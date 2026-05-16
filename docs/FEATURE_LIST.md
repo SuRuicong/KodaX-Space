@@ -1,6 +1,6 @@
 # KodaX Space Feature List
 
-> Last Updated: 2026-05-16 (FEATURE_001, FEATURE_002 completed)
+> Last Updated: 2026-05-16 (FEATURE_001, FEATURE_002, FEATURE_003 completed)
 > Source of truth: [PRD](PRD.md) · [HLD](HLD.md) · [ADR/](ADR/)
 > Versions: v0.1.0 → v0.1.5（M0–M1，约 3–4 个月）
 
@@ -10,7 +10,7 @@
 |----|-------|----------|----------|---------|--------|--------|
 | 001 | Electron 工程骨架 | New | Critical | v0.1.0 | Completed | [v0.1.0.md#001](features/v0.1.0.md#feature_001-electron-工程骨架) |
 | 002 | IPC schema (zod) | New | Critical | v0.1.0 | Completed | [v0.1.0.md#002](features/v0.1.0.md#feature_002-ipc-schema-zod) |
-| 003 | Main 进程 KodaX runtime 集成 | New | Critical | v0.1.0 | Planned | [v0.1.0.md#003](features/v0.1.0.md#feature_003-main-进程-kodax-runtime-集成) |
+| 003 | Main 进程 KodaX runtime 集成 | New | Critical | v0.1.0 | Completed | [v0.1.0.md#003](features/v0.1.0.md#feature_003-main-进程-kodax-runtime-集成) |
 | 004 | Provider 配置 GUI + Keychain | New | Critical | v0.1.0 | Planned | [v0.1.0.md#004](features/v0.1.0.md#feature_004-provider-配置-gui--keychain) |
 | 005 | 项目与 Session 管理 UI | New | Critical | v0.1.0 | Planned | [v0.1.0.md#005](features/v0.1.0.md#feature_005-项目与-session-管理-ui) |
 | 006 | 对话流 UI + tool call 渲染 | New | Critical | v0.1.0 | Planned | [v0.1.0.md#006](features/v0.1.0.md#feature_006-对话流-ui--tool-call-渲染) |
@@ -43,9 +43,9 @@
 === FEATURE LIST ===
 Last Updated: 2026-05-16
 
---- PLANNED (26) ---
+--- PLANNED (25) ---
 
-v0.1.0 (alpha foundation): 8 features (10 total, 2 completed)
+v0.1.0 (alpha foundation): 7 features (10 total, 3 completed)
 v0.1.1 (alpha+):            4 features
 v0.1.2 (beta foundation):   4 features
 v0.1.3 (beta polish):       4 features
@@ -54,15 +54,18 @@ v0.1.5 (release polish):    2 features
 
 --- IN PROGRESS (0) ---
 
---- COMPLETED (2) ---
+--- COMPLETED (3) ---
 
 [NEW, CRITICAL] 001: Electron 工程骨架 (COMPLETED 2026-05-16)
   Planned: v0.1.0 → Released: v0.1.0-alpha.0
 [NEW, CRITICAL] 002: IPC schema (zod) (COMPLETED 2026-05-16)
   Planned: v0.1.0 → Released: v0.1.0-alpha.0
+[NEW, CRITICAL] 003: Main 进程 KodaX runtime 集成 (COMPLETED 2026-05-16)
+  Planned: v0.1.0 → Released: v0.1.0-alpha.0
+  Note: shipped Mock adapter; Real adapter (@kodax-ai/coding) tracked as chore
 
 === SUMMARY ===
-Total: 28 | Planned: 26 | InProgress: 0 | Completed: 2
+Total: 28 | Planned: 25 | InProgress: 0 | Completed: 3
 By Priority: Critical: 8, High: 11, Medium: 8, Low: 1
 By Category:  New: 23, Enhancement: 3, Refactor: 2, Internal: 2
 ```

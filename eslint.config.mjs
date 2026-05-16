@@ -86,7 +86,11 @@ export default [
             { name: '@anthropic-ai/sdk', message: 'renderer must not import LLM SDK runtime' },
             { name: 'openai', message: 'renderer must not import LLM SDK runtime' },
             {
-              name: '@kodax-ai/kodax/coding',
+              name: '@kodax-ai/coding',
+              message: 'renderer must not import KodaX runtime; only types/constants allowed',
+            },
+            {
+              name: '@kodax-ai/skills',
               message: 'renderer must not import KodaX runtime; only types/constants allowed',
             },
           ],

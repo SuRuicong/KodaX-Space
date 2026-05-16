@@ -23,11 +23,25 @@ export type { InvokeChannels, PushChannels } from './channels/index.js';
 export { versionChannel, type SpaceVersionOutput } from './channels/version.js';
 
 export {
+  sessionCreateChannel,
+  sessionSendChannel,
+  sessionCancelChannel,
+  sessionListChannel,
+  sessionDeleteChannel,
+  sessionEventChannel,
+  type SessionMeta,
+  type SessionEvent,
+  type SessionEventKind,
+} from './channels/session.js';
+
+export {
   INVOKE_CHANNEL_NAMES,
   PUSH_CHANNEL_NAMES,
   getInvokeChannel,
+  getPushChannel,
   type InvokeChannelName,
   type PushChannelName,
   type ChannelInput,
   type ChannelOutput,
+  type PushPayload,
 } from './registry.js';

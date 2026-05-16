@@ -24,17 +24,25 @@ export type ChannelInput<C extends InvokeChannelName> = z.infer<InvokeDef<C>['in
 /** 推导 invoke channel 的出参类型。*/
 export type ChannelOutput<C extends InvokeChannelName> = z.infer<InvokeDef<C>['output']>;
 
-// push channel 现在为空——预留类型以便 FEATURE_003 不改这里直接加：
-// type PushDef<C extends PushChannelName> = (typeof pushChannels)[C];
-// export type PushPayload<C extends PushChannelName> = z.infer<PushDef<C>['payload']>;
+type PushDef<C extends PushChannelName> = (typeof pushChannels)[C];
+
+/** 推导 push channel 的 payload 类型。*/
+export type PushPayload<C extends PushChannelName> = z.infer<PushDef<C>['payload']>;
 
 // ---- Lookups ----
 
-/** 根据 channel 名取定义；未注册返回 undefined。*/
+/** 根据 channel 名取 invoke 定义；未注册返回 undefined。*/
 export function getInvokeChannel(
   name: string,
 ): (typeof invokeChannels)[InvokeChannelName] | undefined {
   return (invokeChannels as Record<string, (typeof invokeChannels)[InvokeChannelName] | undefined>)[
     name
   ];
+}
+
+/** 根据 channel 名取 push 定义；未注册返回 undefined。*/
+export function getPushChannel(
+  name: string,
+): (typeof pushChannels)[PushChannelName] | undefined {
+  return (pushChannels as Record<string, (typeof pushChannels)[PushChannelName] | undefined>)[name];
 }

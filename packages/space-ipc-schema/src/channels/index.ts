@@ -12,14 +12,27 @@
 //   - 显式两个 map 让类型 + 运行时 allowlist 同源派生，preload 拿来直接用
 
 import { versionChannel } from './version.js';
+import {
+  sessionCreateChannel,
+  sessionSendChannel,
+  sessionCancelChannel,
+  sessionListChannel,
+  sessionDeleteChannel,
+  sessionEventChannel,
+} from './session.js';
 
 export const invokeChannels = {
   [versionChannel.name]: versionChannel,
+  [sessionCreateChannel.name]: sessionCreateChannel,
+  [sessionSendChannel.name]: sessionSendChannel,
+  [sessionCancelChannel.name]: sessionCancelChannel,
+  [sessionListChannel.name]: sessionListChannel,
+  [sessionDeleteChannel.name]: sessionDeleteChannel,
 } as const;
 
-// 现阶段还没有 push channel——FEATURE_003 会加 session-event 系列。
-// 保留字面量对象（即使是空）的形状，让消费端 import 时类型稳定。
-export const pushChannels = {} as const;
+export const pushChannels = {
+  [sessionEventChannel.name]: sessionEventChannel,
+} as const;
 
 export type InvokeChannels = typeof invokeChannels;
 export type PushChannels = typeof pushChannels;

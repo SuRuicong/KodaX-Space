@@ -26,9 +26,12 @@ declare global {
 
     /**
      * Main → renderer push 事件订阅。返回 unsubscribe 函数。
-     * FEATURE_003 起 push channel 会丰富起来。
+     * payload 按对应 channel 的 zod schema 推导成强类型。
      */
-    on<C extends PushChannelName>(channel: C, listener: (payload: unknown) => void): () => void;
+    on<C extends PushChannelName>(
+      channel: C,
+      listener: (payload: import('@kodax-space/space-ipc-schema').PushPayload<C>) => void,
+    ): () => void;
 
     platform: NodeJS.Platform;
   }

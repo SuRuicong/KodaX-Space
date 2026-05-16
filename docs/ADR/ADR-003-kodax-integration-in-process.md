@@ -103,15 +103,17 @@ B 比 A 多一层 MessagePort 通信成本（µs 级），但 M0 阶段：
 
 ### KodaX 包结构的最佳利用
 
-KodaX 已有 5 个 SDK subpath（`/agent` `/llm` `/coding` `/repl` `/skills`），完全 import-friendly。Space 用法：
+KodaX 在 monorepo 内拆 5 个独立 scoped 包（`@kodax-ai/{agent,llm,coding,repl,skills}`），完全 import-friendly。Space 用法：
 
 | KodaX 包 | Space main import | Space renderer import |
 |---|---|---|
-| `@kodax-ai/kodax/coding` (runKodaX, KodaXClient) | ✅ stateful 也 import | ❌ |
-| `@kodax-ai/kodax/llm` (estimateTokens, KODAX_PROVIDERS, type) | ✅ | ✅ 仅类型 |
-| `@kodax-ai/kodax/skills` | ✅ | ❌ |
-| `@kodax-ai/kodax/agent` (Runner, types) | ✅ | ✅ 仅类型 |
-| `@kodax-ai/kodax/repl` (Ink TUI) | ❌ terminal-only，Space 自己写 UI | ❌ |
+| `@kodax-ai/coding` (runKodaX, KodaXClient) | ✅ stateful 也 import | ❌ |
+| `@kodax-ai/llm` (estimateTokens, KODAX_PROVIDERS, type) | ✅ | ✅ 仅类型 |
+| `@kodax-ai/skills` | ✅ | ❌ |
+| `@kodax-ai/agent` (Runner, types) | ✅ | ✅ 仅类型 |
+| `@kodax-ai/repl` (Ink TUI) | ❌ terminal-only，Space 自己写 UI | ❌ |
+
+> 注：早期版本本 ADR 写过 `@kodax-ai/kodax/coding` 这种 sub-path 形式——这是误解，KodaX 实际是多包，不是一个根包带子路径。FEATURE_003 实施时统一修正。
 
 **renderer 不变量**（CI 强制）：
 - ❌ renderer bundle 不含 `@anthropic-ai/sdk` / `openai` / 任何 LLM runtime

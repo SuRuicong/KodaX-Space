@@ -9,6 +9,8 @@ import { app, BrowserWindow, shell, session } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { registerVersionChannel } from './ipc/version.js';
+import { registerSessionChannels } from './ipc/session.js';
+import { setRendererTarget } from './ipc/push.js';
 
 // CJS 输出（见 scripts/build-main.mjs），__dirname 是原生 Node 全局
 // 不用 import.meta.url（CJS 下不可用）
@@ -130,6 +132,9 @@ app.whenReady().then(() => {
   applyCsp();
   // IPC handlers 必须在窗口创建前注册——否则 renderer 启动后立刻调 invoke 会撞上 "No handler registered"
   registerVersionChannel();
+  registerSessionChannels();
+  // push 目标走 getter 间接拿当前 window——dev HMR / 用户重开窗口都能正确切换
+  setRendererTarget(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null));
   createMainWindow();
 
   app.on('activate', () => {
