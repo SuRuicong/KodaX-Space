@@ -10,6 +10,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { registerVersionChannel } from './ipc/version.js';
 import { registerSessionChannels } from './ipc/session.js';
+import { registerProjectChannels } from './ipc/project.js';
 import { setRendererTarget } from './ipc/push.js';
 import { kodaxHost } from './kodax/host.js';
 
@@ -134,6 +135,7 @@ app.whenReady().then(() => {
   // IPC handlers 必须在窗口创建前注册——否则 renderer 启动后立刻调 invoke 会撞上 "No handler registered"
   registerVersionChannel();
   registerSessionChannels();
+  registerProjectChannels();
   // push 目标走 getter 间接拿当前 window——dev HMR / 用户重开窗口都能正确切换
   setRendererTarget(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null));
   createMainWindow();

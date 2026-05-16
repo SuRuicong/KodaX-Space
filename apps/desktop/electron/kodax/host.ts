@@ -17,6 +17,16 @@ import { MockKodaXSession } from './mock-session.js';
 
 const defaultFactory: SessionFactory = (opts) => new MockKodaXSession(opts);
 
+/**
+ * 临时 title 生成：取 prompt 头 ~50 字，去前后空白 + 换行折叠成单行。
+ * F008 时升级成"用 cheap LLM 给一个 ≤ 8 字总结"。
+ */
+function autoTitleFromPrompt(prompt: string): string {
+  const collapsed = prompt.replace(/\s+/g, ' ').trim();
+  if (collapsed.length <= 50) return collapsed || 'Untitled';
+  return collapsed.slice(0, 47) + '...';
+}
+
 class KodaXHost {
   private readonly sessions = new Map<string, ManagedSession>();
   private factory: SessionFactory = defaultFactory;
@@ -59,6 +69,23 @@ class KodaXHost {
     const s = this.sessions.get(sessionId);
     if (!s) return false;
     await s.cancel();
+    return true;
+  }
+
+  /**
+   * 用户/handler 在 session 还没 title 时自动填一个——基于第一条 prompt。
+   * 已有 title 不覆盖（即使是空字符串，也不当 truthy 处理：用户主动清空可能想要的状态）。
+   */
+  ensureTitle(sessionId: string, fromPrompt: string): void {
+    const s = this.sessions.get(sessionId);
+    if (!s || s.title !== undefined) return;
+    s.title = autoTitleFromPrompt(fromPrompt);
+  }
+
+  setTitle(sessionId: string, title: string): boolean {
+    const s = this.sessions.get(sessionId);
+    if (!s) return false;
+    s.title = title;
     return true;
   }
 

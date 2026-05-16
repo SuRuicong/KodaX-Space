@@ -26,6 +26,9 @@ export function registerSessionChannels(): void {
     if (!session) {
       throw new Error(`session not found: ${input.sessionId}`);
     }
+    // 第一次 send 时自动给 session 起个临时标题（基于 prompt 头部）。
+    // ensureTitle 已经在 host 里做"title === undefined 才填"的判断，重复调用安全。
+    kodaxHost.ensureTitle(input.sessionId, input.prompt);
     // send 是 fire-and-forget——立刻 ACK，事件流通过 push 推
     await session.send(input.prompt);
     return { accepted: true } as const;
@@ -38,15 +41,26 @@ export function registerSessionChannels(): void {
   });
 
   // session.list
-  registerChannel('session.list', () => {
-    const sessions: SessionMeta[] = kodaxHost.list().map((s) => ({
-      sessionId: s.sessionId,
-      projectRoot: s.projectRoot,
-      provider: s.provider,
-      reasoningMode: s.reasoningMode,
-      createdAt: s.createdAt,
-      lastActivityAt: s.lastActivityAt,
-    }));
+  // 可选 projectRoot 过滤——左抽屉切项目时只拉本项目下的 session。
+  // 按 lastActivityAt 倒序，最近活动的在最前。
+  registerChannel('session.list', (input) => {
+    const projectFilter = input?.projectRoot;
+    let list = kodaxHost.list();
+    if (projectFilter) {
+      list = list.filter((s) => s.projectRoot === projectFilter);
+    }
+    const sessions: SessionMeta[] = list
+      .slice()
+      .sort((a, b) => b.lastActivityAt - a.lastActivityAt)
+      .map((s) => ({
+        sessionId: s.sessionId,
+        projectRoot: s.projectRoot,
+        provider: s.provider,
+        reasoningMode: s.reasoningMode,
+        title: s.title,
+        createdAt: s.createdAt,
+        lastActivityAt: s.lastActivityAt,
+      }));
     return { sessions };
   });
 
@@ -54,5 +68,11 @@ export function registerSessionChannels(): void {
   registerChannel('session.delete', async (input) => {
     const deleted = await kodaxHost.delete(input.sessionId);
     return { deleted };
+  });
+
+  // session.setTitle
+  registerChannel('session.setTitle', (input) => {
+    const ok = kodaxHost.setTitle(input.sessionId, input.title);
+    return { ok };
   });
 }

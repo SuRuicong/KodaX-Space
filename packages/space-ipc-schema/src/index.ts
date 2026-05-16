@@ -28,11 +28,20 @@ export {
   sessionCancelChannel,
   sessionListChannel,
   sessionDeleteChannel,
+  sessionSetTitleChannel,
   sessionEventChannel,
   type SessionMeta,
   type SessionEvent,
   type SessionEventKind,
 } from './channels/session.js';
+
+export {
+  projectListChannel,
+  projectOpenDialogChannel,
+  projectRecentAddChannel,
+  projectRecentRemoveChannel,
+  type Project,
+} from './channels/project.js';
 
 export {
   INVOKE_CHANNEL_NAMES,

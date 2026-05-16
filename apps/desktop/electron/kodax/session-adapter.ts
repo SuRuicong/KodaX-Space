@@ -32,6 +32,14 @@ export interface ManagedSession {
   readonly createdAt: number;
   /** 最后一次发送 prompt / 收到事件的时间戳。`session.list` 用它排序。*/
   lastActivityAt: number;
+  /**
+   * 用户可读标题。
+   *   - 创建时为 undefined
+   *   - host 在第一次 send 时根据 prompt 头部 50 字自动填一个临时值
+   *   - FEATURE_008 起再升级成 LLM 总结的 ≤ 8 字
+   *   - 用户可通过 session.setTitle IPC 手工覆盖
+   */
+  title: string | undefined;
 
   /**
    * 提交一条 prompt 到 session。**严格 fire-and-forget**：

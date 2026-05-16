@@ -25,14 +25,20 @@ const MAX_TEXT_CHUNK = 262_144;
 const MAX_TOOL_RESULT = 524_288;
 
 // ---- Session metadata（list/create 返回） ----
+//
+// title 是可选——session 刚创建时为空，第一次 send 后由 host 用 prompt 头 50 字填一个临时值；
+// FEATURE_006/008 时再升级成用 cheap LLM 总结成 ≤ 8 字。
+// 用户可通过 session.setTitle 手工覆盖。
 const sessionMetaSchema = z.object({
   sessionId: z.string().min(1),
   projectRoot: z.string().min(1),
   provider: z.string().min(1),
   reasoningMode: reasoningModeSchema,
+  title: z.string().max(256).optional(),
   createdAt: z.number().int().nonnegative(),
   lastActivityAt: z.number().int().nonnegative(),
 });
+
 
 // ---- Invoke: session.create ----
 export const sessionCreateChannel = {
@@ -76,12 +82,34 @@ export const sessionCancelChannel = {
 } as const;
 
 // ---- Invoke: session.list ----
+//
+// 可选 projectRoot 过滤——左抽屉切换项目时拉本项目下的 session。
+// 不传则返回所有 session。
 export const sessionListChannel = {
   name: 'session.list',
   direction: 'invoke',
-  input: z.undefined(),
+  input: z
+    .object({
+      projectRoot: z.string().min(1).max(4096).optional(),
+    })
+    .optional(),
   output: z.object({
     sessions: z.array(sessionMetaSchema),
+  }),
+} as const;
+
+// ---- Invoke: session.setTitle ----
+//
+// 手工设置标题。F005 让用户右键 session 卡片"Rename"用。
+export const sessionSetTitleChannel = {
+  name: 'session.setTitle',
+  direction: 'invoke',
+  input: z.object({
+    sessionId: z.string().min(1),
+    title: z.string().min(1).max(256),
+  }),
+  output: z.object({
+    ok: z.boolean(),
   }),
 } as const;
 

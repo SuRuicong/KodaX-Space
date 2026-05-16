@@ -133,6 +133,59 @@ test('delete: removes session from list and dispose is idempotent', async () => 
   assert.equal(second, false);
 });
 
+// ---- FEATURE_005: title + filtered list + setTitle ----
+
+test('newly created session has no title', () => {
+  const { sessionId } = kodaxHost.createSession({ projectRoot: '/r', provider: 'mock' });
+  const session = kodaxHost.get(sessionId);
+  assert.equal(session?.title, undefined);
+});
+
+test('ensureTitle: fills title from prompt the first time, no-op on subsequent', () => {
+  const { sessionId } = kodaxHost.createSession({ projectRoot: '/r', provider: 'mock' });
+  kodaxHost.ensureTitle(sessionId, 'Read package.json and explain it briefly');
+  const first = kodaxHost.get(sessionId)?.title;
+  assert.equal(first, 'Read package.json and explain it briefly');
+  // 第二次调 ensureTitle 用不同 prompt 不应覆盖
+  kodaxHost.ensureTitle(sessionId, 'a totally different prompt');
+  assert.equal(kodaxHost.get(sessionId)?.title, first);
+});
+
+test('ensureTitle: long prompts get truncated to ~50 chars with ellipsis', () => {
+  const { sessionId } = kodaxHost.createSession({ projectRoot: '/r', provider: 'mock' });
+  const long = 'a'.repeat(200);
+  kodaxHost.ensureTitle(sessionId, long);
+  const title = kodaxHost.get(sessionId)?.title;
+  assert.ok(title);
+  assert.ok(title!.length <= 50, `title too long: ${title!.length}`);
+  assert.ok(title!.endsWith('...'));
+});
+
+test('ensureTitle: collapses whitespace / newlines into single spaces', () => {
+  const { sessionId } = kodaxHost.createSession({ projectRoot: '/r', provider: 'mock' });
+  kodaxHost.ensureTitle(sessionId, '  hello\n\n  world  \tfoo  ');
+  assert.equal(kodaxHost.get(sessionId)?.title, 'hello world foo');
+});
+
+test('ensureTitle: empty/whitespace-only prompt yields "Untitled"', () => {
+  const { sessionId } = kodaxHost.createSession({ projectRoot: '/r', provider: 'mock' });
+  kodaxHost.ensureTitle(sessionId, '   \n\t   ');
+  assert.equal(kodaxHost.get(sessionId)?.title, 'Untitled');
+});
+
+test('setTitle: replaces an existing title', () => {
+  const { sessionId } = kodaxHost.createSession({ projectRoot: '/r', provider: 'mock' });
+  kodaxHost.ensureTitle(sessionId, 'first');
+  const ok = kodaxHost.setTitle(sessionId, 'manual override');
+  assert.equal(ok, true);
+  assert.equal(kodaxHost.get(sessionId)?.title, 'manual override');
+});
+
+test('setTitle: returns false for non-existent session', () => {
+  const ok = kodaxHost.setTitle('s_does_not_exist', 'whatever');
+  assert.equal(ok, false);
+});
+
 test('push payload: every captured event passes session.event schema', async () => {
   // 这个 test 保险 — push.ts 已经在发出前 zod 校验，但我们再确认捕获的 payload 形状对
   const { sessionId } = kodaxHost.createSession({ projectRoot: '/r', provider: 'mock' });

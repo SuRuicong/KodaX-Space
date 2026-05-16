@@ -18,8 +18,15 @@ import {
   sessionCancelChannel,
   sessionListChannel,
   sessionDeleteChannel,
+  sessionSetTitleChannel,
   sessionEventChannel,
 } from './session.js';
+import {
+  projectListChannel,
+  projectOpenDialogChannel,
+  projectRecentAddChannel,
+  projectRecentRemoveChannel,
+} from './project.js';
 
 export const invokeChannels = {
   [versionChannel.name]: versionChannel,
@@ -28,6 +35,11 @@ export const invokeChannels = {
   [sessionCancelChannel.name]: sessionCancelChannel,
   [sessionListChannel.name]: sessionListChannel,
   [sessionDeleteChannel.name]: sessionDeleteChannel,
+  [sessionSetTitleChannel.name]: sessionSetTitleChannel,
+  [projectListChannel.name]: projectListChannel,
+  [projectOpenDialogChannel.name]: projectOpenDialogChannel,
+  [projectRecentAddChannel.name]: projectRecentAddChannel,
+  [projectRecentRemoveChannel.name]: projectRecentRemoveChannel,
 } as const;
 
 export const pushChannels = {

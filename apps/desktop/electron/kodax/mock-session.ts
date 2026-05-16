@@ -33,6 +33,7 @@ export class MockKodaXSession implements ManagedSession {
   readonly reasoningMode: ManagedSession['reasoningMode'];
   readonly createdAt: number;
   lastActivityAt: number;
+  title: string | undefined = undefined;
 
   private readonly emit: (e: SessionEvent) => void;
   private currentAbort: AbortController | null = null;

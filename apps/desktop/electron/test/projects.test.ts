@@ -1,0 +1,113 @@
+// ProjectStore tests — 用临时目录验证持久化、缓存、去重、删除、损坏恢复。
+
+import { test, beforeEach, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { createProjectStore } from '../projects/store.js';
+
+let tmpDir = '';
+let storeFile = '';
+
+beforeEach(async () => {
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kodax-space-test-'));
+  storeFile = path.join(tmpDir, 'projects.json');
+});
+
+afterEach(async () => {
+  // best-effort cleanup
+  try {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  } catch {
+    // ignore
+  }
+});
+
+test('list: empty when file does not exist', async () => {
+  const store = createProjectStore(storeFile, tmpDir);
+  const projects = await store.list();
+  assert.equal(projects.length, 0);
+});
+
+test('addOrBump: creates new project with name derived from path basename', async () => {
+  const store = createProjectStore(storeFile, tmpDir);
+  const inputPath = path.join(tmpDir, 'my-project');
+  const project = await store.addOrBump(inputPath);
+  assert.equal(project.path, inputPath);
+  assert.equal(project.name, 'my-project');
+  assert.ok(project.addedAt > 0);
+  assert.equal(project.addedAt, project.lastUsedAt);
+});
+
+test('addOrBump: existing path only bumps lastUsedAt, preserves addedAt + name', async () => {
+  const store = createProjectStore(storeFile, tmpDir);
+  const inputPath = path.join(tmpDir, 'proj');
+  const first = await store.addOrBump(inputPath);
+  await new Promise((r) => setTimeout(r, 5)); // ensure timestamp diff
+  const second = await store.addOrBump(inputPath);
+  assert.equal(second.path, first.path);
+  assert.equal(second.addedAt, first.addedAt);
+  assert.ok(second.lastUsedAt >= first.lastUsedAt);
+});
+
+test('addOrBump: persists to disk and survives store recreation', async () => {
+  const store1 = createProjectStore(storeFile, tmpDir);
+  await store1.addOrBump(path.join(tmpDir, 'a'));
+  await store1.addOrBump(path.join(tmpDir, 'b'));
+
+  // 第二个 store 实例（模拟应用重启）
+  const store2 = createProjectStore(storeFile, tmpDir);
+  const projects = await store2.list();
+  assert.equal(projects.length, 2);
+  // 顺序：新加的在前
+  assert.equal(path.basename(projects[0].path), 'b');
+  assert.equal(path.basename(projects[1].path), 'a');
+});
+
+test('remove: deletes the entry and returns true', async () => {
+  const store = createProjectStore(storeFile, tmpDir);
+  const target = path.join(tmpDir, 'target');
+  await store.addOrBump(target);
+  await store.addOrBump(path.join(tmpDir, 'keep'));
+  const removed = await store.remove(target);
+  assert.equal(removed, true);
+  const list = await store.list();
+  assert.equal(list.length, 1);
+  assert.equal(path.basename(list[0].path), 'keep');
+});
+
+test('remove: returns false for non-existent path (idempotent)', async () => {
+  const store = createProjectStore(storeFile, tmpDir);
+  await store.addOrBump(path.join(tmpDir, 'a'));
+  const removed = await store.remove(path.join(tmpDir, 'never-existed'));
+  assert.equal(removed, false);
+});
+
+test('list: recovers gracefully from corrupted JSON file', async () => {
+  await fs.mkdir(tmpDir, { recursive: true });
+  await fs.writeFile(storeFile, 'not valid json {{{{', 'utf-8');
+  const store = createProjectStore(storeFile, tmpDir);
+  // 不抛——回滚到空列表
+  const projects = await store.list();
+  assert.equal(projects.length, 0);
+});
+
+test('list: recovers from schema-valid-JSON-but-wrong-shape', async () => {
+  await fs.mkdir(tmpDir, { recursive: true });
+  await fs.writeFile(storeFile, JSON.stringify({ wrong: 'shape' }), 'utf-8');
+  const store = createProjectStore(storeFile, tmpDir);
+  const projects = await store.list();
+  assert.equal(projects.length, 0);
+});
+
+test('persist uses atomic rename: file does not appear half-written', async () => {
+  // 确认 writeFile 写的是 tmp 文件再 rename——读直接读 storeFile 应该看到完整 JSON
+  const store = createProjectStore(storeFile, tmpDir);
+  await store.addOrBump(path.join(tmpDir, 'p1'));
+  const content = await fs.readFile(storeFile, 'utf-8');
+  const parsed = JSON.parse(content);
+  assert.equal(parsed.version, 1);
+  assert.ok(Array.isArray(parsed.projects));
+  assert.equal(parsed.projects.length, 1);
+});
