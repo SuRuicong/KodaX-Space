@@ -1,0 +1,48 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  smoke:
+    name: Smoke build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install
+        run: npm install
+
+      - name: Build packages (needed for typecheck cross-package + tests)
+        run: npm run build:packages
+
+      - name: Typecheck
+        # FEATURE_002+ 起强制——renderer 误用未注册 channel / handler 返回 schema-错配 shape 都被 TS 拦
+        run: npm run typecheck
+
+      - name: Unit tests (schema validation, envelope, registry)
+        run: npm test
+
+      - name: Build renderer + main
+        run: npm run build:renderer && npm run build:main
+
+      - name: Verify outputs
+        shell: bash
+        run: |
+          test -f dist-electron/main.js || (echo "::error::main.js missing" && exit 1)
+          test -f dist-electron/preload.js || (echo "::error::preload.js missing" && exit 1)
+          test -f apps/desktop/dist/index.html || (echo "::error::renderer index.html missing" && exit 1)
+          echo "all build artifacts present"

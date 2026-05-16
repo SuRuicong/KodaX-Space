@@ -1,0 +1,57 @@
+# electron-builder configuration — FEATURE_001 unsigned dev build
+# 签名与 notarize 留 FEATURE_027 (v0.1.5)
+
+appId: ai.kodax.space
+productName: KodaX Space
+copyright: Copyright © 2026 icetomoyo
+
+directories:
+  output: out
+  buildResources: resources
+
+files:
+  - 'dist-electron/**/*'
+  - 'apps/desktop/dist/**/*'
+  - 'packages/*/dist/**/*'
+  - 'package.json'
+  - '!**/node_modules/*/{CHANGELOG.md,README.md,readme.md}'
+  - '!**/node_modules/.cache/**'
+  - '!**/{test,tests,__tests__,__mocks__}/**'
+
+asar: true
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  # 签名留 FEATURE_027
+  identity: null
+  hardenedRuntime: false
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  # 签名留 FEATURE_027
+  signAndEditExecutable: false
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+
+linux:
+  # M3 启用
+  target: []
+
+extraMetadata:
+  main: dist-electron/main.js
+
+# 不内嵌 KodaX-private 任何代码（见 HLD §18）
+# KodaX SDK 通过 node_modules 引入 (FEATURE_003)

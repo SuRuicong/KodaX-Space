@@ -1,0 +1,72 @@
+# Dependencies
+node_modules/
+.pnp.*
+.yarn/
+
+# Build outputs
+dist/
+dist-electron/
+out/
+build/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+.history/
+
+# Temp files
+*.tmp
+*.bak
+*~
+
+# Env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Electron-builder caches
+.cache/
+*.dmg
+*.exe
+*.msi
+*.AppImage
+*.deb
+*.snap
+
+# KodaX Space runtime data (should be in ~/.kodax/space/, never committed)
+.kodax/
+**/.kodax-space-test-data/
+
+# Vite / other bundler caches
+.vite/
+.turbo/
+.parcel-cache/
+.npm/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Native build artifacts (NAPI crates, future features)
+target/
+*.node
+!packages/native/**/index.d.ts

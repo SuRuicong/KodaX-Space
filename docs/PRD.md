@@ -1,0 +1,757 @@
+# KodaX Space 产品需求文档（PRD）
+
+> Last updated: 2026-05-16
+> Status: v0.2 草案（与 HLD 联动收敛；面板模型从三面板修订为双面板 + Quick Ask）
+> 对标：Anthropic Claude Desktop（Cowork / Code 双面板）+ OpenAI Codex Desktop App（多 agent 本机壳）
+
+---
+
+## 0. 中文导读（一页摘要）
+
+KodaX Space 是 KodaX 生态的**桌面客户端**——不是另一个 IDE，也不是另一个 Chatbot，而是把 KodaX 已有的能力以**桌面级体验**重新组织，并扩展到非终端用户。
+
+- **对标定位**：本地 agent 桌面壳（对标 Claude Desktop / Codex Desktop App）+ **双面板 Code / Partner** + **Quick Ask popover**
+- **不做独立 Chat 面板**：浏览器和各 provider 自家产品已覆盖 chat；桌面 app 的独特价值是本机文件 + 工具执行
+- **底座复用**：直接复用 KodaX 公开 SDK 与 ACP server；不复刻 agent runtime
+- **差异化**：
+  1. **12+ LLM Provider 自由切换**（Claude Desktop 锁定 Anthropic、Codex Desktop 锁定 OpenAI）
+  2. **Repointel 仓库智能前置注入**（专利级核心能力）
+  3. **CLI ↔ Desktop session 连续性**（终端开的 session 桌面继续）
+  4. **可本地离线/可自托管**（不强制云）
+  5. **Skills / Hooks / Permission Mode 与 KodaX 同源**
+- **不做**：
+  - 不做独立 Chat 面板（用 Quick Ask popover 替代"临时问"场景）
+  - 不做新的 IDE（不与 VS Code / JetBrains 正面竞争）
+  - 不做 Cloud Sandbox VM（与 ChatGPT Agent 这类云沙箱模式划清边界）
+  - 不做手机版（Phase 1）
+- **里程碑**：
+  - M0（2026-Q2）骨架可跑：Electron 壳 + **仅 Code 面板**（ACP 接 KodaX）+ MCP 管理；无 tab 切换器
+  - M1（2026-Q3）公开 Beta：**Quick Ask popover**（全局热键）+ 权限 UX + Repointel 默认开
+  - M2（2026-Q4）Partner 面板研究预览（对标 Cowork）；顶部出现 `[Code] [Partner]` tab
+  - M3（2027-Q1）GA：自动更新、Connector 市场、企业策略、Linux 支持
+
+---
+
+## 1. 产品定位
+
+### 1.1 一句话定位
+
+> **KodaX Space 是面向开发者与代码相关知识工作者的、Provider 中立的、可自托管的 AI 桌面 agent 工作台。**
+
+它在用户机器上做三件事：
+
+1. 提供一个**可视化的 Coding Agent**面板（Code）——基于 KodaX。
+2. 提供一个面向非纯编码任务（评审、需求拆解、文档、运维脚本编排）的**Partner 面板**预留位（M2 起，对标 Claude Cowork）。
+3. 作为本机 MCP / Connector / Skill / Repointel 的**统一宿主**。
+
+辅以**Quick Ask popover**——全局热键（⌘⇧K / Ctrl+Shift+K）唤出的浮动小窗，**无 session、无工具、无持久化**，用于"临时问 LLM"场景（M1 起）。
+
+**为什么不做独立 Chat 面板**：浏览器、各 provider 自家产品（claude.ai、智谱 BigModel、Kimi、深度求索 chat 等）已经把 chat 体验做到 polished；桌面 app 的独特价值是"本机文件 + 工具执行"，做独立 chat 面板会稀释这一价值并增加无回报的工作量。临时问答需求由 Quick Ask 这种 popover 形态精确覆盖。
+
+### 1.2 在 KodaX 生态中的位置
+
+```text
+                ┌──────────────────────────┐
+                │      KodaX Space         │  ← 本文档主题：桌面 GUI 壳
+                │  (Electron + React)      │
+                └────────┬─────────────────┘
+                         │ ACP / SDK in-proc
+       ┌─────────────────┼──────────────────┐
+       ▼                 ▼                  ▼
+  ┌─────────┐      ┌──────────┐      ┌──────────────┐
+  │  KodaX  │      │  KodaX   │      │  Repointel   │
+  │  Core   │      │ Partner  │      │  (private)   │
+  │ (OSS)   │      │ (future) │      │  premium     │
+  └─────────┘      └──────────┘      └──────────────┘
+       │                                     │
+       └─────── LLM Providers (12+) ─────────┘
+```
+
+| 层 | 项目 | 对标 |
+|---|---|---|
+| 内核（CLI/SDK） | **KodaX** | Claude Code |
+| 内核（Knowledge Work Agent） | **KodaX Partner**（规划） | Claude Cowork |
+| 桌面壳（统一应用） | **KodaX Space**（本文档） | Claude Desktop |
+| 仓库智能内核 | **Repointel**（KodaX-private） | — (无对标) |
+
+### 1.3 与现有 KodaX CLI/REPL 的关系
+
+KodaX Space **不取代** CLI/REPL。三者关系：
+
+- CLI：脚本化、CI/CD、批处理
+- REPL：终端交互（Ink TUI）
+- Space：桌面交互（Electron + React），并且**桌面是 session 的"第一公民展示面"**——同一个 session ID 可以在任意 surface 间漂移（这是 Claude Code 4.6+ 的 `--teleport / /desktop` 模式所验证过的）。
+
+---
+
+## 2. 对标分析（为什么要做、做什么、不做什么）
+
+### 2.1 Claude Desktop 当前能力（2026 Q1 状态）
+
+| 能力 | Claude Desktop | Codex Desktop App | KodaX Space 立场 |
+|---|---|---|---|
+| 面板组织 | 三 tab（Chat / Cowork / Code，Code 实际埋在 Chat icon hover 下）| 单壳多 agent | **双面板（Code / Partner）+ Quick Ask popover**；不做独立 Chat |
+| MCP server 本地宿主 | ✅ 原生 | ✅ 通过 plugin/skill | ✅ 必须对齐 |
+| 桌面扩展（`.mcpb` 一键安装） | ✅ | ❌ 不兼容 | ✅ 必须兼容 `.mcpb` 标准 |
+| Skills / Plugins 仓库 | 内建 | 90+ plugins | ✅ 复用 KodaX skills + `.mcpb` |
+| Connector（GitHub/Slack/Notion 等图形化接入） | ✅ | ✅ 90+ | ✅ Beta 跟进 |
+| Quick Entry / 全局热键 | ✅ macOS only | — | ✅ M1（KodaX Space 的 Quick Ask 即此入口） |
+| 集成终端（应用内 shell） | ✅ | ✅ 多 tab | ✅ M0 单 tab；M1 多 tab |
+| 文件面板（diff / PDF / docx 预览）| ✅ | ✅ 富预览 | ✅ M0 diff；M1 富预览 |
+| In-app browser plugin（agent 操控本地 dev server）| — | ✅ | M2 通过 MCP（如 Playwright MCP）|
+| Routines / Automations（定时 / 事件触发）| ✅ 云 | ✅ 复用 thread | ❌ 不做云；M3 本地 cron 桥 |
+| 远端 SSH session / devbox | ✅ | ✅ alpha | M2 评估（自部远端 KodaX runner）|
+| Automatic Review Agent（高风险动作经审阅子 agent）| — | ✅ | M2 |
+| 多 agent 并行可视化 | 较新 | ✅ 卖点 | ✅ M0 Subagent tree（KodaX 已有底座）|
+| Cloud Sandbox / VM 执行 | — | ✅ Cloud Tasks | ❌ 与 ChatGPT Agent 划清 |
+| 模型选择 | Anthropic only | OpenAI only | **12+ provider + 自定义** ← 关键差异 |
+| 自托管 | ❌ | ❌ | ✅ ← 关键差异 |
+| 数据本地化 | 部分（经 Anthropic 服务器）| 部分（云 task 上行）| ✅ 默认 ← 关键差异 |
+| 开源 | ❌ | ❌（CLI 开源、Desktop 闭源） | ✅ KodaX 内核 Apache 2.0 |
+| Linux | ❌ | ❌ | ✅ M3 |
+
+### 2.2 与 Cursor / Windsurf / Cline 的差异
+
+KodaX Space **不是 IDE 替代品**。它的设计哲学是：
+
+> "你已经有 VS Code / JetBrains 了。KodaX Space 是一个旁边的桌面助手，它能调用你的代码库，但不会试图取代你的编辑器。"
+
+这意味着：
+- 没有大型代码编辑器内核（不内嵌 Monaco 作为主面板）
+- 内置的文件查看/diff 面板**为 agent 行为审计而存在**，不是编辑工作流
+- 鼓励用户继续用主力 IDE 写代码、用 KodaX Space 跑 agent 与对话
+
+### 2.3 关于 Claude Cowork 的对标取舍
+
+Cowork 的核心承诺是：**面向非开发者知识工作者**，能完成"读邮件—合并 PDF—填表—生成报告"这类多步事务。
+
+KodaX Space Phase 1 **不直接对标 Cowork 的全场景**。原因：
+
+1. KodaX 本体是 coding agent，迁移到通用知识工作需要新的工具集与 prompt 包（即 KodaX Partner）。
+2. 但 Space 必须**预留 Partner 面板的接入点**——这样 Partner 一旦准备好，可以以 plugin 形式插入 Space，而不是另起一个 app。
+
+Phase 1 的 Partner 面板呈现为：
+- 一个 "Knowledge Work (preview)" tab
+- 内置 2–3 个非编码 skill（如 *summarize-docs*、*refactor-meeting-notes*、*draft-rfc*）
+- 文件作用域可锁定到非 git 工作区目录（Documents / Downloads）
+
+---
+
+## 3. 用户与场景
+
+### 3.1 目标用户分层
+
+| 层 | 画像 | 主要使用 |
+|---|---|---|
+| **P0 个人开发者** | 已经会用 KodaX CLI / Claude Code 的开发者 | Code 面板 + MCP + Quick Ask |
+| **P1 团队开发者** | 小团队，关心 provider 切换、可观测性、可审计性 | Code + Repointel + 审计日志 |
+| **P2 代码相关知识工作者** | TL / 架构师 / 产品 / TPM | Code（评审）+ Partner 预览 + Quick Ask |
+| **P3 企业管理员**（M3） | 想把 KodaX 部署给一支团队 | 策略管理、扩展白名单、provider 网关 |
+| **P4 非编码知识工作者**（Phase 2） | 法务、HR、运营 | 等 KodaX Partner 成熟 |
+
+### 3.2 高优先级场景（P0-P1 必须）
+
+| ID | 场景 | 现状痛点 | Space 的解法 |
+|---|---|---|---|
+| S1 | 多仓多 session 并行 | CLI 一窗一 session | 桌面侧栏 + 多窗口/多 tab |
+| S2 | 切换 provider | 改 config → 重启 | 顶栏下拉切换 + per-session 锁定 |
+| S3 | 长任务进度监控 | CLI 滚屏丢失上下文 | Work 仪表盘 + 工具调用时间线 |
+| S4 | Diff 审查 + 一次 approve | CLI 多次 y/n | 文件级 diff 面板 + 批准/驳回 |
+| S5 | MCP 装好不报错 | JSON 手编 | 一键 `.mcpb` 安装 + 健康检查 |
+| S6 | Repointel 状态可见 | CLI 仅 `/status` | 状态条 + 缓存可视化 |
+| S7 | 与终端混用 | CLI 与 desktop 各自一份 session | session 跨 surface 漂移 |
+
+### 3.3 反场景（明确不优化）
+
+- 移动端（Phase 1 不做）
+- 浏览器扩展（Phase 1 不做）
+- 多人协作实时同编辑（Phase 1 不做，session 仍是单人）
+- AI 自主网购、自主转账等高风险事务（永远要求显式人工确认，不做"全自动"宣传）
+
+---
+
+## 4. 产品原则
+
+### 4.1 KodaX Space 五条原则
+
+1. **Shell, not engine** — Space 是壳，不是新引擎。所有 agent 逻辑回到 KodaX 内核。
+2. **Provider neutrality is sacred** — provider 切换永远是顶级操作；任何模型功能必须对 ≥ 2 个 provider 验证。
+3. **Local first, cloud optional** — 默认全本地。云能力（如 Routines）是可选项，不是默认值。
+4. **Oversight by design** — 任何不可逆操作（写文件、跑 bash、调网络）默认进入 review queue；用户可批量批准并配置规则。
+5. **One session, many surfaces** — 同一 session 在 CLI / REPL / Space 之间无缝漂移；Space 不囤积自有状态。
+
+### 4.2 与 KodaX 内核 PRD 的一致性
+
+KodaX 内核的核心承诺（[KodaX/docs/PRD.md](../../KodaX/docs/PRD.md)）继续生效：
+
+- Single-Agent First
+- Harness On Demand（H0/H1/H2）
+- Evidence Before Confidence
+- Work-First UX
+
+Space 仅在 UI/UX 层把这些概念**可视化**，不引入新的执行语义。
+
+### 4.3 与 KodaX-private 的一致性
+
+Repointel 的核心调用契约（`status / warm / preturn / context-pack / impact / symbol / process`）继续仅经本地 daemon，Space 仅作为 status 查看 + 一键 warm 的图形入口，**不直接读取 Repointel 内部数据结构**——这点对 KodaX-private 的专利布局至关重要。
+
+---
+
+## 5. 核心能力清单
+
+### 5.1 Must-have（M0 - M1）
+
+#### 5.1.1 Code Workspace（核心面板）
+
+- 项目选择器：列出最近打开的项目（git root + 工作区目录）
+- 多 session 抽屉：每个 session 一行卡片（标题 / provider / 当前模式 / 最后活动）
+- 主交互区：
+  - 对话流（含 tool call 折叠卡片）
+  - Work 进度条 + 当前 H0/H1/H2 模式徽标
+  - 当前 reasoning mode（off/auto/quick/balanced/deep）下拉
+- 工具调用面板（右抽屉）：
+  - bash：完整命令 + 输出 + 退出码
+  - read/write/edit：路径 + diff
+  - grep/glob：pattern + scope
+  - dispatch_child_task：子 agent 树状嵌套
+- 文件面板（右抽屉）：
+  - 点击 diff 文件名打开
+  - 内置 Monaco 只读模式 + diff 模式
+  - 不做主编辑工作流（教育用户回 IDE 编辑）
+- 内置终端（底部抽屉）：复用系统 shell，与 KodaX bash tool **共享 cwd**
+
+#### 5.1.2 Quick Ask（全局轻量入口，M1 起）
+
+替代"独立 Chat 面板"。设计目标：用户从任意应用按全局热键唤出一个浮动小窗口，问一个临时问题，发完即关。
+
+**形态**：
+- 全局热键：macOS `⌘⇧K`，Windows / Linux `Ctrl+Shift+K`（用户可改）
+- 单输入框 + 单回答区，**无 session 抽屉、无 tool 调用面板、无文件抽屉**
+- 顶部展示当前 provider；可临时切换且**不影响 Code 面板**正在用的 provider
+- 失焦自动收起；Esc 关闭并丢弃；窗口尺寸约 480 × 360 px
+
+**行为**：
+- 创建一个临时 ACP session：固定 `mode='plan'`（read-only，**无 tools、无 MCP**）
+- 流式回答；用户回车连发可累积一次性对话上下文，但**关闭即销毁**
+- **不写入** `~/.kodax/sessions/`（与 KodaX 内核唯一真理面解耦）
+- 想多聊？提供 "Continue in Code panel as new session" 按钮：转换为正式 Code session（此时才落盘）
+
+**为什么不做独立 Chat 面板**：
+- 任何浏览器都能拿到 polished LLM chat（claude.ai、chatgpt.com、智谱 BigModel、Kimi、深度求索 chat、通义、豆包 等）；桌面 app 重新做 chat 没有差异化
+- 桌面 app 的独特价值 = **本机文件 + 工具执行**；独立 Chat 面板把这个价值稀释，且增加后端逻辑（HLD 之前埋的"Chat 不共享 Code 后端"复杂度由此移除）
+- Quick Ask 的"临时问、不持久"语义已经覆盖 Chat 面板的真实使用场景
+- 国内开发者的 chat UI 习惯已被 provider 自家产品满足（智谱 / Kimi / 通义 / 豆包），桌面 app 再做一份是负产出
+
+#### 5.1.3 Permission UX
+
+| 模式 | UI 表现 | KodaX 对应 |
+|---|---|---|
+| Plan | 灰底顶栏 "Read-only planning" | `plan` |
+| Accept Edits | 蓝底顶栏 + "Auto-accept file edits" | `accept-edits` |
+| Auto in Project | 绿底顶栏 + 项目根目录提示 | `auto-in-project` |
+
+权限确认弹窗组件：
+
+```
+┌────────────────────────────────────────┐
+│  ⚠ Agent requests permission           │
+│                                        │
+│  Tool: bash                            │
+│  Command: npm install -D vitest        │
+│  Risk: low (project-local install)     │
+│                                        │
+│  ▢ Always allow `npm install`          │
+│                                        │
+│  [Deny]  [Allow once]  [Allow]         │
+└────────────────────────────────────────┘
+```
+
+行为对齐 KodaX REPL 的 `confirmTools` / `Allow patterns`，规则写入 `~/.kodax/permissions.json`。
+
+#### 5.1.4 Provider 管理
+
+- 内置 12 provider 的开箱可用展示（已配 key 才亮起）
+- 自定义 provider（OpenAI/Anthropic-compatible）的图形化表单
+- API key 写入 OS keychain（Windows Credential Manager / macOS Keychain），不落 plain text
+- 每 provider 卡片显示：模型清单 / capability matrix / 最近一次延迟
+- 一键"测试连接"
+
+#### 5.1.5 MCP 管理
+
+- MCP server 列表 + 状态灯
+- `.mcpb` 一键安装（与 Claude Desktop 兼容的扩展格式）
+- 手动 JSON 模式（不强制 GUI）
+- 进程崩溃自动重启 + 最近日志查看
+- 工具级开关：在 session 内禁用某 MCP server 的某个 tool
+
+#### 5.1.6 Repointel 集成
+
+- 状态条（顶栏右侧）：`Repointel ● premium-native / oss / off`
+- 一键 warm + 切换 mode
+- 不暴露 Repointel 内部结果对象；只展示 KodaX 内核已暴露的状态字段
+- 安装/未安装的引导：未安装时给一键安装指引（指向 KodaX-private 官方 release artifact）
+
+#### 5.1.7 Session Lineage 可视化
+
+- 把 KodaX 的 `branchable session tree` 画成图（节点 = checkpoint，边 = continuation）
+- 支持回放到某 checkpoint、从某节点分叉新 session
+- 与 CLI session ID 完全互通
+
+#### 5.1.8 Cross-Surface Continuity
+
+- "Continue in terminal" 按钮：把当前桌面 session 推到一个新 terminal 窗口
+- "Pull from terminal" 命令：在 CLI 跑 `kodax --teleport-to-desktop`，桌面接收
+- 协议：扩展 ACP 的 `session-handoff` 消息，或写入 `~/.kodax/sessions/<id>.handoff`
+
+#### 5.1.9 Observability 抽屉
+
+- Token 使用：累计 input/output/cache，分 provider
+- 时间线视图：每一步 tool call 的开始/结束时刻
+- 导出 JSON / Markdown 报告（粘到 PR/Issue）
+
+### 5.2 Should-have（M1 - M2）
+
+- 主题（明 / 暗 / 跟随系统）
+- 多窗口（不同窗口 = 不同 session）
+- macOS Stage Manager / Mission Control 友好
+- 自动更新（Squirrel for Mac, NSIS / Squirrel for Win）
+- 桌面通知（长任务完成、需要审批时）
+- 内置终端多 tab（对标 Codex Desktop）
+- 文件富预览：PDF / docx / xlsx / pptx 只读渲染（对标 Codex Desktop）
+- 远端 KodaX runner（用户自部 SSH / Docker exec 后端，ACP over SSH）
+- Connector：GitHub / GitLab / Slack 三件套（可选 OAuth）
+
+### 5.3 Could-have（M2 - M3）
+
+- Partner 面板（KodaX Partner preview）
+- Skill 市场（社区 skill 浏览/安装）
+- Hooks 编辑器（PreToolUse / PostToolUse）
+- Automatic Review Agent（高风险动作经审阅子 agent，对标 Codex Desktop）
+- Automations / 事件触发器（GitHub / Slack / Linear webhook → KodaX session，对标 Cursor 3）
+- 本地 cron 桥（schedule task → OS launchd / Task Scheduler / systemd timer，本地版 Routines）
+- Enterprise 策略（团队 provider 网关、扩展白名单、审计日志中央化）
+
+### 5.4 Won't-have（Phase 1 - 2 内）
+
+- 独立 Chat 面板（由 Quick Ask popover 替代）
+- 内置代码编辑器作为主工作流（不与 IDE 竞争）
+- Cloud Sandbox VM / 云端 agent 执行（与 ChatGPT Agent / Codex Cloud Tasks 划清边界）
+- 实时多人协作
+- 移动端
+- 任何把"用户全自动信任 AI 跑 1 小时无人介入"作为卖点的演示
+
+---
+
+## 6. 用户旅程
+
+### 6.1 首次启动（P0 个人开发者）
+
+```
+启动应用
+  → Welcome 屏：选择主语言（英 / 中）+ 主题
+  → Provider 配置向导（最少配 1 个）
+       展示 12 provider 卡片 + "Skip if you'll use env vars"
+       env var 检测：已设的 provider 自动亮起
+  → 项目选择：当前工作目录 / 浏览 / 跳过
+  → Repointel 引导：已安装则一键 warm；未安装则给安装指引
+  → 第一条消息引导："试试问：分析本项目结构"
+```
+
+### 6.2 日常开发（多 session 并行）
+
+```
+开窗 → 左侧抽屉点 "+ New session"
+  → 选择项目根目录 / provider / reasoning mode
+  → 在对话框写任务
+  → Work 进度条显示 H0_DIRECT，3 秒完成
+  → 中等任务自动 escalate 到 H1，顶栏出现 "Round 1/2"
+  → 复杂改动 escalate 到 H2，左侧 session 卡片标志变更
+  → 期间打开第二个 session，跑另一个仓库的评审
+```
+
+### 6.3 Code Review 旅程
+
+```
+File panel 内点击 git diff
+  → KodaX agent 看到 dirty workspace，自动跑 Repointel preturn
+  → 桌面端展示推荐先看的 8 个文件 + 影响面胶囊
+  → 用户在文件面板批量浏览 diff
+  → 在对话区问"对 packages/llm 的改动给出风险点"
+  → agent 用 Repointel impact 工具补全
+```
+
+### 6.4 Quick Ask 旅程（M1）
+
+```
+用户在 VS Code 写代码遇到陌生 shell 命令
+  → 按 ⌘⇧K 在任意应用上唤出 Quick Ask 浮窗
+  → 输入 "what does `tar xzf -C` do?"
+  → 流式回答 3 秒返回
+  → Esc 关闭，记录立刻销毁
+  → 不打扰当前 IDE 工作流，也不在 ~/.kodax/sessions/ 留痕
+```
+
+进阶：
+
+```
+用户问着问着想动手实现
+  → 点击回答下方 "Continue in Code panel as new session"
+  → Quick Ask 浮窗关闭，Code 面板新建 session 并自动注入刚才对话作为 context
+  → 这时才真正落盘到 ~/.kodax/sessions/<id>.jsonl
+```
+
+### 6.5 Partner 预览（M2，对标 Cowork 入口）
+
+```
+顶部出现 [Code●] [Partner] tab 切换器（M2 起；M0/M1 无 tab）
+  → 切到 Partner
+  → 提示：这是 preview；适合非编码、文档/分析类任务
+  → 选择工作区目录（默认排除 .git）
+  → 内置 skill：summarize-folder / draft-rfc / extract-table-from-pdf
+  → 任务进入 H1-Partner（区别于 Code 的 H1）：
+       - 工具集子集：read / grep / glob / pdf-extract / docx-write
+       - 不暴露 bash（除非用户显式打开）
+```
+
+---
+
+## 7. 信任与安全
+
+### 7.1 数据流约束
+
+- 所有用户文件读取**默认本地**，不上传任何 LLM provider 之外的服务
+- LLM provider 流量受 KodaX 内核已有的 redact-pii 规则（如 provider 配置启用）
+- API key 永不进入日志 / Span / 报错堆栈
+- 桌面 telemetry 默认关闭；开启需用户显式 opt-in，仅含错误堆栈与崩溃信号，无任务内容
+
+### 7.2 权限模型
+
+继承 KodaX 内核三模式（plan / accept-edits / auto-in-project），桌面侧追加：
+
+- **写文件**：在项目根之外要二次确认（与 KodaX `isPathInsideProject` 对齐）
+- **bash**：默认按 `Allow patterns` 评估；通配越权要二次确认
+- **网络**：MCP server 的网络外呼按 server 粒度展示，可按 session 关闭
+- **危险命令**：`rm -rf` / `git push --force` / `chmod 777` / 等内建黑名单永远要求显式 typed confirmation（输入 `CONFIRM`）
+
+### 7.3 Agent 工作区隔离（参考 Windows Agent Workspace）
+
+- 默认 session 工作目录是项目 root
+- "Agent sandbox" 可选模式：把工作区复制到 `.kodax/sandbox-<id>/`，agent 在副本中执行，结果用 diff 合并回主仓库（适合 untrusted skill / 实验任务）
+- 与 KodaX 现有 `worktree_create` 工具集成（同一底层机制）
+
+### 7.4 审计
+
+- 每个 session 自动落地完整 transcript（JSONL）至 `~/.kodax/sessions/<id>.jsonl`
+- "Audit view" 抽屉：按 tool 类型筛选、按时间窗筛选、导出
+- 企业版（M3）：日志可远程汇集到内部 SIEM
+
+### 7.5 内容真实性
+
+- **不夸大自主性**：UI 文案禁止使用 "fully autonomous" / "no oversight needed" 等措辞
+- 长任务进度条与 KodaX Work budget 一一对应；不显示假进度
+
+---
+
+## 8. 差异化竞争力（vs Claude Desktop）
+
+| 维度 | Claude Desktop | KodaX Space | 价值主张 |
+|---|---|---|---|
+| Provider 选择 | Anthropic only | 12+ + 自定义 | 抵抗 vendor lock-in；本地/合规模型可接入 |
+| 数据驻留 | 经 Anthropic 服务器 | 本地默认 | 国内/合规场景可用 |
+| 代码理解 | 通用 | **Repointel 仓库智能**前置 | 减少试探性阅读、降低 token、提升精度 |
+| 桌面扩展 | `.mcpb` | `.mcpb` 兼容 + KodaX skill | 双格式 |
+| 与 CLI 联动 | 单向 `/desktop` | 双向 teleport，同一 session 持久化 | 终端 + 桌面无缝 |
+| 开源 | 闭源 | KodaX 内核开源（Apache 2.0） | 可审计、可 fork、可自托管 |
+| 模型成本控制 | 单一定价 | provider 切换 + token 预算面板 | 成本可见、可压 |
+
+---
+
+## 9. 发布节奏与里程碑
+
+### M0 — 内核打通（2026-Q2，4–6 周）
+
+**Definition of Done**：开发者能在桌面里完成"在一个 KodaX 项目打开 → 提问 → 看到 tool 调用 → 改动落盘 → diff 审查"全流程。**只有 Code 一个面板，顶部不显示 tab 切换器**（避免假繁荣）。
+
+| 任务 | 类别 | 风险 |
+|---|---|---|
+| Electron 骨架 + Vite + React + TypeScript | 工程 | 低 |
+| ACP client：spawn KodaX ACP server，建 stdio bridge | 工程 | 中（ACP 协议覆盖度） |
+| 对话流 UI + tool call 折叠 | UI | 低 |
+| Work 进度条 + reasoning mode 切换 | UI | 低 |
+| Subagent tree 视图（dispatch_child_task 可视化）| UI | 中 |
+| 文件面板（Monaco read-only / diff） | UI | 中 |
+| Provider 配置界面（写 keychain） | 工程 | 中 |
+| MCP 管理 v1（列表 + 启停） | 工程 | 中 |
+| Permission 弹窗组件 | UI | 低 |
+| 内置终端（xterm.js + node-pty，单 tab）| 工程 | 中 |
+| 安装包：Win .exe + macOS .dmg unsigned | 发布 | 中 |
+
+### M1 — 公开 Beta（2026-Q3，6–8 周）
+
+| 任务 | 类别 |
+|---|---|
+| **Quick Ask popover**（全局热键 + 浮窗 UI + 临时 plan-mode session） | UI/工程 |
+| Repointel 状态条 + 一键 warm | 工程 |
+| Session lineage 图 | UI |
+| Cross-surface continuity（CLI ↔ Space teleport）| 工程 |
+| `.mcpb` 一键安装 | 工程 |
+| 自动更新（Squirrel） | 工程 |
+| 桌面通知 | 工程 |
+| 内置终端多 tab | 工程 |
+| 文件富预览（PDF / docx / xlsx 只读） | 工程 |
+| 主题（明/暗/跟随） | UI |
+| 代码签名（macOS notarize / Win EV 证书） | 发布 |
+| 隐私政策 + 文档站 | 法务/文档 |
+
+### M2 — Partner 预览 & 拓展（2026-Q4）
+
+| 任务 | 类别 |
+|---|---|
+| Partner 面板骨架（顶部出现 `[Code] [Partner]` tab 切换器）| UI |
+| 非编码 skill 包（3 个起步） | 内容 |
+| Connector：GitHub / GitLab / Slack | 工程 |
+| Automatic Review Agent（K8 ACP 扩展）| 工程 |
+| Hook 编辑器 v1 | UI |
+| Skill 市场（只读浏览） | 工程 |
+| 远端 KodaX runner（SSH/Docker exec，ACP over tunnel） | 工程 |
+| Agent sandbox（worktree 自动复用） | 工程 |
+
+### M3 — GA & 企业（2027-Q1）
+
+| 任务 | 类别 |
+|---|---|
+| 企业策略（provider 网关、扩展白名单） | 工程 |
+| 中央审计（syslog / SIEM 导出） | 工程 |
+| 团队配置文件下发 | 工程 |
+| Automations / 事件触发器（webhook → KodaX session） | 工程 |
+| 本地 cron 桥（launchd / Task Scheduler / systemd timer） | 工程 |
+| MSI 安装 + AD/MDM 集成 | 发布 |
+| Linux 支持（AppImage + deb） | 发布 |
+
+---
+
+## 10. 成功指标
+
+### 10.1 北极星指标
+
+> **"过去 30 天有完成 ≥ 3 个 session 的本地用户数"**
+
+它衡量了：装得上 + 装完真用 + 用得满意会再开 session。
+
+### 10.2 体验指标
+
+| 指标 | 目标（M1 GA） |
+|---|---|
+| 冷启动时间（点击图标到能输入）| < 3.0 s |
+| 首条 tool 调用渲染延迟（从内核 stream 到 UI 可见） | < 200 ms |
+| MCP 安装失败率 | < 5% |
+| Permission 弹窗 P95 处理耗时（用户决策时间不算） | < 50 ms |
+| Provider 切换需重启次数 | 0 |
+
+### 10.3 业务/生态指标
+
+| 指标 | 目标（M1 GA） |
+|---|---|
+| Repointel 启用率（已安装用户中默认开 premium-native）| > 60% |
+| CLI ↔ Space teleport 使用率（活跃用户）| > 25% |
+| 12 provider 中至少 2 个被使用的用户占比 | > 35% |
+| `.mcpb` 安装的扩展数（平均每用户） | > 2 |
+
+### 10.4 可信任度指标
+
+| 指标 | 目标 |
+|---|---|
+| 危险操作（黑名单命令）误漏率 | 0 |
+| API key 泄露事件 | 0 |
+| 静默上传任何用户文件 | 0 |
+
+---
+
+## 11. 非目标 / 反向声明
+
+明确不做、不承诺：
+
+1. **不做 IDE**：编辑器只在 review 流读取使用，不与 VS Code / JetBrains 竞争编辑工作流。
+2. **不做云服务**：M3 之前不上线托管 SaaS；M3 后任何托管模块必须可关闭、可自部。
+3. **不做 LLM 转发代理**：用户 key 直接打到 provider，KodaX Space 不代理（除非未来企业网关）。
+4. **不做手机端**。
+5. **不做"全自动 1 小时无人值守"宣传**：所有市场材料须如实体现 oversight queue。
+6. **不实现** Anthropic-only 的功能为"独占卖点"：所有跨 provider 兼容是底线。
+
+---
+
+## 12. 风险与缓解
+
+| 风险 | 影响 | 缓解 |
+|---|---|---|
+| Electron RAM/启动慢 | 用户体验差 | 紧凑首屏 + KodaX 内核懒加载（见 [ADR-001](ADR/ADR-001-shell-electron.md) 重审条件） |
+| KodaX runtime 崩溃拖累 Space | 用户丢失未保存对话 | 监控崩溃工单，>5% 时切 utilityProcess（见 [ADR-003](ADR/ADR-003-kodax-integration-in-process.md)） |
+| Repointel 安装失败 | "premium-native" 永远 fallback OSS | 安装引导带 doctor 自检；trace 显式 |
+| Provider key 误存 plain text | 安全事故 | 必须走 OS keychain；CI 静态扫描禁字符串持久化 |
+| MCP 第三方扩展恶意行为 | 用户机器被破坏 | 默认拒绝、显式 allow-list、扩展签名验证（M2）|
+| 与 Claude Desktop `.mcpb` 标准漂移 | 生态隔离 | 紧跟上游格式；不为"差异化"而魔改 |
+| Anthropic 法务对"Cowork-like"宣传 | 合规风险 | 不使用 "Cowork" 商标；术语用 "Partner" 或 "Knowledge Work" |
+| KodaX-private 专利保护 | 不能在 Space 中暴露 Repointel 内部对象 | Space 严格只调用 KodaX 已暴露的 status/控制接口 |
+
+---
+
+## 13. 开放问题（需要早期决策）
+
+| # | 问题 | 决策 |
+|---|---|---|
+| ~~Q1~~ | ~~Electron vs Tauri？~~ | **Electron**，见 [ADR-001](ADR/ADR-001-shell-electron.md) |
+| Q2 | 是否在 Space 内置 Node runtime？ | 是，与 KodaX bundle 同源 |
+| Q3 | 是否在 M0 即支持 Linux？ | 否，M3 |
+| ~~Q4~~ | ~~Chat 面板是否复用 Code session 后端？~~ | **作废**：用 Quick Ask popover 替代独立 Chat 面板，见 [ADR-004](ADR/ADR-004-panel-model.md) |
+| Q5 | 是否提供官方"Anthropic 兼容" connectors（GitHub、Slack）？ | 是，M2，作为可选 |
+| Q6 | 名称 "Partner" 是否最终化？ | 暂定；M2 前与法务/品牌确认 |
+| Q7 | 与 Claude Desktop 的 `.mcpb` 是否做到 100% 二进制兼容？ | 是；不兼容时降级为半自动安装 |
+| Q8 | Session 持久化路径是否复用 `~/.kodax/sessions/`？ | 是；Space 不引入新目录 |
+| ~~Q9~~ | ~~KodaX 集成是 in-process 还是 ACP？~~ | **in-process**，见 [ADR-003](ADR/ADR-003-kodax-integration-in-process.md) |
+| ~~Q10~~ | ~~是否引入 Rust？~~ | **按需 NAPI-RS 热路径**，见 [ADR-002](ADR/ADR-002-rust-integration-napi.md) |
+
+---
+
+## 14. 与 KodaX 内核 PRD 的对照表
+
+| KodaX 内核 PRD 概念 | KodaX Space 中的体现 |
+|---|---|
+| Single-Agent First | Code 面板默认显示 H0/SA；不渲染多角色图 |
+| Harness On Demand（H0/H1/H2）| 顶栏徽标 + Work 进度，仅在升级时显示 Round |
+| Evidence Before Confidence | 任务完成展示 contract / handoff / verdict 摘要卡片（可折叠）|
+| Work-First UX | Work 进度条作主预算 |
+| Scout-first AMA | UI 仅在 "Scout escalated" 时短暂高亮，不暴露 Scout/Planner 等内部角色 |
+| Skill as Progressive Disclosure | Skill 显示为 "skill-active" 标签，不渲染 workflow tree |
+
+---
+
+## 15. 相关参考
+
+- [KodaX Space HLD](HLD.md)
+- [ADR 索引](ADR/README.md)
+- [KodaX PRD](../../KodaX/docs/PRD.md)
+- [KodaX HLD](../../KodaX/docs/HLD.md)
+- [KodaX ADR](../../KodaX/docs/ADR.md)
+- [KodaX-private 技术交底书（Repointel）](../../KodaX-private/技术交底书.md)
+- Claude Desktop 桌面扩展规范（`.mcpb`，参 Anthropic 公开文档）
+
+---
+
+## 附录 A：术语对齐
+
+| Space 术语 | KodaX 内核术语 | Anthropic 对应 |
+|---|---|---|
+| Session | Session / Task | Conversation |
+| Project | Working directory / git root | Workspace |
+| Permission Mode | PermissionMode | Operating mode |
+| Provider | LLM Provider | Model |
+| Skill | Skill | Skill |
+| Connector | MCP server with OAuth UI | Connector |
+| Desktop Extension（`.mcpb`） | MCP package | Desktop Extension |
+| Work | Work budget | Tokens / steps |
+| Repointel premium-native | Repo intelligence engine | （无对应） |
+
+---
+
+## 附录 B：UI 草图（ASCII）
+
+### B.1 主窗口（M0：仅 Code，无 tab 切换器）
+
+M0 状态——Partner 还没上线，所以不显示 tab，直接是 Code workspace：
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  KodaX Space · Code                              Provider:[zhipu▼]   │
+│                                                  Mode:[auto-in-proj▼]│
+├────────────┬──────────────────────────────────────────┬──────────────┤
+│ Sessions   │  Session: review-auth                     │  Files       │
+│            │  Repo: ~/work/myapp                       │              │
+│ ● review-  │  Repointel ● premium-native               │  ▾ src/      │
+│   auth     │                                           │    auth.ts   │
+│ ○ refactor │  > Find security issues in src/auth.ts    │    middle.ts │
+│   db       │                                           │              │
+│ ○ todo-app │  ▸ read src/auth.ts (offset=0, limit=200) │  ▾ tests/    │
+│            │  ▸ grep "password" src/                   │    auth.test │
+│ + New      │  ▸ semantic_lookup "session token"        │              │
+│            │                                           │  [open diff] │
+│ Token use: │  Found 3 issues:                          │              │
+│ in   12.4k │  1) Token stored in localStorage…         ├──────────────┤
+│ out   3.1k │  2) Missing CSRF on /login…               │  Subagents   │
+│ cache 41%  │  3) Plain-text password log…              │  · child-1   │
+│            │                                           │    grep ✓    │
+│ Work 28/200│  > Fix issue 1 with httpOnly cookie       │  · child-2   │
+│ Round —    │                                           │    read ⟳    │
+├────────────┴──────────────────────────────────────────┴──────────────┤
+│  Terminal: ~/work/myapp $ ▮                                          │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+M2+ 状态——Partner 上线后顶部出现 tab 切换器：
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  KodaX Space    [Code●] [Partner]                Provider:[zhipu▼]   │
+│                                                  Mode:[auto-in-proj▼]│
+│  ...（其余布局同上）                                                  │
+```
+
+### B.2 权限确认弹窗
+
+```
+┌──────────────────────────────────────┐
+│  ⚠ Permission requested              │
+│                                      │
+│  Tool      bash                      │
+│  Command   npm test                  │
+│  Risk      low                       │
+│  Reason    Run after editing auth.ts │
+│                                      │
+│  ▢ Always allow `npm test`           │
+│  ▢ Always allow `npm` (any args)     │
+│                                      │
+│         [Deny]    [Allow]            │
+└──────────────────────────────────────┘
+```
+
+### B.3 Repointel 状态条
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ Repointel ● premium-native  warm  cache 73%  daemon ✓   │
+│   [mode▼]  [warm]  [open trace]                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+### B.4 Quick Ask popover（M1）
+
+按 ⌘⇧K / Ctrl+Shift+K 从任意应用唤出：
+
+```
+                                    ┌───────────────────────────────────┐
+                                    │  Quick Ask          provider: zhipu│
+                                    ├───────────────────────────────────┤
+                                    │  > what does `tar xzf -C` do?     │
+                                    │                                   │
+                                    │  -x  extract                       │
+                                    │  -z  gzip-compressed               │
+                                    │  -f  read from archive file        │
+                                    │  -C  change to directory before    │
+                                    │      extracting                    │
+                                    │                                   │
+                                    │  Example:                          │
+                                    │  tar xzf app.tgz -C /opt/app       │
+                                    │                                   │
+                                    ├───────────────────────────────────┤
+                                    │  [Continue in Code panel]  [Esc ✕]│
+                                    └───────────────────────────────────┘
+
+特性：
+- 无 session 抽屉、无 tool 调用面板、无文件抽屉
+- 失焦自动收起；Esc 销毁记录
+- 不写入 ~/.kodax/sessions/
+- 想多聊点击 "Continue in Code panel" → 转 Code session（此时才落盘）
+```
+
+---
+
+> 文档结束。下一步：[HLD](HLD.md) 给出工程设计；后续按 M0 任务表起 ADR-001 (技术栈) 与 ADR-002 (ACP 桥接边界)。

@@ -1,0 +1,9 @@
+KodaX Space
+Copyright 2026 icetomoyo <icetomoyo@gmail.com> <icetomoyo@163.com>
+
+This product includes software developed by icetomoyo.
+
+KodaX Space is the Electron desktop client for the KodaX ecosystem
+(see https://github.com/icetomoyo/KodaX). It consumes the public
+`@kodax-ai/kodax` SDK in-process and ships independently of any
+closed-source KodaX-private components.

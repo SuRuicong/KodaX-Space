@@ -1,0 +1,17 @@
+# Architecture Decision Records — KodaX Space
+
+> 主文档（[PRD](../PRD.md) / [HLD](../HLD.md)）只保留**最终结论**。这里记录**为什么选这个不选别的**——含被否决方案、关键证据、决策时点。
+
+| # | 决策 | 状态 |
+|---|---|---|
+| [ADR-001](ADR-001-shell-electron.md) | Shell 技术栈：Electron | Accepted |
+| [ADR-002](ADR-002-rust-integration-napi.md) | Rust 集成策略：NAPI-RS 选择性热路径 | Accepted |
+| [ADR-003](ADR-003-kodax-integration-in-process.md) | KodaX 集成模式：in-process import | Accepted |
+| [ADR-004](ADR-004-panel-model.md) | 面板模型：双面板 + Quick Ask | Accepted |
+
+## 写 ADR 的约束
+
+- 每个 ADR 一个 decision；不要把多个决策塞一份
+- 必须列**被否决方案**及其原因——这是 ADR 与"设计文档"的关键差别
+- 必须列**未来撤销/重审条件**——决策不应永久绑定
+- 状态：`Proposed` / `Accepted` / `Superseded by ADR-NNN` / `Deprecated`

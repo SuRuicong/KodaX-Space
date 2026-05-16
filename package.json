@@ -1,0 +1,49 @@
+{
+  "name": "kodax-space",
+  "version": "0.1.0-alpha.0",
+  "description": "KodaX Space — Provider-neutral, local-first AI agent desktop client (KodaX 生态桌面客户端)",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "icetomoyo <icetomoyo@gmail.com>",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "npm run build:packages && npm run build:renderer && npm run build:main && npm run build:pack",
+    "build:packages": "npm run build --workspaces --if-present",
+    "build:renderer": "npm run build -w @kodax-space/desktop",
+    "build:main": "node scripts/build-main.mjs",
+    "build:pack": "electron-builder",
+    "build:smoke": "npm run build:packages && npm run build:renderer && npm run build:main",
+    "typecheck": "tsc -p apps/desktop && tsc -p apps/desktop/electron",
+    "lint": "eslint . --ext .ts,.tsx,.mjs --max-warnings 0",
+    "lint:fix": "eslint . --ext .ts,.tsx,.mjs --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "clean": "node scripts/clean.mjs",
+    "test": "npm run test --workspaces --if-present",
+    "postinstall": "electron-builder install-app-deps || true"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.16.0",
+    "eslint-plugin-react": "^7.37.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "prettier": "^3.4.0",
+    "tsx": "^4.22.0",
+    "typescript": "^5.7.0",
+    "wait-on": "^8.0.1"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

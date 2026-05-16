@@ -1,0 +1,33 @@
+// Public surface of @kodax-space/space-ipc-schema.
+//
+// 消费端：
+//   - main:     import { invokeChannels, ok, fail } from '@kodax-space/space-ipc-schema'
+//   - preload:  import { INVOKE_CHANNEL_NAMES, PUSH_CHANNEL_NAMES } from '...'
+//   - renderer: import type { ChannelInput, ChannelOutput, IpcResult } from '...'
+//
+// FEATURE_001 时这里只有一个最小 versionChannel；FEATURE_002 起完整 envelope + registry。
+
+export {
+  IPC_ERROR_CODES,
+  ipcErrorSchema,
+  ok,
+  fail,
+  type IpcError,
+  type IpcErrorCode,
+  type IpcResult,
+} from './envelope.js';
+
+export { invokeChannels, pushChannels } from './channels/index.js';
+export type { InvokeChannels, PushChannels } from './channels/index.js';
+
+export { versionChannel, type SpaceVersionOutput } from './channels/version.js';
+
+export {
+  INVOKE_CHANNEL_NAMES,
+  PUSH_CHANNEL_NAMES,
+  getInvokeChannel,
+  type InvokeChannelName,
+  type PushChannelName,
+  type ChannelInput,
+  type ChannelOutput,
+} from './registry.js';
