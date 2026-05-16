@@ -37,10 +37,29 @@ export function pushToRenderer<C extends PushChannelName>(channel: C, payload: P
   }
   const parsed = def.payload.safeParse(payload);
   if (!parsed.success) {
-    console.error(`[push] ${channel} payload schema invalid:`, parsed.error.flatten());
+    // 只打 issue paths，不打值——payload 在 Real adapter 接入后可能携带 prompt / API key / 文件内容
+    const paths = parsed.error.issues.map((i) => i.path.join('.')).join(', ');
+    console.error(`[push] ${channel} payload schema invalid at: ${paths}`);
     return;
   }
-  const wc = targetGetter?.();
-  if (!wc || wc.isDestroyed()) return;
-  wc.send(channel, parsed.data);
+
+  // 区分两种"无窗口"——便于调试启动期事件丢失
+  if (targetGetter === null) {
+    // 不应该发生：main.ts 在 createMainWindow 前就调 setRendererTarget。
+    // 出现这种情况通常是 test 漏 setup 或 main.ts wire 顺序被改坏了。
+    console.warn(`[push] ${channel} dropped: target getter not initialized (wire bug?)`);
+    return;
+  }
+  const wc = targetGetter();
+  if (!wc || wc.isDestroyed()) {
+    // 正常 fire-and-forget——窗口未创建 / 已销毁。静默丢弃。
+    return;
+  }
+  try {
+    wc.send(channel, parsed.data);
+  } catch (err) {
+    // wc.send 在 webContents 进入异常状态时会 throw；不让一次 push 失败拖垮整个事件流
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[push] ${channel} wc.send threw: ${msg}`);
+  }
 }

@@ -11,6 +11,19 @@ import { z } from 'zod';
 // ---- Reasoning mode (镜像 @kodax-ai/llm 的 KodaXReasoningMode 闭集) ----
 const reasoningModeSchema = z.enum(['off', 'auto', 'quick', 'balanced', 'deep']);
 
+// ---- 尺寸上限：防 IPC 通道被超大 payload 拖垮（DoS / 内存炸） ----
+//
+// MAX_PROMPT_BYTES: 1 MB——比常见编辑器粘贴 + 整文件投喂的上限宽松，足以承载真实
+//   "把这 N 个文件分析一下" 类 prompt。再大需要先切片。
+// MAX_TEXT_CHUNK:  256 KB——单条 text_delta/thinking_delta 上限。LLM 流式返回里
+//   每个 chunk 通常只有几十到几千字节，256 KB 留一个数量级缓冲。
+// MAX_TOOL_RESULT: 512 KB——tool_result.content 比 text_delta 大一档：
+//   `cat` 一个文件、`grep` 一片代码、http response body 都走这里。再大该工具
+//   应该 truncate（KodaX 内核已经做这个）；schema 层兜底拒绝异常巨大值。
+const MAX_PROMPT_BYTES = 1_048_576;
+const MAX_TEXT_CHUNK = 262_144;
+const MAX_TOOL_RESULT = 524_288;
+
 // ---- Session metadata（list/create 返回） ----
 const sessionMetaSchema = z.object({
   sessionId: z.string().min(1),
@@ -42,7 +55,7 @@ export const sessionSendChannel = {
   direction: 'invoke',
   input: z.object({
     sessionId: z.string().min(1),
-    prompt: z.string().min(1),
+    prompt: z.string().min(1).max(MAX_PROMPT_BYTES),
   }),
   output: z.object({
     // 只是 ACK"已排进 session 队列"——真正结果走 session.event push
@@ -105,12 +118,12 @@ export const sessionEventChannel = {
     z.object({
       kind: z.literal('text_delta'),
       sessionId: z.string().min(1),
-      text: z.string(),
+      text: z.string().max(MAX_TEXT_CHUNK),
     }),
     z.object({
       kind: z.literal('thinking_delta'),
       sessionId: z.string().min(1),
-      text: z.string(),
+      text: z.string().max(MAX_TEXT_CHUNK),
     }),
     z.object({
       kind: z.literal('tool_start'),
@@ -123,14 +136,14 @@ export const sessionEventChannel = {
       kind: z.literal('tool_progress'),
       sessionId: z.string().min(1),
       toolId: z.string().min(1),
-      message: z.string(),
+      message: z.string().max(MAX_TEXT_CHUNK),
     }),
     z.object({
       kind: z.literal('tool_result'),
       sessionId: z.string().min(1),
       toolId: z.string().min(1),
       toolName: z.string().min(1),
-      content: z.string(),
+      content: z.string().max(MAX_TOOL_RESULT),
     }),
     z.object({
       kind: z.literal('iteration_end'),

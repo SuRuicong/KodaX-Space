@@ -4,14 +4,16 @@
 // 所有 handler 在 registerChannel 内被 zod 包装（入参/出参/异常三路 envelope）。
 
 import { registerChannel } from './register.js';
+import { validateProjectRoot } from './validate.js';
 import { kodaxHost } from '../kodax/host.js';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 
 export function registerSessionChannels(): void {
   // session.create
   registerChannel('session.create', (input) => {
+    const projectRoot = validateProjectRoot(input.projectRoot);
     const { sessionId, createdAt } = kodaxHost.createSession({
-      projectRoot: input.projectRoot,
+      projectRoot,
       provider: input.provider,
       reasoningMode: input.reasoningMode,
     });

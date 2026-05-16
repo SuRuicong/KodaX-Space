@@ -106,3 +106,32 @@ test('session.event payload: rejects mismatched fields for kind', () => {
   const bad = { kind: 'tool_result' as const, sessionId: 's_1', toolId: 't', toolName: 'r' };
   assert.equal(sessionEventChannel.payload.safeParse(bad).success, false);
 });
+
+// ---- Size caps (review fix) ----
+
+test('session.send rejects prompt over 1 MB (DoS guard)', () => {
+  const tooBig = 'x'.repeat(1_048_577);
+  const result = sessionSendChannel.input.safeParse({ sessionId: 's_1', prompt: tooBig });
+  assert.equal(result.success, false);
+  // 1 MB 整 exactly 边界仍接受
+  const atLimit = 'x'.repeat(1_048_576);
+  assert.equal(sessionSendChannel.input.safeParse({ sessionId: 's_1', prompt: atLimit }).success, true);
+});
+
+test('session.event text_delta rejects text over 256 KB', () => {
+  const tooBig = 'x'.repeat(262_145);
+  const evt = { kind: 'text_delta' as const, sessionId: 's_1', text: tooBig };
+  assert.equal(sessionEventChannel.payload.safeParse(evt).success, false);
+});
+
+test('session.event tool_result rejects content over 512 KB', () => {
+  const tooBig = 'x'.repeat(524_289);
+  const evt = {
+    kind: 'tool_result' as const,
+    sessionId: 's_1',
+    toolId: 't_1',
+    toolName: 'read',
+    content: tooBig,
+  };
+  assert.equal(sessionEventChannel.payload.safeParse(evt).success, false);
+});

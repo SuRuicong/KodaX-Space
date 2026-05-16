@@ -66,9 +66,12 @@ export default function App(): JSX.Element {
     if (!window.kodaxSpace) return;
     setSessionErr(null);
     setBusy(true);
+    // Demo path——FEATURE_005 项目选择 UI 落地后这里换成用户实际选的 git root。
+    // 平台相关，因为 main 端 validateProjectRoot 用 path.isAbsolute（Windows vs POSIX）。
+    const demoRoot = window.kodaxSpace.platform === 'win32' ? 'C:\\demo\\project' : '/tmp/demo/project';
     try {
       const result = await window.kodaxSpace.invoke('session.create', {
-        projectRoot: 'C:\\demo\\project',
+        projectRoot: demoRoot,
         provider: 'mock',
         reasoningMode: 'auto',
       });

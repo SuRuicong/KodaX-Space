@@ -34,16 +34,39 @@ export interface ManagedSession {
   lastActivityAt: number;
 
   /**
-   * 提交一条 prompt 到 session。立即返回（fire-and-forget）；进度由 emit() 推。
-   * 并发约束：同一 session 在 send 进行中不允许再 send——具体策略由实现决定
-   * （可以排队、可以拒绝；F003 Mock 实现直接拒绝）。
+   * 提交一条 prompt 到 session。**严格 fire-and-forget**：
+   *
+   *   - 实现**必须**在返回的 Promise resolve 前**只做同步建账**（如生成 turn id、
+   *     入队 prompt、设置 AbortController）。任何 LLM 调用 / 工具子进程 spawn /
+   *     磁盘写入都**必须**在 detached task 里跑，**不**在这个 Promise 内 await。
+   *   - 调用方（IPC handler）会 await 这个 Promise——它代表"接受并已排入"，
+   *     不代表"LLM 已开始流"或"已完成"。IPC 协议层 ACK 时间应当与 send() resolve
+   *     时间一致（毫秒级，绝不秒级）。
+   *
+   * 并发约束：同一 session 在 send 进行中（即上一次 send 启动的事件流还没 emit
+   * session_complete / session_error）不允许再 send——策略由实现选：
+   *   - 排队  ：把后续 prompt 缓存，前一个流结束再启
+   *   - 拒绝  ：throw，让 IPC handler 走 HANDLER_ERROR envelope（F003 Mock 用这个）
+   *
+   * @throws 同步抛 / Promise reject：session 已 disposed、或并发拒绝
    */
   send(prompt: string): Promise<void>;
 
-  /** 中断当前正在跑的 send。已发送 prompt 的部分输出按 send_error 收尾。*/
+  /**
+   * 中断当前正在跑的 send。
+   *   - 实现**必须**在中断时 emit 一条 `{ kind: 'session_error', error: 'cancelled' }`
+   *     收尾（不是 session_complete）；renderer 用 kind 区分正常完成 vs 用户主动取消。
+   *   - Real adapter 还**必须**确保所有派生 child process（bash 工具、grep、网络流）
+   *     被 kill / 关闭——不允许"前台 abort 了但 LLM HTTP 流还在后台烧 token"。
+   */
   cancel(): Promise<void>;
 
-  /** 释放 session 持有的资源（abortSignal、临时文件等）。dispose 后不应再被使用。*/
+  /**
+   * 释放 session 持有的所有资源。
+   *   - dispose 后该 session 不应再被任何调用方使用（host 已从 Map 删除）。
+   *   - 实现**必须**幂等：disposeAll 兜底 + 用户多次 delete 同一 session 都不应 throw。
+   *   - Real adapter 还**必须**关闭 FileSessionStorage 句柄 / HTTP stream / abort 所有 in-flight。
+   */
   dispose(): Promise<void>;
 }
 

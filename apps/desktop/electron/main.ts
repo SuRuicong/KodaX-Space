@@ -11,6 +11,7 @@ import { pathToFileURL } from 'node:url';
 import { registerVersionChannel } from './ipc/version.js';
 import { registerSessionChannels } from './ipc/session.js';
 import { setRendererTarget } from './ipc/push.js';
+import { kodaxHost } from './kodax/host.js';
 
 // CJS 输出（见 scripts/build-main.mjs），__dirname 是原生 Node 全局
 // 不用 import.meta.url（CJS 下不可用）
@@ -148,6 +149,18 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// 关闭前清空所有活跃 session——Mock 阶段只是 abort 内存里的 AbortController，
+// Real adapter 接入后会负责 kill 工具子进程、关 FileSessionStorage 句柄、断 HTTP 流。
+// 不放在 will-quit 是因为那时 event loop 即将停，async dispose 容易跑不完。
+app.on('before-quit', (event) => {
+  if (kodaxHost.list().length === 0) return;
+  event.preventDefault();
+  void kodaxHost
+    .disposeAll()
+    .catch((err) => console.error('[main] disposeAll on quit:', err instanceof Error ? err.message : err))
+    .finally(() => app.exit(0));
 });
 
 // 兜底 — 未捕获异常不静默，但**不打印原对象**：
