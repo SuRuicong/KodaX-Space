@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { useAppStore } from '../../store/appStore.js';
 import { ConversationStream } from './messages/ConversationStream.js';
 import { InputBox } from './messages/InputBox.js';
+import { TopBar } from '../code/TopBar.js';
 
 export function EventStream(): JSX.Element {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
@@ -59,13 +60,13 @@ export function EventStream(): JSX.Element {
     <div className="flex-1 flex flex-col min-w-0">
       <div className="border-b border-zinc-800 px-4 py-2 flex items-center gap-2 text-sm flex-shrink-0">
         <span className="font-medium text-zinc-200 truncate">{session.title ?? 'Untitled session'}</span>
-        <span className="text-xs text-zinc-500">
-          {session.provider} · {session.reasoningMode}
-        </span>
         <code className="ml-auto text-[10px] text-zinc-600 font-mono truncate max-w-[280px]" title={session.sessionId}>
           {session.sessionId}
         </code>
       </div>
+
+      {/* F008 顶栏：provider / Work / harness / reasoning */}
+      <TopBar session={session} />
 
       <ConversationStream sessionId={currentSessionId} />
 

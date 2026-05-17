@@ -85,10 +85,17 @@ test('end-to-end Mock stream: send → text_delta(s) → tool_start → tool_res
   const events = getEvents();
   const kinds = events.map((e) => e.kind);
 
-  // 第一个事件是 thinking_delta（Mock 实现先 "analysing prompt"）
-  assert.equal(kinds[0], 'thinking_delta');
-  // 中段必有 text_delta + tool_start + tool_result + iteration_end
-  const required = ['text_delta', 'tool_start', 'tool_result', 'iteration_end'] as const;
+  // F008：Mock 现在先推 harness_profile + work_budget，再走 thinking_delta
+  assert.equal(kinds[0], 'harness_profile');
+  // 中段必有 text_delta + tool_start + tool_result + iteration_end + thinking_delta + work_budget
+  const required = [
+    'thinking_delta',
+    'text_delta',
+    'tool_start',
+    'tool_result',
+    'iteration_end',
+    'work_budget',
+  ] as const;
   for (const k of required) {
     assert.ok(kinds.includes(k), `missing kind: ${k}`);
   }

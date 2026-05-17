@@ -56,8 +56,9 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 export class MockKodaXSession implements ManagedSession {
   readonly sessionId: string;
   readonly projectRoot: string;
-  readonly provider: string;
-  readonly reasoningMode: ManagedSession['reasoningMode'];
+  /** F008: provider / reasoningMode 可由 IPC 切换 — 直接赋值，下一次 send 读新值。*/
+  provider: string;
+  reasoningMode: ManagedSession['reasoningMode'];
   readonly createdAt: number;
   lastActivityAt: number;
   title: string | undefined = undefined;
@@ -105,10 +106,30 @@ export class MockKodaXSession implements ManagedSession {
     if (this.currentAbort) this.currentAbort.abort();
   }
 
-  /** 模拟一次完整 run：thinking → 文本流 → 一次工具调用 → 迭代结束 → 完成。*/
+  /** 模拟一次完整 run：thinking → 文本流 → 一次工具调用 → 迭代结束 → 完成。
+   *
+   * FEATURE_008：mock 顺带 emit work_budget + harness_profile 事件，让 TopBar
+   *   有真数据可显示。预算从 0 涨到 ~28（模拟 ~14% 使用率）；profile 默认 H0_DIRECT，
+   *   prompt 含 "plan" 时升级到 H2_PLAN_EXECUTE_EVAL（演示徽标切换）
+   */
   private async runMockStream(prompt: string, signal: AbortSignal): Promise<void> {
     const sid = this.sessionId;
     try {
+      // F008: 起步先推 harness profile + 初始 work budget
+      const profile: 'H0_DIRECT' | 'H1_EXECUTE_EVAL' | 'H2_PLAN_EXECUTE_EVAL' =
+        /\bplan\b|architect|design/i.test(prompt)
+          ? 'H2_PLAN_EXECUTE_EVAL'
+          : /\bcheck\b|review|test/i.test(prompt)
+            ? 'H1_EXECUTE_EVAL'
+            : 'H0_DIRECT';
+      this.emit({
+        kind: 'harness_profile',
+        sessionId: sid,
+        profile,
+        round: profile === 'H0_DIRECT' ? undefined : 1,
+      });
+      this.emit({ kind: 'work_budget', sessionId: sid, used: 2, cap: 200 });
+
       this.emit({ kind: 'thinking_delta', sessionId: sid, text: 'analysing prompt...' });
       await sleep(CHUNK_DELAY_MS, signal);
 
@@ -182,6 +203,10 @@ export class MockKodaXSession implements ManagedSession {
       });
       await sleep(CHUNK_DELAY_MS, signal);
 
+      // F008: 工具完成后预算上涨
+      this.emit({ kind: 'work_budget', sessionId: sid, used: 18, cap: 200 });
+      await sleep(CHUNK_DELAY_MS, signal);
+
       this.emit({
         kind: 'iteration_end',
         sessionId: sid,
@@ -191,6 +216,9 @@ export class MockKodaXSession implements ManagedSession {
         usage: { inputTokens: 980, outputTokens: 300 },
       });
       await sleep(CHUNK_DELAY_MS, signal);
+
+      // F008: iteration 结束推一次最终预算
+      this.emit({ kind: 'work_budget', sessionId: sid, used: 28, cap: 200 });
 
       this.emit({ kind: 'session_complete', sessionId: sid });
       this.lastActivityAt = Date.now();

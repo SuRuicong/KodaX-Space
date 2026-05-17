@@ -58,6 +58,20 @@ interface AppState {
    */
   keychainBackend: 'keychain' | 'memory' | 'unknown';
 
+  /**
+   * F008: 每个 session 的当前 Work 预算（used / cap）。
+   * 由 session-event 'work_budget' 增量更新，覆盖最新值（main 端是权威源）。
+   */
+  workBudgetBySession: Readonly<Record<string, { used: number; cap: number } | undefined>>;
+  /** F008: 每个 session 的当前 harness profile（H0/H1/H2）+ round。*/
+  harnessProfileBySession: Readonly<
+    Record<
+      string,
+      | { profile: 'H0_DIRECT' | 'H1_EXECUTE_EVAL' | 'H2_PLAN_EXECUTE_EVAL'; round?: number }
+      | undefined
+    >
+  >;
+
   // ----- actions -----
   setProjects(projects: readonly Project[]): void;
   setCurrentProject(path: string | null): void;
@@ -93,6 +107,8 @@ export const useAppStore = create<AppState>((set) => ({
   providers: [],
   defaultProviderId: null,
   keychainBackend: 'unknown',
+  workBudgetBySession: {},
+  harnessProfileBySession: {},
 
   setProjects: (projects) => set({ projects }),
   setCurrentProject: (path) => set({ currentProjectPath: path }),
@@ -120,12 +136,26 @@ export const useAppStore = create<AppState>((set) => ({
       // main 端事件是权威；renderer 只缓存自己 UI 里能见到的部分。
       if (!state.sessions.some((s) => s.sessionId === event.sessionId)) return state;
       const bucket = state.eventsBySession[event.sessionId] ?? [];
-      return {
+      const next: Partial<AppState> = {
         eventsBySession: {
           ...state.eventsBySession,
           [event.sessionId]: [...bucket, event],
         },
       };
+      // F008: 同步抽取 work_budget / harness_profile 到 derived maps
+      // —— 视图不必每次 scan 整条 bucket
+      if (event.kind === 'work_budget') {
+        next.workBudgetBySession = {
+          ...state.workBudgetBySession,
+          [event.sessionId]: { used: event.used, cap: event.cap },
+        };
+      } else if (event.kind === 'harness_profile') {
+        next.harnessProfileBySession = {
+          ...state.harnessProfileBySession,
+          [event.sessionId]: { profile: event.profile, round: event.round },
+        };
+      }
+      return next;
     }),
 
   upsertSession: (meta) =>
@@ -144,10 +174,14 @@ export const useAppStore = create<AppState>((set) => ({
       // 同时清掉对应事件 buffer 和 user message buffer——session 不在了，留着就是泄漏
       const { [sessionId]: _evt, ...restEvents } = state.eventsBySession;
       const { [sessionId]: _msg, ...restMsgs } = state.userMessagesBySession;
+      const { [sessionId]: _bud, ...restBudgets } = state.workBudgetBySession;
+      const { [sessionId]: _prof, ...restProfiles } = state.harnessProfileBySession;
       return {
         sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
         eventsBySession: restEvents,
         userMessagesBySession: restMsgs,
+        workBudgetBySession: restBudgets,
+        harnessProfileBySession: restProfiles,
         permissionQueue: state.permissionQueue.filter((p) => p.sessionId !== sessionId),
         currentSessionId: state.currentSessionId === sessionId ? null : state.currentSessionId,
       };
@@ -174,6 +208,8 @@ export const useAppStore = create<AppState>((set) => ({
       eventsBySession: {},
       userMessagesBySession: {},
       permissionQueue: [],
+      workBudgetBySession: {},
+      harnessProfileBySession: {},
       sessions: [],
     }),
 }));

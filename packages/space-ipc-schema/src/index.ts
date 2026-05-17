@@ -29,6 +29,8 @@ export {
   sessionListChannel,
   sessionDeleteChannel,
   sessionSetTitleChannel,
+  sessionSetReasoningModeChannel,
+  sessionSetProviderChannel,
   sessionEventChannel,
   type SessionMeta,
   type SessionEvent,

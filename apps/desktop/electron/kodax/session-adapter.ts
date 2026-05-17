@@ -46,8 +46,13 @@ export type SessionCreateOptions = {
 export interface ManagedSession {
   readonly sessionId: string;
   readonly projectRoot: string;
-  readonly provider: string;
-  readonly reasoningMode: SessionCreateOptions['reasoningMode'];
+  /**
+   * Provider / reasoningMode 在 F008 起可在 session 生命周期内切换
+   * （session.setProvider / session.setReasoningMode IPC）——切换**不重启** session，
+   * 仅影响下一条 prompt。实现侧只需简单赋值，下一次 send 时读最新值。
+   */
+  provider: string;
+  reasoningMode: SessionCreateOptions['reasoningMode'];
   readonly createdAt: number;
   /** 最后一次发送 prompt / 收到事件的时间戳。`session.list` 用它排序。*/
   lastActivityAt: number;

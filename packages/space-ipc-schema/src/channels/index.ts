@@ -19,6 +19,8 @@ import {
   sessionListChannel,
   sessionDeleteChannel,
   sessionSetTitleChannel,
+  sessionSetReasoningModeChannel,
+  sessionSetProviderChannel,
   sessionEventChannel,
 } from './session.js';
 import {
@@ -52,6 +54,8 @@ export const invokeChannels = {
   [sessionListChannel.name]: sessionListChannel,
   [sessionDeleteChannel.name]: sessionDeleteChannel,
   [sessionSetTitleChannel.name]: sessionSetTitleChannel,
+  [sessionSetReasoningModeChannel.name]: sessionSetReasoningModeChannel,
+  [sessionSetProviderChannel.name]: sessionSetProviderChannel,
   [projectListChannel.name]: projectListChannel,
   [projectOpenDialogChannel.name]: projectOpenDialogChannel,
   [projectRecentAddChannel.name]: projectRecentAddChannel,

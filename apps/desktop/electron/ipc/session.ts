@@ -85,4 +85,16 @@ export function registerSessionChannels(): void {
     const ok = kodaxHost.setTitle(input.sessionId, input.title);
     return { ok };
   });
+
+  // session.setReasoningMode — F008
+  registerChannel('session.setReasoningMode', (input) => {
+    const ok = kodaxHost.setReasoningMode(input.sessionId, input.mode);
+    return { ok };
+  });
+
+  // session.setProvider — F008
+  registerChannel('session.setProvider', (input) => {
+    const ok = kodaxHost.setProvider(input.sessionId, input.providerId);
+    return { ok };
+  });
 }

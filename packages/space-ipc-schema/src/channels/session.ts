@@ -125,6 +125,39 @@ export const sessionDeleteChannel = {
   }),
 } as const;
 
+// ---- Invoke: session.setReasoningMode ---- (FEATURE_008)
+//
+// 切 reasoning mode **不重启** session——新设置应用于下一条 prompt。
+// Mock 阶段只在 main 端 ManagedSession 上更新字段；Real adapter 会把它传到 KodaX runtime。
+export const sessionSetReasoningModeChannel = {
+  name: 'session.setReasoningMode',
+  direction: 'invoke',
+  input: z.object({
+    sessionId: z.string().min(1),
+    mode: reasoningModeSchema,
+  }),
+  output: z.object({
+    ok: z.boolean(),
+  }),
+} as const;
+
+// ---- Invoke: session.setProvider ---- (FEATURE_008)
+//
+// 切 provider 同样不重启 session——下一条 prompt 走新 provider。Real adapter 接入后
+// 会重新 import provider class 并 swap LLM client。
+// providerId 必须是 built-in 或 custom_<hex> ('mock' 也允许——FEATURE_003 兼容)
+export const sessionSetProviderChannel = {
+  name: 'session.setProvider',
+  direction: 'invoke',
+  input: z.object({
+    sessionId: z.string().min(1),
+    providerId: z.string().min(1).max(64),
+  }),
+  output: z.object({
+    ok: z.boolean(),
+  }),
+} as const;
+
 // ---- Push: session.event ----
 //
 // Discriminated union by `kind`。每条都带 sessionId（同时跑多 session 时 renderer 路由用）。
@@ -189,6 +222,30 @@ export const sessionEventChannel = {
       kind: z.literal('session_error'),
       sessionId: z.string().min(1),
       error: z.string(),
+    }),
+    // FEATURE_008: Work 预算 + harness profile 推送
+    //
+    // work_budget: 用户可见的工作预算（KodaX 内核已有 { cap, used } 概念）。
+    //   推送频率：每轮 iteration 结束后、tool 完成后等关键检查点。
+    //   cap 上限 1M——理论上一个 session 不会跑到这么大，但 schema 留 buffer 防 OOM
+    //
+    // harness_profile: KodaX harness on-demand 模式徽标（H0/H1/H2）。
+    //   - H0_DIRECT: 单步直接执行（默认）
+    //   - H1_EXECUTE_EVAL: 加自我评估
+    //   - H2_PLAN_EXECUTE_EVAL: 加规划层
+    //   切换发生时推一次（不每个 iteration 重推同值）。round 仅在 H1/H2 有意义
+    z.object({
+      kind: z.literal('work_budget'),
+      sessionId: z.string().min(1),
+      used: z.number().int().nonnegative().max(1_000_000),
+      cap: z.number().int().positive().max(1_000_000),
+    }),
+    z.object({
+      kind: z.literal('harness_profile'),
+      sessionId: z.string().min(1),
+      profile: z.enum(['H0_DIRECT', 'H1_EXECUTE_EVAL', 'H2_PLAN_EXECUTE_EVAL']),
+      /** H1/H2 时显示 Round 数；H0 为 undefined。*/
+      round: z.number().int().positive().max(100).optional(),
     }),
   ]),
 } as const;

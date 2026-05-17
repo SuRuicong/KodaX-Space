@@ -107,6 +107,43 @@ test('session.event payload: rejects mismatched fields for kind', () => {
   assert.equal(sessionEventChannel.payload.safeParse(bad).success, false);
 });
 
+// --- FEATURE_008 new event variants ---
+
+test('session.event payload: work_budget accepts valid', () => {
+  const evt = { kind: 'work_budget' as const, sessionId: 's_1', used: 42, cap: 200 };
+  assert.equal(sessionEventChannel.payload.safeParse(evt).success, true);
+});
+
+test('session.event payload: work_budget rejects negative used', () => {
+  const evt = { kind: 'work_budget' as const, sessionId: 's_1', used: -1, cap: 200 };
+  assert.equal(sessionEventChannel.payload.safeParse(evt).success, false);
+});
+
+test('session.event payload: work_budget rejects cap=0 (must be positive)', () => {
+  const evt = { kind: 'work_budget' as const, sessionId: 's_1', used: 0, cap: 0 };
+  assert.equal(sessionEventChannel.payload.safeParse(evt).success, false);
+});
+
+test('session.event payload: harness_profile H0 without round', () => {
+  const evt = { kind: 'harness_profile' as const, sessionId: 's_1', profile: 'H0_DIRECT' as const };
+  assert.equal(sessionEventChannel.payload.safeParse(evt).success, true);
+});
+
+test('session.event payload: harness_profile H2 with round', () => {
+  const evt = {
+    kind: 'harness_profile' as const,
+    sessionId: 's_1',
+    profile: 'H2_PLAN_EXECUTE_EVAL' as const,
+    round: 3,
+  };
+  assert.equal(sessionEventChannel.payload.safeParse(evt).success, true);
+});
+
+test('session.event payload: harness_profile rejects unknown profile', () => {
+  const evt = { kind: 'harness_profile' as const, sessionId: 's_1', profile: 'H99_FAKE' };
+  assert.equal(sessionEventChannel.payload.safeParse(evt).success, false);
+});
+
 // ---- Size caps (review fix) ----
 
 test('session.send rejects prompt over 1 MB (DoS guard)', () => {
