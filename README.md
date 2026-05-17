@@ -28,11 +28,17 @@ npm install
 # 开发模式（vite HMR + esbuild watch + electron）
 npm run dev
 
-# 仅构建（不打包安装包）
+# 单元测试 + 类型检查
+npm test && npm run typecheck
+
+# 仅构建 dist (不打包安装包)
 npm run build:smoke
 
-# 完整构建 + 打包安装包（unsigned dev build，签名留 v0.1.5）
-npm run build
+# 完整构建 + 打包平台安装包（unsigned dev build，签名留 v0.1.5）
+npm run build:win        # Windows NSIS .exe
+npm run build:mac        # macOS universal .dmg
+npm run build            # 当前平台（CI matrix 用）
+npm run smoke:pack       # 校验 installer size + asar 内容
 ```
 
 ## Project Layout
@@ -53,9 +59,24 @@ KodaX-Space/
 
 ## Status
 
-v0.1.0-alpha.0 — Electron 工程骨架（[FEATURE_001](docs/features/v0.1.0.md#feature_001-electron-工程骨架)）
+**v0.1.0-alpha.0 — Alpha foundation 完成 ✅** （10/10 features）
 
-下一步：FEATURE_002 IPC schema (zod)。
+| # | Feature | 落地状态 |
+|---|---------|---------|
+| 001 | Electron 工程骨架 | ✓ |
+| 002 | IPC schema (zod) | ✓ |
+| 003 | Main 进程 KodaX runtime 集成 | ✓ Mock adapter |
+| 004 | Provider 配置 GUI + Keychain | ✓ 13 built-in + custom + keytar fallback |
+| 005 | 项目与 Session 管理 UI | ✓ |
+| 006 | 对话流 UI + tool call 渲染 | ✓ |
+| 007 | Permission 弹窗组件 | ✓ ask-and-wait + typed-confirm |
+| 008 | Work 进度 + reasoning mode 切换 | ✓ |
+| 009 | 文件面板（Monaco read-only + diff） | ✓ |
+| 010 | 跨平台安装包（unsigned dev） | ✓ Win/macOS via electron-builder |
+
+**这一版能做什么**：装好 alpha 安装包后，配一个 LLM provider key → 选项目目录 → 创建 session → 跟 mock agent 对话 → 看 token 流式输出 + tool call 卡片 → 工具调用前权限弹窗确认 → 文件面板看树/读文件 → tool_call write/edit 时自动跳 diff 视图。reasoning mode / provider / Work 预算可在 TopBar 实时切换/查看。
+
+下一步：v0.1.1 — Productivity baseline（内置终端 + Subagent tree + MCP 管理 + NAPI tokenizer）。
 
 ## License
 

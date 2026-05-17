@@ -52,6 +52,12 @@ Desktop.ini
 *.deb
 *.snap
 
+# F010: generated icon placeholder (regenerated each build via scripts/gen-icon.mjs)
+resources/icon.png
+resources/icon.ico
+resources/icon.icns
+resources/.icon-*/
+
 # KodaX Space runtime data (should be in ~/.kodax/space/, never committed)
 .kodax/
 **/.kodax-space-test-data/

@@ -3,12 +3,11 @@
   "compilerOptions": {
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM"],
     "types": ["node"],
     "outDir": "../../../dist-electron",
-    "rootDir": ".",
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["**/*.ts"]
+  "include": ["**/*.ts", "../renderer/src/features/session/composeMessages.ts", "../renderer/src/store/appStore.ts"]
 }

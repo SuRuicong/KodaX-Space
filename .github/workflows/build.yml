@@ -46,3 +46,7 @@ jobs:
           test -f dist-electron/preload.js || (echo "::error::preload.js missing" && exit 1)
           test -f apps/desktop/dist/index.html || (echo "::error::renderer index.html missing" && exit 1)
           echo "all build artifacts present"
+
+      # F010: gen-icon 是 release workflow 的前置；这里只 smoke 验证它不报错
+      - name: Verify icon generation script
+        run: node scripts/gen-icon.mjs

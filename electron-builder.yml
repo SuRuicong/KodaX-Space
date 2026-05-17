@@ -1,5 +1,12 @@
-# electron-builder configuration — FEATURE_001 unsigned dev build
+# electron-builder configuration — F010 unsigned dev installer
 # 签名与 notarize 留 FEATURE_027 (v0.1.5)
+#
+# 产物（F010）：
+#   - Windows:  out/KodaX-Space-Setup-${version}.exe  (NSIS, x64)
+#   - macOS:    out/KodaX-Space-${version}-universal.dmg (DMG, x64+arm64)
+#   - Linux:    暂不出（v0.1.4+ 再开 AppImage/deb）
+#
+# 体积目标：< 200 MB（asar 压缩 + 排除 test/cache/source map）
 
 appId: ai.kodax.space
 productName: KodaX Space
@@ -14,11 +21,20 @@ files:
   - 'apps/desktop/dist/**/*'
   - 'packages/*/dist/**/*'
   - 'package.json'
-  - '!**/node_modules/*/{CHANGELOG.md,README.md,readme.md}'
+  - '!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,HISTORY.md,LICENSE,license,*.d.ts.map}'
   - '!**/node_modules/.cache/**'
-  - '!**/{test,tests,__tests__,__mocks__}/**'
+  - '!**/{test,tests,__tests__,__mocks__,docs,doc,example,examples}/**'
+  - '!**/*.{md,markdown}'
+  - '!**/*.map'
+  - '!**/.bin/**'
+  - '!**/*.{ts,tsx,scss,less}'
 
 asar: true
+
+# build:smoke 已经把 renderer + main 全 bundle 进 dist*。
+# native 模块（keytar 等）走 asarUnpack——asar 内 require .node 会失败
+asarUnpack:
+  - '**/*.node'
 
 mac:
   category: public.app-category.developer-tools
@@ -30,6 +46,8 @@ mac:
   # 签名留 FEATURE_027
   identity: null
   hardenedRuntime: false
+  icon: resources/icon.png  # electron-builder 自动从 PNG 生成 icns
+  artifactName: '${productName}-${version}-${arch}.${ext}'
 
 win:
   target:
@@ -38,6 +56,8 @@ win:
         - x64
   # 签名留 FEATURE_027
   signAndEditExecutable: false
+  icon: resources/icon.png  # electron-builder 自动从 PNG 生成 ico（256x256+）
+  artifactName: '${productName}-Setup-${version}.${ext}'
 
 nsis:
   oneClick: false
@@ -45,6 +65,9 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   createStartMenuShortcut: true
+  # 卸载时清理 %APPDATA%/kodax-space —— 不留 user data 残留
+  deleteAppDataOnUninstall: true
+  shortcutName: KodaX Space
 
 linux:
   # M3 启用

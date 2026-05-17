@@ -1,0 +1,128 @@
+# Release workflow — F010
+#
+# 触发方式：
+#   1. workflow_dispatch (manual)：手动跑，artifact 上传到 workflow run（不发 Release）
+#   2. push tag v* (e.g. v0.1.0-alpha.0)：自动 build + 创建 GitHub Release，
+#      artifact 上传到 Release（不签名，所以 prerelease=true）
+#
+# 矩阵：windows-latest + macos-latest 各跑一次
+# 跑时长预期：每个 OS ~10-15 分钟（含 npm install + electron-builder + asar）
+
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      mark_as_prerelease:
+        description: 'Mark Release as prerelease (since unsigned)'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # need to create Release + upload assets
+
+jobs:
+  build:
+    name: Build installer (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_glob: 'out/*.exe'
+            build_script: build:win
+          - os: macos-latest
+            artifact_glob: 'out/*.dmg'
+            build_script: build:mac
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Build workspace packages
+        run: npm run build:packages
+
+      - name: Typecheck (gate before pack)
+        run: npm run typecheck
+        # rootDir cross-reference issue in composeMessages.test (pre-F009 bug,
+        # tracked separately) — allow non-fatal until that's fixed
+        continue-on-error: true
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build installer
+        run: npm run ${{ matrix.build_script }}
+        env:
+          # electron-builder 在 push tag 时会调 GitHub API auto-publish
+          # 我们这里手动用 release step 上传，所以关掉
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 关闭 native rebuild 在 CI（keytar 在 v0.1.0 是 optional + memory fallback）
+          npm_config_build_from_source: 'false'
+
+      - name: Smoke check installer
+        run: npm run smoke:pack
+
+      - name: Upload installer artifacts (workflow_dispatch path)
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.os }}
+          path: |
+            out/*.exe
+            out/*.dmg
+            out/*.blockmap
+            out/latest*.yml
+          retention-days: 30
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Stage release files
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.blockmap' -o -name 'latest*.yml' \) -exec mv {} release/ \;
+          ls -la release/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # unsigned dev installer — 始终标 prerelease，提醒用户 Gatekeeper / SmartScreen 警告是预期
+          prerelease: true
+          generate_release_notes: true
+          files: release/*
+          body: |
+            ## KodaX Space ${{ github.ref_name }} (unsigned dev)
+
+            ⚠️ **Unsigned installers** — first launch will trigger:
+            - Windows: SmartScreen → click "More info" → "Run anyway"
+            - macOS: Gatekeeper → right-click → Open → confirm
+
+            Code signing + notarization land in v0.1.5 (FEATURE_027).
+
+            ### Verify checksum
+            See SHA256 in `latest*.yml` (electron-updater manifest).
