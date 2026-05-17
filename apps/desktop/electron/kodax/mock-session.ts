@@ -8,9 +8,36 @@
 //   4. 并发 send：第二次 send 在 in-flight 时直接 reject，不排队（F003 范围内的 send 已经一次跑完才会 ACK）
 
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
-import type { ManagedSession, SessionCreateOptions } from './session-adapter.js';
+import type {
+  ManagedSession,
+  PermissionRequestFn,
+  SessionCreateOptions,
+} from './session-adapter.js';
 
 const CHUNK_DELAY_MS = 35;
+
+/**
+ * 决定 mock 这一轮要"申请"哪个工具的权限。
+ *   - prompt 含 "rm" / "delete" / "delete the database" → bash 危险命令（触发 typed-confirm 弹窗）
+ *   - prompt 含 "write" → write 工具（medium）
+ *   - 其他 → read 工具（low，但首次仍会弹）
+ */
+function pickMockToolCall(prompt: string): { toolName: string; input: Record<string, unknown> } {
+  const lower = prompt.toLowerCase();
+  if (lower.includes('rm -rf') || lower.includes('delete the database') || lower.includes('drop table')) {
+    return {
+      toolName: 'bash',
+      input: { command: lower.includes('rm') ? 'rm -rf /tmp/test' : 'DROP TABLE users' },
+    };
+  }
+  if (lower.includes('write') || lower.includes('save')) {
+    return { toolName: 'write', input: { path: 'output.txt', content: '...' } };
+  }
+  if (lower.includes('run') || lower.includes('install') || lower.includes('npm')) {
+    return { toolName: 'bash', input: { command: 'npm install' } };
+  }
+  return { toolName: 'read', input: { path: 'package.json' } };
+}
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -36,6 +63,7 @@ export class MockKodaXSession implements ManagedSession {
   title: string | undefined = undefined;
 
   private readonly emit: (e: SessionEvent) => void;
+  private readonly requestPermission: PermissionRequestFn;
   private currentAbort: AbortController | null = null;
   private disposed = false;
 
@@ -47,6 +75,7 @@ export class MockKodaXSession implements ManagedSession {
     this.createdAt = Date.now();
     this.lastActivityAt = this.createdAt;
     this.emit = opts.emit;
+    this.requestPermission = opts.requestPermission;
   }
 
   async send(prompt: string): Promise<void> {
@@ -97,12 +126,47 @@ export class MockKodaXSession implements ManagedSession {
       }
 
       const toolId = `mock-tool-${Date.now().toString(36)}`;
+      const { toolName, input } = pickMockToolCall(prompt);
+
+      // F007 permission gate：工具调用前先问。被拒绝就 emit tool_result 说明，结束本轮
+      const decision = await this.requestPermission({ toolId, toolName, input });
+      if (signal.aborted) {
+        throw new DOMException('aborted', 'AbortError');
+      }
+      if (decision === 'deny') {
+        this.emit({
+          kind: 'tool_start',
+          sessionId: sid,
+          toolId,
+          toolName,
+          input,
+        });
+        await sleep(CHUNK_DELAY_MS, signal);
+        this.emit({
+          kind: 'tool_result',
+          sessionId: sid,
+          toolId,
+          toolName,
+          content: `permission denied: user rejected ${toolName}`,
+        });
+        await sleep(CHUNK_DELAY_MS, signal);
+        this.emit({
+          kind: 'iteration_end',
+          sessionId: sid,
+          iter: 1,
+          maxIter: 30,
+          tokenCount: 800,
+        });
+        this.emit({ kind: 'session_complete', sessionId: sid });
+        return;
+      }
+
       this.emit({
         kind: 'tool_start',
         sessionId: sid,
         toolId,
-        toolName: 'read',
-        input: { path: 'package.json' },
+        toolName,
+        input,
       });
       await sleep(CHUNK_DELAY_MS * 2, signal);
 
@@ -110,8 +174,11 @@ export class MockKodaXSession implements ManagedSession {
         kind: 'tool_result',
         sessionId: sid,
         toolId,
-        toolName: 'read',
-        content: '{\n  "name": "kodax-space",\n  "version": "0.1.0-alpha.0"\n}',
+        toolName,
+        content:
+          toolName === 'read'
+            ? '{\n  "name": "kodax-space",\n  "version": "0.1.0-alpha.0"\n}'
+            : `[mock] ${toolName} executed with input: ${JSON.stringify(input)}`,
       });
       await sleep(CHUNK_DELAY_MS, signal);
 

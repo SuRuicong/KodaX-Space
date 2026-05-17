@@ -1,6 +1,6 @@
 # KodaX Space Feature List
 
-> Last Updated: 2026-05-17 (FEATURE_001, FEATURE_002, FEATURE_003, FEATURE_005, FEATURE_006 completed)
+> Last Updated: 2026-05-17 (FEATURE_001, FEATURE_002, FEATURE_003, FEATURE_005, FEATURE_006, FEATURE_007 completed)
 > Source of truth: [PRD](PRD.md) · [HLD](HLD.md) · [ADR/](ADR/)
 > Versions: v0.1.0 → v0.1.5（M0–M1，约 3–4 个月）
 
@@ -14,7 +14,7 @@
 | 004 | Provider 配置 GUI + Keychain | New | Critical | v0.1.0 | Planned | [v0.1.0.md#004](features/v0.1.0.md#feature_004-provider-配置-gui--keychain) |
 | 005 | 项目与 Session 管理 UI | New | Critical | v0.1.0 | Completed | [v0.1.0.md#005](features/v0.1.0.md#feature_005-项目与-session-管理-ui) |
 | 006 | 对话流 UI + tool call 渲染 | New | Critical | v0.1.0 | Completed | [v0.1.0.md#006](features/v0.1.0.md#feature_006-对话流-ui--tool-call-渲染) |
-| 007 | Permission 弹窗组件 | New | Critical | v0.1.0 | Planned | [v0.1.0.md#007](features/v0.1.0.md#feature_007-permission-弹窗组件) |
+| 007 | Permission 弹窗组件 | New | Critical | v0.1.0 | Completed | [v0.1.0.md#007](features/v0.1.0.md#feature_007-permission-弹窗组件) |
 | 008 | Work 进度 + reasoning mode 切换 | New | High | v0.1.0 | Planned | [v0.1.0.md#008](features/v0.1.0.md#feature_008-work-进度--reasoning-mode-切换) |
 | 009 | 文件面板（Monaco read-only + diff） | New | High | v0.1.0 | Planned | [v0.1.0.md#009](features/v0.1.0.md#feature_009-文件面板monaco-read-only--diff) |
 | 010 | 跨平台安装包（unsigned dev） | New | Critical | v0.1.0 | Planned | [v0.1.0.md#010](features/v0.1.0.md#feature_010-跨平台安装包unsigned-dev) |
@@ -41,11 +41,11 @@
 
 ```
 === FEATURE LIST ===
-Last Updated: 2026-05-16
+Last Updated: 2026-05-17
 
---- PLANNED (23) ---
+--- PLANNED (22) ---
 
-v0.1.0 (alpha foundation): 5 features (10 total, 5 completed)
+v0.1.0 (alpha foundation): 4 features (10 total, 6 completed)
 v0.1.1 (alpha+):            4 features
 v0.1.2 (beta foundation):   4 features
 v0.1.3 (beta polish):       4 features
@@ -54,7 +54,7 @@ v0.1.5 (release polish):    2 features
 
 --- IN PROGRESS (0) ---
 
---- COMPLETED (5) ---
+--- COMPLETED (6) ---
 
 [NEW, CRITICAL] 001: Electron 工程骨架 (COMPLETED 2026-05-16)
   Planned: v0.1.0 → Released: v0.1.0-alpha.0
@@ -67,9 +67,11 @@ v0.1.5 (release polish):    2 features
   Planned: v0.1.0 → Released: v0.1.0-alpha.0
 [NEW, CRITICAL] 006: 对话流 UI + tool call 渲染 (COMPLETED 2026-05-17)
   Planned: v0.1.0 → Released: v0.1.0-alpha.0
+[NEW, CRITICAL] 007: Permission 弹窗组件 (COMPLETED 2026-05-17)
+  Planned: v0.1.0 → Released: v0.1.0-alpha.0
 
 === SUMMARY ===
-Total: 28 | Planned: 23 | InProgress: 0 | Completed: 5
+Total: 28 | Planned: 22 | InProgress: 0 | Completed: 6
 By Priority: Critical: 8, High: 11, Medium: 8, Low: 1
 By Category:  New: 23, Enhancement: 3, Refactor: 2, Internal: 2
 ```

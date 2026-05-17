@@ -27,6 +27,13 @@ import {
   projectRecentAddChannel,
   projectRecentRemoveChannel,
 } from './project.js';
+import {
+  permissionRequestChannel,
+  permissionCancelledChannel,
+  permissionAnswerChannel,
+  permissionListChannel,
+  permissionRevokeChannel,
+} from './permission.js';
 
 export const invokeChannels = {
   [versionChannel.name]: versionChannel,
@@ -40,10 +47,15 @@ export const invokeChannels = {
   [projectOpenDialogChannel.name]: projectOpenDialogChannel,
   [projectRecentAddChannel.name]: projectRecentAddChannel,
   [projectRecentRemoveChannel.name]: projectRecentRemoveChannel,
+  [permissionAnswerChannel.name]: permissionAnswerChannel,
+  [permissionListChannel.name]: permissionListChannel,
+  [permissionRevokeChannel.name]: permissionRevokeChannel,
 } as const;
 
 export const pushChannels = {
   [sessionEventChannel.name]: sessionEventChannel,
+  [permissionRequestChannel.name]: permissionRequestChannel,
+  [permissionCancelledChannel.name]: permissionCancelledChannel,
 } as const;
 
 export type InvokeChannels = typeof invokeChannels;

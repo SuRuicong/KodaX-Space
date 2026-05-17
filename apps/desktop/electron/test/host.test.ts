@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { kodaxHost } from '../kodax/host.js';
 import { setRendererTarget } from '../ipc/push.js';
+import { permissionBroker } from '../permission/broker.js';
 
 // Stub webContents：捕获所有 session.event payload 到数组里
 type CapturedSend = { channel: string; payload: unknown };
@@ -17,7 +18,16 @@ beforeEach(async () => {
   captured.length = 0;
   await kodaxHost.disposeAll();
   setRendererTarget(() => ({
-    send: (channel: string, payload: unknown) => captured.push({ channel, payload }),
+    send: (channel: string, payload: unknown) => {
+      captured.push({ channel, payload });
+      // F007: Mock 通过 broker 弹窗才能继续执行工具。测试自动 allow_once。
+      // 危险命令场景的 typed-confirm 由 broker.test.ts 单独验证；这里只关心事件流。
+      if (channel === 'permission.request') {
+        const p = payload as { reqId: string };
+        // 用 setImmediate 模拟 IPC 异步——避免在 push 发送过程中递归调用 resolve
+        setImmediate(() => permissionBroker.resolve(p.reqId, 'allow_once'));
+      }
+    },
     isDestroyed: () => false,
     // 我们只用到 send/isDestroyed——其他字段 stub 一下避免类型噪音
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

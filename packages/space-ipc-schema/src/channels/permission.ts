@@ -1,0 +1,122 @@
+// Permission channels — FEATURE_007.
+//
+// 流向：
+//   main → renderer push  permission.request   (ask)
+//   renderer → main invoke permission.answer    (reply)
+//   renderer → main invoke permission.list      (前端展示 / 调试用)
+//   renderer → main invoke permission.revoke    (撤销一条 always-allow 规则)
+//
+// 为什么不像 "ask-and-wait" 协议那样把 reqId 编进 channel 名（permission.answer.<reqId>）：
+//   - preload allowlist 是静态的；动态名要么放开通配（破坏白名单），要么每次注册新 channel（电耗）
+//   - 改成"统一 channel + reqId 字段路由"——main 侧维护 pending Map，按 reqId resolve 等待方
+//
+// 风险等级（用于 UI 颜色 + 决策阈值）：
+//   low      —— 只读类（read / grep / glob）
+//   medium   —— 写文件 / 编辑 / 一般 bash 命令
+//   high     —— 执行 + 网络 / 删除 / 提权命令
+//   danger   —— 黑名单命令（rm -rf / git push --force / curl | sh 等），强制 typed confirmation
+//
+// 决策类型：
+//   deny           —— 拒绝本次
+//   allow_once     —— 允许本次（不写入持久规则）
+//   allow_always   —— 允许本次 + 写入 ~/.kodax/permissions.json 的 always-allow（pattern 可选）
+
+import { z } from 'zod';
+
+// 共享：tool call 描述。toolName + input + 可选 pattern（如 "bash:rm -rf *"）。
+// 用 z.record(z.unknown()) 而非 z.unknown()——保证 input 是个 object，
+// renderer 渲染时不必再做 typeof / null 兜底。
+const permissionToolCallSchema = z.object({
+  toolId: z.string().min(1),
+  toolName: z.string().min(1),
+  input: z.record(z.unknown()).optional(),
+});
+
+const riskLevelSchema = z.enum(['low', 'medium', 'high', 'danger']);
+const decisionSchema = z.enum(['deny', 'allow_once', 'allow_always']);
+
+// Always-allow rule. pattern 形如 "<toolName>" 或 "<toolName>:<input-fingerprint>"。
+//   - "<toolName>" 单独：批准该工具所有调用（如 "read"）
+//   - "<toolName>:<fingerprint>" 复合：精确匹配某种调用形态（如 "bash:npm install"）
+// fingerprint 由 main 端从 input 生成（不在 schema 层做——schema 只承载结构）。
+const permissionRuleSchema = z.object({
+  pattern: z.string().min(1),
+  createdAt: z.number().int().nonnegative(),
+});
+
+// ---- Push: permission.request ----
+// reqId 由 main 生成，renderer 必须原样回传。
+// reason 是简短文字，可显示给用户（"工具调用前需要批准" / "命令包含潜在危险操作" 等）。
+export const permissionRequestChannel = {
+  name: 'permission.request',
+  direction: 'push',
+  payload: z.object({
+    reqId: z.string().min(1),
+    sessionId: z.string().min(1),
+    risk: riskLevelSchema,
+    reason: z.string().max(512),
+    toolCall: permissionToolCallSchema,
+    /** 已生成的 pattern 候选，给 "Always allow" 选项预填，renderer 决定要不要带 pattern。*/
+    suggestedPattern: z.string().min(1).max(512).optional(),
+  }),
+} as const;
+
+// ---- Push: permission.cancelled ----
+// 当 session 被取消 / 删除 / 出错时，main 主动撤回 pending request。
+// renderer 收到后关掉对应弹窗（即使用户还没决策也算"自动拒绝"）。
+export const permissionCancelledChannel = {
+  name: 'permission.cancelled',
+  direction: 'push',
+  payload: z.object({
+    reqId: z.string().min(1),
+    sessionId: z.string().min(1),
+    reason: z.enum(['session_cancelled', 'session_disposed', 'timeout', 'shutdown']),
+  }),
+} as const;
+
+// ---- Invoke: permission.answer ----
+// 决策由 renderer 回 main。
+// pattern 仅在 decision='allow_always' 时有意义；其余忽略（main 不会读）。
+export const permissionAnswerChannel = {
+  name: 'permission.answer',
+  direction: 'invoke',
+  input: z.object({
+    reqId: z.string().min(1),
+    decision: decisionSchema,
+    pattern: z.string().min(1).max(512).optional(),
+  }),
+  output: z.object({
+    accepted: z.boolean(),
+  }),
+} as const;
+
+// ---- Invoke: permission.list ----
+// 列出当前所有 always-allow 规则。给设置面板 / 撤销用。
+export const permissionListChannel = {
+  name: 'permission.list',
+  direction: 'invoke',
+  input: z.undefined().optional(),
+  output: z.object({
+    rules: z.array(permissionRuleSchema),
+  }),
+} as const;
+
+// ---- Invoke: permission.revoke ----
+// 删除一条 always-allow 规则。
+export const permissionRevokeChannel = {
+  name: 'permission.revoke',
+  direction: 'invoke',
+  input: z.object({
+    pattern: z.string().min(1).max(512),
+  }),
+  output: z.object({
+    removed: z.boolean(),
+  }),
+} as const;
+
+export type PermissionRisk = z.infer<typeof riskLevelSchema>;
+export type PermissionDecision = z.infer<typeof decisionSchema>;
+export type PermissionToolCall = z.infer<typeof permissionToolCallSchema>;
+export type PermissionRule = z.infer<typeof permissionRuleSchema>;
+export type PermissionRequestPayload = z.infer<typeof permissionRequestChannel.payload>;
+export type PermissionCancelledPayload = z.infer<typeof permissionCancelledChannel.payload>;

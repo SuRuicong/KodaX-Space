@@ -11,8 +11,10 @@ import { pathToFileURL } from 'node:url';
 import { registerVersionChannel } from './ipc/version.js';
 import { registerSessionChannels } from './ipc/session.js';
 import { registerProjectChannels } from './ipc/project.js';
+import { registerPermissionChannels } from './ipc/permission.js';
 import { setRendererTarget } from './ipc/push.js';
 import { kodaxHost } from './kodax/host.js';
+import { permissionRegistry } from './permission/registry.js';
 
 // CJS 输出（见 scripts/build-main.mjs），__dirname 是原生 Node 全局
 // 不用 import.meta.url（CJS 下不可用）
@@ -136,8 +138,12 @@ app.whenReady().then(() => {
   registerVersionChannel();
   registerSessionChannels();
   registerProjectChannels();
+  registerPermissionChannels();
   // push 目标走 getter 间接拿当前 window——dev HMR / 用户重开窗口都能正确切换
   setRendererTarget(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null));
+  // 预加载 always-allow 规则 — broker.request 走 matches() 是同步路径，必须事先 load。
+  // 失败不阻塞启动（registry.load 内部 catch 后 cached 落为 []）。
+  void permissionRegistry.load();
   createMainWindow();
 
   app.on('activate', () => {

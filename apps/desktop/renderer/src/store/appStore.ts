@@ -11,7 +11,12 @@
 //   - 异步进行中标志（busy）—— 同上
 
 import { create } from 'zustand';
-import type { Project, SessionMeta, SessionEvent } from '@kodax-space/space-ipc-schema';
+import type {
+  Project,
+  SessionMeta,
+  SessionEvent,
+  PermissionRequestPayload,
+} from '@kodax-space/space-ipc-schema';
 
 /**
  * 用户在 renderer 端发出的 prompt 记录。
@@ -35,6 +40,13 @@ interface AppState {
   eventsBySession: Readonly<Record<string, readonly SessionEvent[]>>;
   /** 每个 sessionId 一桶用户消息（renderer 本地跟踪）。*/
   userMessagesBySession: Readonly<Record<string, readonly UserMessage[]>>;
+  /**
+   * 待用户决策的 permission 请求队列（FIFO）。
+   * 一次只显示一个弹窗——多 session 并发时按到达顺序处理，已决策的弹下一个。
+   * 不按 sessionId 桶分——弹窗永远是 modal 全屏，按全局队列处理更简单也防止用户同时
+   * 看到多个弹窗时手抖点错。
+   */
+  permissionQueue: readonly PermissionRequestPayload[];
 
   // ----- actions -----
   setProjects(projects: readonly Project[]): void;
@@ -45,6 +57,11 @@ interface AppState {
   appendUserMessage(sessionId: string, content: string): void;
   upsertSession(meta: SessionMeta): void;
   removeSession(sessionId: string): void;
+  enqueuePermission(req: PermissionRequestPayload): void;
+  /** 用户决策完 / main 端 cancel 推过来 / session 删除 — 都从队列里挪走。*/
+  dequeuePermission(reqId: string): void;
+  /** session 被删 / 取消时清掉该 session 所有 pending（防止用户看到已死 session 的弹窗）。*/
+  clearPermissionsForSession(sessionId: string): void;
   /** 切项目时清空当前 session 选择和事件 buffer（事件留主进程的；renderer 只清缓存）。*/
   resetSessionView(): void;
 }
@@ -59,6 +76,7 @@ export const useAppStore = create<AppState>((set) => ({
   currentSessionId: null,
   eventsBySession: {},
   userMessagesBySession: {},
+  permissionQueue: [],
 
   setProjects: (projects) => set({ projects }),
   setCurrentProject: (path) => set({ currentProjectPath: path }),
@@ -114,15 +132,34 @@ export const useAppStore = create<AppState>((set) => ({
         sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
         eventsBySession: restEvents,
         userMessagesBySession: restMsgs,
+        permissionQueue: state.permissionQueue.filter((p) => p.sessionId !== sessionId),
         currentSessionId: state.currentSessionId === sessionId ? null : state.currentSessionId,
       };
     }),
+
+  enqueuePermission: (req) =>
+    set((state) => {
+      // 防 main 端重发同 reqId（push 不应当重发，但兜底）
+      if (state.permissionQueue.some((p) => p.reqId === req.reqId)) return state;
+      return { permissionQueue: [...state.permissionQueue, req] };
+    }),
+
+  dequeuePermission: (reqId) =>
+    set((state) => ({
+      permissionQueue: state.permissionQueue.filter((p) => p.reqId !== reqId),
+    })),
+
+  clearPermissionsForSession: (sessionId) =>
+    set((state) => ({
+      permissionQueue: state.permissionQueue.filter((p) => p.sessionId !== sessionId),
+    })),
 
   resetSessionView: () =>
     set({
       currentSessionId: null,
       eventsBySession: {},
       userMessagesBySession: {},
+      permissionQueue: [],
       sessions: [],
     }),
 }));

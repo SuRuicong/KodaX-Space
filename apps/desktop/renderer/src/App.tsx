@@ -23,11 +23,14 @@ import { useAppStore } from './store/appStore.js';
 import { ProjectPicker } from './features/project/ProjectPicker.js';
 import { SessionList } from './features/session/SessionList.js';
 import { EventStream } from './features/session/EventStream.js';
+import { PermissionModal } from './features/permission/PermissionModal.js';
 
 export default function App(): JSX.Element {
   const [version, setVersion] = useState<SpaceVersionOutput | null>(null);
   const appendEvent = useAppStore((s) => s.appendEvent);
-  const unsubRef = useRef<(() => void) | null>(null);
+  const enqueuePermission = useAppStore((s) => s.enqueuePermission);
+  const dequeuePermission = useAppStore((s) => s.dequeuePermission);
+  const unsubsRef = useRef<Array<() => void>>([]);
 
   useEffect(() => {
     const bridge = window.kodaxSpace;
@@ -39,14 +42,31 @@ export default function App(): JSX.Element {
     });
 
     // 全局 session.event 订阅——所有 session 共用这个监听，store 按 sessionId 路由
-    unsubRef.current = bridge.on('session.event', (event) => {
-      appendEvent(event);
-    });
+    unsubsRef.current.push(
+      bridge.on('session.event', (event) => {
+        appendEvent(event);
+      }),
+    );
+
+    // F007: permission ask-and-wait — push 进队列，modal 渲染队列头
+    unsubsRef.current.push(
+      bridge.on('permission.request', (payload) => {
+        enqueuePermission(payload);
+      }),
+    );
+
+    // main 主动撤回（超时 / session 取消 / 关闭）— renderer 同步 dequeue 关弹窗
+    unsubsRef.current.push(
+      bridge.on('permission.cancelled', (payload) => {
+        dequeuePermission(payload.reqId);
+      }),
+    );
 
     return () => {
-      unsubRef.current?.();
+      for (const u of unsubsRef.current) u();
+      unsubsRef.current = [];
     };
-  }, [appendEvent]);
+  }, [appendEvent, enqueuePermission, dequeuePermission]);
 
   return (
     <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100">
@@ -73,11 +93,13 @@ export default function App(): JSX.Element {
 
       <footer className="border-t border-zinc-800 px-4 py-1.5 text-[10px] text-zinc-600 flex justify-between flex-shrink-0">
         <span>
-          FEATURE_005 scaffold · Mock adapter · docs:{' '}
+          FEATURE_007 · Mock adapter · docs:{' '}
           <code className="font-mono text-zinc-500">docs/HLD.md</code>
         </span>
         <span>{version?.platform ?? ''}</span>
       </footer>
+
+      <PermissionModal />
     </div>
   );
 }

@@ -14,7 +14,24 @@
 //   KodaXEvents.onStreamEnd      → emit({ kind:'session_complete', ... })
 //   (catch in agent.run)         → emit({ kind:'session_error',  ... })
 
-import type { SessionEvent } from '@kodax-space/space-ipc-schema';
+import type { PermissionDecision, SessionEvent } from '@kodax-space/space-ipc-schema';
+
+/**
+ * 工具调用前的权限请求回调。
+ *
+ * - session 实现（Mock / Real）在调用真实 tool 前调一次
+ * - host 注入实现：转 PermissionBroker，broker 推 IPC 给 renderer，等用户决策
+ * - 返回 'deny' → session **必须**放弃本次 tool 调用，emit 一条 tool_result 说明 "permission denied"
+ * - 返回 'allow_once' / 'allow_always' → session 继续执行
+ *
+ * 即便 session 实现不接 permission 流（早期 Mock 或 Real adapter 不需要 gate 的工具），
+ * 这个字段可以不调用——`session-adapter` 不强制每次 tool 都过 gate。
+ */
+export type PermissionRequestFn = (req: {
+  readonly toolId: string;
+  readonly toolName: string;
+  readonly input?: Record<string, unknown>;
+}) => Promise<PermissionDecision>;
 
 export type SessionCreateOptions = {
   readonly sessionId: string;
@@ -22,6 +39,8 @@ export type SessionCreateOptions = {
   readonly provider: string;
   readonly reasoningMode: 'off' | 'auto' | 'quick' | 'balanced' | 'deep';
   readonly emit: (event: SessionEvent) => void;
+  /** 工具调用前的 gate；host 注入。Mock 用来模拟弹窗。*/
+  readonly requestPermission: PermissionRequestFn;
 };
 
 export interface ManagedSession {

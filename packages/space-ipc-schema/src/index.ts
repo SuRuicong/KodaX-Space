@@ -44,6 +44,20 @@ export {
 } from './channels/project.js';
 
 export {
+  permissionRequestChannel,
+  permissionCancelledChannel,
+  permissionAnswerChannel,
+  permissionListChannel,
+  permissionRevokeChannel,
+  type PermissionRisk,
+  type PermissionDecision,
+  type PermissionToolCall,
+  type PermissionRule,
+  type PermissionRequestPayload,
+  type PermissionCancelledPayload,
+} from './channels/permission.js';
+
+export {
   INVOKE_CHANNEL_NAMES,
   PUSH_CHANNEL_NAMES,
   getInvokeChannel,
