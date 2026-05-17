@@ -19,6 +19,7 @@
 
 import type { BuiltinProvider } from './catalog.js';
 import type { CustomProvider } from './config.js';
+import { validateBaseUrl } from './url-guard.js';
 
 type Probe = BuiltinProvider | CustomProvider;
 
@@ -103,11 +104,14 @@ export async function testProvider(provider: Probe, apiKey: string): Promise<Tes
 }
 
 function pickEndpoint(provider: Probe): string | undefined {
-  // BuiltinProvider 的 testEndpoint 字段在 catalog 里硬编码
+  // BuiltinProvider 的 testEndpoint 字段在 catalog 里硬编码（信任的）
   if ('testEndpoint' in provider && provider.testEndpoint) return provider.testEndpoint;
-  // CustomProvider 没有显式 testEndpoint——用 baseUrl + protocol 标准 path 拼
+  // CustomProvider —— 再过一遍 validateBaseUrl（defense-in-depth：custom-providers.json
+  // 可能被外部进程篡改/手工编辑，addCustom 时的校验在此处再确认一次）
   if ('baseUrl' in provider) {
-    const base = provider.baseUrl.replace(/\/$/, '');
+    const validation = validateBaseUrl(provider.baseUrl);
+    if (!validation.ok || !validation.normalizedUrl) return undefined;
+    const base = validation.normalizedUrl;
     if (provider.protocol === 'openai') return `${base}/models`;
     if (provider.protocol === 'anthropic') return `${base}/messages`;
   }

@@ -52,6 +52,11 @@ interface AppState {
   /** Provider catalog（built-in + custom）+ configured 状态。FEATURE_004。*/
   providers: readonly ProviderInfo[];
   defaultProviderId: string | null;
+  /**
+   * Keychain backend 状态。'memory' 表示 key 仅在本进程内有效；
+   * UI 应显著告警，否则用户以为配了 key 但重启就丢（review M1-sec）。
+   */
+  keychainBackend: 'keychain' | 'memory' | 'unknown';
 
   // ----- actions -----
   setProjects(projects: readonly Project[]): void;
@@ -65,7 +70,11 @@ interface AppState {
   enqueuePermission(req: PermissionRequestPayload): void;
   /** 用户决策完 / main 端 cancel 推过来 / session 删除 — 都从队列里挪走。*/
   dequeuePermission(reqId: string): void;
-  setProviders(providers: readonly ProviderInfo[], defaultProviderId: string | null): void;
+  setProviders(
+    providers: readonly ProviderInfo[],
+    defaultProviderId: string | null,
+    keychainBackend: 'keychain' | 'memory' | 'unknown',
+  ): void;
   /** 切项目时清空当前 session 选择和事件 buffer（事件留主进程的；renderer 只清缓存）。*/
   resetSessionView(): void;
 }
@@ -83,6 +92,7 @@ export const useAppStore = create<AppState>((set) => ({
   permissionQueue: [],
   providers: [],
   defaultProviderId: null,
+  keychainBackend: 'unknown',
 
   setProjects: (projects) => set({ projects }),
   setCurrentProject: (path) => set({ currentProjectPath: path }),
@@ -155,7 +165,8 @@ export const useAppStore = create<AppState>((set) => ({
       permissionQueue: state.permissionQueue.filter((p) => p.reqId !== reqId),
     })),
 
-  setProviders: (providers, defaultProviderId) => set({ providers, defaultProviderId }),
+  setProviders: (providers, defaultProviderId, keychainBackend) =>
+    set({ providers, defaultProviderId, keychainBackend }),
 
   resetSessionView: () =>
     set({

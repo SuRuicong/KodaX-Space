@@ -71,10 +71,12 @@ test('addCustom generates custom_<hex> id matching schema regex', async () => {
     displayName: 'My Gateway',
     protocol: 'openai',
     baseUrl: 'https://gw.example.com/v1',
+
     apiKeyEnv: 'GW_KEY',
     defaultModel: 'gpt-4o',
   });
-  assert.match(id, /^custom_[a-f0-9]{8,}$/);
+  // H3-code fix: randomBytes(8) → 16 hex chars
+  assert.match(id, /^custom_[a-f0-9]{16}$/);
 });
 
 test('addCustom persists provider with all fields', async () => {

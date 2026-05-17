@@ -15,6 +15,7 @@
 //   - schema 损坏不抛——log + 回滚空配置
 
 import { promises as fs } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
 import { z } from 'zod';
@@ -37,12 +38,16 @@ type SpaceConfig = z.infer<typeof spaceConfigSchema>;
 
 // ---- 自定义 provider 列表 ----
 //
-// id 由 main 生成（"custom_<8 hex>"）——不接受用户指定。
+// id 由 main 生成（"custom_" + 16 hex chars，即 randomBytes(8) 的十六进制）——
+// 不接受用户指定。review H1-merged：用 node:crypto.randomBytes（CSPRNG），
+// 不再 fallback 到 Math.random()。
+// review H3-code：regex 从 `{8,}` 改成精确 `{16}`——对齐实际输出（8 字节 = 16 hex）
+//
 // apiKeyEnv 由用户填写——允许复用 built-in env（如多个 Anthropic-compat 自建网关
 // 都用 ANTHROPIC_API_KEY），但同一 apiKeyEnv 在同一时间只能注入一个值；
 // 用户切默认 provider 时会重新注入对应 key。
 const customProviderSchema = z.object({
-  id: z.string().min(1).max(64).regex(/^custom_[a-f0-9]{8,}$/),
+  id: z.string().min(1).max(64).regex(/^custom_[a-f0-9]{16}$/),
   displayName: z.string().min(1).max(128),
   protocol: z.enum(['anthropic', 'openai']),
   baseUrl: z.string().url().max(512),
@@ -64,6 +69,15 @@ const customProvidersFileSchema = z.object({
 export class ProviderConfigStore {
   private spaceCache: SpaceConfig | null = null;
   private customCache: CustomProvider[] | null = null;
+  /**
+   * **全局写锁**——所有 mutateSpace / mutateCustom 调用都串行通过这一条 promise chain。
+   * 不是按文件分锁的——同时写两个文件也走同一把锁，避免任何"setDefault 和 addCustom
+   * 同帧到达，各自读了同一个旧 writeLock"的并发坑（虽然 promise chain 重新赋值是
+   * 同步的，看起来安全，但任何未来加新的 mutateX 方法的人都必须复用这个写锁）。
+   *
+   * review H1-code 备注：保持单字段 writeLock 的强约束——任何新增 mutation 方法
+   * **必须**chain 到这一字段，**不要**起新的 mutex。
+   */
   private writeLock: Promise<void> = Promise.resolve();
 
   constructor(
@@ -100,10 +114,11 @@ export class ProviderConfigStore {
 
   /**
    * 新增自定义 provider，生成稳定 id。
-   * id 格式 `custom_<8 hex>`——保证不与 built-in id（kebab-case 字母）冲突。
+   * id 格式 `custom_` + 16 hex chars（randomBytes(8) 十六进制编码）——
+   * 保证不与 built-in id（kebab-case 字母）冲突 + 64 位 CSPRNG 熵足够防猜测。
    */
   async addCustom(p: Omit<CustomProvider, 'id' | 'createdAt'>): Promise<string> {
-    const id = `custom_${randomHex(8)}`;
+    const id = `custom_${randomBytes(8).toString('hex')}`;
     const entry: CustomProvider = { ...p, id, createdAt: Date.now() };
     await this.mutateCustom((rules) => [...rules, entry]);
     return id;
@@ -204,7 +219,9 @@ export class ProviderConfigStore {
 
 async function persistAtomic(dir: string, filePath: string, data: string): Promise<void> {
   await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-  const tmp = `${filePath}.${process.pid}.tmp`;
+  // review M3-sec：用 random hex 后缀代替 PID——单用户桌面 PID 易猜测，
+  // 攻击者有本地写权限时可能用 symlink 提前抢占 .tmp 文件
+  const tmp = `${filePath}.${randomBytes(4).toString('hex')}.tmp`;
   await fs.writeFile(tmp, data, { encoding: 'utf-8', mode: 0o600 });
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -225,17 +242,6 @@ async function persistAtomic(dir: string, filePath: string, data: string): Promi
   throw lastErr instanceof Error
     ? lastErr
     : new Error(`[ProviderConfigStore] rename failed after retries: ${String(lastErr)}`);
-}
-
-function randomHex(bytes: number): string {
-  const buf = new Uint8Array(bytes);
-  if (typeof globalThis.crypto?.getRandomValues === 'function') {
-    globalThis.crypto.getRandomValues(buf);
-  } else {
-    // Node 18 fallback
-    for (let i = 0; i < bytes; i++) buf[i] = Math.floor(Math.random() * 256);
-  }
-  return Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /** 进程单例。main 启动时调一次 load()。*/

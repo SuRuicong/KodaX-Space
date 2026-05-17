@@ -26,6 +26,7 @@ interface ProviderSettingsProps {
 
 export function ProviderSettings({ onClose }: ProviderSettingsProps): JSX.Element {
   const providers = useAppStore((s) => s.providers);
+  const keychainBackend = useAppStore((s) => s.keychainBackend);
   const setProviders = useAppStore((s) => s.setProviders);
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -44,7 +45,7 @@ export function ProviderSettings({ onClose }: ProviderSettingsProps): JSX.Elemen
         setErr(`${result.error.code}: ${result.error.message}`);
         return;
       }
-      setProviders(result.data.providers, result.data.defaultProviderId);
+      setProviders(result.data.providers, result.data.defaultProviderId, result.data.keychainBackend);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -84,6 +85,18 @@ export function ProviderSettings({ onClose }: ProviderSettingsProps): JSX.Elemen
         {err && (
           <div className="text-xs font-mono text-red-300 border border-red-900 rounded p-2 bg-red-950/40">
             {err}
+          </div>
+        )}
+
+        {keychainBackend === 'memory' && (
+          <div className="text-xs border border-amber-800 rounded p-3 bg-amber-950/40 text-amber-100">
+            <div className="font-semibold mb-1">⚠ Keychain unavailable — keys stored in memory only</div>
+            <div className="text-amber-200/80">
+              Could not load <code className="font-mono">keytar</code> or the system keychain
+              (macOS Keychain / Windows Credential Manager / Linux libsecret). API keys you set
+              here will work this session but <strong>will be lost on app restart</strong>.
+              Install build tools (or libsecret on Linux) and reinstall to enable persistent storage.
+            </div>
           </div>
         )}
 

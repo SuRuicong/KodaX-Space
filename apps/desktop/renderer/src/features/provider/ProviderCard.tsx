@@ -39,18 +39,21 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
     if (trimmed.length === 0) return;
     setBusy(true);
     setErr(null);
+    // review M1-code：成功 / 失败 / 异常都立即清 draft——key 不该在 React state 持久存在
+    // 让 GC 能在下一帧回收。出错时用户需要重新粘贴，是可接受的代价
+    const submitted = trimmed;
+    setDraft('');
+    setReveal(false);
     try {
       const result = await window.kodaxSpace.invoke('provider.setKey', {
         providerId: provider.id,
-        apiKey: trimmed,
+        apiKey: submitted,
       });
       if (!result.ok) {
         setErr(`${result.error.code}: ${result.error.message}`);
         return;
       }
       setEditing(false);
-      setDraft(''); // 立即清空，不在 React state 保留 key
-      setReveal(false);
       await onChanged();
     } finally {
       setBusy(false);

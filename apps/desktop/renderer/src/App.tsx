@@ -48,7 +48,9 @@ export default function App(): JSX.Element {
 
     // FEATURE_004 启动时拉一次 provider 列表（main 已经把 keychain 中的 key 注入 env）
     bridge.invoke('provider.list', undefined).then((result) => {
-      if (result.ok) setProviders(result.data.providers, result.data.defaultProviderId);
+      if (result.ok) {
+        setProviders(result.data.providers, result.data.defaultProviderId, result.data.keychainBackend);
+      }
     });
 
     // 全局 session.event 订阅——所有 session 共用这个监听，store 按 sessionId 路由

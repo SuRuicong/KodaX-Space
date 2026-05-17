@@ -40,6 +40,12 @@ const providerInfoSchema = z.object({
 });
 
 // --- Invoke: provider.list ---
+//
+// keychainBackend：
+//   'keychain' — OS 原生 keychain（macOS Keychain / Win CredMgr / Linux libsecret）
+//   'memory'   — fallback（keytar 没装 / Linux 没 libsecret）；key 仅本进程有效，
+//                进程重启后丢失。UI 应当显示明显告警，避免"我配了 key 重启就没了"
+//                的 UX 完整性问题（review M1-sec）
 export const providerListChannel = {
   name: 'provider.list',
   direction: 'invoke',
@@ -47,6 +53,7 @@ export const providerListChannel = {
   output: z.object({
     providers: z.array(providerInfoSchema),
     defaultProviderId: z.string().min(1).max(64).nullable(),
+    keychainBackend: z.enum(['keychain', 'memory']),
   }),
 } as const;
 
@@ -112,15 +119,27 @@ export const providerSetDefaultChannel = {
 // --- Invoke: provider.addCustom ---
 //
 // 自定义 provider 持久化到 ~/.kodax/config.json（与 KodaX CLI 共享路径）。
-// id 由 main 生成（"custom_<8 hex>"），不接受用户指定—— 避免与 built-in id 冲突。
+// id 由 main 生成（"custom_" + 16 hex），不接受用户指定—— 避免与 built-in id 冲突。
+//
+// review C1+M2-sec：baseUrl 必须 https://（schema 第一道；main 端 validateBaseUrl 第二道
+// 拦 IP literal / 内网 hostname / 非标准端口）
+// review H2-sec：apiKeyEnv 必须是合法 env var 名 + 不在 main 端的 reserved 黑名单
 export const providerAddCustomChannel = {
   name: 'provider.addCustom',
   direction: 'invoke',
   input: z.object({
     displayName: z.string().min(1).max(128),
     protocol: z.enum(['anthropic', 'openai']),
-    baseUrl: z.string().url().max(512),
-    apiKeyEnv: z.string().min(1).max(128),
+    baseUrl: z
+      .string()
+      .url()
+      .max(512)
+      .startsWith('https://', { message: 'baseUrl must use https://' }),
+    apiKeyEnv: z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(/^[A-Z_][A-Z0-9_]{0,127}$/, { message: 'apiKeyEnv must be uppercase snake_case' }),
     defaultModel: z.string().min(1).max(128),
     models: z.array(z.string().min(1).max(128)).max(64).optional(),
   }),

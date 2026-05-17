@@ -6,7 +6,7 @@
 //   - 点 session 卡片 → setCurrentSession（仅切视图，无 IPC）
 //   - 右键卡片 → 弹 Rename / Delete
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../../store/appStore.js';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 
@@ -39,14 +39,22 @@ export function SessionList(): JSX.Element {
 
   const [provider, setProvider] = useState<string>(MOCK_PROVIDER);
 
-  // 默认 provider 在 store 里就绪后，自动把 picker 切到默认（只在初始 mock 时换；
-  // 用户手动选过其他值就不打扰）
+  // 默认 provider 在 store 里就绪后，自动把 picker 切到默认——只在**首次**
+  // providers 列表非空 + defaultProviderId 就绪时执行一次。之后用户改了下拉，
+  // 即使 store 再变也不再覆盖。
+  //
+  // review M4-code：原本用 `if (provider === MOCK_PROVIDER) ...` 守门，但
+  // useEffect 闭包里的 provider 可能陈旧——用户改了下拉然后 providers 又刷新一次
+  // 时会触发误覆盖。改用 ref 锁住"已自动选过"状态
+  const hasAutoSelectedRef = useRef(false);
   useEffect(() => {
-    if (provider === MOCK_PROVIDER && defaultProviderId) {
-      const p = providers.find((x) => x.id === defaultProviderId);
-      if (p?.configured) setProvider(defaultProviderId);
+    if (hasAutoSelectedRef.current) return;
+    if (defaultProviderId === null) return;
+    const p = providers.find((x) => x.id === defaultProviderId);
+    if (p?.configured) {
+      hasAutoSelectedRef.current = true;
+      setProvider(defaultProviderId);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultProviderId, providers]);
   // 改名 UI：renaming = 当前正在改的 sessionId；draft = 输入框值。
   // 用 inline 输入而不是 window.prompt——后者在 Electron sandbox=true 下被禁用，会静默失败。
