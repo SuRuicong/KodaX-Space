@@ -12,10 +12,12 @@ import { registerVersionChannel } from './ipc/version.js';
 import { registerSessionChannels } from './ipc/session.js';
 import { registerProjectChannels } from './ipc/project.js';
 import { registerPermissionChannels } from './ipc/permission.js';
+import { registerProviderChannels, injectAllKeysToEnv } from './ipc/provider.js';
 import { setRendererTarget } from './ipc/push.js';
 import { kodaxHost } from './kodax/host.js';
 import { permissionRegistry } from './permission/registry.js';
 import { permissionBroker } from './permission/broker.js';
+import { providerConfigStore } from './providers/config.js';
 
 // CJS 输出（见 scripts/build-main.mjs），__dirname 是原生 Node 全局
 // 不用 import.meta.url（CJS 下不可用）
@@ -140,11 +142,17 @@ app.whenReady().then(() => {
   registerSessionChannels();
   registerProjectChannels();
   registerPermissionChannels();
+  registerProviderChannels();
   // push 目标走 getter 间接拿当前 window——dev HMR / 用户重开窗口都能正确切换
   setRendererTarget(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null));
   // 预加载 always-allow 规则 — broker.request 走 matches() 是同步路径，必须事先 load。
   // 失败不阻塞启动（registry.load 内部 catch 后 cached 落为 []）。
   void permissionRegistry.load();
+  // FEATURE_004 启动期把 keychain 里的 key 注入 process.env，
+  // 让 KodaX SDK（getProvider）从 env 读到。失败不阻塞启动——provider 配置 UI 仍能用
+  void providerConfigStore.load().then(() => injectAllKeysToEnv()).catch((err) => {
+    console.error('[main] inject keychain keys to env failed:', err instanceof Error ? err.message : err);
+  });
   createMainWindow();
 
   app.on('activate', () => {

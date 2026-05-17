@@ -34,6 +34,15 @@ import {
   permissionListChannel,
   permissionRevokeChannel,
 } from './permission.js';
+import {
+  providerListChannel,
+  providerSetKeyChannel,
+  providerRemoveKeyChannel,
+  providerTestChannel,
+  providerSetDefaultChannel,
+  providerAddCustomChannel,
+  providerRemoveCustomChannel,
+} from './provider.js';
 
 export const invokeChannels = {
   [versionChannel.name]: versionChannel,
@@ -50,6 +59,13 @@ export const invokeChannels = {
   [permissionAnswerChannel.name]: permissionAnswerChannel,
   [permissionListChannel.name]: permissionListChannel,
   [permissionRevokeChannel.name]: permissionRevokeChannel,
+  [providerListChannel.name]: providerListChannel,
+  [providerSetKeyChannel.name]: providerSetKeyChannel,
+  [providerRemoveKeyChannel.name]: providerRemoveKeyChannel,
+  [providerTestChannel.name]: providerTestChannel,
+  [providerSetDefaultChannel.name]: providerSetDefaultChannel,
+  [providerAddCustomChannel.name]: providerAddCustomChannel,
+  [providerRemoveCustomChannel.name]: providerRemoveCustomChannel,
 } as const;
 
 export const pushChannels = {

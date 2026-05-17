@@ -13,6 +13,7 @@
 import { create } from 'zustand';
 import type {
   Project,
+  ProviderInfo,
   SessionMeta,
   SessionEvent,
   PermissionRequestPayload,
@@ -48,6 +49,10 @@ interface AppState {
    */
   permissionQueue: readonly PermissionRequestPayload[];
 
+  /** Provider catalog（built-in + custom）+ configured 状态。FEATURE_004。*/
+  providers: readonly ProviderInfo[];
+  defaultProviderId: string | null;
+
   // ----- actions -----
   setProjects(projects: readonly Project[]): void;
   setCurrentProject(path: string | null): void;
@@ -60,6 +65,7 @@ interface AppState {
   enqueuePermission(req: PermissionRequestPayload): void;
   /** 用户决策完 / main 端 cancel 推过来 / session 删除 — 都从队列里挪走。*/
   dequeuePermission(reqId: string): void;
+  setProviders(providers: readonly ProviderInfo[], defaultProviderId: string | null): void;
   /** 切项目时清空当前 session 选择和事件 buffer（事件留主进程的；renderer 只清缓存）。*/
   resetSessionView(): void;
 }
@@ -75,6 +81,8 @@ export const useAppStore = create<AppState>((set) => ({
   eventsBySession: {},
   userMessagesBySession: {},
   permissionQueue: [],
+  providers: [],
+  defaultProviderId: null,
 
   setProjects: (projects) => set({ projects }),
   setCurrentProject: (path) => set({ currentProjectPath: path }),
@@ -146,6 +154,8 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({
       permissionQueue: state.permissionQueue.filter((p) => p.reqId !== reqId),
     })),
+
+  setProviders: (providers, defaultProviderId) => set({ providers, defaultProviderId }),
 
   resetSessionView: () =>
     set({

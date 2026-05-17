@@ -24,12 +24,17 @@ import { ProjectPicker } from './features/project/ProjectPicker.js';
 import { SessionList } from './features/session/SessionList.js';
 import { EventStream } from './features/session/EventStream.js';
 import { PermissionModal } from './features/permission/PermissionModal.js';
+import { ProviderSettings } from './features/provider/ProviderSettings.js';
 
 export default function App(): JSX.Element {
   const [version, setVersion] = useState<SpaceVersionOutput | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
   const appendEvent = useAppStore((s) => s.appendEvent);
   const enqueuePermission = useAppStore((s) => s.enqueuePermission);
   const dequeuePermission = useAppStore((s) => s.dequeuePermission);
+  const setProviders = useAppStore((s) => s.setProviders);
+  const providers = useAppStore((s) => s.providers);
+  const defaultProviderId = useAppStore((s) => s.defaultProviderId);
   const unsubsRef = useRef<Array<() => void>>([]);
 
   useEffect(() => {
@@ -39,6 +44,11 @@ export default function App(): JSX.Element {
     // 启动期一次性自检 + 订阅事件流
     bridge.invoke('space.version', undefined).then((result) => {
       if (result.ok) setVersion(result.data);
+    });
+
+    // FEATURE_004 启动时拉一次 provider 列表（main 已经把 keychain 中的 key 注入 env）
+    bridge.invoke('provider.list', undefined).then((result) => {
+      if (result.ok) setProviders(result.data.providers, result.data.defaultProviderId);
     });
 
     // 全局 session.event 订阅——所有 session 共用这个监听，store 按 sessionId 路由
@@ -66,7 +76,20 @@ export default function App(): JSX.Element {
       for (const u of unsubsRef.current) u();
       unsubsRef.current = [];
     };
-  }, [appendEvent, enqueuePermission, dequeuePermission]);
+  }, [appendEvent, enqueuePermission, dequeuePermission, setProviders]);
+
+  // Esc 关 settings 面板
+  useEffect(() => {
+    if (!showSettings) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setShowSettings(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showSettings]);
+
+  const configuredCount = providers.filter((p) => p.configured).length;
+  const defaultProvider = providers.find((p) => p.id === defaultProviderId);
 
   return (
     <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100">
@@ -76,7 +99,18 @@ export default function App(): JSX.Element {
         <span className="text-xs text-zinc-500 font-mono">
           v{version?.spaceVersion ?? '?.?.?'}
         </span>
-        <span className="ml-auto text-[10px] text-zinc-600 font-mono">
+        <button
+          type="button"
+          onClick={() => setShowSettings(true)}
+          className="ml-auto px-2 py-1 text-[11px] rounded bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-zinc-800 flex items-center gap-1.5"
+          title="Provider settings"
+        >
+          <span aria-hidden>⚙</span>
+          <span className="font-mono">
+            {defaultProvider ? defaultProvider.displayName : `${configuredCount}/${providers.length} providers`}
+          </span>
+        </button>
+        <span className="text-[10px] text-zinc-600 font-mono">
           {version
             ? `electron ${version.electronVersion} · chromium ${version.chromeVersion}`
             : 'loading…'}
@@ -93,13 +127,14 @@ export default function App(): JSX.Element {
 
       <footer className="border-t border-zinc-800 px-4 py-1.5 text-[10px] text-zinc-600 flex justify-between flex-shrink-0">
         <span>
-          FEATURE_007 · Mock adapter · docs:{' '}
+          FEATURE_004 · Mock adapter · docs:{' '}
           <code className="font-mono text-zinc-500">docs/HLD.md</code>
         </span>
         <span>{version?.platform ?? ''}</span>
       </footer>
 
       <PermissionModal />
+      {showSettings && <ProviderSettings onClose={() => setShowSettings(false)} />}
     </div>
   );
 }

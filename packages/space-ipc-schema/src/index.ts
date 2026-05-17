@@ -58,6 +58,18 @@ export {
 } from './channels/permission.js';
 
 export {
+  providerListChannel,
+  providerSetKeyChannel,
+  providerRemoveKeyChannel,
+  providerTestChannel,
+  providerSetDefaultChannel,
+  providerAddCustomChannel,
+  providerRemoveCustomChannel,
+  type ProviderInfo,
+  type ProviderProtocol,
+} from './channels/provider.js';
+
+export {
   INVOKE_CHANNEL_NAMES,
   PUSH_CHANNEL_NAMES,
   getInvokeChannel,

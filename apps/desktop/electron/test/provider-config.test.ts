@@ -1,0 +1,196 @@
+// ProviderConfigStore tests — FEATURE_004
+//
+// 验证两个文件（space provider-config.json + custom-providers.json）的
+// 持久化、缓存、并发安全、损坏恢复。
+
+import { test, beforeEach, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { ProviderConfigStore } from '../providers/config.js';
+
+let tmpDir = '';
+let spaceFile = '';
+let customFile = '';
+
+beforeEach(async () => {
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kodax-provider-test-'));
+  spaceFile = path.join(tmpDir, 'space-config.json');
+  customFile = path.join(tmpDir, 'custom.json');
+});
+
+afterEach(async () => {
+  try {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  } catch {
+    // ignore
+  }
+});
+
+function newStore(): ProviderConfigStore {
+  return new ProviderConfigStore(spaceFile, tmpDir, customFile, tmpDir);
+}
+
+test('load: empty when files do not exist', async () => {
+  const store = newStore();
+  await store.load();
+  assert.equal(store.getDefaultProviderId(), null);
+  assert.deepEqual(store.listCustom(), []);
+});
+
+test('setDefault then getDefaultProviderId', async () => {
+  const store = newStore();
+  await store.load();
+  await store.setDefault('anthropic');
+  assert.equal(store.getDefaultProviderId(), 'anthropic');
+});
+
+test('default persists across store reinstantiation', async () => {
+  const s1 = newStore();
+  await s1.load();
+  await s1.setDefault('zhipu-coding');
+
+  const s2 = newStore();
+  await s2.load();
+  assert.equal(s2.getDefaultProviderId(), 'zhipu-coding');
+});
+
+test('clearDefault sets to null', async () => {
+  const store = newStore();
+  await store.load();
+  await store.setDefault('anthropic');
+  await store.clearDefault();
+  assert.equal(store.getDefaultProviderId(), null);
+});
+
+test('addCustom generates custom_<hex> id matching schema regex', async () => {
+  const store = newStore();
+  await store.load();
+  const id = await store.addCustom({
+    displayName: 'My Gateway',
+    protocol: 'openai',
+    baseUrl: 'https://gw.example.com/v1',
+    apiKeyEnv: 'GW_KEY',
+    defaultModel: 'gpt-4o',
+  });
+  assert.match(id, /^custom_[a-f0-9]{8,}$/);
+});
+
+test('addCustom persists provider with all fields', async () => {
+  const store = newStore();
+  await store.load();
+  const id = await store.addCustom({
+    displayName: 'My GW',
+    protocol: 'anthropic',
+    baseUrl: 'https://api.example.com/v1',
+    apiKeyEnv: 'MY_KEY',
+    defaultModel: 'claude-3',
+    models: ['claude-3', 'claude-3-haiku'],
+  });
+  const list = store.listCustom();
+  assert.equal(list.length, 1);
+  assert.equal(list[0].id, id);
+  assert.equal(list[0].displayName, 'My GW');
+  assert.equal(list[0].protocol, 'anthropic');
+  assert.equal(list[0].baseUrl, 'https://api.example.com/v1');
+  assert.deepEqual(list[0].models, ['claude-3', 'claude-3-haiku']);
+});
+
+test('removeCustom returns true for existing, false for missing', async () => {
+  const store = newStore();
+  await store.load();
+  const id = await store.addCustom({
+    displayName: 'X',
+    protocol: 'openai',
+    baseUrl: 'https://x.example.com/v1',
+    apiKeyEnv: 'X_KEY',
+    defaultModel: 'm',
+  });
+  assert.equal(await store.removeCustom(id), true);
+  assert.equal(await store.removeCustom(id), false);
+});
+
+test('removeCustom refuses to remove a built-in id', async () => {
+  const store = newStore();
+  await store.load();
+  assert.equal(await store.removeCustom('anthropic'), false);
+});
+
+test('custom providers persist across store reinstantiation', async () => {
+  const s1 = newStore();
+  await s1.load();
+  await s1.addCustom({
+    displayName: 'P1',
+    protocol: 'openai',
+    baseUrl: 'https://p1.example.com/v1',
+    apiKeyEnv: 'P1_KEY',
+    defaultModel: 'm1',
+  });
+  await s1.addCustom({
+    displayName: 'P2',
+    protocol: 'anthropic',
+    baseUrl: 'https://p2.example.com/v1',
+    apiKeyEnv: 'P2_KEY',
+    defaultModel: 'm2',
+  });
+
+  const s2 = newStore();
+  await s2.load();
+  assert.equal(s2.listCustom().length, 2);
+});
+
+test('corrupted JSON: invalid syntax → falls back to empty + no throw', async () => {
+  await fs.mkdir(tmpDir, { recursive: true });
+  await fs.writeFile(spaceFile, '{not valid', 'utf-8');
+  await fs.writeFile(customFile, 'also not valid', 'utf-8');
+
+  const store = newStore();
+  await store.load();
+  assert.equal(store.getDefaultProviderId(), null);
+  assert.deepEqual(store.listCustom(), []);
+  // 仍能正常写入
+  await store.setDefault('openai');
+  assert.equal(store.getDefaultProviderId(), 'openai');
+});
+
+test('schema-valid-but-wrong-shape: invalid version → empty fallback', async () => {
+  await fs.mkdir(tmpDir, { recursive: true });
+  await fs.writeFile(spaceFile, JSON.stringify({ version: 99, defaultProviderId: 'x' }), 'utf-8');
+  const store = newStore();
+  await store.load();
+  assert.equal(store.getDefaultProviderId(), null);
+});
+
+test('concurrent addCustom: no lost update', async () => {
+  const store = newStore();
+  await store.load();
+  await Promise.all([
+    store.addCustom({
+      displayName: 'A',
+      protocol: 'openai',
+      baseUrl: 'https://a/v1',
+      apiKeyEnv: 'A_KEY',
+      defaultModel: 'm',
+    }),
+    store.addCustom({
+      displayName: 'B',
+      protocol: 'openai',
+      baseUrl: 'https://b/v1',
+      apiKeyEnv: 'B_KEY',
+      defaultModel: 'm',
+    }),
+    store.addCustom({
+      displayName: 'C',
+      protocol: 'openai',
+      baseUrl: 'https://c/v1',
+      apiKeyEnv: 'C_KEY',
+      defaultModel: 'm',
+    }),
+  ]);
+  assert.equal(store.listCustom().length, 3);
+
+  const store2 = newStore();
+  await store2.load();
+  assert.equal(store2.listCustom().length, 3);
+});

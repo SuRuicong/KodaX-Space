@@ -1,0 +1,146 @@
+// Provider 配置 channels — FEATURE_004
+//
+// 数据流：
+//   - 列出 catalog（built-in + custom） : provider.list
+//   - 写 API key（renderer → main → keychain，**永不**回传 key）: provider.setKey
+//   - 删 key                                                  : provider.removeKey
+//   - 测连接（main 自己用 key 试调，renderer 只看结果）       : provider.test
+//   - 设默认 provider                                         : provider.setDefault
+//   - 加自定义 provider（OpenAI-compat / Anthropic-compat）   : provider.addCustom
+//   - 删自定义 provider                                       : provider.removeCustom
+//
+// 重要安全约束：API key **绝不**通过 IPC 回传给 renderer。
+//   - provider.list 只回 `configured: boolean`
+//   - main 进程持有 key（process.env 注入），renderer 永远只知道"是否配置"
+//   - 这是 contextIsolation + sandbox 之外的第三层防御：即使 renderer 被 XSS
+//     污染，attacker 也拿不到 key（因为根本没经过 renderer）
+
+import { z } from 'zod';
+
+// --- 共享：单个 provider 描述 ---
+//
+// `id` 是稳定的标识符（如 'anthropic'、'zhipu-coding'）
+// `displayName` 是 UI 显示用（如 'Anthropic'、'Zhipu Coding Plan'）
+// `apiKeyEnv` 是 SDK 读 key 的 env var（如 'ANTHROPIC_API_KEY'）—— main 用它注入 env
+// `isCustom` 区分 built-in 和用户加的自定义 provider
+// `defaultModel` / `models` 给 SessionCreate 下拉选模型用
+// `protocol` 标识 SDK 协议族（Anthropic / OpenAI / CLI-bridge）—— 自定义 provider 必填
+const providerInfoSchema = z.object({
+  id: z.string().min(1).max(64),
+  displayName: z.string().min(1).max(128),
+  apiKeyEnv: z.string().min(1).max(128),
+  protocol: z.enum(['anthropic', 'openai', 'gemini-cli', 'codex-cli']),
+  defaultModel: z.string().min(1).max(128),
+  models: z.array(z.string().min(1).max(128)).max(64).optional(),
+  configured: z.boolean(),
+  isDefault: z.boolean(),
+  isCustom: z.boolean(),
+  // 自定义 provider 才有；built-in 走 SDK 内置 baseUrl
+  baseUrl: z.string().url().max(512).optional(),
+});
+
+// --- Invoke: provider.list ---
+export const providerListChannel = {
+  name: 'provider.list',
+  direction: 'invoke',
+  input: z.undefined().optional(),
+  output: z.object({
+    providers: z.array(providerInfoSchema),
+    defaultProviderId: z.string().min(1).max(64).nullable(),
+  }),
+} as const;
+
+// --- Invoke: provider.setKey ---
+//
+// API key 上限 4096：足以承载所有已知 provider 的 key（最长的是 Anthropic OAuth token
+// ~200 字符），同时挡 LLM 把整段文本当 key 提交的攻击向量
+export const providerSetKeyChannel = {
+  name: 'provider.setKey',
+  direction: 'invoke',
+  input: z.object({
+    providerId: z.string().min(1).max(64),
+    apiKey: z.string().min(1).max(4096),
+  }),
+  output: z.object({
+    ok: z.boolean(),
+  }),
+} as const;
+
+// --- Invoke: provider.removeKey ---
+export const providerRemoveKeyChannel = {
+  name: 'provider.removeKey',
+  direction: 'invoke',
+  input: z.object({
+    providerId: z.string().min(1).max(64),
+  }),
+  output: z.object({
+    ok: z.boolean(),
+  }),
+} as const;
+
+// --- Invoke: provider.test ---
+//
+// "测连接" = main 用 key 发一个 minimal request（如 GET /v1/models）验证 401 vs 200。
+// 不真发 LLM completion（每次测都烧 token 不合适；不同 provider 的最小调用也不一致）。
+// latencyMs 取 fetch round-trip；error 是脱敏后的失败说明（"unauthorized" / "network error"），
+// **不**回传 HTTP body（可能含 key 回显之类）。
+export const providerTestChannel = {
+  name: 'provider.test',
+  direction: 'invoke',
+  input: z.object({
+    providerId: z.string().min(1).max(64),
+  }),
+  output: z.object({
+    ok: z.boolean(),
+    latencyMs: z.number().int().nonnegative().optional(),
+    error: z.string().max(256).optional(),
+  }),
+} as const;
+
+// --- Invoke: provider.setDefault ---
+export const providerSetDefaultChannel = {
+  name: 'provider.setDefault',
+  direction: 'invoke',
+  input: z.object({
+    providerId: z.string().min(1).max(64),
+  }),
+  output: z.object({
+    ok: z.boolean(),
+  }),
+} as const;
+
+// --- Invoke: provider.addCustom ---
+//
+// 自定义 provider 持久化到 ~/.kodax/config.json（与 KodaX CLI 共享路径）。
+// id 由 main 生成（"custom_<8 hex>"），不接受用户指定—— 避免与 built-in id 冲突。
+export const providerAddCustomChannel = {
+  name: 'provider.addCustom',
+  direction: 'invoke',
+  input: z.object({
+    displayName: z.string().min(1).max(128),
+    protocol: z.enum(['anthropic', 'openai']),
+    baseUrl: z.string().url().max(512),
+    apiKeyEnv: z.string().min(1).max(128),
+    defaultModel: z.string().min(1).max(128),
+    models: z.array(z.string().min(1).max(128)).max(64).optional(),
+  }),
+  output: z.object({
+    ok: z.boolean(),
+    providerId: z.string().min(1).max(64),
+  }),
+} as const;
+
+// --- Invoke: provider.removeCustom ---
+export const providerRemoveCustomChannel = {
+  name: 'provider.removeCustom',
+  direction: 'invoke',
+  input: z.object({
+    providerId: z.string().min(1).max(64),
+  }),
+  output: z.object({
+    ok: z.boolean(),
+  }),
+} as const;
+
+export type ProviderInfo = z.infer<typeof providerInfoSchema>;
+export type ProviderProtocol = ProviderInfo['protocol'];

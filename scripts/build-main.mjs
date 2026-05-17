@@ -39,7 +39,10 @@ const sharedOptions = {
   format: 'cjs',
   sourcemap: isDev ? 'inline' : false,
   minify: !isDev,
-  external: ['electron'],
+  // keytar 是原生模块（native binding），不能被 esbuild bundle；
+  // 必须保持 require('keytar') 在运行时由 Node module 解析。
+  // electron-builder 打包时会把 node_modules/keytar/build/Release/keytar.node 一并塞进。
+  external: ['electron', 'keytar'],
   logLevel: 'info',
 };
 

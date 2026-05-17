@@ -6,12 +6,13 @@
 //   - 点 session 卡片 → setCurrentSession（仅切视图，无 IPC）
 //   - 右键卡片 → 弹 Rename / Delete
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../../store/appStore.js';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 
-const PROVIDERS = ['mock', 'anthropic', 'openai', 'zhipu-coding'] as const;
-type Provider = (typeof PROVIDERS)[number];
+// 'mock' 永远保留——FEATURE_003 Mock adapter 的入口，未配 key 时也能跑通整个流程。
+// 真 provider 列表从 store 拉（FEATURE_004 已注入）。
+const MOCK_PROVIDER = 'mock';
 
 export function SessionList(): JSX.Element {
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
@@ -21,8 +22,32 @@ export function SessionList(): JSX.Element {
   const setCurrentSession = useAppStore((s) => s.setCurrentSession);
   const upsertSession = useAppStore((s) => s.upsertSession);
   const removeSession = useAppStore((s) => s.removeSession);
+  const providers = useAppStore((s) => s.providers);
+  const defaultProviderId = useAppStore((s) => s.defaultProviderId);
   const [creating, setCreating] = useState<boolean>(false);
-  const [provider, setProvider] = useState<Provider>('mock');
+
+  // 下拉选项：Mock 永远第一项；之后按"已配 key 的 provider 在前，未配 key 的在后"
+  const providerOptions = useMemo(() => {
+    const configured = providers.filter((p) => p.configured);
+    const unconfigured = providers.filter((p) => !p.configured);
+    return [
+      { id: MOCK_PROVIDER, displayName: 'Mock (no key needed)', configured: true, isCustom: false },
+      ...configured.map((p) => ({ id: p.id, displayName: p.displayName, configured: true, isCustom: p.isCustom })),
+      ...unconfigured.map((p) => ({ id: p.id, displayName: `${p.displayName} (not configured)`, configured: false, isCustom: p.isCustom })),
+    ];
+  }, [providers]);
+
+  const [provider, setProvider] = useState<string>(MOCK_PROVIDER);
+
+  // 默认 provider 在 store 里就绪后，自动把 picker 切到默认（只在初始 mock 时换；
+  // 用户手动选过其他值就不打扰）
+  useEffect(() => {
+    if (provider === MOCK_PROVIDER && defaultProviderId) {
+      const p = providers.find((x) => x.id === defaultProviderId);
+      if (p?.configured) setProvider(defaultProviderId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultProviderId, providers]);
   // 改名 UI：renaming = 当前正在改的 sessionId；draft = 输入框值。
   // 用 inline 输入而不是 window.prompt——后者在 Electron sandbox=true 下被禁用，会静默失败。
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -118,14 +143,14 @@ export function SessionList(): JSX.Element {
         <div className="flex items-center gap-1">
           <select
             value={provider}
-            onChange={(e) => setProvider(e.target.value as Provider)}
-            className="text-xs bg-zinc-800 border border-zinc-700 text-zinc-300 rounded px-1 py-0.5"
+            onChange={(e) => setProvider(e.target.value)}
+            className="text-xs bg-zinc-800 border border-zinc-700 text-zinc-300 rounded px-1 py-0.5 max-w-[160px]"
             disabled={!currentProjectPath}
             title="Provider for new sessions"
           >
-            {PROVIDERS.map((p) => (
-              <option key={p} value={p}>
-                {p}
+            {providerOptions.map((p) => (
+              <option key={p.id} value={p.id} disabled={!p.configured && p.id !== MOCK_PROVIDER}>
+                {p.displayName}
               </option>
             ))}
           </select>
