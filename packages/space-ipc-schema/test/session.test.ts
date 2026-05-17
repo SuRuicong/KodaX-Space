@@ -144,6 +144,39 @@ test('session.event payload: harness_profile rejects unknown profile', () => {
   assert.equal(sessionEventChannel.payload.safeParse(evt).success, false);
 });
 
+// --- review F008 C2-sec: providerId format guard ---
+
+test('session.create input accepts mock / builtin / custom_<16hex>', () => {
+  const valid = ['mock', 'anthropic', 'zhipu-coding', 'custom_0123456789abcdef'];
+  for (const p of valid) {
+    const r = sessionCreateChannel.input.safeParse({
+      projectRoot: '/root',
+      provider: p,
+    });
+    assert.equal(r.success, true, `should accept ${p}`);
+  }
+});
+
+test('session.create input rejects malformed providerId', () => {
+  const invalid = [
+    '../../etc/passwd',
+    '<script>alert(1)</script>',
+    'custom_short',
+    'custom_NOTHEX0000000000',
+    'Anthropic', // uppercase
+    'has space',
+    '-leading-dash',
+    'with_underscore',
+  ];
+  for (const p of invalid) {
+    const r = sessionCreateChannel.input.safeParse({
+      projectRoot: '/root',
+      provider: p,
+    });
+    assert.equal(r.success, false, `should reject ${p}`);
+  }
+});
+
 // ---- Size caps (review fix) ----
 
 test('session.send rejects prompt over 1 MB (DoS guard)', () => {

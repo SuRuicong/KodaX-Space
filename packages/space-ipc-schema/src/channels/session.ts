@@ -11,6 +11,21 @@ import { z } from 'zod';
 // ---- Reasoning mode (镜像 @kodax-ai/llm 的 KodaXReasoningMode 闭集) ----
 const reasoningModeSchema = z.enum(['off', 'auto', 'quick', 'balanced', 'deep']);
 
+// ---- Provider ID (review F008 C2-sec)
+//
+// 限制 providerId 字符集到合法形态的并集——避免任意字符串混进 ManagedSession.provider 字段
+// （`../../etc/passwd`、`%00injected`、`<script>` 等）。三类合法 ID：
+//   - 'mock'                      — FEATURE_003 Mock adapter 入口
+//   - kebab-case 字母数字          — built-in（'anthropic'、'zhipu-coding' 等）
+//   - 'custom_' + 16 hex          — 用户自定义（F004 randomBytes(8).hex()）
+//
+// 与 ProviderConfigStore.addCustom 生成的 ID 格式严格对齐
+const providerIdSchema = z.union([
+  z.literal('mock'),
+  z.string().regex(/^[a-z][a-z0-9-]{0,62}$/, { message: 'providerId must be kebab-case' }),
+  z.string().regex(/^custom_[a-f0-9]{16}$/),
+]);
+
 // ---- 尺寸上限：防 IPC 通道被超大 payload 拖垮（DoS / 内存炸） ----
 //
 // MAX_PROMPT_BYTES: 1 MB——比常见编辑器粘贴 + 整文件投喂的上限宽松，足以承载真实
@@ -32,7 +47,7 @@ const MAX_TOOL_RESULT = 524_288;
 const sessionMetaSchema = z.object({
   sessionId: z.string().min(1),
   projectRoot: z.string().min(1),
-  provider: z.string().min(1),
+  provider: providerIdSchema,
   reasoningMode: reasoningModeSchema,
   title: z.string().max(256).optional(),
   createdAt: z.number().int().nonnegative(),
@@ -46,7 +61,7 @@ export const sessionCreateChannel = {
   direction: 'invoke',
   input: z.object({
     projectRoot: z.string().min(1),
-    provider: z.string().min(1),
+    provider: providerIdSchema,
     reasoningMode: reasoningModeSchema.optional(),
   }),
   output: z.object({
@@ -146,12 +161,16 @@ export const sessionSetReasoningModeChannel = {
 // 切 provider 同样不重启 session——下一条 prompt 走新 provider。Real adapter 接入后
 // 会重新 import provider class 并 swap LLM client。
 // providerId 必须是 built-in 或 custom_<hex> ('mock' 也允许——FEATURE_003 兼容)
+//
+// 注意：schema 只验格式；main 端 handler 必须再做"是否实际存在于 catalog/custom" 检查
+// （review F008 C1-sec）。否则 attacker 可让 session 指向永不存在的 custom_ID，
+// real adapter 接入后会静默 fallback 或抛错
 export const sessionSetProviderChannel = {
   name: 'session.setProvider',
   direction: 'invoke',
   input: z.object({
     sessionId: z.string().min(1),
-    providerId: z.string().min(1).max(64),
+    providerId: providerIdSchema,
   }),
   output: z.object({
     ok: z.boolean(),
@@ -237,6 +256,9 @@ export const sessionEventChannel = {
     z.object({
       kind: z.literal('work_budget'),
       sessionId: z.string().min(1),
+      // 注：schema 不强制 used <= cap（zod discriminatedUnion 不接受 refined 分支）。
+      // 不变量在 main 端 pushToRenderer 推送前 clamp 一次（review M-code-3）：
+      // 万一 real adapter 推了不合理值，前端不会显示 "Work 250/200" 这种比例
       used: z.number().int().nonnegative().max(1_000_000),
       cap: z.number().int().positive().max(1_000_000),
     }),

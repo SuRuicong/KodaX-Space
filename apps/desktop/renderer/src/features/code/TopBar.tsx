@@ -14,7 +14,6 @@
 // 切 reasoning mode 不变 model。换 model 待 F008-extended chore 做（不在本期）。
 
 import { useState } from 'react';
-import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
 import { WorkBudget } from './WorkBudget.js';
 import { HarnessBadge } from './HarnessBadge.js';
@@ -22,35 +21,53 @@ import { HarnessBadge } from './HarnessBadge.js';
 const REASONING_MODES = ['off', 'auto', 'quick', 'balanced', 'deep'] as const;
 type ReasoningMode = (typeof REASONING_MODES)[number];
 
+function isReasoningMode(v: string): v is ReasoningMode {
+  return (REASONING_MODES as readonly string[]).includes(v);
+}
+
 const MOCK_PROVIDER = 'mock';
 
 interface TopBarProps {
-  readonly session: SessionMeta;
+  readonly sessionId: string;
 }
 
-export function TopBar({ session }: TopBarProps): JSX.Element {
+/**
+ * review F008 M-code-2：session 从 store 直接读，不再走 prop——避免父组件
+ * stale closure 把旧 session 传下来导致 TopBar 显示一帧旧 provider 值。
+ * 同源数据 + Zustand selector 重渲染保证最新值。
+ */
+export function TopBar({ sessionId }: TopBarProps): JSX.Element | null {
+  const session = useAppStore((s) => s.sessions.find((x) => x.sessionId === sessionId) ?? null);
   const providers = useAppStore((s) => s.providers);
-  const budget = useAppStore((s) => s.workBudgetBySession[session.sessionId]);
-  const harness = useAppStore((s) => s.harnessProfileBySession[session.sessionId]);
+  const budget = useAppStore((s) => s.workBudgetBySession[sessionId]);
+  const harness = useAppStore((s) => s.harnessProfileBySession[sessionId]);
   const upsertSession = useAppStore((s) => s.upsertSession);
 
-  const [busy, setBusy] = useState(false);
+  // review H1-code：原本一个 busy 变量被两个 dropdown 共用——快速连点同一 dropdown
+  // 时第二个 finally 会提前清 busy，留个"看起来 enable 但 IPC 还在飞"的窗口。
+  // 拆成两个独立状态，互不干扰
+  const [providerBusy, setProviderBusy] = useState(false);
+  const [reasoningBusy, setReasoningBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // 同 SessionList：Mock 第一，已配的在前，未配的 disabled
+  if (!session) return null;
+
+  // 同 SessionList：Mock 第一，已配的在前，未配的 disabled。
+  // review L2-code：过滤掉任何 id==='mock' 的 store 条目，避免与硬编码 mock 重复
+  const realProviders = providers.filter((p) => p.id !== MOCK_PROVIDER);
   const providerOptions = [
     { id: MOCK_PROVIDER, displayName: 'Mock', configured: true },
-    ...providers
+    ...realProviders
       .filter((p) => p.configured)
       .map((p) => ({ id: p.id, displayName: p.displayName, configured: true })),
-    ...providers
+    ...realProviders
       .filter((p) => !p.configured)
       .map((p) => ({ id: p.id, displayName: `${p.displayName} (not configured)`, configured: false })),
   ];
 
   async function handleProviderChange(providerId: string): Promise<void> {
-    if (!window.kodaxSpace || providerId === session.provider) return;
-    setBusy(true);
+    if (!window.kodaxSpace || providerId === session.provider || providerBusy) return;
+    setProviderBusy(true);
     setErr(null);
     try {
       const result = await window.kodaxSpace.invoke('session.setProvider', {
@@ -64,26 +81,29 @@ export function TopBar({ session }: TopBarProps): JSX.Element {
       // 乐观更新本地 session meta——下次 session.list 拉到的就是新值
       upsertSession({ ...session, provider: providerId });
     } finally {
-      setBusy(false);
+      setProviderBusy(false);
     }
   }
 
-  async function handleReasoningChange(mode: ReasoningMode): Promise<void> {
-    if (!window.kodaxSpace || mode === session.reasoningMode) return;
-    setBusy(true);
+  async function handleReasoningChange(value: string): Promise<void> {
+    // review L2-sec：select option 虽然是硬编码，但仍走 runtime guard——
+    // 防止某天 select 改成自由文本输入或其他事件源
+    if (!isReasoningMode(value)) return;
+    if (!window.kodaxSpace || value === session.reasoningMode || reasoningBusy) return;
+    setReasoningBusy(true);
     setErr(null);
     try {
       const result = await window.kodaxSpace.invoke('session.setReasoningMode', {
         sessionId: session.sessionId,
-        mode,
+        mode: value,
       });
       if (!result.ok) {
         setErr(`${result.error.code}: ${result.error.message}`);
         return;
       }
-      upsertSession({ ...session, reasoningMode: mode });
+      upsertSession({ ...session, reasoningMode: value });
     } finally {
-      setBusy(false);
+      setReasoningBusy(false);
     }
   }
 
@@ -93,7 +113,7 @@ export function TopBar({ session }: TopBarProps): JSX.Element {
       <select
         value={session.provider}
         onChange={(e) => void handleProviderChange(e.target.value)}
-        disabled={busy}
+        disabled={providerBusy}
         className="bg-zinc-900 border border-zinc-800 text-zinc-200 rounded px-1.5 py-0.5 max-w-[180px]"
         title="Provider for next prompt"
       >
@@ -124,8 +144,8 @@ export function TopBar({ session }: TopBarProps): JSX.Element {
         <span className="text-[10px] text-zinc-500 font-mono uppercase">Reasoning</span>
         <select
           value={session.reasoningMode}
-          onChange={(e) => void handleReasoningChange(e.target.value as ReasoningMode)}
-          disabled={busy}
+          onChange={(e) => void handleReasoningChange(e.target.value)}
+          disabled={reasoningBusy}
           className="bg-zinc-900 border border-zinc-800 text-zinc-200 rounded px-1.5 py-0.5"
           title="Reasoning mode for next prompt"
         >

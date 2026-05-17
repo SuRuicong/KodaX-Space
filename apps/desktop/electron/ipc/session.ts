@@ -7,12 +7,27 @@ import path from 'node:path';
 import { registerChannel } from './register.js';
 import { validateProjectRoot } from './validate.js';
 import { kodaxHost } from '../kodax/host.js';
+import { isBuiltinId } from '../providers/catalog.js';
+import { providerConfigStore } from '../providers/config.js';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
+
+/**
+ * 校验 providerId 实际存在于 catalog / custom-providers / 是 'mock'。
+ * review F008 C1-sec：schema 只验格式，不验存在性——必须 main 端再过一层。
+ */
+async function assertProviderExists(providerId: string): Promise<void> {
+  if (providerId === 'mock') return;
+  if (isBuiltinId(providerId)) return;
+  await providerConfigStore.load();
+  if (providerConfigStore.getCustom(providerId)) return;
+  throw new Error(`unknown providerId: ${providerId}`);
+}
 
 export function registerSessionChannels(): void {
   // session.create
-  registerChannel('session.create', (input) => {
+  registerChannel('session.create', async (input) => {
     const projectRoot = validateProjectRoot(input.projectRoot);
+    await assertProviderExists(input.provider);
     const { sessionId, createdAt } = kodaxHost.createSession({
       projectRoot,
       provider: input.provider,
@@ -93,7 +108,9 @@ export function registerSessionChannels(): void {
   });
 
   // session.setProvider — F008
-  registerChannel('session.setProvider', (input) => {
+  // 必须先验 providerId 真实存在——schema 只验格式，不验 catalog（review C1-sec）
+  registerChannel('session.setProvider', async (input) => {
+    await assertProviderExists(input.providerId);
     const ok = kodaxHost.setProvider(input.sessionId, input.providerId);
     return { ok };
   });

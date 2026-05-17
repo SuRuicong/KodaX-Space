@@ -65,8 +65,9 @@ export function EventStream(): JSX.Element {
         </code>
       </div>
 
-      {/* F008 顶栏：provider / Work / harness / reasoning */}
-      <TopBar session={session} />
+      {/* F008 顶栏：provider / Work / harness / reasoning。TopBar 自己从 store 读 session
+          以避免 stale prop（review M-code-2） */}
+      <TopBar sessionId={currentSessionId} />
 
       <ConversationStream sessionId={currentSessionId} />
 

@@ -13,6 +13,7 @@ import type {
   PermissionRequestFn,
   SessionCreateOptions,
 } from './session-adapter.js';
+import { sanitizeForDisplay } from '../permission/sanitize.js';
 
 const CHUNK_DELAY_MS = 35;
 
@@ -115,11 +116,13 @@ export class MockKodaXSession implements ManagedSession {
   private async runMockStream(prompt: string, signal: AbortSignal): Promise<void> {
     const sid = this.sessionId;
     try {
-      // F008: 起步先推 harness profile + 初始 work budget
+      // F008: 起步先推 harness profile + 初始 work budget。
+      // review M-code-1：所有 keyword 都加 \b 单词边界——避免 "unreviewed" / "testing"
+      // 等子串误触发，让测试 fixture 更稳。
       const profile: 'H0_DIRECT' | 'H1_EXECUTE_EVAL' | 'H2_PLAN_EXECUTE_EVAL' =
-        /\bplan\b|architect|design/i.test(prompt)
+        /\b(plan|architect|design)\b/i.test(prompt)
           ? 'H2_PLAN_EXECUTE_EVAL'
-          : /\bcheck\b|review|test/i.test(prompt)
+          : /\b(check|review|test)\b/i.test(prompt)
             ? 'H1_EXECUTE_EVAL'
             : 'H0_DIRECT';
       this.emit({
@@ -133,9 +136,12 @@ export class MockKodaXSession implements ManagedSession {
       this.emit({ kind: 'thinking_delta', sessionId: sid, text: 'analysing prompt...' });
       await sleep(CHUNK_DELAY_MS, signal);
 
+      // review M1-sec：剥 prompt 中的控制字符 / RTL / 零宽——renderer 把这段直接显示，
+      // 也避免未来结构化日志被 ANSI escape 等污染。同 sanitize.ts 同款策略
+      const safePromptSnippet = sanitizeForDisplay(prompt, 60);
       const replyChunks = [
         '我收到了你的 prompt: ',
-        `"${prompt.slice(0, 60)}${prompt.length > 60 ? '…' : ''}"`,
+        `"${safePromptSnippet}"`,
         '\n\n',
         '这是 FEATURE_003 阶段的 Mock 回应——',
         '验证 IPC 事件流从 main 到 renderer 完整跑通。',
@@ -178,6 +184,9 @@ export class MockKodaXSession implements ManagedSession {
           maxIter: 30,
           tokenCount: 800,
         });
+        // review L1-code：deny 路径也推一次最终 budget，避免 UI 停留在初始 2/200
+        // 让用户疑惑"我拒绝了却看起来没消耗"
+        this.emit({ kind: 'work_budget', sessionId: sid, used: 8, cap: 200 });
         this.emit({ kind: 'session_complete', sessionId: sid });
         return;
       }

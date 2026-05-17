@@ -35,6 +35,21 @@ export function pushToRenderer<C extends PushChannelName>(channel: C, payload: P
     console.error(`[push] no schema for channel: ${channel}`);
     return;
   }
+  // review F008 M-code-3：work_budget.used > cap 是不变量违反。schema 没法 enforce
+  // （zod discriminatedUnion 不接受 refined 分支），这里在 push 前 clamp + warn。
+  // 用 unknown 转换 + duck typing 避开 narrow——这层就是兜底
+  if (channel === 'session.event' && payload && typeof payload === 'object') {
+    const p = payload as { kind?: unknown; used?: unknown; cap?: unknown };
+    if (
+      p.kind === 'work_budget' &&
+      typeof p.used === 'number' &&
+      typeof p.cap === 'number' &&
+      p.used > p.cap
+    ) {
+      console.warn(`[push] work_budget used (${p.used}) > cap (${p.cap}); clamping`);
+      p.used = p.cap;
+    }
+  }
   const parsed = def.payload.safeParse(payload);
   if (!parsed.success) {
     // 只打 issue paths，不打值——payload 在 Real adapter 接入后可能携带 prompt / API key / 文件内容
