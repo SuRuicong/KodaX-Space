@@ -11,7 +11,7 @@
 //   - reason 字段已在 main 端限到 512 字；这里多套一层 truncate 防止极端长 string 撑爆 modal
 //   - typed-confirm 比较用 trim() 后大小写敏感等值——避免 "Confirm" / " CONFIRM " 通过
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   PermissionDecision,
   PermissionRisk,
@@ -59,6 +59,44 @@ export function PermissionModal(): JSX.Element | null {
     }
   }, [head]);
 
+  // 提前算这些 derived state，answer/keydown 都要用
+  const style = head ? RISK_STYLE[head.risk] : null;
+  const isDanger = head?.risk === 'danger';
+  const dangerConfirmed = !isDanger || confirmText.trim() === DANGER_CONFIRM_PHRASE;
+
+  // review M3-code：用 useCallback 锁住 answer 的依赖关系，避免 keydown handler
+  // 闭包陈旧的风险（queue shift 时仍调用陈旧 head 的 answer）
+  const answer = useCallback(
+    async (decision: PermissionDecision): Promise<void> => {
+      if (!head || !window.kodaxSpace) return;
+      if (busy) return;
+      if (decision !== 'deny' && !dangerConfirmed) return;
+      setBusy(true);
+      setErr(null);
+      try {
+        // review C2-sec：不再发 pattern 字段——main 端用自己生成的 trustedPattern。
+        // renderer 只能 toggle decision（deny / allow_once / allow_always）。
+        // suggestedPattern 仍然存在但只用于 UI 显示（"Always allow bash:npm" 的文字）。
+        const result = await window.kodaxSpace.invoke('permission.answer', {
+          reqId: head.reqId,
+          decision,
+        });
+        if (!result.ok) {
+          setErr(`${result.error.code}: ${result.error.message}`);
+          setBusy(false);
+          return;
+        }
+        // result.data.accepted=false 表示 main 端已经把这条 reqId 撤回（超时 / session 取消）；
+        // 视觉上同样 dequeue——弹窗已无意义
+        dequeue(head.reqId);
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e));
+        setBusy(false);
+      }
+    },
+    [head, busy, dangerConfirmed, dequeue],
+  );
+
   // Escape = deny；Enter = allow_once（仅非危险时）
   useEffect(() => {
     if (!head) return;
@@ -71,40 +109,9 @@ export function PermissionModal(): JSX.Element | null {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [head?.reqId, busy]);
+  }, [head, busy, answer]);
 
-  if (!head) return null;
-
-  const style = RISK_STYLE[head.risk];
-  const isDanger = head.risk === 'danger';
-  const dangerConfirmed = !isDanger || confirmText.trim() === DANGER_CONFIRM_PHRASE;
-
-  async function answer(decision: PermissionDecision): Promise<void> {
-    if (!head || !window.kodaxSpace) return;
-    if (busy) return;
-    if (decision !== 'deny' && !dangerConfirmed) return;
-    setBusy(true);
-    setErr(null);
-    try {
-      const result = await window.kodaxSpace.invoke('permission.answer', {
-        reqId: head.reqId,
-        decision,
-        pattern: decision === 'allow_always' ? head.suggestedPattern : undefined,
-      });
-      if (!result.ok) {
-        setErr(`${result.error.code}: ${result.error.message}`);
-        setBusy(false);
-        return;
-      }
-      // result.data.accepted=false 表示 main 端已经把这条 reqId 撤回（超时 / session 取消）；
-      // 视觉上同样 dequeue——弹窗已无意义
-      dequeue(head.reqId);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-      setBusy(false);
-    }
-  }
+  if (!head || !style) return null;
 
   return (
     <div

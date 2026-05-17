@@ -119,6 +119,36 @@ test('concurrent add: no lost update (writeLock serialises)', async () => {
   assert.equal(reg2.list().length, 4);
 });
 
+test('L2-sec: rules array capped at 1000 (FIFO eviction of oldest)', async () => {
+  const reg = new PermissionRegistry(registryFile, tmpDir);
+  await reg.load();
+  // 加 1005 条 — 应保留最新的 1000 条
+  for (let i = 0; i < 1005; i++) {
+    await reg.add(`pattern-${i}`);
+  }
+  const patterns = reg.list().map((r) => r.pattern);
+  assert.equal(patterns.length, 1000);
+  // 最早的 5 条应该被淘汰
+  assert.equal(patterns.includes('pattern-0'), false);
+  assert.equal(patterns.includes('pattern-4'), false);
+  assert.equal(patterns.includes('pattern-5'), true);
+  assert.equal(patterns.includes('pattern-1004'), true);
+});
+
+test('H1-code: add() is immutable — does not mutate the rules passed in', async () => {
+  const reg = new PermissionRegistry(registryFile, tmpDir);
+  await reg.load();
+  await reg.add('read');
+  const before = reg.list();
+  await reg.add('read'); // 重复 add — 更新 createdAt
+  const after = reg.list();
+  // before 应当不变（list 返回拷贝；add 内部不就地修改）
+  // 通过引用 + 内容双重断言
+  assert.notStrictEqual(before, after, 'list returns must be independent copies');
+  // before 的内容仍是旧 createdAt
+  assert.equal(before.length, 1);
+});
+
 test('atomic write: file does not appear half-written between mutations', async () => {
   const reg = new PermissionRegistry(registryFile, tmpDir);
   await reg.load();

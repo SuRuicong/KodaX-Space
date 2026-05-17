@@ -173,6 +173,123 @@ test('allow_always: cached rule pre-empts second request (same pattern, no push)
   assert.equal(result.decision, 'allow_once');
 });
 
+test('C2-sec: broker.peek returns trustedPattern from pending entry', async () => {
+  const pending = permissionBroker.request({
+    sessionId: 's1',
+    toolId: 't1',
+    toolName: 'bash',
+    input: { command: 'npm install' },
+  });
+  await new Promise((r) => setImmediate(r));
+  const { reqId } = lastRequest();
+  const meta = permissionBroker.peek(reqId);
+  assert.ok(meta);
+  assert.equal(meta.trustedPattern, 'bash:npm');
+
+  permissionBroker.resolve(reqId, 'deny');
+  await pending; // 收尾
+});
+
+test('C2-sec: broker.peek returns undefined trustedPattern for danger commands', async () => {
+  const pending = permissionBroker.request({
+    sessionId: 's1',
+    toolId: 't1',
+    toolName: 'bash',
+    input: { command: 'rm -rf /' },
+  });
+  await new Promise((r) => setImmediate(r));
+  const { reqId } = lastRequest();
+  const meta = permissionBroker.peek(reqId);
+  assert.ok(meta);
+  assert.equal(meta.trustedPattern, undefined);
+
+  permissionBroker.resolve(reqId, 'deny');
+  await pending;
+});
+
+test('C2-sec: resolve with allow_always uses trustedPattern (renderer cannot influence)', async () => {
+  const pending = permissionBroker.request({
+    sessionId: 's1',
+    toolId: 't1',
+    toolName: 'read',
+    input: { path: 'a' },
+  });
+  await new Promise((r) => setImmediate(r));
+  const { reqId } = lastRequest();
+  permissionBroker.resolve(reqId, 'allow_always');
+  const result = await pending;
+  assert.equal(result.decision, 'allow_always');
+  assert.equal(result.pattern, 'read'); // 取自 broker 生成的 suggestedPattern
+});
+
+test('M2-sec: cancelAll pushes permission.cancelled for each pending', async () => {
+  const p1 = permissionBroker.request({
+    sessionId: 's1',
+    toolId: 't1',
+    toolName: 'read',
+    input: { path: 'a' },
+  });
+  const p2 = permissionBroker.request({
+    sessionId: 's2',
+    toolId: 't2',
+    toolName: 'read',
+    input: { path: 'b' },
+  });
+  await new Promise((r) => setImmediate(r));
+  captured.length = 0; // 清掉 .request 推送，只看 cancelled
+
+  permissionBroker.cancelAll('shutdown');
+  const r1 = await p1;
+  const r2 = await p2;
+  assert.equal(r1.decision, 'deny');
+  assert.equal(r2.decision, 'deny');
+
+  const cancelled = captured.filter((c) => c.channel === 'permission.cancelled');
+  assert.equal(cancelled.length, 2);
+  for (const c of cancelled) {
+    const p = c.payload as { reason: string };
+    assert.equal(p.reason, 'shutdown');
+  }
+});
+
+test('H3-sec: pushed permission.request has sanitized toolName (RTL stripped)', async () => {
+  const pending = permissionBroker.request({
+    sessionId: 's1',
+    toolId: 't1',
+    toolName: '‮read', // RTL override + read
+    input: { path: 'normal.txt' },
+  });
+  await new Promise((r) => setImmediate(r));
+  const evt = captured.find((c) => c.channel === 'permission.request');
+  assert.ok(evt);
+  const p = evt.payload as { toolCall: { toolName: string } };
+  // RTL 必须被剥掉
+  assert.equal(p.toolCall.toolName, 'read');
+
+  const { reqId } = lastRequest();
+  permissionBroker.resolve(reqId, 'deny');
+  await pending;
+});
+
+test('H3-sec: pushed input strings are sanitized', async () => {
+  const pending = permissionBroker.request({
+    sessionId: 's1',
+    toolId: 't1',
+    toolName: 'read',
+    input: { path: '‮src/main.ts', mode: 'r\x00w' },
+  });
+  await new Promise((r) => setImmediate(r));
+  const evt = captured.find((c) => c.channel === 'permission.request');
+  assert.ok(evt);
+  const p = evt.payload as { toolCall: { input?: Record<string, unknown> } };
+  assert.equal(p.toolCall.input?.path, 'src/main.ts');
+  assert.equal(p.toolCall.input?.mode, 'rw');
+
+  const { reqId } = lastRequest();
+  permissionBroker.resolve(reqId, 'deny');
+  await pending;
+});
+
 test('danger overrides rule: even with bash rule cached, rm -rf still pops modal', async () => {
   // 用户曾经批准过 "bash:rm" 这种规则（极不该有，但假设有）
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

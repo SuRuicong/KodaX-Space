@@ -15,6 +15,7 @@ import { registerPermissionChannels } from './ipc/permission.js';
 import { setRendererTarget } from './ipc/push.js';
 import { kodaxHost } from './kodax/host.js';
 import { permissionRegistry } from './permission/registry.js';
+import { permissionBroker } from './permission/broker.js';
 
 // CJS 输出（见 scripts/build-main.mjs），__dirname 是原生 Node 全局
 // 不用 import.meta.url（CJS 下不可用）
@@ -162,7 +163,12 @@ app.on('window-all-closed', () => {
 // 关闭前清空所有活跃 session——Mock 阶段只是 abort 内存里的 AbortController，
 // Real adapter 接入后会负责 kill 工具子进程、关 FileSessionStorage 句柄、断 HTTP 流。
 // 不放在 will-quit 是因为那时 event loop 即将停，async dispose 容易跑不完。
+//
+// review H3-code（2026-05-17）：先 cancelAll pending 权限请求——disposeAll 会
+// 逐 session cancelSession，但循环被打断时（before-quit 第二次触发等）仍有 pending
+// 可能残留。先一把扫光，幂等
 app.on('before-quit', (event) => {
+  permissionBroker.cancelAll('shutdown');
   if (kodaxHost.list().length === 0) return;
   event.preventDefault();
   void kodaxHost

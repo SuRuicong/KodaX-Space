@@ -26,9 +26,13 @@ const ruleSchema = z.object({
   createdAt: z.number().int().nonnegative(),
 });
 
+// review L2-sec：rules 数组上限 1000——防止 LLM 反复诱导用户 allow_always 后
+// permissions.json 无限增长（matches() 是线性扫描，10k+ 规则会拖慢每次工具调用）。
+// 实际场景一个用户 10 条规则就算多，1000 留足够 buffer 且不构成 DoS
+const MAX_RULES = 1000;
 const fileSchema = z.object({
   version: z.literal(1),
-  rules: z.array(ruleSchema),
+  rules: z.array(ruleSchema).max(MAX_RULES),
 });
 
 export type PermissionRule = z.infer<typeof ruleSchema>;
@@ -90,16 +94,24 @@ export class PermissionRegistry {
   /**
    * 新增一条 always-allow 规则。pattern 已存在则更新 createdAt（重复批准视为续约）。
    * load() 必须先跑过。
+   *
+   * review H1-code（2026-05-17）：完全 immutable 更新——与 remove() 的 filter 风格一致，
+   * 避免 cached 与 mutate 回调入参同引用的潜在 bug
    */
   async add(pattern: string): Promise<void> {
     await this.mutate((rules) => {
+      const next = { pattern, createdAt: Date.now() };
       const idx = rules.findIndex((r) => r.pattern === pattern);
       if (idx >= 0) {
-        rules[idx] = { pattern, createdAt: Date.now() };
-      } else {
-        rules.push({ pattern, createdAt: Date.now() });
+        return [...rules.slice(0, idx), next, ...rules.slice(idx + 1)];
       }
-      return rules;
+      // review L2-sec：达到上限时丢弃最老的（FIFO 淘汰），保证总条数恒定 ≤ MAX_RULES
+      if (rules.length >= MAX_RULES) {
+        // 按 createdAt 升序排，删最老的；保留 MAX_RULES-1 条 + 本次新增 = MAX_RULES
+        const sorted = [...rules].sort((a, b) => a.createdAt - b.createdAt);
+        return [...sorted.slice(1), next];
+      }
+      return [...rules, next];
     });
   }
 
@@ -138,25 +150,43 @@ export class PermissionRegistry {
     return next;
   }
 
-  /** 原子写：tmp → rename。锁内调用。*/
+  /**
+   * 原子写：tmp → rename。锁内调用。
+   *
+   * review H2-sec（2026-05-17）：Windows EEXIST/EPERM fallback 之前用
+   * copyFile + unlink，copyFile 本身不原子——并发 load 时可能读到半写文件。
+   * 现在改成"短暂重试 rename"：Windows 上 EEXIST/EPERM 通常是目标被 av/IDE 短暂占用，
+   * 50ms 后重试 3 次几乎总能成功。仍失败则抛错让上层重试整个 mutate。
+   */
   private async persistLocked(rules: PermissionRule[]): Promise<void> {
     await fs.mkdir(this.dir, { recursive: true, mode: 0o700 });
     const payload: z.infer<typeof fileSchema> = { version: 1, rules };
     const data = JSON.stringify(payload, null, 2);
     const tmp = `${this.filePath}.${process.pid}.tmp`;
     await fs.writeFile(tmp, data, { encoding: 'utf-8', mode: 0o600 });
-    try {
-      await fs.rename(tmp, this.filePath);
-    } catch (err) {
-      // Windows 偶发 EEXIST/EPERM — 退化为 copy + unlink
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === 'EEXIST' || code === 'EPERM') {
-        await fs.copyFile(tmp, this.filePath);
-        await fs.unlink(tmp).catch(() => undefined);
-      } else {
-        throw err;
+
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        await fs.rename(tmp, this.filePath);
+        return;
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== 'EEXIST' && code !== 'EPERM') {
+          // 清理 tmp 防止泄漏
+          await fs.unlink(tmp).catch(() => undefined);
+          throw err;
+        }
+        lastErr = err;
+        // 指数退避：50ms → 100ms → 200ms（足以让 av / IDE 释放 lock）
+        await new Promise((r) => setTimeout(r, 50 * Math.pow(2, attempt)));
       }
     }
+    // 4 次仍失败——清理 tmp + 抛错
+    await fs.unlink(tmp).catch(() => undefined);
+    throw lastErr instanceof Error
+      ? lastErr
+      : new Error(`[PermissionRegistry] rename failed after retries: ${String(lastErr)}`);
   }
 }
 

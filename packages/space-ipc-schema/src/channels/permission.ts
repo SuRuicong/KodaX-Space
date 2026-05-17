@@ -76,14 +76,18 @@ export const permissionCancelledChannel = {
 
 // ---- Invoke: permission.answer ----
 // 决策由 renderer 回 main。
-// pattern 仅在 decision='allow_always' 时有意义；其余忽略（main 不会读）。
+//
+// review C2-sec（2026-05-17）：去掉 pattern 字段。原本允许 renderer 提交自定义 pattern
+// 持久化到 ~/.kodax/permissions.json——这是个 trust gap：renderer 如被攻陷可提交
+// pattern="bash" 把整个 bash 工具批准。现在 main 端用自己生成的 trustedPattern（broker
+// 在 push 时已生成 suggestedPattern 并保存到 pending entry），handler 通过 broker.peek()
+// 取出来用，renderer 只能选 decision 三选一。
 export const permissionAnswerChannel = {
   name: 'permission.answer',
   direction: 'invoke',
   input: z.object({
     reqId: z.string().min(1),
     decision: decisionSchema,
-    pattern: z.string().min(1).max(512).optional(),
   }),
   output: z.object({
     accepted: z.boolean(),

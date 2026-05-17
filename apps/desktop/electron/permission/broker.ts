@@ -25,6 +25,7 @@ import type {
 import { pushToRenderer } from '../ipc/push.js';
 import { assessRisk, suggestAlwaysAllowPattern } from './risk.js';
 import { permissionRegistry } from './registry.js';
+import { sanitizeForDisplay, sanitizeInputForDisplay } from './sanitize.js';
 
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
 
@@ -47,6 +48,8 @@ interface PendingEntry {
   readonly reqId: string;
   readonly sessionId: string;
   readonly risk: PermissionRisk;
+  /** main 端为本次调用生成的 allow-always pattern；renderer 提交的 pattern 一律忽略（C2-sec）。*/
+  readonly trustedPattern: string | undefined;
   readonly resolve: (r: PermissionResolved) => void;
   readonly timer: NodeJS.Timeout;
 }
@@ -59,9 +62,17 @@ class PermissionBroker {
    *
    * 'allow_once' / 'allow_always' → 调用方继续执行
    * 'deny'                         → 调用方放弃，emit tool_result 带 "permission denied"
+   *
+   * review H2-code（2026-05-17）：在 matches() 前显式 await load()。
+   * registry.load() 是 idempotent 的（cached !== null 时立即返回），后续调用零成本。
+   * 这关闭了"启动早期 main.ts void load() 还没完成但 session 已经发起 tool 调用"的窗口——
+   * 该窗口里 matches() 会返回 false 然后强弹窗（安全侧），但显式 await 杜绝未来误优化的风险
    */
   async request(req: PermissionRequestInput): Promise<PermissionResolved> {
     const assessment = assessRisk(req.toolName, req.input);
+
+    // 确保规则已加载——idempotent，已加载时立即返回
+    await permissionRegistry.load();
 
     // 已批准且非危险 — 跳过弹窗
     if (!assessment.dangerous && permissionRegistry.matches(req.toolName, req.input)) {
@@ -90,6 +101,7 @@ class PermissionBroker {
         reqId,
         sessionId: req.sessionId,
         risk: assessment.risk,
+        trustedPattern: suggestedPattern,
         resolve: (r) => {
           clearTimeout(timer);
           resolve(r);
@@ -97,15 +109,21 @@ class PermissionBroker {
         timer,
       });
 
+      // review H3-sec：清洗显示用字段。原始 input 已经被 assessRisk 用过，
+      // 这里清洗只影响 modal 显示——不影响危险检测结果
+      const safeToolName = sanitizeForDisplay(req.toolName, 128) || '(unnamed)';
+      const safeReason = sanitizeForDisplay(assessment.reason, 512);
+      const safeInput = sanitizeInputForDisplay(req.input);
+
       pushToRenderer('permission.request', {
         reqId,
         sessionId: req.sessionId,
         risk: assessment.risk,
-        reason: assessment.reason,
+        reason: safeReason,
         toolCall: {
           toolId: req.toolId,
-          toolName: req.toolName,
-          input: req.input,
+          toolName: safeToolName,
+          input: safeInput,
         },
         suggestedPattern,
       });
@@ -113,15 +131,34 @@ class PermissionBroker {
   }
 
   /**
-   * Renderer 回答时调用。reqId 不存在（超时 / session 已取消）返回 false。
+   * 查询某 pending entry 的可信元数据。
+   * Handler 在调用 resolve 前用这个拿 trustedPattern——renderer 提交的 pattern 字段一律忽略。
+   * 不存在时返回 undefined。
    */
-  resolve(reqId: string, decision: PermissionDecision, pattern?: string): boolean {
+  peek(reqId: string): { trustedPattern: string | undefined; sessionId: string; risk: PermissionRisk } | undefined {
+    const entry = this.pending.get(reqId);
+    if (!entry) return undefined;
+    return {
+      trustedPattern: entry.trustedPattern,
+      sessionId: entry.sessionId,
+      risk: entry.risk,
+    };
+  }
+
+  /**
+   * Renderer 回答时调用。reqId 不存在（超时 / session 已取消）返回 false。
+   *
+   * 注意（review C2-sec）：不再接受 renderer-supplied pattern。Handler 应当先
+   * 调 peek() 拿 trustedPattern，自己处理持久化，再调 resolve 通知 session 继续。
+   * Broker 只承诺把 decision + risk 传回等待的 promise。
+   */
+  resolve(reqId: string, decision: PermissionDecision): boolean {
     const entry = this.pending.get(reqId);
     if (!entry) return false;
     this.pending.delete(reqId);
     entry.resolve({
       decision,
-      pattern: decision === 'allow_always' ? pattern : undefined,
+      pattern: decision === 'allow_always' ? entry.trustedPattern : undefined,
       risk: entry.risk,
     });
     return true;
@@ -148,17 +185,23 @@ class PermissionBroker {
     }
   }
 
-  /** 进程退出兜底：所有 pending 全部 deny。*/
+  /**
+   * 进程退出兜底：所有 pending 全部 deny + 推 permission.cancelled 给 renderer
+   * 关弹窗（review M2-sec：原本不推 cancelled，renderer modal queue 残留）。
+   * 在 app.before-quit 调用——保证 disposeAll 循环被中断时也能清理。
+   */
   cancelAll(reason: 'shutdown'): void {
-    const ids = [...this.pending.keys()];
-    for (const id of ids) {
-      const entry = this.pending.get(id);
-      if (!entry) continue;
-      this.pending.delete(id);
+    const entries = [...this.pending.values()];
+    for (const entry of entries) {
+      this.pending.delete(entry.reqId);
       clearTimeout(entry.timer);
+      pushToRenderer('permission.cancelled', {
+        reqId: entry.reqId,
+        sessionId: entry.sessionId,
+        reason,
+      });
       entry.resolve({ decision: 'deny', risk: entry.risk });
     }
-    void reason;
   }
 
   /** 测试 / 调试：当前 pending 数。*/

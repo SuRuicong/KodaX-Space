@@ -60,8 +60,6 @@ interface AppState {
   enqueuePermission(req: PermissionRequestPayload): void;
   /** 用户决策完 / main 端 cancel 推过来 / session 删除 — 都从队列里挪走。*/
   dequeuePermission(reqId: string): void;
-  /** session 被删 / 取消时清掉该 session 所有 pending（防止用户看到已死 session 的弹窗）。*/
-  clearPermissionsForSession(sessionId: string): void;
   /** 切项目时清空当前 session 选择和事件 buffer（事件留主进程的；renderer 只清缓存）。*/
   resetSessionView(): void;
 }
@@ -147,11 +145,6 @@ export const useAppStore = create<AppState>((set) => ({
   dequeuePermission: (reqId) =>
     set((state) => ({
       permissionQueue: state.permissionQueue.filter((p) => p.reqId !== reqId),
-    })),
-
-  clearPermissionsForSession: (sessionId) =>
-    set((state) => ({
-      permissionQueue: state.permissionQueue.filter((p) => p.sessionId !== sessionId),
     })),
 
   resetSessionView: () =>
