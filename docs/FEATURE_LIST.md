@@ -1,6 +1,6 @@
 # KodaX Space Feature List
 
-> Last Updated: 2026-05-17 (FEATURE_001, FEATURE_002, FEATURE_003, FEATURE_004, FEATURE_005, FEATURE_006, FEATURE_007, FEATURE_008 completed)
+> Last Updated: 2026-05-17 (FEATURE_001..FEATURE_009 completed)
 > Source of truth: [PRD](PRD.md) · [HLD](HLD.md) · [ADR/](ADR/)
 > Versions: v0.1.0 → v0.1.5（M0–M1，约 3–4 个月）
 
@@ -16,7 +16,7 @@
 | 006 | 对话流 UI + tool call 渲染 | New | Critical | v0.1.0 | Completed | [v0.1.0.md#006](features/v0.1.0.md#feature_006-对话流-ui--tool-call-渲染) |
 | 007 | Permission 弹窗组件 | New | Critical | v0.1.0 | Completed | [v0.1.0.md#007](features/v0.1.0.md#feature_007-permission-弹窗组件) |
 | 008 | Work 进度 + reasoning mode 切换 | New | High | v0.1.0 | Completed | [v0.1.0.md#008](features/v0.1.0.md#feature_008-work-进度--reasoning-mode-切换) |
-| 009 | 文件面板（Monaco read-only + diff） | New | High | v0.1.0 | Planned | [v0.1.0.md#009](features/v0.1.0.md#feature_009-文件面板monaco-read-only--diff) |
+| 009 | 文件面板（Monaco read-only + diff） | New | High | v0.1.0 | Completed | [v0.1.0.md#009](features/v0.1.0.md#feature_009-文件面板monaco-read-only--diff) |
 | 010 | 跨平台安装包（unsigned dev） | New | Critical | v0.1.0 | Planned | [v0.1.0.md#010](features/v0.1.0.md#feature_010-跨平台安装包unsigned-dev) |
 | 011 | 内置终端（xterm.js + node-pty 单 tab） | New | High | v0.1.1 | Planned | [v0.1.1.md#011](features/v0.1.1.md#feature_011-内置终端xtermjs--node-pty-单-tab) |
 | 012 | Subagent tree 视图 | New | High | v0.1.1 | Planned | [v0.1.1.md#012](features/v0.1.1.md#feature_012-subagent-tree-视图) |
@@ -43,9 +43,9 @@
 === FEATURE LIST ===
 Last Updated: 2026-05-17
 
---- PLANNED (20) ---
+--- PLANNED (19) ---
 
-v0.1.0 (alpha foundation): 2 features (10 total, 8 completed)
+v0.1.0 (alpha foundation): 1 feature (10 total, 9 completed)
 v0.1.1 (alpha+):            4 features
 v0.1.2 (beta foundation):   4 features
 v0.1.3 (beta polish):       4 features
@@ -54,7 +54,7 @@ v0.1.5 (release polish):    2 features
 
 --- IN PROGRESS (0) ---
 
---- COMPLETED (7) ---
+--- COMPLETED (9) ---
 
 [NEW, CRITICAL] 001: Electron 工程骨架 (COMPLETED 2026-05-16)
   Planned: v0.1.0 → Released: v0.1.0-alpha.0
@@ -74,9 +74,12 @@ v0.1.5 (release polish):    2 features
   Planned: v0.1.0 → Released: v0.1.0-alpha.0
 [NEW, HIGH] 008: Work 进度 + reasoning mode 切换 (COMPLETED 2026-05-17)
   Planned: v0.1.0 → Released: v0.1.0-alpha.0
+[NEW, HIGH] 009: 文件面板（Monaco read-only + diff） (COMPLETED 2026-05-17)
+  Planned: v0.1.0 → Released: v0.1.0-alpha.0
+  Note: Monaco bundled (no CDN); editor.worker only (no language services); 5MB read cap + path-traversal defense
 
 === SUMMARY ===
-Total: 28 | Planned: 20 | InProgress: 0 | Completed: 8
+Total: 28 | Planned: 19 | InProgress: 0 | Completed: 9
 By Priority: Critical: 8, High: 11, Medium: 8, Low: 1
 By Category:  New: 23, Enhancement: 3, Refactor: 2, Internal: 2
 ```

@@ -72,6 +72,16 @@ export {
 } from './channels/provider.js';
 
 export {
+  filesTreeChannel,
+  filesReadChannel,
+  filesDiffChannel,
+  fileNodeSchema,
+  MAX_FILE_BYTES,
+  MAX_TREE_NODES,
+  type FileNodeT,
+} from './channels/files.js';
+
+export {
   INVOKE_CHANNEL_NAMES,
   PUSH_CHANNEL_NAMES,
   getInvokeChannel,

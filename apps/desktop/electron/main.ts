@@ -13,6 +13,7 @@ import { registerSessionChannels } from './ipc/session.js';
 import { registerProjectChannels } from './ipc/project.js';
 import { registerPermissionChannels } from './ipc/permission.js';
 import { registerProviderChannels, injectAllKeysToEnv } from './ipc/provider.js';
+import { registerFilesChannels } from './ipc/files.js';
 import { setRendererTarget } from './ipc/push.js';
 import { kodaxHost } from './kodax/host.js';
 import { permissionRegistry } from './permission/registry.js';
@@ -49,10 +50,14 @@ function applyCsp(): void {
   // 注：style-src 'unsafe-inline' 保留——React/shadcn/Radix 的内联 style props 需要；
   // 风险面在 Electron 本地环境足够小（无第三方 CSS 注入向量）。
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    // F009 CSP 扩项：
+    //   - worker-src 'self' blob:  → Monaco editor 用 Web Worker（dev 走 module worker；prod 走 blob）
+    //   - script-src 加 blob:       → 同上，Monaco esm worker 通过 blob URL 起
     const csp = isDev
       ? [
           "default-src 'self'",
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
+          "worker-src 'self' blob:",
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data:",
           "font-src 'self' data:",
@@ -60,7 +65,8 @@ function applyCsp(): void {
         ].join('; ')
       : [
           "default-src 'self'",
-          "script-src 'self'",
+          "script-src 'self' blob:",
+          "worker-src 'self' blob:",
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data:",
           "font-src 'self' data:",
@@ -143,6 +149,7 @@ app.whenReady().then(() => {
   registerProjectChannels();
   registerPermissionChannels();
   registerProviderChannels();
+  registerFilesChannels();
   // push 目标走 getter 间接拿当前 window——dev HMR / 用户重开窗口都能正确切换
   setRendererTarget(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null));
   // 预加载 always-allow 规则 — broker.request 走 matches() 是同步路径，必须事先 load。

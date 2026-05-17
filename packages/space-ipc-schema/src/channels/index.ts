@@ -45,6 +45,7 @@ import {
   providerAddCustomChannel,
   providerRemoveCustomChannel,
 } from './provider.js';
+import { filesTreeChannel, filesReadChannel, filesDiffChannel } from './files.js';
 
 export const invokeChannels = {
   [versionChannel.name]: versionChannel,
@@ -70,6 +71,9 @@ export const invokeChannels = {
   [providerSetDefaultChannel.name]: providerSetDefaultChannel,
   [providerAddCustomChannel.name]: providerAddCustomChannel,
   [providerRemoveCustomChannel.name]: providerRemoveCustomChannel,
+  [filesTreeChannel.name]: filesTreeChannel,
+  [filesReadChannel.name]: filesReadChannel,
+  [filesDiffChannel.name]: filesDiffChannel,
 } as const;
 
 export const pushChannels = {

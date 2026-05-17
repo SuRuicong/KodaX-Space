@@ -51,6 +51,9 @@ export function TopBar({ sessionId }: TopBarProps): JSX.Element | null {
   const [err, setErr] = useState<string | null>(null);
 
   if (!session) return null;
+  // TS 在 async 闭包里不保留 outer const 的 narrowing——本地 alias 把已 narrow 过的类型
+  // 显式定型，下方闭包用 sess 就不会再被推回 SessionMeta | null
+  const sess = session;
 
   // 同 SessionList：Mock 第一，已配的在前，未配的 disabled。
   // review L2-code：过滤掉任何 id==='mock' 的 store 条目，避免与硬编码 mock 重复
@@ -66,12 +69,12 @@ export function TopBar({ sessionId }: TopBarProps): JSX.Element | null {
   ];
 
   async function handleProviderChange(providerId: string): Promise<void> {
-    if (!window.kodaxSpace || providerId === session.provider || providerBusy) return;
+    if (!window.kodaxSpace || providerId === sess.provider || providerBusy) return;
     setProviderBusy(true);
     setErr(null);
     try {
       const result = await window.kodaxSpace.invoke('session.setProvider', {
-        sessionId: session.sessionId,
+        sessionId: sess.sessionId,
         providerId,
       });
       if (!result.ok) {
@@ -79,7 +82,7 @@ export function TopBar({ sessionId }: TopBarProps): JSX.Element | null {
         return;
       }
       // 乐观更新本地 session meta——下次 session.list 拉到的就是新值
-      upsertSession({ ...session, provider: providerId });
+      upsertSession({ ...sess,provider: providerId });
     } finally {
       setProviderBusy(false);
     }
@@ -89,19 +92,19 @@ export function TopBar({ sessionId }: TopBarProps): JSX.Element | null {
     // review L2-sec：select option 虽然是硬编码，但仍走 runtime guard——
     // 防止某天 select 改成自由文本输入或其他事件源
     if (!isReasoningMode(value)) return;
-    if (!window.kodaxSpace || value === session.reasoningMode || reasoningBusy) return;
+    if (!window.kodaxSpace || value === sess.reasoningMode || reasoningBusy) return;
     setReasoningBusy(true);
     setErr(null);
     try {
       const result = await window.kodaxSpace.invoke('session.setReasoningMode', {
-        sessionId: session.sessionId,
+        sessionId: sess.sessionId,
         mode: value,
       });
       if (!result.ok) {
         setErr(`${result.error.code}: ${result.error.message}`);
         return;
       }
-      upsertSession({ ...session, reasoningMode: value });
+      upsertSession({ ...sess,reasoningMode: value });
     } finally {
       setReasoningBusy(false);
     }
@@ -111,7 +114,7 @@ export function TopBar({ sessionId }: TopBarProps): JSX.Element | null {
     <div className="border-b border-zinc-800 px-4 py-1.5 flex items-center gap-3 flex-shrink-0 text-xs">
       {/* 左：provider dropdown */}
       <select
-        value={session.provider}
+        value={sess.provider}
         onChange={(e) => void handleProviderChange(e.target.value)}
         disabled={providerBusy}
         className="bg-zinc-900 border border-zinc-800 text-zinc-200 rounded px-1.5 py-0.5 max-w-[180px]"
@@ -126,10 +129,10 @@ export function TopBar({ sessionId }: TopBarProps): JSX.Element | null {
             {p.displayName}
           </option>
         ))}
-        {/* 防御：当前 session.provider 不在 providers 列表（旧 session / 已删 custom）时
+        {/* 防御：当前 sess.provider 不在 providers 列表（旧 session / 已删 custom）时
             仍能显示，不被 select 强制重置 */}
-        {!providerOptions.some((p) => p.id === session.provider) && (
-          <option value={session.provider}>{session.provider}</option>
+        {!providerOptions.some((p) => p.id === sess.provider) && (
+          <option value={sess.provider}>{sess.provider}</option>
         )}
       </select>
 
@@ -143,7 +146,7 @@ export function TopBar({ sessionId }: TopBarProps): JSX.Element | null {
       <div className="ml-auto flex items-center gap-1.5">
         <span className="text-[10px] text-zinc-500 font-mono uppercase">Reasoning</span>
         <select
-          value={session.reasoningMode}
+          value={sess.reasoningMode}
           onChange={(e) => void handleReasoningChange(e.target.value)}
           disabled={reasoningBusy}
           className="bg-zinc-900 border border-zinc-800 text-zinc-200 rounded px-1.5 py-0.5"

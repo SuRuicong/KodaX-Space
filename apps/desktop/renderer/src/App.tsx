@@ -25,10 +25,12 @@ import { SessionList } from './features/session/SessionList.js';
 import { EventStream } from './features/session/EventStream.js';
 import { PermissionModal } from './features/permission/PermissionModal.js';
 import { ProviderSettings } from './features/provider/ProviderSettings.js';
+import { FilePanel } from './features/code/FilePanel.js';
 
 export default function App(): JSX.Element {
   const [version, setVersion] = useState<SpaceVersionOutput | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showFiles, setShowFiles] = useState(true);
   const appendEvent = useAppStore((s) => s.appendEvent);
   const enqueuePermission = useAppStore((s) => s.enqueuePermission);
   const dequeuePermission = useAppStore((s) => s.dequeuePermission);
@@ -103,8 +105,19 @@ export default function App(): JSX.Element {
         </span>
         <button
           type="button"
+          onClick={() => setShowFiles((v) => !v)}
+          className={`ml-auto px-2 py-1 text-[11px] rounded border border-zinc-800 flex items-center gap-1.5 ${
+            showFiles ? 'bg-zinc-800 text-zinc-100' : 'bg-zinc-900 text-zinc-400 hover:bg-zinc-800'
+          }`}
+          title="Toggle file panel"
+        >
+          <span aria-hidden>📁</span>
+          <span>Files</span>
+        </button>
+        <button
+          type="button"
           onClick={() => setShowSettings(true)}
-          className="ml-auto px-2 py-1 text-[11px] rounded bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-zinc-800 flex items-center gap-1.5"
+          className="px-2 py-1 text-[11px] rounded bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-zinc-800 flex items-center gap-1.5"
           title="Provider settings"
         >
           <span aria-hidden>⚙</span>
@@ -125,6 +138,7 @@ export default function App(): JSX.Element {
           <SessionList />
         </aside>
         <EventStream />
+        {showFiles && <FilePanel />}
       </div>
 
       <footer className="border-t border-zinc-800 px-4 py-1.5 text-[10px] text-zinc-600 flex justify-between flex-shrink-0">

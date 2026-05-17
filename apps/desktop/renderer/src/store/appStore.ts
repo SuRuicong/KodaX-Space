@@ -71,6 +71,16 @@ interface AppState {
       | undefined
     >
   >;
+  /**
+   * F009: 最后一次被 tool_call (write/edit) 触及的相对路径——FilePanel 监听这个值切到 diff 视图。
+   * 用 "可读完一次就置 null" 的单值 + clearLastDiffPath 模式，避免 useEffect 反复触发。
+   */
+  lastDiffPath: string | null;
+  /**
+   * F009 内部：tool_start 的 path 暂存，等 tool_result 落地时取出 → 写 lastDiffPath。
+   * Renderer 永不直接读这个字段；不导出 selector。
+   */
+  pendingToolPaths: Readonly<Record<string, string>>;
 
   // ----- actions -----
   setProjects(projects: readonly Project[]): void;
@@ -91,6 +101,8 @@ interface AppState {
   ): void;
   /** 切项目时清空当前 session 选择和事件 buffer（事件留主进程的；renderer 只清缓存）。*/
   resetSessionView(): void;
+  /** F009: FilePanel 读完 lastDiffPath 后清掉，避免反复 jump。*/
+  clearLastDiffPath(): void;
 }
 
 // 单调 counter 用于生成 stable id——sessionId 内多条 user message 顺序唯一。
@@ -109,6 +121,8 @@ export const useAppStore = create<AppState>((set) => ({
   keychainBackend: 'unknown',
   workBudgetBySession: {},
   harnessProfileBySession: {},
+  lastDiffPath: null,
+  pendingToolPaths: {},
 
   setProjects: (projects) => set({ projects }),
   setCurrentProject: (path) => set({ currentProjectPath: path }),
@@ -154,6 +168,28 @@ export const useAppStore = create<AppState>((set) => ({
           ...state.harnessProfileBySession,
           [event.sessionId]: { profile: event.profile, round: event.round },
         };
+      } else if (event.kind === 'tool_start') {
+        // F009：记 toolId → path 暂存；等 tool_result 来配对决定要不要 jump 到 diff
+        // input.path 由 mock-session / real adapter 在 tool_start 时附上
+        if (
+          (event.toolName === 'write' || event.toolName === 'edit') &&
+          event.input &&
+          typeof event.input.path === 'string'
+        ) {
+          next.pendingToolPaths = {
+            ...state.pendingToolPaths,
+            [event.toolId]: event.input.path,
+          };
+        }
+      } else if (event.kind === 'tool_result') {
+        // F009：write/edit 完成 + tool_start 暂存了 path → 触发 FilePanel 跳 diff
+        const pendingPath = state.pendingToolPaths[event.toolId];
+        if (pendingPath && (event.toolName === 'write' || event.toolName === 'edit')) {
+          next.lastDiffPath = pendingPath;
+          // 同时清掉 pending（防止内存累积）
+          const { [event.toolId]: _drop, ...restPending } = state.pendingToolPaths;
+          next.pendingToolPaths = restPending;
+        }
       }
       return next;
     }),
@@ -184,6 +220,9 @@ export const useAppStore = create<AppState>((set) => ({
         harnessProfileBySession: restProfiles,
         permissionQueue: state.permissionQueue.filter((p) => p.sessionId !== sessionId),
         currentSessionId: state.currentSessionId === sessionId ? null : state.currentSessionId,
+        // F009: 删 session 不能让 pending tool path / lastDiffPath 留指着已删 session
+        lastDiffPath:
+          state.currentSessionId === sessionId ? null : state.lastDiffPath,
       };
     }),
 
@@ -202,6 +241,8 @@ export const useAppStore = create<AppState>((set) => ({
   setProviders: (providers, defaultProviderId, keychainBackend) =>
     set({ providers, defaultProviderId, keychainBackend }),
 
+  clearLastDiffPath: () => set({ lastDiffPath: null }),
+
   resetSessionView: () =>
     set({
       currentSessionId: null,
@@ -211,5 +252,7 @@ export const useAppStore = create<AppState>((set) => ({
       workBudgetBySession: {},
       harnessProfileBySession: {},
       sessions: [],
+      lastDiffPath: null,
+      pendingToolPaths: {},
     }),
 }));

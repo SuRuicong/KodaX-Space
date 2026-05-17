@@ -201,11 +201,16 @@ export async function listAccounts(): Promise<readonly string[]> {
 }
 
 /**
- * 测试用：清空 memory store。仅 in-memory 模式有效。
- * 单测 beforeEach 用它隔离 state——keychain 模式下不动 OS keychain。
+ * 测试用：清空 memory store **并强制 backend=memory**。
+ *
+ * 为什么强制 memory：测试机如果装了 keytar（CI 偶尔会编译原生模块），
+ * 真实 OS keychain 里残留的 entries（之前用过的 dev keys）会污染 listAccounts 结果。
+ * 单测必须跑在隔离 backend 上——任何 set/list 都走 memory store。
  */
 export function _resetMemoryStoreForTesting(): void {
   memoryStore.clear();
-  backendStatus = 'unknown';
-  keytarPromise = null;
+  // 跳过 detectBackend：直接锁定 'memory'，detectBackend 早返回
+  backendStatus = 'memory';
+  // keytarPromise 不重置——keep 它指向 null 或 loaded module 都行，
+  // backendStatus='memory' 让所有路径都走 memoryStore，不会触达 keytar
 }
