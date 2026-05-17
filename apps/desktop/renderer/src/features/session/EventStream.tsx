@@ -1,26 +1,27 @@
-// EventStream — 主区。显示当前 session 的事件日志 + prompt 输入框。
+// EventStream —— 主区 session 视图。F006 起改成"对话流 + 输入框"形态。
 //
-// 事件源：useAppStore.eventsBySession[currentSessionId]——store 在 App 顶层一次性
-// 订阅了 push channel，按 sessionId 路由进 bucket。本组件只读它。
+// 职责：
+//   - 取当前 session meta（显示在标头）
+//   - 渲染 ConversationStream（消息编排 + 滚动）
+//   - 渲染 InputBox（textarea + 发送 / 取消按钮）
+//   - 发送时：把 prompt 推进 store 的 userMessagesBySession，再走 IPC session.send
 
 import { useState } from 'react';
 import { useAppStore } from '../../store/appStore.js';
-import type { SessionEvent } from '@kodax-space/space-ipc-schema';
+import { ConversationStream } from './messages/ConversationStream.js';
+import { InputBox } from './messages/InputBox.js';
 
 export function EventStream(): JSX.Element {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const session = useAppStore((s) =>
     currentSessionId ? s.sessions.find((x) => x.sessionId === currentSessionId) ?? null : null,
   );
-  const events = useAppStore((s) =>
-    currentSessionId ? s.eventsBySession[currentSessionId] ?? [] : [],
-  );
+  const appendUserMessage = useAppStore((s) => s.appendUserMessage);
 
-  const [prompt, setPrompt] = useState<string>('Read package.json and summarize');
+  const [prompt, setPrompt] = useState<string>('');
   const [busy, setBusy] = useState<boolean>(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // 显式收窄到 SessionMeta：currentSessionId 存在 && 在 sessions 列表里能找到
   if (currentSessionId === null || session === null) {
     return (
       <div className="flex-1 flex items-center justify-center text-zinc-600 text-sm">
@@ -31,12 +32,17 @@ export function EventStream(): JSX.Element {
 
   async function handleSend(): Promise<void> {
     if (!currentSessionId || !window.kodaxSpace) return;
+    const trimmed = prompt.trim();
+    if (trimmed === '') return;
     setErr(null);
     setBusy(true);
+    // 本地先记录用户消息（IPC 失败也保留这条记录，配合 error 提示让用户看到"我发了什么"）
+    appendUserMessage(currentSessionId, trimmed);
+    setPrompt('');
     try {
       const result = await window.kodaxSpace.invoke('session.send', {
         sessionId: currentSessionId,
-        prompt,
+        prompt: trimmed,
       });
       if (!result.ok) setErr(`${result.error.code}: ${result.error.message}`);
     } finally {
@@ -51,7 +57,7 @@ export function EventStream(): JSX.Element {
 
   return (
     <div className="flex-1 flex flex-col min-w-0">
-      <div className="border-b border-zinc-800 px-4 py-2 flex items-center gap-2 text-sm">
+      <div className="border-b border-zinc-800 px-4 py-2 flex items-center gap-2 text-sm flex-shrink-0">
         <span className="font-medium text-zinc-200 truncate">{session.title ?? 'Untitled session'}</span>
         <span className="text-xs text-zinc-500">
           {session.provider} · {session.reasoningMode}
@@ -61,86 +67,18 @@ export function EventStream(): JSX.Element {
         </code>
       </div>
 
-      <div className="flex-1 overflow-auto px-4 py-3 font-mono text-xs space-y-1">
-        {events.length === 0 && <div className="text-zinc-600 italic">No events yet. Send a prompt below.</div>}
-        {events.map((evt, idx) => (
-          <EventLine key={idx} event={evt} />
-        ))}
-      </div>
+      <ConversationStream sessionId={currentSessionId} />
 
-      <div className="border-t border-zinc-800 p-3 space-y-2">
+      <div className="border-t border-zinc-800 p-3 space-y-2 flex-shrink-0">
         {err && <div className="text-red-400 text-xs font-mono">{err}</div>}
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Prompt..."
-            className="flex-1 px-3 py-2 text-sm rounded bg-zinc-950 border border-zinc-800 font-mono text-zinc-100"
-            onKeyDown={(e) => {
-              if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                e.preventDefault();
-                void handleSend();
-              }
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => void handleSend()}
-            disabled={busy || prompt.trim() === ''}
-            className="text-sm px-3 py-2 rounded bg-blue-700/80 hover:bg-blue-600 disabled:opacity-40 text-white"
-          >
-            Send
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleCancel()}
-            className="text-sm px-3 py-2 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
-            title="Cancel current run"
-          >
-            ⏹
-          </button>
-        </div>
-        <div className="text-[10px] text-zinc-600">⌘/Ctrl + Enter to send</div>
+        <InputBox
+          value={prompt}
+          onChange={setPrompt}
+          onSubmit={() => void handleSend()}
+          onCancel={() => void handleCancel()}
+          disabled={busy}
+        />
       </div>
     </div>
   );
-}
-
-function EventLine({ event }: { event: SessionEvent }): JSX.Element {
-  const colorByKind: Record<SessionEvent['kind'], string> = {
-    text_delta: 'text-zinc-200',
-    thinking_delta: 'text-purple-400',
-    tool_start: 'text-blue-400',
-    tool_progress: 'text-blue-300',
-    tool_result: 'text-emerald-400',
-    iteration_end: 'text-amber-400',
-    session_complete: 'text-emerald-500 font-semibold',
-    session_error: 'text-red-400',
-  };
-  return (
-    <div className={`whitespace-pre-wrap ${colorByKind[event.kind]}`}>
-      <span className="text-zinc-600">[{event.kind}]</span> {formatEventBody(event)}
-    </div>
-  );
-}
-
-function formatEventBody(event: SessionEvent): string {
-  switch (event.kind) {
-    case 'text_delta':
-    case 'thinking_delta':
-      return event.text;
-    case 'tool_start':
-      return `${event.toolName}(${event.input ? JSON.stringify(event.input) : ''})`;
-    case 'tool_progress':
-      return event.message;
-    case 'tool_result':
-      return `${event.toolName} → ${event.content.slice(0, 80)}${event.content.length > 80 ? '…' : ''}`;
-    case 'iteration_end':
-      return `iter ${event.iter}/${event.maxIter} · ${event.tokenCount} tokens`;
-    case 'session_complete':
-      return '✓ complete';
-    case 'session_error':
-      return event.error;
-  }
 }

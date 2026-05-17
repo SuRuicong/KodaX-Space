@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+/* highlight.js dark theme for code blocks in markdown.
+   atom-one-dark 与项目 zinc-950 配色协调；rehype-highlight 注入 .hljs-* class，这里提供颜色。 */
+@import 'highlight.js/styles/atom-one-dark.css';
+
 @layer base {
   html,
   body,
