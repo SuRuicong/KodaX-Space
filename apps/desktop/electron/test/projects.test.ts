@@ -111,3 +111,63 @@ test('persist uses atomic rename: file does not appear half-written', async () =
   assert.ok(Array.isArray(parsed.projects));
   assert.equal(parsed.projects.length, 1);
 });
+
+// ---- Review fixes ----
+
+test('concurrent addOrBump: both writes persisted (no lost-update race)', async () => {
+  const store = createProjectStore(storeFile, tmpDir);
+  // 不 await——同时 enqueue 两个 mutation
+  const p1 = store.addOrBump(path.join(tmpDir, 'concurrent-a'));
+  const p2 = store.addOrBump(path.join(tmpDir, 'concurrent-b'));
+  await Promise.all([p1, p2]);
+
+  // 两个 project 都应在磁盘上
+  const reloaded = createProjectStore(storeFile, tmpDir);
+  const list = await reloaded.list();
+  const names = list.map((p) => path.basename(p.path)).sort();
+  assert.deepEqual(names, ['concurrent-a', 'concurrent-b']);
+});
+
+test('rename over existing file works (Windows fallback covers EEXIST/EPERM)', async () => {
+  const store = createProjectStore(storeFile, tmpDir);
+  // 第一次写：dest 不存在，fs.rename 直接成功
+  await store.addOrBump(path.join(tmpDir, 'first'));
+  // 第二次写：dest 已存在，POSIX 仍原子覆盖；Windows 走 copyFile+unlink fallback
+  await store.addOrBump(path.join(tmpDir, 'second'));
+  const list = await createProjectStore(storeFile, tmpDir).list();
+  assert.equal(list.length, 2);
+});
+
+test('list: filters out poisoned entries with non-absolute paths', async () => {
+  // 模拟攻击者 / 别的进程往 projects.json 里写畸形条目
+  await fs.mkdir(tmpDir, { recursive: true });
+  const poisoned = {
+    version: 1,
+    projects: [
+      { path: path.join(tmpDir, 'valid'), name: 'valid', addedAt: 1, lastUsedAt: 1 },
+      { path: '../../escape', name: 'escape', addedAt: 1, lastUsedAt: 1 }, // 非绝对
+      { path: 'relative-path', name: 'rel', addedAt: 1, lastUsedAt: 1 }, // 非绝对
+    ],
+  };
+  await fs.writeFile(storeFile, JSON.stringify(poisoned), 'utf-8');
+
+  const list = await createProjectStore(storeFile, tmpDir).list();
+  // 只有 valid 应该幸存
+  assert.equal(list.length, 1);
+  assert.equal(path.basename(list[0].path), 'valid');
+});
+
+test('list: filters out entries with NUL byte in path', async () => {
+  await fs.mkdir(tmpDir, { recursive: true });
+  const poisoned = {
+    version: 1,
+    projects: [
+      { path: path.join(tmpDir, 'ok'), name: 'ok', addedAt: 1, lastUsedAt: 1 },
+      { path: '/safe-looking\x00/escape', name: 'nul', addedAt: 1, lastUsedAt: 1 },
+    ],
+  };
+  await fs.writeFile(storeFile, JSON.stringify(poisoned), 'utf-8');
+  const list = await createProjectStore(storeFile, tmpDir).list();
+  assert.equal(list.length, 1);
+  assert.equal(path.basename(list[0].path), 'ok');
+});

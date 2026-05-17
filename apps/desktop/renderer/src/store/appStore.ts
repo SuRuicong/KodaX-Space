@@ -48,6 +48,10 @@ export const useAppStore = create<AppState>((set) => ({
 
   appendEvent: (event) =>
     set((state) => {
+      // 切项目 / 删除 session 后，旧 session 的迟到事件仍会通过同一 push channel 到达。
+      // 如果 renderer 没有这条 session 的记录就 drop——否则会累积无人引用的 bucket。
+      // main 端事件是权威；renderer 只缓存自己 UI 里能见到的部分。
+      if (!state.sessions.some((s) => s.sessionId === event.sessionId)) return state;
       const bucket = state.eventsBySession[event.sessionId] ?? [];
       return {
         eventsBySession: {

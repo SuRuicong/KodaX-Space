@@ -23,6 +23,10 @@ export function SessionList(): JSX.Element {
   const removeSession = useAppStore((s) => s.removeSession);
   const [creating, setCreating] = useState<boolean>(false);
   const [provider, setProvider] = useState<Provider>('mock');
+  // 改名 UI：renaming = 当前正在改的 sessionId；draft = 输入框值。
+  // 用 inline 输入而不是 window.prompt——后者在 Electron sandbox=true 下被禁用，会静默失败。
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState<string>('');
 
   useEffect(() => {
     if (!currentProjectPath) {
@@ -60,7 +64,8 @@ export function SessionList(): JSX.Element {
       };
       upsertSession(stub);
       setCurrentSession(stub.sessionId);
-      void refreshSessions(currentProjectPath, setSessions);
+      // await refresh——确保 main 端权威列表已应用，避免后续操作看到 stub 残影
+      await refreshSessions(currentProjectPath, setSessions);
     } finally {
       setCreating(false);
     }
@@ -76,16 +81,34 @@ export function SessionList(): JSX.Element {
     }
   }
 
-  async function handleRename(e: React.MouseEvent, sessionId: string, current: string | undefined): Promise<void> {
+  function startRename(e: React.MouseEvent, sessionId: string, current: string | undefined): void {
     e.stopPropagation();
-    const bridge = window.kodaxSpace;
-    if (!bridge) return;
-    const next = window.prompt('Rename session:', current ?? '');
-    if (next === null || next.trim() === '') return;
-    const result = await bridge.invoke('session.setTitle', { sessionId, title: next.trim() });
-    if (result.ok && currentProjectPath) {
-      void refreshSessions(currentProjectPath, setSessions);
+    setRenaming(sessionId);
+    setRenameDraft(current ?? '');
+  }
+
+  async function commitRename(): Promise<void> {
+    if (renaming === null) return;
+    const trimmed = renameDraft.trim();
+    if (trimmed === '') {
+      setRenaming(null);
+      return;
     }
+    const bridge = window.kodaxSpace;
+    if (!bridge) {
+      setRenaming(null);
+      return;
+    }
+    const result = await bridge.invoke('session.setTitle', { sessionId: renaming, title: trimmed });
+    setRenaming(null);
+    if (result.ok && currentProjectPath) {
+      await refreshSessions(currentProjectPath, setSessions);
+    }
+  }
+
+  function cancelRename(): void {
+    setRenaming(null);
+    setRenameDraft('');
   }
 
   return (
@@ -149,11 +172,30 @@ export function SessionList(): JSX.Element {
               title={s.sessionId}
             >
               <div className="flex items-center gap-2">
-                <span className="flex-1 truncate font-medium">{s.title ?? 'Untitled session'}</span>
+                {renaming === s.sessionId ? (
+                  <input
+                    type="text"
+                    autoFocus
+                    value={renameDraft}
+                    onChange={(e) => setRenameDraft(e.target.value)}
+                    onBlur={() => void commitRename()}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === 'Enter') void commitRename();
+                      else if (e.key === 'Escape') cancelRename();
+                    }}
+                    maxLength={256}
+                    className="flex-1 min-w-0 bg-zinc-950 border border-zinc-700 rounded px-1.5 py-0.5 text-sm font-medium text-zinc-100"
+                    aria-label="New session title"
+                  />
+                ) : (
+                  <span className="flex-1 truncate font-medium">{s.title ?? 'Untitled session'}</span>
+                )}
                 <span className="opacity-0 group-hover:opacity-100 flex gap-1 text-xs">
                   <button
                     type="button"
-                    onClick={(e) => void handleRename(e, s.sessionId, s.title)}
+                    onClick={(e) => startRename(e, s.sessionId, s.title)}
                     className="text-zinc-500 hover:text-zinc-200 px-1"
                     aria-label="Rename session"
                   >

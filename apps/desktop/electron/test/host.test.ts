@@ -186,6 +186,49 @@ test('setTitle: returns false for non-existent session', () => {
   assert.equal(ok, false);
 });
 
+// ---- Review fixes: Unicode-safe title + sanitization ----
+
+test('ensureTitle: does not split surrogate-pair emoji at truncation boundary', () => {
+  const { sessionId } = kodaxHost.createSession({ projectRoot: '/r', provider: 'mock' });
+  // 50 个 a + 1 个 emoji——按 UTF-16 code unit slice 会切到 emoji 第一个 surrogate
+  const prompt = 'a'.repeat(50) + '🔥end';
+  kodaxHost.ensureTitle(sessionId, prompt);
+  const title = kodaxHost.get(sessionId)?.title;
+  assert.ok(title);
+  // 不应出现孤立 surrogate（半个 emoji 编码非法）
+  for (const ch of title!) {
+    const code = ch.codePointAt(0)!;
+    assert.ok(code < 0xd800 || code > 0xdfff, `lone surrogate at U+${code.toString(16)}`);
+  }
+});
+
+test('sanitizeTitle path: strips RTL override character', () => {
+  const { sessionId } = kodaxHost.createSession({ projectRoot: '/r', provider: 'mock' });
+  // U+202E = RIGHT-TO-LEFT OVERRIDE
+  kodaxHost.ensureTitle(sessionId, 'hello‮evil');
+  const title = kodaxHost.get(sessionId)?.title;
+  assert.ok(!title!.includes('‮'), `title contains RTL override: ${JSON.stringify(title)}`);
+  assert.equal(title, 'helloevil');
+});
+
+test('sanitizeTitle path: strips zero-width chars and BOM', () => {
+  const { sessionId } = kodaxHost.createSession({ projectRoot: '/r', provider: 'mock' });
+  kodaxHost.ensureTitle(sessionId, 'h​e‌l﻿lo');
+  assert.equal(kodaxHost.get(sessionId)?.title, 'hello');
+});
+
+test('sanitizeTitle path: strips C0 control chars', () => {
+  const { sessionId } = kodaxHost.createSession({ projectRoot: '/r', provider: 'mock' });
+  kodaxHost.ensureTitle(sessionId, 'hi\x00\x01\x07world');
+  assert.equal(kodaxHost.get(sessionId)?.title, 'hiworld');
+});
+
+test('setTitle: same sanitization applies to user-supplied renames', () => {
+  const { sessionId } = kodaxHost.createSession({ projectRoot: '/r', provider: 'mock' });
+  kodaxHost.setTitle(sessionId, 'evil‮txt');
+  assert.equal(kodaxHost.get(sessionId)?.title, 'eviltxt');
+});
+
 test('push payload: every captured event passes session.event schema', async () => {
   // 这个 test 保险 — push.ts 已经在发出前 zod 校验，但我们再确认捕获的 payload 形状对
   const { sessionId } = kodaxHost.createSession({ projectRoot: '/r', provider: 'mock' });

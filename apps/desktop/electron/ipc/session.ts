@@ -3,6 +3,7 @@
 // 5 个 invoke channel 全部委托给 kodaxHost 单例处理。
 // 所有 handler 在 registerChannel 内被 zod 包装（入参/出参/异常三路 envelope）。
 
+import path from 'node:path';
 import { registerChannel } from './register.js';
 import { validateProjectRoot } from './validate.js';
 import { kodaxHost } from '../kodax/host.js';
@@ -43,11 +44,20 @@ export function registerSessionChannels(): void {
   // session.list
   // 可选 projectRoot 过滤——左抽屉切项目时只拉本项目下的 session。
   // 按 lastActivityAt 倒序，最近活动的在最前。
+  //
+  // 安全：
+  //   - filter 同样过 validateProjectRoot——schema 只检字符串长度，
+  //     不验证 abs path / no NUL / no ..
+  //   - 用 path.normalize 后比较——避免 trailing slash / 大小写差异导致 filter miss
+  //     （比如 session 存了 /Users/foo/proj，renderer 传 /Users/foo/proj/ 应该匹配）
   registerChannel('session.list', (input) => {
-    const projectFilter = input?.projectRoot;
+    let projectFilter: string | undefined;
+    if (input?.projectRoot !== undefined) {
+      projectFilter = path.normalize(validateProjectRoot(input.projectRoot));
+    }
     let list = kodaxHost.list();
-    if (projectFilter) {
-      list = list.filter((s) => s.projectRoot === projectFilter);
+    if (projectFilter !== undefined) {
+      list = list.filter((s) => path.normalize(s.projectRoot) === projectFilter);
     }
     const sessions: SessionMeta[] = list
       .slice()

@@ -10,6 +10,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { z } from 'zod';
+import { validateProjectRoot } from '../ipc/validate.js';
 
 // 注：与 KodaX CLI 共享 ~/.kodax 根，但 Space 自己的目录是 ~/.kodax/space/。
 // 与 KodaX session JSONL 完全隔离，避免一方误删另一方文件。
@@ -51,7 +52,21 @@ export class ProjectStore {
         );
         this.cached = [];
       } else {
-        this.cached = parsed.data.projects;
+        // 文件可能被外部（别的进程 / 攻击者 / 手工编辑）写入畸形 path——
+        // schema 只确保字符串；不验证语义。这里再过一遍 validateProjectRoot 把
+        // 非绝对 / 含 .. / 含 NUL 的条目 drop 掉。filename basename 是显示用的，
+        // 不影响实际打开行为（实际打开走 IPC 边界还会再 validate 一次）。
+        this.cached = parsed.data.projects.filter((p) => {
+          try {
+            validateProjectRoot(p.path);
+            return true;
+          } catch (err) {
+            console.warn(
+              `[ProjectStore] dropping invalid entry: ${err instanceof Error ? err.message : String(err)}`,
+            );
+            return false;
+          }
+        });
       }
     } catch (err) {
       // ENOENT = 首次启动；其他错误也按"启动空列表"处理，写新文件时会覆盖
@@ -71,35 +86,32 @@ export class ProjectStore {
    * 返回更新后的 Project 对象。
    */
   async addOrBump(absPath: string): Promise<Project> {
-    const list = await this.list();
-    const now = Date.now();
-    const existingIdx = list.findIndex((p) => p.path === absPath);
-    let project: Project;
-    if (existingIdx >= 0) {
-      project = { ...list[existingIdx], lastUsedAt: now };
-      list[existingIdx] = project;
-    } else {
-      project = {
+    return this.mutate((list) => {
+      const now = Date.now();
+      const existingIdx = list.findIndex((p) => p.path === absPath);
+      if (existingIdx >= 0) {
+        const project: Project = { ...list[existingIdx], lastUsedAt: now };
+        list[existingIdx] = project;
+        return { list, ret: project };
+      }
+      const project: Project = {
         path: absPath,
         name: path.basename(absPath) || absPath,
         addedAt: now,
         lastUsedAt: now,
       };
       list.unshift(project);
-    }
-    this.cached = list;
-    await this.persist(list);
-    return project;
+      return { list, ret: project };
+    });
   }
 
   async remove(absPath: string): Promise<boolean> {
-    const list = await this.list();
-    const before = list.length;
-    const next = list.filter((p) => p.path !== absPath);
-    if (next.length === before) return false;
-    this.cached = next;
-    await this.persist(next);
-    return true;
+    return this.mutate((list) => {
+      const before = list.length;
+      const next = list.filter((p) => p.path !== absPath);
+      if (next.length === before) return { list, ret: false };
+      return { list: next, ret: true };
+    });
   }
 
   /** 测试用：丢内存 cache 强制下次 list 重新读盘。*/
@@ -107,8 +119,16 @@ export class ProjectStore {
     this.cached = null;
   }
 
-  private async persist(list: Project[]): Promise<void> {
-    // serialise writes —— 不让并发写互相覆盖
+  /**
+   * 串行化"读-改-写"。两个并发 caller 必须按 enqueue 顺序拿到最新 cache 再修改，
+   * 不能各自 snapshot 然后最后写的赢——那样会丢前面的写。
+   *
+   * 实现：把整个"读 cache + apply mutation + persist"塞进同一个 lock，
+   * lock 用 promise 链。每个调用排到链尾，wait 前一个完成后再跑。
+   */
+  private async mutate<R>(
+    apply: (list: Project[]) => { list: Project[]; ret: R },
+  ): Promise<R> {
     const prev = this.writeLock;
     let release: () => void = () => {};
     this.writeLock = new Promise((resolve) => {
@@ -116,13 +136,40 @@ export class ProjectStore {
     });
     await prev;
     try {
-      await fs.mkdir(this.dir, { recursive: true });
-      const payload = JSON.stringify({ version: 1, projects: list }, null, 2);
-      const tmp = `${this.filePath}.tmp-${process.pid}-${Date.now()}`;
-      await fs.writeFile(tmp, payload, 'utf-8');
-      await fs.rename(tmp, this.filePath);
+      const current = await this.list();
+      const { list, ret } = apply([...current]); // copy 防 mutation 泄露
+      this.cached = list;
+      await this.persistLocked(list);
+      return ret;
     } finally {
       release();
+    }
+  }
+
+  /** 已经持锁的写入。**不**自己再持锁——只能从 mutate() 调。*/
+  private async persistLocked(list: Project[]): Promise<void> {
+    // mode 0o700 / 0o600：projects.json 含用户项目路径，可能泄露 proprietary 代码名等。
+    // Windows 忽略 mode，POSIX 强制 user-only。
+    await fs.mkdir(this.dir, { recursive: true, mode: 0o700 });
+    const payload = JSON.stringify({ version: 1, projects: list }, null, 2);
+    const tmp = `${this.filePath}.tmp-${process.pid}-${Date.now()}`;
+    await fs.writeFile(tmp, payload, { encoding: 'utf-8', mode: 0o600 });
+
+    // POSIX 的 rename 是原子覆盖；Windows 的 rename 在目标存在时会 EEXIST / EPERM。
+    // 用 fallback：rename 失败就改 copyFile + unlink（牺牲严格原子性换跨平台）。
+    try {
+      await fs.rename(tmp, this.filePath);
+    } catch (err) {
+      const code = err instanceof Error && 'code' in err ? (err as { code: string }).code : '';
+      if (code === 'EEXIST' || code === 'EPERM') {
+        await fs.copyFile(tmp, this.filePath);
+        await fs.unlink(tmp).catch(() => {
+          /* 删 tmp 失败不影响主写——下次启动会被覆盖 */
+        });
+      } else {
+        await fs.unlink(tmp).catch(() => {});
+        throw err;
+      }
     }
   }
 }
