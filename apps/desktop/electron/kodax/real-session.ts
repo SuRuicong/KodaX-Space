@@ -88,6 +88,8 @@ export class RealKodaXSession implements ManagedSession {
   provider: string;
   reasoningMode: SpaceReasoning;
   permissionMode: ManagedSession['permissionMode'];
+  /** FEATURE_029：auto mode 子档；非 auto mode 时持有也无害（下次切 auto 时生效）。*/
+  autoModeEngine: ManagedSession['autoModeEngine'];
   readonly createdAt: number;
   lastActivityAt: number;
   title: string | undefined = undefined;
@@ -103,6 +105,7 @@ export class RealKodaXSession implements ManagedSession {
     this.provider = opts.provider;
     this.reasoningMode = opts.reasoningMode;
     this.permissionMode = opts.permissionMode;
+    this.autoModeEngine = opts.autoModeEngine ?? 'llm';
     this.createdAt = Date.now();
     this.lastActivityAt = this.createdAt;
     this.emit = opts.emit;
@@ -142,15 +145,18 @@ export class RealKodaXSession implements ManagedSession {
 
     // Permission 统一钩子。KodaX 在工具实际执行前调这个，返回 false → 跳过执行，
     // 返回 true → 正常执行，返回 string → 直接当作 tool result（覆盖执行）。
-    // Space PermissionBroker 据当前 mode 短路 (plan-mode 全 deny / bypass 全 allow /
-    // accept-edits 自动批 edit/write / ask-permissions 弹 modal)。
+    // Space PermissionBroker 据当前 mode (FEATURE_029 canonical 3 mode) 短路：
+    //   - plan         → 全 deny
+    //   - accept-edits → edit/write 类自动批，其他走 ask modal
+    //   - auto         → guardrail 内部决策 (FEATURE_030 注入后接管该路径)，
+    //                    F030 前先 fallback 到 accept-edits 行为
     //
     // 这是替代"KodaX 内部 permission + Space PermissionBroker 双 broker"方案的关键钩子——
     // 现在只有**一套** permission 决策路径：Space broker。KodaX 看决策结果执行/跳过。
     //
     // 防御：planModeBlockCheck 与本钩子之间存在 TOCTOU 窗口——LLM 决定 tool name 时
-    // mode 是 plan-mode → planModeBlockCheck 放行 (因为该 tool 不在 blocklist)，
-    // 但 LLM 在实际 invoke 前 mode 被改成 accept-edits，broker 短路又允许。
+    // mode 是 'plan' → planModeBlockCheck 放行 (因为该 tool 不在 blocklist)，
+    // 但 LLM 在实际 invoke 前 mode 被改成 'accept-edits'，broker 短路又允许。
     // 这里再 snapshot 一次 mode 用于审计 (broker 仍用现行 mode 决定)。
     const beforeToolExecute: NonNullable<KodaXEvents['beforeToolExecute']> = async (
       tool,
@@ -183,9 +189,9 @@ export class RealKodaXSession implements ManagedSession {
       tool: string,
       _input: Record<string, unknown>,
     ): string | null => {
-      if (this.permissionMode !== 'plan-mode') return null;
+      if (this.permissionMode !== 'plan') return null;
       if (!PLAN_MODE_BLOCKED_TOOLS.has(tool)) return null;
-      return `[plan-mode] tool '${tool}' is blocked. Plan-mode allows only read/search tools — describe the plan instead of executing it.`;
+      return `[plan] tool '${tool}' is blocked. Plan mode allows only read/search tools — describe the plan instead of executing it.`;
     };
 
     // Exit plan mode — KodaX 的 exit_plan_mode 工具调用这个让 host 审批 plan 文本。
@@ -201,7 +207,7 @@ export class RealKodaXSession implements ManagedSession {
     // 同时 emit 一条 system_notice 把 plan 文本推给 renderer 让用户看到（Phase G 会改成
     // 弹 modal "approve / reject" 真双向交互）。
     const exitPlanMode: NonNullable<KodaXEvents['exitPlanMode']> = async (plan) => {
-      if (this.permissionMode !== 'plan-mode') return 'not-in-plan-mode';
+      if (this.permissionMode !== 'plan') return 'not-in-plan-mode';
       // 防御 truncate：thinking_end schema 上限 256KB，留 1KB 给 prefix/suffix
       const MAX_PLAN_BYTES = 250_000;
       const truncatedPlan =
@@ -211,7 +217,7 @@ export class RealKodaXSession implements ManagedSession {
       this.emit({
         kind: 'thinking_end',
         sessionId: sid,
-        thinking: `[plan-mode] proposed plan:\n\n${truncatedPlan}\n\n— exit_plan_mode 自动拒绝，请用户手动切 Mode selector 到 'accept-edits' 来执行。`,
+        thinking: `[plan] proposed plan:\n\n${truncatedPlan}\n\n— exit_plan_mode 自动拒绝，请用户手动切 Mode selector 到 'accept-edits' 或 'auto' 来执行。`,
       });
       console.info(
         `[real-session ${sid}] exit_plan_mode rejected (LLM-driven escalation blocked).`,

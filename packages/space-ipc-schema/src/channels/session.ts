@@ -11,22 +11,39 @@ import { z } from 'zod';
 // ---- Reasoning mode (镜像 @kodax-ai/llm 的 KodaXReasoningMode 闭集) ----
 const reasoningModeSchema = z.enum(['off', 'auto', 'quick', 'balanced', 'deep']);
 
-// ---- Permission mode (FEATURE_007 / alpha.1) ----
+// ---- Permission mode (FEATURE_029 / alpha.1) — 对齐 KodaX REPL canonical ----
+// 起因 + 决策记录见 docs/ADR/ADR-005-permission-mode-canonical.md
 //
-// Claude Desktop 嵌 Claude Code 截图揭示的 4 种 mode：
-//   - ask-permissions    每次工具调用都弹窗（alpha.0 默认）
-//   - accept-edits       edit/write 自动批，dangerous (bash rm 等) 仍弹
-//   - plan-mode          全部 deny — agent 只能输出 plan 不能动文件/命令
-//   - bypass-permissions 全部 allow — 危险也跳过；UI 需 settings 显式 unlock 才能选
+// **canonical 3 mode**（与 KodaX REPL FEATURE_092 对齐）：
+//   - 'plan'         只规划，所有 mutating 工具 hard-block (planModeBlockCheck 拦下)
+//   - 'accept-edits' edit/write 自动批；bash / network / MCP 走 confirm
+//   - 'auto'         所有 tools 由 AutoModeToolGuardrail 守门（FEATURE_030 注入）
 //
-// main 端 PermissionBroker.request() 第一步根据 mode 做短路决策。
-const permissionModeSchema = z.enum([
-  'ask-permissions',
-  'accept-edits',
-  'plan-mode',
-  'bypass-permissions',
-]);
+// auto mode 配 sub-engine: 'llm' | 'rules' (autoModeEngineSchema, 见下)
+// fallback：denial threshold (3/20) 或 circuit breaker (5/10m) 触发后 llm 自动降到 rules，
+// 通过 SessionEvent 'auto_engine_change' 通知 renderer 更新 UI。
+//
+// **alpha.0/.1 旧 enum 已 deprecated**：
+//   - 'plan-mode'          → 'plan'
+//   - 'ask-permissions'    → 'accept-edits' (KodaX 没有"问每次"独立 mode)
+//   - 'bypass-permissions' → 'auto' + engine 'rules' (auto-rules.jsonc allow-all 实现 bypass)
+//   - 'accept-edits'       → 'accept-edits' (不变)
+//
+// 注意：当前 desktop sessions 仅 in-memory (host Map)，**无持久化文件**，故未实现
+// migrateLegacyPermissionMode 迁移函数——zod 在 IPC 边界直接拒绝旧 enum 值。
+// 未来若 F033 引入 ~/.kodax/sessions/ 持久化加载，再补迁移函数 + 单测。
+const permissionModeSchema = z.enum(['plan', 'accept-edits', 'auto']);
 export type PermissionMode = z.infer<typeof permissionModeSchema>;
+
+// ---- Auto-mode engine 子档 (FEATURE_029) ----
+//
+// 仅 permissionMode === 'auto' 时有意义。
+//   - 'llm'   sideQuery 调 classifier 让 LLM 判断 risk
+//   - 'rules' 走 ~/.kodax/auto-rules.jsonc + 内置 signals (file/bash/path) + AGENTS.md context
+//
+// 启动默认 'llm'；触发 denial threshold / circuit breaker → 自动 'rules'。
+const autoModeEngineSchema = z.enum(['llm', 'rules']);
+export type AutoModeEngine = z.infer<typeof autoModeEngineSchema>;
 
 // ---- Provider ID (review F008 C2-sec)
 //
@@ -66,8 +83,20 @@ const sessionMetaSchema = z.object({
   projectRoot: z.string().min(1),
   provider: providerIdSchema,
   reasoningMode: reasoningModeSchema,
-  /** alpha.1：permission gate 模式。缺省 'ask-permissions' (alpha.0 行为)。*/
-  permissionMode: permissionModeSchema.default('ask-permissions'),
+  /**
+   * FEATURE_029：canonical 3 mode。缺省 'accept-edits'——足够日常 edit/write
+   * 自动批 + bash/network 仍走 confirm，对新用户最不容易出事。
+   * 用户想跑全自动 → 显式切 'auto' (会触发 AutoModeToolGuardrail bootstrap)。
+   */
+  permissionMode: permissionModeSchema.default('accept-edits'),
+  /**
+   * 仅当 permissionMode === 'auto' 时实际驱动 guardrail；其他 mode 下仍持有该字段
+   * （用户先选 engine 再切到 auto 是合法路径）。
+   * **非 optional**：runtime ManagedSession.autoModeEngine 始终有值，default 'llm'
+   * 与 IPC layer 一致——避免 main 端 "always present" 与 renderer 端 "may absent"
+   * 双语义分歧（reviewer 反馈 MEDIUM）。
+   */
+  autoModeEngine: autoModeEngineSchema.default('llm'),
   title: z.string().max(256).optional(),
   createdAt: z.number().int().nonnegative(),
   lastActivityAt: z.number().int().nonnegative(),
@@ -83,6 +112,8 @@ export const sessionCreateChannel = {
     provider: providerIdSchema,
     reasoningMode: reasoningModeSchema.optional(),
     permissionMode: permissionModeSchema.optional(),
+    /** 仅 mode='auto' 生效。缺省 'llm'。*/
+    autoModeEngine: autoModeEngineSchema.optional(),
   }),
   output: z.object({
     sessionId: z.string().min(1),
@@ -160,19 +191,32 @@ export const sessionDeleteChannel = {
   }),
 } as const;
 
-// ---- Invoke: session.setPermissionMode ---- (alpha.1)
+// ---- Invoke: session.setPermissionMode ---- (FEATURE_029)
 //
 // Claude Desktop Mode 切换 (Ctrl+M)。立即生效——下一次 tool call 走新 mode。
-//
-// 'bypass-permissions' 需要 UI 端先解锁 settings flag 才允许传——这层 UI gate；
-// main 端不区分 mode 的"信任度"，全部接受。如未来需要服务端二次校验（防 renderer 篡改
-// 直接传 bypass），加 settings.bypass_permissions_enabled flag 同步到 main 即可。
+// 切到 'auto' 时如果 autoModeEngine 未先设置过，main 端用缺省 'llm' bootstrap guardrail。
 export const sessionSetPermissionModeChannel = {
   name: 'session.setPermissionMode',
   direction: 'invoke',
   input: z.object({
     sessionId: z.string().min(1),
     mode: permissionModeSchema,
+  }),
+  output: z.object({
+    ok: z.boolean(),
+  }),
+} as const;
+
+// ---- Invoke: session.setAutoModeEngine ---- (FEATURE_029)
+//
+// 用户手动在 Auto 子菜单切 llm ↔ rules。立即生效；若当前 mode 不是 'auto' 也接受
+// （记录起来，下次切到 auto 时生效），main 端不强制 mode === 'auto'。
+export const sessionSetAutoModeEngineChannel = {
+  name: 'session.setAutoModeEngine',
+  direction: 'invoke',
+  input: z.object({
+    sessionId: z.string().min(1),
+    engine: autoModeEngineSchema,
   }),
   output: z.object({
     ok: z.boolean(),
@@ -433,6 +477,18 @@ export const sessionEventChannel = {
       kind: z.literal('managed_task_status'),
       sessionId: z.string().min(1),
       status: managedTaskStatusSchema,
+    }),
+    // ---- FEATURE_029 Auto-mode engine change ----
+    //
+    // 推送时机：
+    //   - user 手动 setAutoModeEngine（reason='manual'）
+    //   - guardrail 触发 denial threshold（reason='denial_threshold'）
+    //   - guardrail 触发 circuit breaker（reason='circuit_breaker'）
+    z.object({
+      kind: z.literal('auto_engine_change'),
+      sessionId: z.string().min(1),
+      engine: autoModeEngineSchema,
+      reason: z.enum(['manual', 'denial_threshold', 'circuit_breaker']).optional(),
     }),
     // ---- FEATURE_008 legacy work_budget / harness_profile ----
     //

@@ -205,3 +205,57 @@ test('session.event tool_result rejects content over 512 KB', () => {
   };
   assert.equal(sessionEventChannel.payload.safeParse(evt).success, false);
 });
+
+// ---- FEATURE_029: canonical 3 mode + auto engine ----
+
+test('permissionMode enum accepts canonical 3: plan / accept-edits / auto', () => {
+  for (const mode of ['plan', 'accept-edits', 'auto'] as const) {
+    const result = sessionCreateChannel.input.safeParse({
+      projectRoot: '/tmp/proj',
+      provider: 'mock',
+      permissionMode: mode,
+    });
+    assert.equal(result.success, true, `should accept ${mode}`);
+  }
+});
+
+test('permissionMode enum rejects legacy values: ask-permissions / bypass-permissions / plan-mode', () => {
+  for (const mode of ['ask-permissions', 'bypass-permissions', 'plan-mode']) {
+    const result = sessionCreateChannel.input.safeParse({
+      projectRoot: '/tmp/proj',
+      provider: 'mock',
+      permissionMode: mode,
+    });
+    assert.equal(result.success, false, `should reject legacy ${mode}`);
+  }
+});
+
+test('session.event auto_engine_change variant accepted with reason enum', () => {
+  for (const reason of ['manual', 'denial_threshold', 'circuit_breaker'] as const) {
+    const evt = {
+      kind: 'auto_engine_change' as const,
+      sessionId: 's_1',
+      engine: 'rules' as const,
+      reason,
+    };
+    assert.equal(sessionEventChannel.payload.safeParse(evt).success, true, `reason=${reason}`);
+  }
+});
+
+test('session.event auto_engine_change accepts engine without reason (optional)', () => {
+  const evt = {
+    kind: 'auto_engine_change' as const,
+    sessionId: 's_1',
+    engine: 'llm' as const,
+  };
+  assert.equal(sessionEventChannel.payload.safeParse(evt).success, true);
+});
+
+test('session.event auto_engine_change rejects invalid engine value', () => {
+  const evt = {
+    kind: 'auto_engine_change' as const,
+    sessionId: 's_1',
+    engine: 'something-else',
+  };
+  assert.equal(sessionEventChannel.payload.safeParse(evt).success, false);
+});

@@ -73,8 +73,10 @@ export class MockKodaXSession implements ManagedSession {
   /** F008: provider / reasoningMode 可由 IPC 切换 — 直接赋值，下一次 send 读新值。*/
   provider: string;
   reasoningMode: ManagedSession['reasoningMode'];
-  /** alpha.1: permissionMode 同上策略，session.setPermissionMode IPC 改字段；下次 tool call 生效。*/
+  /** FEATURE_029: permissionMode 同上策略，session.setPermissionMode IPC 改字段；下次 tool call 生效。*/
   permissionMode: ManagedSession['permissionMode'];
+  /** FEATURE_029: auto-mode 子档；mock 不实际跑 guardrail 但需要持有字段供 host setter。*/
+  autoModeEngine: ManagedSession['autoModeEngine'];
   readonly createdAt: number;
   lastActivityAt: number;
   title: string | undefined = undefined;
@@ -90,6 +92,7 @@ export class MockKodaXSession implements ManagedSession {
     this.provider = opts.provider;
     this.reasoningMode = opts.reasoningMode;
     this.permissionMode = opts.permissionMode;
+    this.autoModeEngine = opts.autoModeEngine ?? 'llm';
     this.createdAt = Date.now();
     this.lastActivityAt = this.createdAt;
     this.emit = opts.emit;

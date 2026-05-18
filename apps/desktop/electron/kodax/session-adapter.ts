@@ -14,7 +14,7 @@
 //   KodaXEvents.onStreamEnd      → emit({ kind:'session_complete', ... })
 //   (catch in agent.run)         → emit({ kind:'session_error',  ... })
 
-import type { PermissionDecision, PermissionMode, SessionEvent } from '@kodax-space/space-ipc-schema';
+import type { AutoModeEngine, PermissionDecision, PermissionMode, SessionEvent } from '@kodax-space/space-ipc-schema';
 
 /**
  * 工具调用前的权限请求回调。
@@ -39,6 +39,8 @@ export type SessionCreateOptions = {
   readonly provider: string;
   readonly reasoningMode: 'off' | 'auto' | 'quick' | 'balanced' | 'deep';
   readonly permissionMode: PermissionMode;
+  /** 仅 permissionMode === 'auto' 时生效；缺省 'llm'。FEATURE_029 */
+  readonly autoModeEngine?: AutoModeEngine;
   readonly emit: (event: SessionEvent) => void;
   /** 工具调用前的 gate；host 注入。Mock 用来模拟弹窗。*/
   readonly requestPermission: PermissionRequestFn;
@@ -54,8 +56,10 @@ export interface ManagedSession {
    */
   provider: string;
   reasoningMode: SessionCreateOptions['reasoningMode'];
-  /** alpha.1: permission gate mode；alpha.0 隐式 'ask-permissions'。*/
+  /** FEATURE_029: canonical 'plan' | 'accept-edits' | 'auto'。*/
   permissionMode: PermissionMode;
+  /** 仅当 permissionMode === 'auto' 时有意义；缺省 'llm'。*/
+  autoModeEngine: AutoModeEngine;
   readonly createdAt: number;
   /** 最后一次发送 prompt / 收到事件的时间戳。`session.list` 用它排序。*/
   lastActivityAt: number;

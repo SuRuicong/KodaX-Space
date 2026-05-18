@@ -33,6 +33,7 @@ export function registerSessionChannels(): void {
       provider: input.provider,
       reasoningMode: input.reasoningMode,
       permissionMode: input.permissionMode,
+      autoModeEngine: input.autoModeEngine,
     });
     return { sessionId, createdAt };
   });
@@ -84,6 +85,7 @@ export function registerSessionChannels(): void {
         provider: s.provider,
         reasoningMode: s.reasoningMode,
         permissionMode: s.permissionMode,
+        autoModeEngine: s.autoModeEngine,
         title: s.title,
         createdAt: s.createdAt,
         lastActivityAt: s.lastActivityAt,
@@ -117,10 +119,18 @@ export function registerSessionChannels(): void {
     return { ok };
   });
 
-  // session.setPermissionMode — alpha.1
+  // session.setPermissionMode — FEATURE_029 canonical 3 mode
   // 切 mode 立即生效（下次 tool call broker.request 走新 mode 短路）。
   registerChannel('session.setPermissionMode', (input) => {
     const ok = kodaxHost.setPermissionMode(input.sessionId, input.mode);
+    return { ok };
+  });
+
+  // session.setAutoModeEngine — FEATURE_029
+  // 切 auto mode 子档 engine ('llm' | 'rules')。即便当前 mode 不是 'auto' 也接受
+  // (用户先选 engine 再切 auto 是合法路径)，下次进入 auto 时按新 engine bootstrap guardrail。
+  registerChannel('session.setAutoModeEngine', (input) => {
+    const ok = kodaxHost.setAutoModeEngine(input.sessionId, input.engine);
     return { ok };
   });
 }

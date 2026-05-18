@@ -236,6 +236,13 @@ export const useAppStore = create<AppState>((set) => ({
             [event.sessionId]: { profile, round: ws.currentRound },
           };
         }
+      } else if (event.kind === 'auto_engine_change') {
+        // FEATURE_029: auto-mode engine 切换（user manual / denial threshold / circuit breaker）。
+        // 更新 session.autoModeEngine 让 ModeSelector 立即反映；本地 store 不持久化，
+        // 重启后 main 端 list 重新拉权威值。
+        next.sessions = state.sessions.map((s) =>
+          s.sessionId === event.sessionId ? { ...s, autoModeEngine: event.engine } : s,
+        );
       } else if (event.kind === 'tool_start') {
         // F009：记 toolId → path 暂存；等 tool_result 来配对决定要不要 jump 到 diff
         // input.path 由 mock-session / real adapter 在 tool_start 时附上
