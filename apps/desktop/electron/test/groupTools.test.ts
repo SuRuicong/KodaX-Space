@@ -7,7 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { ConversationMessage } from '../../features/session/composeMessages.js';
+import type { ConversationMessage } from '../../renderer/src/features/session/composeMessages.js';
 
 // 从 ConversationStreamV2 抽出来的 groupTools 副本（保持模块内部不导出，
 // 测试在这里复制实现以便独立验证；如后续频繁改可考虑提取到 utils 共享）
@@ -120,7 +120,7 @@ test('groupTools: preserves tool order within group', () => {
   const out = groupTools([tool('t1', 'read'), tool('t2', 'edit'), tool('t3', 'bash')]);
   if (out[0].kind === 'tool_group') {
     assert.deepEqual(
-      out[0].tools.map((t) => t.toolName),
+      out[0].tools.map((t: { toolName: string }) => t.toolName),
       ['read', 'edit', 'bash'],
     );
   }

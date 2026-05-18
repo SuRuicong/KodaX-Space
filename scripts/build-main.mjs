@@ -42,7 +42,12 @@ const sharedOptions = {
   // keytar 是原生模块（native binding），不能被 esbuild bundle；
   // 必须保持 require('keytar') 在运行时由 Node module 解析。
   // electron-builder 打包时会把 node_modules/keytar/build/Release/keytar.node 一并塞进。
-  external: ['electron', 'keytar'],
+  //
+  // @kodax-ai/kodax 标 external：bundle 进 main.js 会让 main.js 从 880KB 涨到 53MB
+  // （KodaX 自带 React/Ink/openai-sdk/anthropic-sdk 等大依赖）。external 后 require 时
+  // 直接走 node_modules，electron-builder 把整个 @kodax-ai/kodax 塞进 asar——大小没变
+  // 但 main.js 启动快很多，dev watch 重 bundle 也快。
+  external: ['electron', 'keytar', '@kodax-ai/kodax', '@kodax-ai/kodax/coding'],
   logLevel: 'info',
 };
 
