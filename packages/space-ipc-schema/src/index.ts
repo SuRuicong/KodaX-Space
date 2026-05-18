@@ -50,6 +50,16 @@ export {
 } from './channels/project.js';
 
 export {
+  askUserRequestChannel,
+  askUserReplyChannel,
+  askUserCancelledChannel,
+  type AskUserVerdict,
+  type AskUserSignal,
+  type AskUserToolCall,
+  type AskUserRequestPayload,
+} from './channels/ask-user.js';
+
+export {
   permissionRequestChannel,
   permissionCancelledChannel,
   permissionAnswerChannel,

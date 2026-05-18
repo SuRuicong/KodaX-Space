@@ -30,6 +30,7 @@ import { BottomBar } from './BottomBar.js';
 import { ConversationStreamV2 } from './ConversationStreamV2.js';
 import { PopoutOverlay } from './popouts/PopoutOverlay.js';
 import { PermissionModal } from '../features/permission/PermissionModal.js';
+import { AskUserModal } from '../features/ask-user/AskUserModal.js';
 
 export type Mode = 'coder' | 'partner';
 
@@ -59,6 +60,7 @@ export function Shell(): JSX.Element {
       </div>
 
       <PermissionModal />
+      <AskUserModal />
     </div>
   );
 }

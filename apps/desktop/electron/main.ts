@@ -12,12 +12,14 @@ import { registerVersionChannel } from './ipc/version.js';
 import { registerSessionChannels } from './ipc/session.js';
 import { registerProjectChannels } from './ipc/project.js';
 import { registerPermissionChannels } from './ipc/permission.js';
+import { registerAskUserChannels } from './ipc/ask-user.js';
 import { registerProviderChannels, injectAllKeysToEnv } from './ipc/provider.js';
 import { registerFilesChannels } from './ipc/files.js';
 import { setRendererTarget } from './ipc/push.js';
 import { kodaxHost } from './kodax/host.js';
 import { permissionRegistry } from './permission/registry.js';
 import { permissionBroker } from './permission/broker.js';
+import { askUserBroker } from './permission/ask-user-broker.js';
 import { providerConfigStore } from './providers/config.js';
 
 // CJS 输出（见 scripts/build-main.mjs），__dirname 是原生 Node 全局
@@ -148,6 +150,7 @@ app.whenReady().then(() => {
   registerSessionChannels();
   registerProjectChannels();
   registerPermissionChannels();
+  registerAskUserChannels();
   registerProviderChannels();
   registerFilesChannels();
   // push 目标走 getter 间接拿当前 window——dev HMR / 用户重开窗口都能正确切换
@@ -184,6 +187,7 @@ app.on('window-all-closed', () => {
 // 可能残留。先一把扫光，幂等
 app.on('before-quit', (event) => {
   permissionBroker.cancelAll('shutdown');
+  askUserBroker.cancelAll('shutdown');
   if (kodaxHost.list().length === 0) return;
   event.preventDefault();
   void kodaxHost

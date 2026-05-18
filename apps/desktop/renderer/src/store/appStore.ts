@@ -17,6 +17,7 @@ import type {
   SessionMeta,
   SessionEvent,
   PermissionRequestPayload,
+  AskUserRequestPayload,
 } from '@kodax-space/space-ipc-schema';
 
 /**
@@ -48,6 +49,12 @@ interface AppState {
    * 看到多个弹窗时手抖点错。
    */
   permissionQueue: readonly PermissionRequestPayload[];
+
+  /**
+   * FEATURE_032: 待用户决策的 askUser 请求队列。与 permissionQueue 并行——前者是
+   * "tool 调用 gate"，后者是 "agent / guardrail 主动问问题"，UI 不同 modal、不互相阻塞。
+   */
+  askUserQueue: readonly AskUserRequestPayload[];
 
   /** Provider catalog（built-in + custom）+ configured 状态。FEATURE_004。*/
   providers: readonly ProviderInfo[];
@@ -126,6 +133,9 @@ interface AppState {
   enqueuePermission(req: PermissionRequestPayload): void;
   /** 用户决策完 / main 端 cancel 推过来 / session 删除 — 都从队列里挪走。*/
   dequeuePermission(reqId: string): void;
+  /** FEATURE_032: askUser 队列管理 (与 permissionQueue 同模式)。*/
+  enqueueAskUser(req: AskUserRequestPayload): void;
+  dequeueAskUser(reqId: string): void;
   setProviders(
     providers: readonly ProviderInfo[],
     defaultProviderId: string | null,
@@ -148,6 +158,7 @@ export const useAppStore = create<AppState>((set) => ({
   eventsBySession: {},
   userMessagesBySession: {},
   permissionQueue: [],
+  askUserQueue: [],
   providers: [],
   defaultProviderId: null,
   keychainBackend: 'unknown',
@@ -298,6 +309,7 @@ export const useAppStore = create<AppState>((set) => ({
         todoListBySession: restTodos,
         managedTaskStatusBySession: restMts,
         permissionQueue: state.permissionQueue.filter((p) => p.sessionId !== sessionId),
+        askUserQueue: state.askUserQueue.filter((p) => p.sessionId !== sessionId),
         currentSessionId: state.currentSessionId === sessionId ? null : state.currentSessionId,
         // F009: 删 session 不能让 pending tool path / lastDiffPath 留指着已删 session
         lastDiffPath:
@@ -317,6 +329,17 @@ export const useAppStore = create<AppState>((set) => ({
       permissionQueue: state.permissionQueue.filter((p) => p.reqId !== reqId),
     })),
 
+  enqueueAskUser: (req) =>
+    set((state) => {
+      if (state.askUserQueue.some((p) => p.reqId === req.reqId)) return state;
+      return { askUserQueue: [...state.askUserQueue, req] };
+    }),
+
+  dequeueAskUser: (reqId) =>
+    set((state) => ({
+      askUserQueue: state.askUserQueue.filter((p) => p.reqId !== reqId),
+    })),
+
   setProviders: (providers, defaultProviderId, keychainBackend) =>
     set({ providers, defaultProviderId, keychainBackend }),
 
@@ -328,6 +351,7 @@ export const useAppStore = create<AppState>((set) => ({
       eventsBySession: {},
       userMessagesBySession: {},
       permissionQueue: [],
+      askUserQueue: [],
       workBudgetBySession: {},
       harnessProfileBySession: {},
       todoListBySession: {},

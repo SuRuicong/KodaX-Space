@@ -35,6 +35,10 @@ function truncate(s: string, max: number): string {
 export function PermissionModal(): JSX.Element | null {
   const queue = useAppStore((s) => s.permissionQueue);
   const dequeue = useAppStore((s) => s.dequeuePermission);
+  // FEATURE_032 fix: AskUserModal 渲染在 PermissionModal 之后（DOM 顺序晚 → z-stack 上层），
+  // 当 askUserQueue 也非空时用户看到的是 AskUserModal——本 modal 应当 yield Esc / Enter
+  // 给上层 modal 处理，避免一次 Esc 同时 dequeue 两个 modal head。
+  const askUserActive = useAppStore((s) => s.askUserQueue.length > 0);
   const head = queue[0] ?? null;
 
   // 每次切换 head（新弹窗）重置本地状态
@@ -82,7 +86,10 @@ export function PermissionModal(): JSX.Element | null {
           decision,
         });
         if (!result.ok) {
-          setErr(`${result.error.code}: ${result.error.message}`);
+          // defensive (FEATURE_032 review): optional chaining 防 envelope error 字段缺失
+          const code = result.error?.code ?? 'ERR_UNKNOWN';
+          const message = result.error?.message ?? 'unknown error';
+          setErr(`${code}: ${message}`);
           setBusy(false);
           return;
         }
@@ -98,8 +105,9 @@ export function PermissionModal(): JSX.Element | null {
   );
 
   // Escape = deny；Enter = allow_once（仅非危险时）
+  // 当 AskUserModal 同时可见时让出键盘——避免一次 Esc 同时 dequeue 双 modal head
   useEffect(() => {
-    if (!head) return;
+    if (!head || askUserActive) return;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
         void answer('deny');
@@ -109,7 +117,7 @@ export function PermissionModal(): JSX.Element | null {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [head, busy, answer]);
+  }, [head, busy, answer, askUserActive]);
 
   if (!head || !style) return null;
 

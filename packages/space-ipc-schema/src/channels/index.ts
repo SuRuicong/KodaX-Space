@@ -39,6 +39,11 @@ import {
   permissionRevokeChannel,
 } from './permission.js';
 import {
+  askUserRequestChannel,
+  askUserReplyChannel,
+  askUserCancelledChannel,
+} from './ask-user.js';
+import {
   providerListChannel,
   providerSetKeyChannel,
   providerRemoveKeyChannel,
@@ -68,6 +73,7 @@ export const invokeChannels = {
   [permissionAnswerChannel.name]: permissionAnswerChannel,
   [permissionListChannel.name]: permissionListChannel,
   [permissionRevokeChannel.name]: permissionRevokeChannel,
+  [askUserReplyChannel.name]: askUserReplyChannel,
   [providerListChannel.name]: providerListChannel,
   [providerSetKeyChannel.name]: providerSetKeyChannel,
   [providerRemoveKeyChannel.name]: providerRemoveKeyChannel,
@@ -84,6 +90,8 @@ export const pushChannels = {
   [sessionEventChannel.name]: sessionEventChannel,
   [permissionRequestChannel.name]: permissionRequestChannel,
   [permissionCancelledChannel.name]: permissionCancelledChannel,
+  [askUserRequestChannel.name]: askUserRequestChannel,
+  [askUserCancelledChannel.name]: askUserCancelledChannel,
 } as const;
 
 export type InvokeChannels = typeof invokeChannels;

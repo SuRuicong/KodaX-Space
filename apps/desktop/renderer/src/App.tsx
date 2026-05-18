@@ -24,6 +24,7 @@ import { ProjectPicker } from './features/project/ProjectPicker.js';
 import { SessionList } from './features/session/SessionList.js';
 import { EventStream } from './features/session/EventStream.js';
 import { PermissionModal } from './features/permission/PermissionModal.js';
+import { AskUserModal } from './features/ask-user/AskUserModal.js';
 import { ProviderSettings } from './features/provider/ProviderSettings.js';
 import { FilePanel } from './features/code/FilePanel.js';
 import { Shell } from './shell/Shell.js';
@@ -40,6 +41,8 @@ export default function App(): JSX.Element {
   const appendEvent = useAppStore((s) => s.appendEvent);
   const enqueuePermission = useAppStore((s) => s.enqueuePermission);
   const dequeuePermission = useAppStore((s) => s.dequeuePermission);
+  const enqueueAskUser = useAppStore((s) => s.enqueueAskUser);
+  const dequeueAskUser = useAppStore((s) => s.dequeueAskUser);
   const setProviders = useAppStore((s) => s.setProviders);
   const providers = useAppStore((s) => s.providers);
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
@@ -82,11 +85,30 @@ export default function App(): JSX.Element {
       }),
     );
 
+    // FEATURE_032: askUser ask-and-wait — push 进 askUser 队列，AskUserModal 渲染队列头
+    unsubsRef.current.push(
+      bridge.on('askUser.request', (payload) => {
+        enqueueAskUser(payload);
+      }),
+    );
+    unsubsRef.current.push(
+      bridge.on('askUser.cancelled', (payload) => {
+        dequeueAskUser(payload.reqId);
+      }),
+    );
+
     return () => {
       for (const u of unsubsRef.current) u();
       unsubsRef.current = [];
     };
-  }, [appendEvent, enqueuePermission, dequeuePermission, setProviders]);
+  }, [
+    appendEvent,
+    enqueuePermission,
+    dequeuePermission,
+    enqueueAskUser,
+    dequeueAskUser,
+    setProviders,
+  ]);
 
   // Esc 关 settings 面板
   useEffect(() => {
@@ -102,7 +124,11 @@ export default function App(): JSX.Element {
   const defaultProvider = providers.find((p) => p.id === defaultProviderId);
 
   // alpha.1: 新 Shell 接管整个 layout，旧 layout 保留以 fallback 验证。
-  // Settings overlay 仍 hoist 在这里（Shell 内部不重复实现）
+  // Settings overlay 仍 hoist 在这里（Shell 内部不重复实现）。
+  //
+  // **注意 (F032 review)**：PermissionModal / AskUserModal 由 Shell 内部 mount，本分支 return
+  // 之前的代码不应当再 mount 一次——否则两套 modal 共享 store queue 会双重渲染 + 双重键盘
+  // 监听。下方 USE_NEW_SHELL=false 分支才走 root-level mount。
   if (USE_NEW_SHELL) {
     return (
       <>
@@ -167,6 +193,7 @@ export default function App(): JSX.Element {
       </footer>
 
       <PermissionModal />
+      <AskUserModal />
       {showSettings && <ProviderSettings onClose={() => setShowSettings(false)} />}
     </div>
   );
