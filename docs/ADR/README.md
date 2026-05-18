@@ -8,6 +8,7 @@
 | [ADR-002](ADR-002-rust-integration-napi.md) | Rust 集成策略：NAPI-RS 选择性热路径 | Accepted |
 | [ADR-003](ADR-003-kodax-integration-in-process.md) | KodaX 集成模式：in-process import | Accepted |
 | [ADR-004](ADR-004-panel-model.md) | 面板模型：双面板 + Quick Ask | Accepted |
+| [ADR-005](ADR-005-permission-mode-canonical.md) | Permission Mode 对齐 KodaX REPL canonical 3 + Auto engine 子档 | Accepted |
 
 ## 写 ADR 的约束
 
