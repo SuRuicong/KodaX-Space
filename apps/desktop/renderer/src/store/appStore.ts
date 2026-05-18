@@ -61,13 +61,45 @@ interface AppState {
   /**
    * F008: 每个 session 的当前 Work 预算（used / cap）。
    * 由 session-event 'work_budget' 增量更新，覆盖最新值（main 端是权威源）。
+   * alpha.1：也从 managed_task_status.globalWorkBudget/budgetUsage 派生。
    */
   workBudgetBySession: Readonly<Record<string, { used: number; cap: number } | undefined>>;
-  /** F008: 每个 session 的当前 harness profile（H0/H1/H2）+ round。*/
+  /** F008: 每个 session 的当前 harness profile（H0/H1/H2）+ round。
+   *  alpha.1：也从 managed_task_status.harnessProfile/currentRound 派生（profile 名映射）。
+   */
   harnessProfileBySession: Readonly<
     Record<
       string,
       | { profile: 'H0_DIRECT' | 'H1_EXECUTE_EVAL' | 'H2_PLAN_EXECUTE_EVAL'; round?: number }
+      | undefined
+    >
+  >;
+  /**
+   * alpha.1: Scout-seeded todo list per session.
+   * 由 session-event 'todo_update' 全量替换最新列表。空列表也是有效状态（表示 todo cleared）。
+   */
+  todoListBySession: Readonly<
+    Record<
+      string,
+      | ReadonlyArray<{
+          id: string;
+          content: string;
+          status: 'pending' | 'in_progress' | 'completed';
+          activeForm?: string;
+        }>
+      | undefined
+    >
+  >;
+  /**
+   * alpha.1: KodaX managed task / subagent 最新状态。
+   * 由 session-event 'managed_task_status' 全量替换最新值（main 端在每次 status 变化时推一次）。
+   * 字段对照 KodaXManagedTaskStatusEvent — agentMode / harnessProfile / activeWorker / budget /
+   * idleWaiting / childFanoutCount / events[] 等。
+   */
+  managedTaskStatusBySession: Readonly<
+    Record<
+      string,
+      | Extract<SessionEvent, { kind: 'managed_task_status' }>['status']
       | undefined
     >
   >;
@@ -121,6 +153,8 @@ export const useAppStore = create<AppState>((set) => ({
   keychainBackend: 'unknown',
   workBudgetBySession: {},
   harnessProfileBySession: {},
+  todoListBySession: {},
+  managedTaskStatusBySession: {},
   lastDiffPath: null,
   pendingToolPaths: {},
 
@@ -168,6 +202,40 @@ export const useAppStore = create<AppState>((set) => ({
           ...state.harnessProfileBySession,
           [event.sessionId]: { profile: event.profile, round: event.round },
         };
+      } else if (event.kind === 'todo_update') {
+        // alpha.1: 全量替换；空列表表示 cleared
+        next.todoListBySession = {
+          ...state.todoListBySession,
+          [event.sessionId]: event.items,
+        };
+      } else if (event.kind === 'managed_task_status') {
+        // alpha.1: 直接覆盖最新值。同时派生 legacy work_budget / harness_profile
+        // 以便老 TasksPanel/Tabs 仍能渲染。
+        next.managedTaskStatusBySession = {
+          ...state.managedTaskStatusBySession,
+          [event.sessionId]: event.status,
+        };
+        const ws = event.status;
+        if (ws.budgetUsage !== undefined && ws.globalWorkBudget !== undefined) {
+          next.workBudgetBySession = {
+            ...state.workBudgetBySession,
+            [event.sessionId]: { used: ws.budgetUsage, cap: ws.globalWorkBudget },
+          };
+        }
+        // KodaX harnessProfile 是字符串（KodaXHarnessProfile）；老 enum 限 H0/H1/H2。
+        // 已知映射：'H0_DIRECT' / 'H1_EXECUTE_EVAL' / 'H2_PLAN_EXECUTE_EVAL' 字面量直接通过；
+        // 其他 KodaX 自定义 profile 留 undefined（保留旧值，避免抖动）。
+        const profile = ws.harnessProfile;
+        if (
+          profile === 'H0_DIRECT' ||
+          profile === 'H1_EXECUTE_EVAL' ||
+          profile === 'H2_PLAN_EXECUTE_EVAL'
+        ) {
+          next.harnessProfileBySession = {
+            ...state.harnessProfileBySession,
+            [event.sessionId]: { profile, round: ws.currentRound },
+          };
+        }
       } else if (event.kind === 'tool_start') {
         // F009：记 toolId → path 暂存；等 tool_result 来配对决定要不要 jump 到 diff
         // input.path 由 mock-session / real adapter 在 tool_start 时附上
@@ -212,12 +280,16 @@ export const useAppStore = create<AppState>((set) => ({
       const { [sessionId]: _msg, ...restMsgs } = state.userMessagesBySession;
       const { [sessionId]: _bud, ...restBudgets } = state.workBudgetBySession;
       const { [sessionId]: _prof, ...restProfiles } = state.harnessProfileBySession;
+      const { [sessionId]: _todo, ...restTodos } = state.todoListBySession;
+      const { [sessionId]: _mts, ...restMts } = state.managedTaskStatusBySession;
       return {
         sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
         eventsBySession: restEvents,
         userMessagesBySession: restMsgs,
         workBudgetBySession: restBudgets,
         harnessProfileBySession: restProfiles,
+        todoListBySession: restTodos,
+        managedTaskStatusBySession: restMts,
         permissionQueue: state.permissionQueue.filter((p) => p.sessionId !== sessionId),
         currentSessionId: state.currentSessionId === sessionId ? null : state.currentSessionId,
         // F009: 删 session 不能让 pending tool path / lastDiffPath 留指着已删 session
@@ -251,6 +323,8 @@ export const useAppStore = create<AppState>((set) => ({
       permissionQueue: [],
       workBudgetBySession: {},
       harnessProfileBySession: {},
+      todoListBySession: {},
+      managedTaskStatusBySession: {},
       sessions: [],
       lastDiffPath: null,
       pendingToolPaths: {},

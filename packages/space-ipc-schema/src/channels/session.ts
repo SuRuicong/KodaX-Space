@@ -230,10 +230,79 @@ const tokenUsageSchema = z
   })
   .optional();
 
+// alpha.1 KodaX 0.7.40 全 surface 接通 — todo / managed_task_status / compact_* / retry_after /
+// repointel_trace / session_start / iteration_start / stream_end / thinking_end / tool_input_delta /
+// provider_recovery — payload shape 对照 KodaX packages/coding/src/types.ts KodaXEvents 抽取（subset；
+// 只挑 desktop UI 驱动得到的字段），具体见 apps/desktop/electron/kodax/kodax-sdk-types.d.ts。
+const todoItemSchema = z.object({
+  id: z.string().min(1).max(128),
+  content: z.string().max(2048),
+  status: z.enum(['pending', 'in_progress', 'completed']),
+  activeForm: z.string().max(2048).optional(),
+});
+
+const repointelTraceSchema = z.object({
+  kind: z.string().min(1).max(64),
+  mode: z.enum(['auto', 'off', 'oss', 'premium-shared', 'premium-native']).optional(),
+  engine: z.string().max(64).optional(),
+  bridge: z.string().max(64).optional(),
+  status: z.string().max(64).optional(),
+  latencyMs: z.number().nonnegative().max(600_000).optional(),
+  cacheHit: z.boolean().optional(),
+});
+
+const retryAfterSchema = z.object({
+  provider: z.string().min(1).max(64),
+  waitMs: z.number().int().nonnegative().max(3_600_000),
+  reason: z.enum(['rate-limit', 'overloaded']),
+  source: z.enum([
+    'retry-after-seconds',
+    'retry-after-date',
+    'retry-after-ms',
+    'exponential-backoff',
+  ]),
+  attempt: z.number().int().nonnegative().max(100),
+  maxAttempts: z.number().int().positive().max(100),
+});
+
+const managedLiveEventSchema = z.object({
+  key: z.string().min(1).max(128),
+  kind: z.enum(['progress', 'completed', 'notification', 'warning']),
+  presentation: z.enum(['status', 'assistant', 'thinking']).optional(),
+  phase: z.string().max(64).optional(),
+  workerId: z.string().max(128).optional(),
+  workerTitle: z.string().max(256).optional(),
+  summary: z.string().max(1024),
+  detail: z.string().max(MAX_TEXT_CHUNK).optional(),
+  persistToHistory: z.boolean().optional(),
+});
+
+const managedTaskStatusSchema = z.object({
+  agentMode: z.enum(['ama', 'sa']),
+  harnessProfile: z.string().max(64),
+  activeWorkerId: z.string().max(128).optional(),
+  activeWorkerTitle: z.string().max(256).optional(),
+  childFanoutClass: z.string().max(64).optional(),
+  childFanoutCount: z.number().int().nonnegative().max(100).optional(),
+  currentRound: z.number().int().nonnegative().max(100).optional(),
+  maxRounds: z.number().int().nonnegative().max(100).optional(),
+  phase: z.string().max(64).optional(),
+  note: z.string().max(1024).optional(),
+  detailNote: z.string().max(MAX_TEXT_CHUNK).optional(),
+  events: z.array(managedLiveEventSchema).max(50).optional(),
+  upgradeCeiling: z.string().max(64).optional(),
+  globalWorkBudget: z.number().int().nonnegative().max(1_000_000).optional(),
+  budgetUsage: z.number().int().nonnegative().max(1_000_000).optional(),
+  budgetApprovalRequired: z.boolean().optional(),
+  idleWaiting: z.boolean().optional(),
+  idleWaitingPendingCount: z.number().int().nonnegative().max(100).optional(),
+});
+
 export const sessionEventChannel = {
   name: 'session.event',
   direction: 'push',
   payload: z.discriminatedUnion('kind', [
+    // ---- 流式输出（v0.1.0-alpha.0 已有）----
     z.object({
       kind: z.literal('text_delta'),
       sessionId: z.string().min(1),
@@ -245,11 +314,26 @@ export const sessionEventChannel = {
       text: z.string().max(MAX_TEXT_CHUNK),
     }),
     z.object({
+      kind: z.literal('thinking_end'),
+      sessionId: z.string().min(1),
+      // 全量 thinking trace 在大 reasoning session 可能不小，但比 tool_result 小一档。
+      // 256KB = MAX_TEXT_CHUNK，与单条 text/thinking_delta 同级——KodaX 内部 thinking 是
+      // 流式累积的，到 onThinkingEnd 时长度 ≈ 所有 thinking_delta 拼接。512KB 太大易 DoS。
+      thinking: z.string().max(MAX_TEXT_CHUNK),
+    }),
+    z.object({
       kind: z.literal('tool_start'),
       sessionId: z.string().min(1),
       toolId: z.string().min(1),
       toolName: z.string().min(1),
       input: toolInputSchema.optional(),
+    }),
+    z.object({
+      kind: z.literal('tool_input_delta'),
+      sessionId: z.string().min(1),
+      toolId: z.string().min(1).optional(),
+      toolName: z.string().min(1),
+      partialJson: z.string().max(MAX_TEXT_CHUNK),
     }),
     z.object({
       kind: z.literal('tool_progress'),
@@ -265,11 +349,29 @@ export const sessionEventChannel = {
       content: z.string().max(MAX_TOOL_RESULT),
     }),
     z.object({
+      kind: z.literal('stream_end'),
+      sessionId: z.string().min(1),
+    }),
+    // ---- session/iteration lifecycle ----
+    z.object({
+      kind: z.literal('session_start'),
+      sessionId: z.string().min(1),
+      provider: z.string().min(1).max(64),
+    }),
+    z.object({
+      kind: z.literal('iteration_start'),
+      sessionId: z.string().min(1),
+      iter: z.number().int().nonnegative(),
+      maxIter: z.number().int().positive(),
+    }),
+    z.object({
       kind: z.literal('iteration_end'),
       sessionId: z.string().min(1),
       iter: z.number().int().nonnegative(),
       maxIter: z.number().int().positive(),
       tokenCount: z.number().int().nonnegative(),
+      tokenSource: z.enum(['api', 'estimate']).optional(),
+      scope: z.enum(['parent', 'worker']).optional(),
       usage: tokenUsageSchema,
     }),
     z.object({
@@ -281,23 +383,65 @@ export const sessionEventChannel = {
       sessionId: z.string().min(1),
       error: z.string(),
     }),
-    // FEATURE_008: Work 预算 + harness profile 推送
+    // ---- Context compaction（KodaX onCompact* 系列）----
+    z.object({
+      kind: z.literal('compact_start'),
+      sessionId: z.string().min(1),
+    }),
+    z.object({
+      kind: z.literal('compact_stats'),
+      sessionId: z.string().min(1),
+      tokensBefore: z.number().int().nonnegative().max(10_000_000),
+      tokensAfter: z.number().int().nonnegative().max(10_000_000),
+    }),
+    z.object({
+      kind: z.literal('compact_end'),
+      sessionId: z.string().min(1),
+    }),
+    // ---- Provider retry / recovery ----
+    z.object({
+      kind: z.literal('retry_after'),
+      sessionId: z.string().min(1),
+      payload: retryAfterSchema,
+    }),
+    z.object({
+      kind: z.literal('provider_recovery'),
+      sessionId: z.string().min(1),
+      stage: z.string().max(64),
+      errorClass: z.string().max(64),
+      attempt: z.number().int().nonnegative().max(100),
+      maxAttempts: z.number().int().positive().max(100),
+      delayMs: z.number().int().nonnegative().max(3_600_000),
+      recoveryAction: z.string().max(64),
+      ladderStep: z.number().int().nonnegative().max(10),
+      fallbackUsed: z.boolean(),
+    }),
+    // ---- Repointel (repo intelligence) trace ----
+    z.object({
+      kind: z.literal('repointel_trace'),
+      sessionId: z.string().min(1),
+      event: repointelTraceSchema,
+    }),
+    // ---- Plan / Todo (Scout-seeded todo list) ----
+    z.object({
+      kind: z.literal('todo_update'),
+      sessionId: z.string().min(1),
+      items: z.array(todoItemSchema).max(200),
+    }),
+    // ---- Managed Task / Subagent status (Tasks popout) ----
+    z.object({
+      kind: z.literal('managed_task_status'),
+      sessionId: z.string().min(1),
+      status: managedTaskStatusSchema,
+    }),
+    // ---- FEATURE_008 legacy work_budget / harness_profile ----
     //
-    // work_budget: 用户可见的工作预算（KodaX 内核已有 { cap, used } 概念）。
-    //   推送频率：每轮 iteration 结束后、tool 完成后等关键检查点。
-    //   cap 上限 1M——理论上一个 session 不会跑到这么大，但 schema 留 buffer 防 OOM
-    //
-    // harness_profile: KodaX harness on-demand 模式徽标（H0/H1/H2）。
-    //   - H0_DIRECT: 单步直接执行（默认）
-    //   - H1_EXECUTE_EVAL: 加自我评估
-    //   - H2_PLAN_EXECUTE_EVAL: 加规划层
-    //   切换发生时推一次（不每个 iteration 重推同值）。round 仅在 H1/H2 有意义
+    // alpha.0 已经 wire 到 TopBar 上的两个事件。alpha.1 重构后 main 端可以
+    // 从 managed_task_status (budgetUsage/globalWorkBudget/harnessProfile) 派生，
+    // 但 schema 保留两个独立事件 — renderer 现有代码继续工作，不破坏向后兼容。
     z.object({
       kind: z.literal('work_budget'),
       sessionId: z.string().min(1),
-      // 注：schema 不强制 used <= cap（zod discriminatedUnion 不接受 refined 分支）。
-      // 不变量在 main 端 pushToRenderer 推送前 clamp 一次（review M-code-3）：
-      // 万一 real adapter 推了不合理值，前端不会显示 "Work 250/200" 这种比例
       used: z.number().int().nonnegative().max(1_000_000),
       cap: z.number().int().positive().max(1_000_000),
     }),
@@ -305,7 +449,6 @@ export const sessionEventChannel = {
       kind: z.literal('harness_profile'),
       sessionId: z.string().min(1),
       profile: z.enum(['H0_DIRECT', 'H1_EXECUTE_EVAL', 'H2_PLAN_EXECUTE_EVAL']),
-      /** H1/H2 时显示 Round 数；H0 为 undefined。*/
       round: z.number().int().positive().max(100).optional(),
     }),
   ]),
