@@ -143,6 +143,8 @@ interface AppState {
   ): void;
   /** 切项目时清空当前 session 选择和事件 buffer（事件留主进程的；renderer 只清缓存）。*/
   resetSessionView(): void;
+  /** FEATURE_031: /clear 命令清空指定 session 的事件 / 用户消息 buffer (session 本体保留)。*/
+  resetSessionMessages(sessionId: string): void;
   /** F009: FilePanel 读完 lastDiffPath 后清掉，避免反复 jump。*/
   clearLastDiffPath(): void;
 }
@@ -360,4 +362,10 @@ export const useAppStore = create<AppState>((set) => ({
       lastDiffPath: null,
       pendingToolPaths: {},
     }),
+
+  resetSessionMessages: (sessionId) =>
+    set((state) => ({
+      eventsBySession: { ...state.eventsBySession, [sessionId]: [] },
+      userMessagesBySession: { ...state.userMessagesBySession, [sessionId]: [] },
+    })),
 }));

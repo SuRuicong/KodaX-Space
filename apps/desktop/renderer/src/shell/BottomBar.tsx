@@ -14,19 +14,92 @@ import { ModelEffortSelector } from './ModelEffortSelector.js';
 import { ModeSelector } from './ModeSelector.js';
 import { ContextWindowIndicator } from './ContextWindowIndicator.js';
 import { AttachMenu } from './AttachMenu.js';
+import { SlashCommandPopover } from './SlashCommandPopover.js';
+import type { SlashCommandMeta } from '@kodax-space/space-ipc-schema';
+
+/**
+ * F031 helper：按空白切 args，保留双引号包裹的整段。
+ * 上限 20 与 slashExecChannel 的 z.array(...).max(20) 一致——超出后停切，
+ * 避免恶意粘贴在 renderer 端就预分配巨大数组。
+ */
+const SLASH_ARGS_MAX = 20;
+function tokenizeArgs(rest: string): string[] {
+  const result: string[] = [];
+  const re = /"([^"]*)"|(\S+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(rest)) !== null) {
+    result.push(m[1] ?? m[2] ?? '');
+    if (result.length >= SLASH_ARGS_MAX) break;
+  }
+  return result;
+}
 
 export function BottomBar(): JSX.Element {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const appendUserMessage = useAppStore((s) => s.appendUserMessage);
+  const resetSessionMessages = useAppStore((s) => s.resetSessionMessages);
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [attachOpen, setAttachOpen] = useState(false);
 
+  /**
+   * slash 模式：trim 后以 '/' 起头、且不含空白（仍在敲命令名）。
+   * 用 trimmed 而非 raw 是为了让 ` /help`（前导空格、粘贴常见）也能弹补全；
+   * 用 \s 而非空格能同时识别 \n \t（多行/粘贴）。
+   */
+  const trimmedPrompt = prompt.trimStart();
+  const slashMode = trimmedPrompt.startsWith('/') && !/\s/.test(trimmedPrompt);
+
+  async function execSlash(name: string, args: string[]): Promise<void> {
+    if (!currentSessionId || !window.kodaxSpace) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const result = await window.kodaxSpace.invoke('slash.exec', {
+        sessionId: currentSessionId,
+        name,
+        args,
+      });
+      if (!result.ok) {
+        setErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`);
+        return;
+      }
+      const { ok, message, echo, clearStream } = result.data;
+      if (echo && message) {
+        // F031: /help /clear 等命令把 message 当 system_notice 显示
+        appendUserMessage(currentSessionId, `/${name} ${args.join(' ')}`.trim());
+      }
+      if (clearStream) {
+        // F031: 由 handler 显式请求清空消息流（不再 hardcode name === 'clear'）。
+        resetSessionMessages(currentSessionId);
+      }
+      if (!ok && message) {
+        setErr(message);
+      } else if (ok && message && !echo) {
+        // 静默成功命令（mode/provider）给一个一闪即逝的反馈
+        setErr(null);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleSend(): Promise<void> {
     if (!currentSessionId || !window.kodaxSpace) return;
     const trimmed = prompt.trim();
     if (trimmed === '') return;
+    // F031: 以 `/` 起头视为 slash 命令；按空白切 name + args，调 slash.exec
+    if (trimmed.startsWith('/')) {
+      const head = trimmed.slice(1);
+      const spaceIdx = head.search(/\s/);
+      const name = (spaceIdx === -1 ? head : head.slice(0, spaceIdx)).trim();
+      const rest = spaceIdx === -1 ? '' : head.slice(spaceIdx + 1).trim();
+      const args = rest === '' ? [] : tokenizeArgs(rest);
+      setPrompt('');
+      await execSlash(name, args);
+      return;
+    }
     setErr(null);
     setBusy(true);
     appendUserMessage(currentSessionId, trimmed);
@@ -36,9 +109,25 @@ export function BottomBar(): JSX.Element {
         sessionId: currentSessionId,
         prompt: trimmed,
       });
-      if (!result.ok) setErr(`${result.error.code}: ${result.error.message}`);
+      if (!result.ok) setErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`);
     } finally {
       setBusy(false);
+    }
+  }
+
+  function onSlashPick(cmd: SlashCommandMeta | null): void {
+    if (cmd === null) {
+      setPrompt('');
+      return;
+    }
+    // 命令选中后：
+    //   - 无参数 hint → 直接执行
+    //   - 有参数 → 把 "/name " 放回输入框等用户继续输入
+    if (!cmd.argsHint) {
+      setPrompt('');
+      void execSlash(cmd.name, []);
+    } else {
+      setPrompt(`/${cmd.name} `);
     }
   }
 
@@ -49,6 +138,13 @@ export function BottomBar(): JSX.Element {
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
     if (e.key === 'Enter' && !e.shiftKey) {
+      // F031: slash 模式下让 SlashCommandPopover 的 onPick (window keydown) 处理 Enter
+      // textarea 这层不 preventDefault，避免双重触发（handleSend + popover.onPick）
+      if (slashMode) {
+        // 仍 preventDefault 防 textarea 插入换行（Enter 默认行为）
+        e.preventDefault();
+        return;
+      }
       e.preventDefault();
       void handleSend();
     }
@@ -78,6 +174,10 @@ export function BottomBar(): JSX.Element {
         <div className="absolute right-1 bottom-1 pointer-events-auto">
           <ContextWindowIndicator />
         </div>
+        {/* F031: slash 补全 popover — prompt trim 后以 '/' 开头且未含空白时显示 */}
+        {slashMode && (
+          <SlashCommandPopover query={trimmedPrompt} onPick={onSlashPick} />
+        )}
       </div>
 
       <div className="flex items-center gap-2 text-[10px]">

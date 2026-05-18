@@ -60,6 +60,13 @@ export {
 } from './channels/ask-user.js';
 
 export {
+  slashDiscoverChannel,
+  slashExecChannel,
+  type SlashCommandMeta,
+  type SlashCommandSource,
+} from './channels/slash.js';
+
+export {
   permissionRequestChannel,
   permissionCancelledChannel,
   permissionAnswerChannel,

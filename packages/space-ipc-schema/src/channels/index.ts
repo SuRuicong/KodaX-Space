@@ -44,6 +44,10 @@ import {
   askUserCancelledChannel,
 } from './ask-user.js';
 import {
+  slashDiscoverChannel,
+  slashExecChannel,
+} from './slash.js';
+import {
   providerListChannel,
   providerSetKeyChannel,
   providerRemoveKeyChannel,
@@ -74,6 +78,8 @@ export const invokeChannels = {
   [permissionListChannel.name]: permissionListChannel,
   [permissionRevokeChannel.name]: permissionRevokeChannel,
   [askUserReplyChannel.name]: askUserReplyChannel,
+  [slashDiscoverChannel.name]: slashDiscoverChannel,
+  [slashExecChannel.name]: slashExecChannel,
   [providerListChannel.name]: providerListChannel,
   [providerSetKeyChannel.name]: providerSetKeyChannel,
   [providerRemoveKeyChannel.name]: providerRemoveKeyChannel,
