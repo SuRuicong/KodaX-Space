@@ -122,7 +122,7 @@ KodaX-Space/
 │           ├── main.tsx
 │           ├── App.tsx
 │           ├── features/
-│           │   ├── code/            ← Code 面板（M0）
+│           │   ├── code/            ← Coder 面板（M0）
 │           │   ├── partner/         ← Partner 面板（M2）
 │           │   ├── quick-ask/       ← Quick Ask popover（M1）
 │           │   ├── permission/
@@ -452,7 +452,7 @@ type QuickAskParams = {
 
 - M0：renderer 只渲染 Code surface，顶部无 tab 切换器
 - M1：加 Quick Ask popover（独立 frameless `BrowserWindow`）
-- M2：Partner surface 上线，顶部 `[Code] [Partner]` tab
+- M2：Partner surface 上线，顶部 `[Coder] [Partner]` tab
 
 ### 9.5 三个 BrowserWindow
 
@@ -765,7 +765,7 @@ Space 严格遵守：
 
 | 任务 | 类别 |
 |---|---|
-| Partner 面板骨架 + `[Code] [Partner]` tab | UI |
+| Partner 面板骨架 + `[Coder] [Partner]` tab | UI |
 | 非编码 skill 包（3 个起步） | 内容 |
 | Connector：GitHub / GitLab / Slack | 工程 |
 | Automatic Review Agent | 工程 |

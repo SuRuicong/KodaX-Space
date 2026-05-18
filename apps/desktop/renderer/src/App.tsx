@@ -26,6 +26,12 @@ import { EventStream } from './features/session/EventStream.js';
 import { PermissionModal } from './features/permission/PermissionModal.js';
 import { ProviderSettings } from './features/provider/ProviderSettings.js';
 import { FilePanel } from './features/code/FilePanel.js';
+import { Shell } from './shell/Shell.js';
+
+// alpha.1: Claude Desktop 风 shell feature flag。
+// dev：在 apps/desktop/.env.local 里 `VITE_USE_NEW_SHELL=1` 启用新 shell；缺省继续用 alpha.0 layout。
+// 注：init useEffect 在两种 shell 下都需要跑（拉 version / providers / 订阅事件流），所以保持在 App 顶层。
+const USE_NEW_SHELL = import.meta.env.VITE_USE_NEW_SHELL === '1';
 
 export default function App(): JSX.Element {
   const [version, setVersion] = useState<SpaceVersionOutput | null>(null);
@@ -94,6 +100,17 @@ export default function App(): JSX.Element {
 
   const configuredCount = providers.filter((p) => p.configured).length;
   const defaultProvider = providers.find((p) => p.id === defaultProviderId);
+
+  // alpha.1: 新 Shell 接管整个 layout，旧 layout 保留以 fallback 验证。
+  // Settings overlay 仍 hoist 在这里（Shell 内部不重复实现）
+  if (USE_NEW_SHELL) {
+    return (
+      <>
+        <Shell />
+        {showSettings && <ProviderSettings onClose={() => setShowSettings(false)} />}
+      </>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100">

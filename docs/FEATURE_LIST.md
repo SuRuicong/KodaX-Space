@@ -1,6 +1,8 @@
 # KodaX Space Feature List
 
-> Last Updated: 2026-05-17 (v0.1.0 complete — FEATURE_001..FEATURE_010)
+> Last Updated: 2026-05-18 (v0.1.0-alpha.0 完成 10/10；alpha.1 启动 UI shell 重构对齐 Claude Desktop)
+>
+> **2026-05-18 form-factor reset**：alpha.0 的 UI 形态偏 IDE，alpha.1 按 [ADR-004](ADR/ADR-004-panel-model.md) 重构对齐 Claude Desktop 中的 Claude Code。F006/F008/F009 标记重做（main 端保留）；新增 F011-revised / F012-revised。详见下面 "v0.1.0-alpha.1 重构 plan" 区段。
 > Source of truth: [PRD](PRD.md) · [HLD](HLD.md) · [ADR/](ADR/)
 > Versions: v0.1.0 → v0.1.5（M0–M1，约 3–4 个月）
 
@@ -37,11 +39,36 @@
 | 027 | 代码签名 + notarize | Internal | Medium | v0.1.5 | Planned | [v0.1.5.md#027](features/v0.1.5.md#feature_027-代码签名--notarize) |
 | 028 | 隐私政策 + 文档站 | Internal | Low | v0.1.5 | Planned | [v0.1.5.md#028](features/v0.1.5.md#feature_028-隐私政策--文档站) |
 
+## v0.1.0-alpha.1 重构 plan（2026-05-18）
+
+**起因**：alpha.0 的 UI 形态偏 VS Code（常驻文件树/右抽屉 Monaco/顶部 TopBar），跟 [ADR-004](ADR/ADR-004-panel-model.md) 的 Coder 面板 + Claude Desktop 对标定位脱节。alpha.1 重构 UI shell。
+
+**main 端零改动**：IPC schema / KodaX runtime / Permission broker / Provider config / files handler 全部复用，**只重写 renderer**。
+
+**重做的 feature**：
+
+| ID | 原状 | alpha.1 调整 |
+|----|-----|-------------|
+| F006 | 对话流 + 1 tool = 1 卡 | tool 聚合 "Ran N commands ›" 折叠 |
+| F008 | 常驻 TopBar (provider/work/harness/reasoning) | 拆掉常驻栏；provider+Effort 进底部 selector；Work/harness 进 Tasks popout |
+| F009 | 右抽屉 FilePanel + FileTree + Monaco 常驻 | 砍 FileTree + 抽屉；Monaco 改 Preview/Diff popout 按需呼出 |
+
+**新增（alpha.1）**：
+
+| ID | 标题 | 范围 |
+|----|------|------|
+| F011-revised | Coder shell layout (Claude Desktop 对标) | sidebar mode tab + 顶部面包屑 + 右上 5 popout toolbar + 底部 chip bar + model+Effort selector |
+| F012-revised | Tasks / Plan popout | 右上 Tasks popout 装 Work 预算 + harness profile；Plan popout 装多步任务 |
+
+**原 F011 / F012 (v0.1.1)**：内置终端单 tab / Subagent tree → 这些设计要按新形态重写，留 v0.1.1 重新打包成"Terminal popout"和"Subagent panel in Tasks"。
+
+---
+
 ## Status
 
 ```
 === FEATURE LIST ===
-Last Updated: 2026-05-17
+Last Updated: 2026-05-18
 
 --- PLANNED (18) ---
 

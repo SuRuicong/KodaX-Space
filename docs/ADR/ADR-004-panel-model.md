@@ -14,7 +14,7 @@ KodaX Space 对标 Claude Desktop（Chat / Cowork / Code 三面板）与 Codex D
 
 **采用双面板 + Quick Ask popover**：
 
-- **Code 面板**（M0 起）：可视化的 KodaX coding agent，主舞台
+- **Coder 面板**（M0 起）：可视化的 KodaX coding agent，主舞台
 - **Partner 面板**（M2 起）：对标 Claude Cowork，非编码 / 文档任务
 - **Quick Ask popover**（M1 起）：全局热键唤出的浮窗，临时问答；无 session、无工具、无持久化
 
@@ -35,14 +35,23 @@ KodaX Space 对标 Claude Desktop（Chat / Cowork / Code 三面板）与 Codex D
 
 - 形态：全局热键 `⌘⇧K` / `Ctrl+Shift+K`，独立 frameless 小窗
 - 行为：临时 ACP-style session，强制 `mode='plan'`、无 MCP、不落盘、关闭即销毁
-- 多聊？点 "Continue in Code panel as new session"，转 Code session（此时落盘）
+- 多聊？点 "Continue in Coder panel as new session"，转 Coder session（此时落盘）
 
-### 为什么 M0 不显示 tab 切换器
+### Tab 显示规则（2026-05-18 修订）
 
-M0 只有 Code 面板。M2 才有 Partner。**在只有 1 个面板时显示 tab 切换器是假繁荣**——给用户"功能未完成"的暗示。规则：
+原 v1 决策："M0–M1 不显示 tab"，理由是"只有 1 个面板时显示 tab 是假繁荣"。
 
-- M0–M1：顶部无 tab，直接是 Code workspace
-- M2+：Partner 上线，顶部出现 `[Code] [Partner]` tab
+**v2 决策**（2026-05-18 修订）：**M0 起即显示 Coder/Partner tab，Partner 灰掉 + "Coming v0.1.x" 标签**。
+
+修订理由：
+- 用户提供 Claude Desktop 截图，参考产品 sidebar 顶部双 mode tab 是常驻 UI 锚点
+- 视觉骨架与对标产品对齐胜过"避免假繁荣"——用户对 Claude Desktop 习惯成本最低
+- "Coming" 标签足以传达"未就绪"信号，不会被误以为可用
+
+规则：
+
+- M0 起：sidebar 顶部显示 `[Coder] [Partner]`，Partner 灰 + "Coming"
+- M2+：Partner 上线，灰态去掉
 
 ### 替代方案与否决理由
 
@@ -58,20 +67,20 @@ M0 只有 Code 面板。M2 才有 Partner。**在只有 1 个面板时显示 tab
 
 ### 接受
 
-- 用户期望"Space 也能 chat"时需引导到 Quick Ask 或 Code 面板新 session
+- 用户期望"Space 也能 chat"时需引导到 Quick Ask 或 Coder 面板新 session
 - Quick Ask 是 M1 工作量
 - Partner tab 上线时机紧绑 KodaX Partner 内核
 
 ### 获得
 
 - 价值主张聚焦：本机 agent，不假装是通用 chat 客户端
-- 后端实现简化（只有 Code session kind 真正落盘）
+- 后端实现简化（只有 Coder session kind 真正落盘）
 - 与 Claude Desktop 形成清晰差异化
 
 ## Reconsider When
 
 - KodaX Partner 决定不做——Partner 面板需求消失，可能退化为单面板 + Quick Ask
-- 用户工单中"找不到 chat tab"占比 > 10%——可能需要更显眼的"Continue in Code panel"引导
+- 用户工单中"找不到 chat tab"占比 > 10%——可能需要更显眼的"Continue in Coder panel"引导
 - 未来 KodaX 出现第三类 surface（如 BI / 数据分析 agent）——可能扩展到 3 面板
 
 ## References

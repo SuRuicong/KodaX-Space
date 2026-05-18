@@ -76,3 +76,4 @@ coverage/
 target/
 *.node
 !packages/native/**/index.d.ts
+.claude/
