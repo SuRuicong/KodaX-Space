@@ -11,6 +11,23 @@ import { z } from 'zod';
 // ---- Reasoning mode (镜像 @kodax-ai/llm 的 KodaXReasoningMode 闭集) ----
 const reasoningModeSchema = z.enum(['off', 'auto', 'quick', 'balanced', 'deep']);
 
+// ---- Permission mode (FEATURE_007 / alpha.1) ----
+//
+// Claude Desktop 嵌 Claude Code 截图揭示的 4 种 mode：
+//   - ask-permissions    每次工具调用都弹窗（alpha.0 默认）
+//   - accept-edits       edit/write 自动批，dangerous (bash rm 等) 仍弹
+//   - plan-mode          全部 deny — agent 只能输出 plan 不能动文件/命令
+//   - bypass-permissions 全部 allow — 危险也跳过；UI 需 settings 显式 unlock 才能选
+//
+// main 端 PermissionBroker.request() 第一步根据 mode 做短路决策。
+const permissionModeSchema = z.enum([
+  'ask-permissions',
+  'accept-edits',
+  'plan-mode',
+  'bypass-permissions',
+]);
+export type PermissionMode = z.infer<typeof permissionModeSchema>;
+
 // ---- Provider ID (review F008 C2-sec)
 //
 // 限制 providerId 字符集到合法形态的并集——避免任意字符串混进 ManagedSession.provider 字段
@@ -49,6 +66,8 @@ const sessionMetaSchema = z.object({
   projectRoot: z.string().min(1),
   provider: providerIdSchema,
   reasoningMode: reasoningModeSchema,
+  /** alpha.1：permission gate 模式。缺省 'ask-permissions' (alpha.0 行为)。*/
+  permissionMode: permissionModeSchema.default('ask-permissions'),
   title: z.string().max(256).optional(),
   createdAt: z.number().int().nonnegative(),
   lastActivityAt: z.number().int().nonnegative(),
@@ -63,6 +82,7 @@ export const sessionCreateChannel = {
     projectRoot: z.string().min(1),
     provider: providerIdSchema,
     reasoningMode: reasoningModeSchema.optional(),
+    permissionMode: permissionModeSchema.optional(),
   }),
   output: z.object({
     sessionId: z.string().min(1),
@@ -137,6 +157,25 @@ export const sessionDeleteChannel = {
   }),
   output: z.object({
     deleted: z.boolean(),
+  }),
+} as const;
+
+// ---- Invoke: session.setPermissionMode ---- (alpha.1)
+//
+// Claude Desktop Mode 切换 (Ctrl+M)。立即生效——下一次 tool call 走新 mode。
+//
+// 'bypass-permissions' 需要 UI 端先解锁 settings flag 才允许传——这层 UI gate；
+// main 端不区分 mode 的"信任度"，全部接受。如未来需要服务端二次校验（防 renderer 篡改
+// 直接传 bypass），加 settings.bypass_permissions_enabled flag 同步到 main 即可。
+export const sessionSetPermissionModeChannel = {
+  name: 'session.setPermissionMode',
+  direction: 'invoke',
+  input: z.object({
+    sessionId: z.string().min(1),
+    mode: permissionModeSchema,
+  }),
+  output: z.object({
+    ok: z.boolean(),
   }),
 } as const;
 

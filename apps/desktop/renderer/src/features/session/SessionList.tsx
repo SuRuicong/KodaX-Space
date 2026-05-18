@@ -91,6 +91,7 @@ export function SessionList(): JSX.Element {
         projectRoot: currentProjectPath,
         provider,
         reasoningMode: 'auto',
+        permissionMode: 'ask-permissions',
         title: undefined,
         createdAt: result.data.createdAt,
         lastActivityAt: result.data.createdAt,

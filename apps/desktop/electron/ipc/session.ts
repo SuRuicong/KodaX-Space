@@ -32,6 +32,7 @@ export function registerSessionChannels(): void {
       projectRoot,
       provider: input.provider,
       reasoningMode: input.reasoningMode,
+      permissionMode: input.permissionMode,
     });
     return { sessionId, createdAt };
   });
@@ -82,6 +83,7 @@ export function registerSessionChannels(): void {
         projectRoot: s.projectRoot,
         provider: s.provider,
         reasoningMode: s.reasoningMode,
+        permissionMode: s.permissionMode,
         title: s.title,
         createdAt: s.createdAt,
         lastActivityAt: s.lastActivityAt,
@@ -112,6 +114,13 @@ export function registerSessionChannels(): void {
   registerChannel('session.setProvider', async (input) => {
     await assertProviderExists(input.providerId);
     const ok = kodaxHost.setProvider(input.sessionId, input.providerId);
+    return { ok };
+  });
+
+  // session.setPermissionMode — alpha.1
+  // 切 mode 立即生效（下次 tool call broker.request 走新 mode 短路）。
+  registerChannel('session.setPermissionMode', (input) => {
+    const ok = kodaxHost.setPermissionMode(input.sessionId, input.mode);
     return { ok };
   });
 }

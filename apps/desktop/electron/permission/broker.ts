@@ -20,6 +20,7 @@
 import { randomUUID } from 'node:crypto';
 import type {
   PermissionDecision,
+  PermissionMode,
   PermissionRisk,
 } from '@kodax-space/space-ipc-schema';
 import { pushToRenderer } from '../ipc/push.js';
@@ -34,9 +35,15 @@ export interface PermissionRequestInput {
   readonly toolId: string;
   readonly toolName: string;
   readonly input?: Record<string, unknown>;
+  /** alpha.1：session 当前 permissionMode；缺省按 'ask-permissions' 走 alpha.0 行为。*/
+  readonly mode?: PermissionMode;
   /** 超时毫秒数；不传走 DEFAULT_TIMEOUT_MS。测试可调小。*/
   readonly timeoutMs?: number;
 }
+
+// alpha.1 mode 行为表：accept-edits 时这些工具名自动 allow_once（dangerous 仍走弹窗）。
+// 命名贴近 KodaX 内核约定 + Claude Code 通用名。Real adapter 接入后可能扩展（如 multi_edit / str_replace）。
+const EDIT_TOOLS = new Set(['edit', 'write', 'multi_edit', 'str_replace']);
 
 export interface PermissionResolved {
   readonly decision: PermissionDecision;
@@ -70,6 +77,30 @@ class PermissionBroker {
    */
   async request(req: PermissionRequestInput): Promise<PermissionResolved> {
     const assessment = assessRisk(req.toolName, req.input);
+    const mode: PermissionMode = req.mode ?? 'ask-permissions';
+
+    // alpha.1 mode-aware 短路（在 always-allow 规则之前）：
+    //
+    //   plan-mode          → 全 deny，agent 只能 plan 不能执行
+    //   bypass-permissions → 全 allow，跳过 always-allow 规则、危险检测都不走（UI 端通过
+    //                        settings flag 解锁选择；main 端信任 UI 传入）
+    //   accept-edits       → edit/write 自动批，dangerous 仍走弹窗（rm -rf 等不能 silent 跳过）
+    //   ask-permissions    → 走 alpha.0 原逻辑（always-allow 规则 + 危险弹窗）
+    if (mode === 'plan-mode') {
+      return { decision: 'deny', risk: assessment.risk };
+    }
+    if (mode === 'bypass-permissions') {
+      // 全放——记 warn 日志便于事后审计，但不弹窗
+      console.warn(
+        `[permission-broker] bypass mode: ${req.toolName} auto-allowed without prompt (session=${req.sessionId})`,
+      );
+      return { decision: 'allow_once', risk: assessment.risk };
+    }
+    if (mode === 'accept-edits' && !assessment.dangerous && EDIT_TOOLS.has(req.toolName)) {
+      return { decision: 'allow_once', risk: assessment.risk };
+    }
+
+    // ask-permissions（默认） + accept-edits 中 dangerous / 非 edit 工具：走原逻辑
 
     // 确保规则已加载——idempotent，已加载时立即返回
     await permissionRegistry.load();

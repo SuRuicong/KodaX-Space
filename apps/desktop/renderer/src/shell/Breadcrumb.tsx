@@ -3,13 +3,16 @@
 // 顶部面包屑：`Project / Session ▾`
 // 点 session name 弹下拉切换；点 project name 触发 project picker。
 
+import { useState } from 'react';
 import { useAppStore } from '../store/appStore.js';
+import { SessionMenu } from './SessionMenu.js';
 
 export function Breadcrumb(): JSX.Element {
   const projectPath = useAppStore((s) => s.currentProjectPath);
   const sessions = useAppStore((s) => s.sessions);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const session = sessions.find((x) => x.sessionId === currentSessionId);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const projectName = projectPath ? projectPath.split(/[\\/]/).filter(Boolean).pop() : null;
 
@@ -43,9 +46,26 @@ export function Breadcrumb(): JSX.Element {
         </button>
       )}
       <span className="text-zinc-700">/</span>
-      <span className="px-1.5 py-0.5 truncate text-zinc-400" title={session?.sessionId}>
-        {session?.title ?? (session ? 'Untitled session' : 'No session')}
-      </span>
+      <div className="relative flex items-center min-w-0">
+        <span className="px-1.5 py-0.5 truncate text-zinc-400" title={session?.sessionId}>
+          {session?.title ?? (session ? 'Untitled session' : 'No session')}
+        </span>
+        {session && (
+          <>
+            <button
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              className="px-1 py-0.5 text-zinc-600 hover:text-zinc-300 text-xs"
+              aria-label="Session options"
+            >
+              ▾
+            </button>
+            {menuOpen && (
+              <SessionMenu sessionId={session.sessionId} onClose={() => setMenuOpen(false)} />
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
