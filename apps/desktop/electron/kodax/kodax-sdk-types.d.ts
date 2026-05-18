@@ -255,6 +255,8 @@ declare module '@kodax-ai/kodax/coding' {
     session?: KodaXSessionOptions;
     context?: KodaXContextOptions;
     events?: KodaXEvents;
+    /** FEATURE_092: run-scoped guardrails forwarded to Runner.run. AutoMode 注入点。*/
+    guardrails?: readonly Guardrail[];
     abortSignal?: AbortSignal;
   }
 
@@ -264,4 +266,125 @@ declare module '@kodax-ai/kodax/coding' {
   }
 
   export function runKodaX(options: KodaXOptions, prompt: string): Promise<KodaXResult>;
+
+  // ============= FEATURE_030 AutoModeToolGuardrail surface =============
+  // Minimal subset of @kodax-ai/coding 暴露的 guardrail / agents-loader 类型，
+  // 供 Space main 端 wire FEATURE_030 时用。完整 surface 见 KodaX
+  // packages/coding/src/guardrails/auto-mode/guardrail.ts。
+
+  /** AGENTS.md scan result item. 与 Space agents-md-loader.ts 严格 shape 对齐。*/
+  export interface AgentsFile {
+    path: string;
+    content: string;
+    scope: 'global' | 'project' | 'directory';
+  }
+
+  /** AutoMode classifier engine. */
+  export type AutoModeEngineKodaX = 'llm' | 'rules';
+
+  /** 用户响应 (FEATURE_092 phase 2b.7b)。*/
+  export type AutoModeAskUserVerdict = 'allow' | 'block';
+
+  /** 静态分析信号 (FEATURE_158)。本 type 不完整 mirror — 只暴露 Space adapter 用到的字段。*/
+  export interface ToolCallSignal {
+    type: string;
+    severity?: string;
+    message?: string;
+    [key: string]: unknown;
+  }
+
+  /** Tool call snapshot fed to AutoModeAskUser. */
+  export interface RunnerToolCall {
+    name: string;
+    input: Record<string, unknown>;
+    id?: string;
+    [key: string]: unknown;
+  }
+
+  export type AutoModeAskUser = (
+    call: RunnerToolCall,
+    reason: string,
+    signals?: readonly ToolCallSignal[],
+  ) => Promise<AutoModeAskUserVerdict>;
+
+  export interface KodaXBaseProvider {
+    [key: string]: unknown;
+  }
+
+  /**
+   * Guardrail 接口（minimal）。KodaXOptions.guardrails 数组项形态。
+   * AutoModeToolGuardrail 实现该接口；KodaX runtime 通过 beforeTool / 其他钩子
+   * 调进来。Space 不实例化通用 Guardrail，只用 createAutoModeToolGuardrail 产物。
+   */
+  export interface Guardrail {
+    readonly name: string;
+    readonly beforeTool?: unknown;
+    readonly beforeInput?: unknown;
+    readonly afterOutput?: unknown;
+  }
+
+  /** AutoMode engine 变更回调（manual / fallback）。 */
+  export type AutoModeOnEngineChange = (engine: AutoModeEngineKodaX) => void;
+
+  /** AutoRules loader 输出（loadAutoRules 返回）。Space 只读 sources / errors 给 banner 用。*/
+  export interface AutoRules {
+    [key: string]: unknown;
+  }
+  export interface RulesLoadResult {
+    merged: AutoRules;
+    sources: readonly string[];
+    errors: readonly string[];
+    skipped?: readonly string[];
+  }
+
+  /** SignalCollector — 静态分析 signal 产出器；不在 Space 端实现，仅占位类型。*/
+  export interface SignalCollector {
+    [key: string]: unknown;
+  }
+
+  /** createAutoModeToolGuardrail 完整 config（subset；只列 Space 用得到的）。 */
+  export interface AutoModeGuardrailConfig {
+    readonly rules: AutoRules;
+    readonly claudeMd?: string;
+    readonly askUser?: AutoModeAskUser;
+    readonly getToolProjection: (toolName: string) => ((input: unknown) => string) | undefined;
+    readonly resolveProvider: (providerName: string) => KodaXBaseProvider | undefined;
+    readonly defaultProvider: string;
+    readonly defaultModel: string;
+    readonly getDefaultProvider?: () => string;
+    readonly getDefaultModel?: () => string;
+    readonly log?: (level: 'info' | 'warn', msg: string) => void;
+    readonly onEngineChange?: AutoModeOnEngineChange;
+    readonly initialEngine?: AutoModeEngineKodaX;
+    readonly timeoutMs?: number;
+    readonly userSettings?: string;
+    readonly envVar?: string;
+    readonly projectRoot?: string;
+    readonly extraCollectors?: readonly SignalCollector[];
+  }
+
+  export interface AutoModeToolGuardrail extends Guardrail {
+    getEngine(): AutoModeEngineKodaX;
+    setEngine(engine: AutoModeEngineKodaX): void;
+  }
+
+  export function createAutoModeToolGuardrail(
+    config: AutoModeGuardrailConfig,
+  ): AutoModeToolGuardrail;
+
+  export interface LoadAutoRulesOptions {
+    userKodaxDir?: string;
+    projectRoot?: string;
+  }
+  export function loadAutoRules(options: LoadAutoRulesOptions): Promise<RulesLoadResult>;
+
+  export function formatAgentsForPrompt(files: readonly AgentsFile[]): string;
+  export function getKodaxGlobalDir(): string;
+  export function resolveProvider(name: string): KodaXBaseProvider;
+  export function getRegisteredToolDefinition(
+    toolName: string,
+  ): { toClassifierInput?: (input: unknown) => string } | undefined;
+  export function getBuiltinRegisteredToolDefinition(
+    toolName: string,
+  ): { toClassifierInput?: (input: unknown) => string } | undefined;
 }

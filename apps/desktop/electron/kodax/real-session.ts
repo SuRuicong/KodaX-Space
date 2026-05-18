@@ -17,8 +17,19 @@
 //      Exit plan mode 由 events.exitPlanMode 让 Space 弹 modal（v0.1.x 中先 stub allow）。
 
 import { runKodaX } from '@kodax-ai/kodax/coding';
-import type { KodaXOptions, KodaXEvents } from '@kodax-ai/kodax/coding';
+import type {
+  AutoModeAskUser,
+  AutoModeAskUserVerdict,
+  AutoModeEngineKodaX,
+  Guardrail,
+  KodaXOptions,
+  KodaXEvents,
+  RunnerToolCall,
+  ToolCallSignal,
+} from '@kodax-ai/kodax/coding';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
+import { askUserBroker } from '../permission/ask-user-broker.js';
+import { bootstrapAutoMode } from './auto-mode-bootstrap.js';
 import type {
   ManagedSession,
   PermissionRequestFn,
@@ -138,6 +149,59 @@ export class RealKodaXSession implements ManagedSession {
   async dispose(): Promise<void> {
     this.disposed = true;
     if (this.currentAbort) this.currentAbort.abort();
+  }
+
+  /**
+   * FEATURE_030: 把 KodaX `AutoModeAskUser` callback 桥接到 Space askUserBroker。
+   * KodaX guardrail 升级路径（denial threshold / circuit breaker / classifier
+   * decision escalate）会调这个；broker 推 IPC 弹 AskUserModal；用户答复 → verdict 回 KodaX。
+   *
+   * 把 signals 从 KodaX shape (ToolCallSignal[]) 映射到 Space schema 的 AskUserSignal：
+   * KodaX 内部 signal severity 是 string；Space schema 限 'info'|'warning'|'danger'。
+   * 未知 severity → 默认 'info'（保守）。message 缺失 → type 名兜底显示。
+   */
+  private makeAskUserBridge(): AutoModeAskUser {
+    const sid = this.sessionId;
+    return async (
+      call: RunnerToolCall,
+      reason: string,
+      signals?: readonly ToolCallSignal[],
+    ): Promise<AutoModeAskUserVerdict> => {
+      const sigArr = signals?.map((s) => {
+        const sev = s.severity;
+        let normalized: 'info' | 'warning' | 'danger';
+        if (sev === 'warning' || sev === 'danger') {
+          normalized = sev;
+        } else if (sev === 'info' || sev === undefined) {
+          normalized = 'info';
+        } else {
+          // F030 review HIGH#1: 未知 severity 静默降到 info 会让 'critical' 等
+          // 未来 KodaX 引入的更高级别 signal silent downgrade。observable warn
+          // 让此类升级可被诊断。当前 KodaX 0.7.40 只有 info/warning/danger 三档；
+          // 若 SDK 引入 'critical' 这条 warn 会立即冒头，prompt 我们扩 schema。
+          console.warn(
+            `[real-session ${sid}] unknown signal severity "${sev}" mapped to info ` +
+            `(type=${String(s.type)}); KodaX SDK may have introduced new severity level`,
+          );
+          normalized = 'info';
+        }
+        return {
+          type: String(s.type ?? 'unknown'),
+          severity: normalized,
+          message: String(s.message ?? s.type ?? ''),
+        };
+      });
+      return askUserBroker.request({
+        sessionId: sid,
+        reason,
+        toolCall: {
+          toolId: String(call.id ?? `auto_${call.name}_${Date.now()}`),
+          toolName: String(call.name),
+          input: call.input,
+        },
+        signals: sigArr,
+      });
+    };
   }
 
   private async runRealStream(prompt: string, signal: AbortSignal): Promise<void> {
@@ -438,6 +502,84 @@ export class RealKodaXSession implements ManagedSession {
       exitPlanMode,
     };
 
+    // FEATURE_030: AutoModeToolGuardrail bootstrap — 仅 mode='auto' 时构造并注入
+    // KodaXOptions.guardrails。其他 mode 跳过，零成本（loadAutoRules 不读盘）。
+    let guardrails: Guardrail[] | undefined;
+    if (this.permissionMode === 'auto') {
+      // F030 review MEDIUM#1: 检查 abort 状态早退，避免 cancel 后还白白等 30s I/O
+      if (signal.aborted) {
+        this.emit({ kind: 'session_error', sessionId: sid, error: 'cancelled' });
+        return;
+      }
+      try {
+        const bootstrap = await bootstrapAutoMode({
+          askUser: this.makeAskUserBridge(),
+          projectRoot: this.projectRoot,
+          getCurrentProviderName: () => this.provider,
+          getCurrentModel: () => '', // F029 schema 暂未引入 session.model 字段；F-future
+          initialEngine: this.autoModeEngine as AutoModeEngineKodaX,
+          timeoutMs: 30_000,
+          onEngineChange: (engine) => {
+            // F030 review MEDIUM#4: session dispose 后 guardrail in-flight classifier
+            // 仍可能调回这里——disposed 守护防止往已关 push channel 写
+            if (this.disposed) return;
+            if (this.autoModeEngine === engine) return;
+            const previousEngine = this.autoModeEngine;
+            this.autoModeEngine = engine;
+            // F030 review MEDIUM#2: 无法从 SDK 区分 denial threshold vs circuit breaker，
+            // 两者都是 llm→rules 自动 fallback。用 'denial_threshold' 占位但更老实的做法
+            // 是 omit reason 字段——schema reason 是 optional，renderer 看到 undefined 就
+            // 显示通用 "engine fallback" 而不是误导成"due to denials"。
+            const isAutoFallback = previousEngine === 'llm' && engine === 'rules';
+            this.emit({
+              kind: 'auto_engine_change',
+              sessionId: sid,
+              engine,
+              // 'manual' 是确定的（user-driven setEngine 走 host.setAutoModeEngine 路径，
+              // 不经过 guardrail onEngineChange）；这里都是 SDK 内部自动调，故只能是
+              // denial_threshold 或 circuit_breaker——我们没法从 SDK 区分，故 omit。
+              ...(isAutoFallback ? {} : { reason: 'manual' as const }),
+            });
+          },
+          log: (level, msg) =>
+            level === 'warn'
+              ? console.warn(`[auto-mode ${sid}] ${msg}`)
+              : console.info(`[auto-mode ${sid}] ${msg}`),
+        });
+        guardrails = [bootstrap.getGuardrail()];
+        console.info(
+          `[real-session ${sid}] auto-mode bootstrapped; engine=${this.autoModeEngine}, ` +
+          `rules sources=${bootstrap.rulesLoadResult.sources.length}, ` +
+          `errors=${bootstrap.rulesLoadResult.errors.length}`,
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[real-session ${sid}] auto-mode bootstrap failed: ${message}`);
+        // F030 review HIGH#2: 失败 fallback 不是 fail-open——broker (F029) 把 auto 当
+        // accept-edits 处理，bash/dangerous 仍弹窗。但用户以为"Auto"全自动跑，应当显著
+        // 告知 guardrail 失效。多重信号：
+        //   1. session_error 进入 conversation stream（持久化、不会闪走）
+        //   2. 强制 engine 降到 'rules' 让 status bar 立即显示 "Auto · rules"（视觉提示）
+        //   3. 文案明确告知失败原因 + 当前回退行为，让用户知道"是 accept-edits 不是 llm guardrail"
+        this.emit({
+          kind: 'session_error',
+          sessionId: sid,
+          error:
+            `Auto mode guardrail failed to initialize: ${message}. ` +
+            `Session continues with accept-edits behavior (no LLM/rules classifier). ` +
+            `Check ~/.kodax/auto-rules.jsonc syntax or pick a different mode.`,
+        });
+        if (this.autoModeEngine !== 'rules') {
+          this.autoModeEngine = 'rules';
+          this.emit({
+            kind: 'auto_engine_change',
+            sessionId: sid,
+            engine: 'rules',
+          });
+        }
+      }
+    }
+
     const options: KodaXOptions = {
       provider: this.provider,
       reasoningMode: this.reasoningMode,
@@ -451,6 +593,7 @@ export class RealKodaXSession implements ManagedSession {
         executionCwd: this.projectRoot,
         planModeBlockCheck,
       },
+      guardrails,
     };
 
     try {
