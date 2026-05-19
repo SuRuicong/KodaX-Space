@@ -89,6 +89,9 @@ export function registerSessionChannels(): void {
         title: s.title,
         createdAt: s.createdAt,
         lastActivityAt: s.lastActivityAt,
+        // FEATURE_033：fork child 才有；root 不带（undefined 经 zod 不出现在 JSON）
+        parentSessionId: s.parentSessionId,
+        forkPointTurnIdx: s.forkPointTurnIdx,
       }));
     return { sessions };
   });
@@ -132,5 +135,22 @@ export function registerSessionChannels(): void {
   registerChannel('session.setAutoModeEngine', (input) => {
     const ok = kodaxHost.setAutoModeEngine(input.sessionId, input.engine);
     return { ok };
+  });
+
+  // session.fork — FEATURE_033 (in-memory)
+  // alpha.1 in-memory only：fork 出新 session，inherit source 运行时设置 + 标
+  // parentSessionId/forkPointTurnIdx 元数据；events 复制由 renderer 完成。
+  registerChannel('session.fork', (input) => {
+    const result = kodaxHost.fork(input.sessionId, input.forkPointTurnIdx);
+    if (!result) {
+      throw new Error(`session not found: ${input.sessionId}`);
+    }
+    return result;
+  });
+
+  // session.rewind — FEATURE_033 (in-memory)
+  // alpha.1 in-memory only：main 端 cancel in-flight（await）；renderer 截断 events。
+  registerChannel('session.rewind', async (input) => {
+    return kodaxHost.rewind(input.sessionId, input.rewindPastTurnIdx);
   });
 }

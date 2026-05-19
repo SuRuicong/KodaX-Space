@@ -80,6 +80,9 @@ export class MockKodaXSession implements ManagedSession {
   readonly createdAt: number;
   lastActivityAt: number;
   title: string | undefined = undefined;
+  /** FEATURE_033 fork 元数据；root session 都为 undefined。*/
+  parentSessionId?: string;
+  forkPointTurnIdx?: number;
 
   private readonly emit: (e: SessionEvent) => void;
   private readonly requestPermission: PermissionRequestFn;
@@ -95,6 +98,8 @@ export class MockKodaXSession implements ManagedSession {
     this.autoModeEngine = opts.autoModeEngine ?? 'llm';
     this.createdAt = Date.now();
     this.lastActivityAt = this.createdAt;
+    this.parentSessionId = opts.parentSessionId;
+    this.forkPointTurnIdx = opts.forkPointTurnIdx;
     this.emit = opts.emit;
     this.requestPermission = opts.requestPermission;
   }

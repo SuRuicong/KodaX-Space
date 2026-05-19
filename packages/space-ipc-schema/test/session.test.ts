@@ -14,6 +14,8 @@ import {
   sessionListChannel,
   sessionDeleteChannel,
   sessionEventChannel,
+  sessionForkChannel,
+  sessionRewindChannel,
 } from '../src/index.js';
 
 test('all 5 session invoke channels are registered', () => {
@@ -258,4 +260,42 @@ test('session.event auto_engine_change rejects invalid engine value', () => {
     engine: 'something-else',
   };
   assert.equal(sessionEventChannel.payload.safeParse(evt).success, false);
+});
+
+// ---- FEATURE_033 fork + rewind channels ----
+
+test('session.fork + session.rewind channels are registered', () => {
+  assert.ok(invokeChannels['session.fork']);
+  assert.ok(invokeChannels['session.rewind']);
+  assert.ok(INVOKE_CHANNEL_NAMES.has('session.fork'));
+  assert.ok(INVOKE_CHANNEL_NAMES.has('session.rewind'));
+});
+
+test('session.fork input requires sessionId + non-negative forkPointTurnIdx', () => {
+  assert.equal(sessionForkChannel.input.safeParse({ sessionId: 's_1', forkPointTurnIdx: 0 }).success, true);
+  assert.equal(sessionForkChannel.input.safeParse({ sessionId: 's_1', forkPointTurnIdx: 5 }).success, true);
+  assert.equal(sessionForkChannel.input.safeParse({ sessionId: 's_1', forkPointTurnIdx: -1 }).success, false);
+  assert.equal(sessionForkChannel.input.safeParse({ sessionId: '', forkPointTurnIdx: 0 }).success, false);
+  assert.equal(sessionForkChannel.input.safeParse({ sessionId: 's_1' }).success, false);
+  // 10_001 超 max → 拒绝（DoS guard）
+  assert.equal(sessionForkChannel.input.safeParse({ sessionId: 's_1', forkPointTurnIdx: 10_001 }).success, false);
+});
+
+test('session.fork output is { newSessionId, createdAt }', () => {
+  assert.equal(sessionForkChannel.output.safeParse({ newSessionId: 's_2', createdAt: 0 }).success, true);
+  assert.equal(sessionForkChannel.output.safeParse({ newSessionId: 's_2' }).success, false);
+  assert.equal(sessionForkChannel.output.safeParse({ newSessionId: '', createdAt: 0 }).success, false);
+});
+
+test('session.rewind input requires sessionId + non-negative rewindPastTurnIdx', () => {
+  assert.equal(sessionRewindChannel.input.safeParse({ sessionId: 's_1', rewindPastTurnIdx: 0 }).success, true);
+  assert.equal(sessionRewindChannel.input.safeParse({ sessionId: 's_1', rewindPastTurnIdx: -1 }).success, false);
+});
+
+test('session.rewind output reason enum is exhaustive', () => {
+  assert.equal(sessionRewindChannel.output.safeParse({ ok: true }).success, true);
+  assert.equal(sessionRewindChannel.output.safeParse({ ok: false, reason: 'session_not_found' }).success, true);
+  assert.equal(sessionRewindChannel.output.safeParse({ ok: false, reason: 'invalid_index' }).success, true);
+  assert.equal(sessionRewindChannel.output.safeParse({ ok: false, reason: 'session_busy' }).success, true);
+  assert.equal(sessionRewindChannel.output.safeParse({ ok: false, reason: 'rate_limited' }).success, false);
 });

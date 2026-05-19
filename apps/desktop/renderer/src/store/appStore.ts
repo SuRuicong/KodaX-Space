@@ -145,6 +145,19 @@ interface AppState {
   resetSessionView(): void;
   /** FEATURE_031: /clear 命令清空指定 session 的事件 / 用户消息 buffer (session 本体保留)。*/
   resetSessionMessages(sessionId: string): void;
+  /**
+   * FEATURE_033 fork：把 source 的 user messages [0..forkPointTurnIdx] + 全部对应 events
+   * 复制到 newSessionId 的 buffer。main 端已经把新 session 加进 list (caller responsible
+   * for upsertSession with new meta)；本 action 只负责 buffer 复制。
+   */
+  forkSessionBuffers(srcSessionId: string, newSessionId: string, forkPointTurnIdx: number): void;
+  /**
+   * FEATURE_033 rewind：截断 sessionId 的 buffer 到 rewindPastTurnIdx (含)。
+   *   - userMessagesBySession 保留 [0..idx] 共 idx+1 条
+   *   - eventsBySession 保留 [0..events-before-(idx+1)-th-user-message]
+   * 越界 idx 静默 no-op（main 端不持有 events 不会报 invalid_index，校验放这层）。
+   */
+  rewindSessionBuffers(sessionId: string, rewindPastTurnIdx: number): void;
   /** F009: FilePanel 读完 lastDiffPath 后清掉，避免反复 jump。*/
   clearLastDiffPath(): void;
 }
@@ -368,4 +381,71 @@ export const useAppStore = create<AppState>((set) => ({
       eventsBySession: { ...state.eventsBySession, [sessionId]: [] },
       userMessagesBySession: { ...state.userMessagesBySession, [sessionId]: [] },
     })),
+
+  // FEATURE_033: fork = clone full buffer 到 newSessionId。
+  // forkPointTurnIdx 当前仅作 metadata 记录（main 端已经写 session 上）；不在 renderer 层
+  // 按 turn 切，因为 in-memory 阶段 UX 是 "在当前对话末尾分叉一条平行线"。
+  // KodaX SDK 0.7.42 出 forkSession() 后 main 端会接磁盘，renderer 这层直接 setSessions 即可。
+  forkSessionBuffers: (srcSessionId, newSessionId, _forkPointTurnIdx) =>
+    set((state) => {
+      const srcEvents = state.eventsBySession[srcSessionId] ?? [];
+      const srcMsgs = state.userMessagesBySession[srcSessionId] ?? [];
+      // events 里的 sessionId 字段是 source 的——为新 session 重建 events 时需要改 sessionId，
+      // 否则 ConversationStreamV2 按 sessionId 过滤会读不到。这里直接做映射。
+      const remapped = srcEvents.map((e) => ({ ...e, sessionId: newSessionId } as SessionEvent));
+      return {
+        eventsBySession: { ...state.eventsBySession, [newSessionId]: remapped },
+        userMessagesBySession: { ...state.userMessagesBySession, [newSessionId]: srcMsgs.slice() },
+      };
+    }),
+
+  // FEATURE_033 rewind: 截断 userMessages 与 events buffer 到 rewindPastTurnIdx (含)。
+  //   - userMessages 保留前 idx+1 条
+  //   - events 按 session_complete / session_error 分 turn：保留前 idx+1 个 turn 的全部 events
+  //   - idx >= 现有 turn 数 → silent no-op (renderer 校验，main 不持有 events)
+  //
+  // **同时清空 derived state maps**（reviewer F033 HIGH-1）：
+  // todoList / workBudget / managedTaskStatus / harnessProfile 都是 per-session 派生状态，
+  // 由 appendEvent 累积。rewind 跨过 turn 边界后，这些值不再对应剩余 events——若不重置会
+  // 在 UI 上显示 stale 数据（如已被截掉那轮的 todo list、过高的 work budget 计数）。
+  // 重置后用户继续 send 时自然由新 events 重新填充。
+  rewindSessionBuffers: (sessionId, rewindPastTurnIdx) =>
+    set((state) => {
+      const msgs = state.userMessagesBySession[sessionId] ?? [];
+      const events = state.eventsBySession[sessionId] ?? [];
+      // idx 越界 → 啥都不做
+      if (rewindPastTurnIdx < 0 || rewindPastTurnIdx >= msgs.length) return state;
+      const newMsgs = msgs.slice(0, rewindPastTurnIdx + 1);
+      // events 按 session_complete/session_error 分段，保留前 (rewindPastTurnIdx + 1) 段。
+      //
+      // 命名说明：`completedTurnsBefore` 表示"在当前位置之前已经完成的 turn 数"——
+      // 第一次见到 session_complete 时为 0（处理 turn 0），第二次为 1（turn 1）...
+      // 当 completedTurnsBefore === rewindPastTurnIdx 时即在处理目标 turn 末尾，
+      // 切到 i+1 (含本条 session_complete) 即"保留 turns 0..idx 共 idx+1 个"。
+      let completedTurnsBefore = 0;
+      let sliceEnd = events.length; // 默认保留全部（last turn 还没 complete 时）
+      for (let i = 0; i < events.length; i++) {
+        const k = events[i].kind;
+        if (k === 'session_complete' || k === 'session_error') {
+          if (completedTurnsBefore === rewindPastTurnIdx) {
+            sliceEnd = i + 1;
+            break;
+          }
+          completedTurnsBefore++;
+        }
+      }
+      // 同步清掉 derived state（不区分 turn 边界——简单一致，让 events 重新驱动）
+      const { [sessionId]: _todo, ...restTodos } = state.todoListBySession;
+      const { [sessionId]: _bud, ...restBudgets } = state.workBudgetBySession;
+      const { [sessionId]: _mts, ...restMts } = state.managedTaskStatusBySession;
+      const { [sessionId]: _prof, ...restProfiles } = state.harnessProfileBySession;
+      return {
+        userMessagesBySession: { ...state.userMessagesBySession, [sessionId]: newMsgs },
+        eventsBySession: { ...state.eventsBySession, [sessionId]: events.slice(0, sliceEnd) },
+        todoListBySession: restTodos,
+        workBudgetBySession: restBudgets,
+        managedTaskStatusBySession: restMts,
+        harnessProfileBySession: restProfiles,
+      };
+    }),
 }));

@@ -41,6 +41,9 @@ export type SessionCreateOptions = {
   readonly permissionMode: PermissionMode;
   /** 仅 permissionMode === 'auto' 时生效；缺省 'llm'。FEATURE_029 */
   readonly autoModeEngine?: AutoModeEngine;
+  /** FEATURE_033 fork 时由 host 传入；root session 不带。*/
+  readonly parentSessionId?: string;
+  readonly forkPointTurnIdx?: number;
   readonly emit: (event: SessionEvent) => void;
   /** 工具调用前的 gate；host 注入。Mock 用来模拟弹窗。*/
   readonly requestPermission: PermissionRequestFn;
@@ -71,6 +74,13 @@ export interface ManagedSession {
    *   - 用户可通过 session.setTitle IPC 手工覆盖
    */
   title: string | undefined;
+
+  /**
+   * FEATURE_033 fork 元数据：仅 fork child 有；root session 不带。
+   * KodaX SDK 0.7.42 持久化 API ready 后这两个字段会由 SDK 注入。
+   */
+  parentSessionId?: string;
+  forkPointTurnIdx?: number;
 
   /**
    * 提交一条 prompt 到 session。**严格 fire-and-forget**：

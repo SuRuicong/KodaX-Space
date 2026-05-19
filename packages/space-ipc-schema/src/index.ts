@@ -33,6 +33,8 @@ export {
   sessionSetProviderChannel,
   sessionSetPermissionModeChannel,
   sessionSetAutoModeEngineChannel,
+  sessionForkChannel,
+  sessionRewindChannel,
   sessionEventChannel,
   type PermissionMode,
   type AutoModeEngine,

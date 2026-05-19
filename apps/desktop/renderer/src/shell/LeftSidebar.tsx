@@ -1,4 +1,4 @@
-// LeftSidebar — F011-revised
+// LeftSidebar — F011-revised + FEATURE_033 tree view
 //
 // Claude Desktop 风左侧侧栏：
 //   ┌─────────────┐
@@ -11,14 +11,16 @@
 //   │
 //   │ Recents ────────────────
 //   │   · 项目分析
+//   │     ⑂ 项目分析 (fork)         ← FEATURE_033 fork child 缩进显示
 //   │   · 修个 bug
 //   └─────────────┘
 //
 // ADR-004 v2 决策：M0 就显示 Coder/Partner tab；Partner 灰 + "Coming"。
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import type { Mode } from './Shell.js';
 import { useAppStore } from '../store/appStore.js';
+import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 
 interface LeftSidebarProps {
   mode: Mode;
@@ -89,22 +91,11 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
             {currentProjectPath ? 'No sessions yet.' : 'Open a folder to start.'}
           </div>
         )}
-        {sessions.map((s) => (
-          <button
-            key={s.sessionId}
-            type="button"
-            onClick={() => setCurrentSession(s.sessionId)}
-            className={`w-full text-left text-xs px-2 py-1 rounded truncate ${
-              s.sessionId === currentSessionId
-                ? 'bg-zinc-800 text-zinc-100'
-                : 'text-zinc-400 hover:bg-zinc-900'
-            }`}
-            title={s.title ?? s.sessionId}
-          >
-            <span className="text-zinc-600 mr-1" aria-hidden>·</span>
-            {s.title ?? 'Untitled session'}
-          </button>
-        ))}
+        <SessionTree
+          sessions={sessions}
+          currentSessionId={currentSessionId}
+          onSelect={setCurrentSession}
+        />
       </div>
 
       {/* Bottom: mode/gateway label */}
@@ -113,6 +104,103 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
         <button type="button" className="hover:text-zinc-400" aria-label="Settings">⚙</button>
       </div>
     </aside>
+  );
+}
+
+/**
+ * FEATURE_033: 按 parentSessionId 把 sessions 排成 root → children 树。
+ * 渲染顺序：每个 root 紧跟其 descendants（DFS pre-order）；fork child 缩进 + 用 ⑂ 图标。
+ *
+ * 边界处理：
+ *   - parent 已被 delete 了 → orphan：当 root 渲染（仍能选中、不丢）
+ *   - cycle 防御：DFS 走过的 id 不再重复进入
+ */
+interface SessionTreeProps {
+  readonly sessions: readonly SessionMeta[];
+  readonly currentSessionId: string | null;
+  readonly onSelect: (sessionId: string) => void;
+}
+
+function SessionTree({ sessions, currentSessionId, onSelect }: SessionTreeProps): JSX.Element {
+  const rendered = useMemo(() => buildSessionTreeOrder(sessions), [sessions]);
+  return (
+    <>
+      {rendered.map(({ session, depth }) => (
+        <SessionRow
+          key={session.sessionId}
+          session={session}
+          depth={depth}
+          isSelected={session.sessionId === currentSessionId}
+          onSelect={onSelect}
+        />
+      ))}
+    </>
+  );
+}
+
+interface SessionTreeNode {
+  readonly session: SessionMeta;
+  readonly depth: number;
+}
+
+/** DFS pre-order，root 按 lastActivityAt 倒序；children 同样倒序。 */
+export function buildSessionTreeOrder(sessions: readonly SessionMeta[]): readonly SessionTreeNode[] {
+  const byId = new Map<string, SessionMeta>(sessions.map((s) => [s.sessionId, s]));
+  const childrenByParent = new Map<string, SessionMeta[]>();
+  const roots: SessionMeta[] = [];
+  for (const s of sessions) {
+    if (s.parentSessionId !== undefined && byId.has(s.parentSessionId)) {
+      const bucket = childrenByParent.get(s.parentSessionId) ?? [];
+      bucket.push(s);
+      childrenByParent.set(s.parentSessionId, bucket);
+    } else {
+      roots.push(s);
+    }
+  }
+  // 按 lastActivityAt 倒序
+  const byActivityDesc = (a: SessionMeta, b: SessionMeta): number => b.lastActivityAt - a.lastActivityAt;
+  roots.sort(byActivityDesc);
+  for (const list of childrenByParent.values()) list.sort(byActivityDesc);
+
+  const out: SessionTreeNode[] = [];
+  const visited = new Set<string>();
+  function walk(s: SessionMeta, depth: number): void {
+    if (visited.has(s.sessionId)) return; // cycle guard
+    visited.add(s.sessionId);
+    out.push({ session: s, depth });
+    const kids = childrenByParent.get(s.sessionId) ?? [];
+    for (const c of kids) walk(c, depth + 1);
+  }
+  for (const r of roots) walk(r, 0);
+  return out;
+}
+
+function SessionRow({
+  session,
+  depth,
+  isSelected,
+  onSelect,
+}: {
+  session: SessionMeta;
+  depth: number;
+  isSelected: boolean;
+  onSelect: (id: string) => void;
+}): JSX.Element {
+  const indent = Math.min(depth, 4); // 不无限缩进；4 层就够
+  const isFork = depth > 0 || session.parentSessionId !== undefined;
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(session.sessionId)}
+      className={`w-full text-left text-xs px-2 py-1 rounded truncate ${
+        isSelected ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-900'
+      }`}
+      style={{ paddingLeft: `${0.5 + indent * 0.8}rem` }}
+      title={session.title ?? session.sessionId}
+    >
+      <span className="text-zinc-600 mr-1" aria-hidden>{isFork ? '⑂' : '·'}</span>
+      {session.title ?? 'Untitled session'}
+    </button>
   );
 }
 

@@ -78,11 +78,20 @@ const MAX_TOOL_RESULT = 524_288;
 // title 是可选——session 刚创建时为空，第一次 send 后由 host 用 prompt 头 50 字填一个临时值；
 // FEATURE_006/008 时再升级成用 cheap LLM 总结成 ≤ 8 字。
 // 用户可通过 session.setTitle 手工覆盖。
+//
+// FEATURE_033 in-memory fork 字段：
+//   parentSessionId    — 仅 fork 出来的 child 有；root 不带
+//   forkPointTurnIdx   — fork 时 source 的 turn idx（仅 child 有）
+// KodaX SDK 0.7.42 持久化 API ready 后这两个字段会同时改由 SDK 注入。
 const sessionMetaSchema = z.object({
   sessionId: z.string().min(1),
   projectRoot: z.string().min(1),
   provider: providerIdSchema,
   reasoningMode: reasoningModeSchema,
+  /** F033 fork child 才有；root session 不带。*/
+  parentSessionId: z.string().min(1).optional(),
+  /** F033 fork 时 source 的 turn idx (>= 0)。*/
+  forkPointTurnIdx: z.number().int().nonnegative().optional(),
   /**
    * FEATURE_029：canonical 3 mode。缺省 'accept-edits'——足够日常 edit/write
    * 自动批 + bash/network 仍走 confirm，对新用户最不容易出事。
@@ -257,6 +266,50 @@ export const sessionSetProviderChannel = {
   }),
   output: z.object({
     ok: z.boolean(),
+  }),
+} as const;
+
+// ---- Invoke: session.fork ---- (FEATURE_033 in-memory)
+//
+// 从 sourceSessionId 在 forkPointTurnIdx 处 fork：
+//   - main 端新建 in-memory session，inherit projectRoot/provider/permissionMode 等
+//   - 新 session 写 parentSessionId + forkPointTurnIdx 元数据
+//   - 真实 events 拷贝由 renderer 完成（events 状态在 appStore 里）
+//   - title 自动加 "(fork)" 后缀，便于用户在 sidebar 区分
+//
+// 持久化语义：alpha.1 仅 in-memory；KodaX SDK 0.7.42 出 forkSession() 后接磁盘。
+export const sessionForkChannel = {
+  name: 'session.fork',
+  direction: 'invoke',
+  input: z.object({
+    sessionId: z.string().min(1),
+    forkPointTurnIdx: z.number().int().nonnegative().max(10_000),
+  }),
+  output: z.object({
+    newSessionId: z.string().min(1),
+    createdAt: z.number().int().nonnegative(),
+  }),
+} as const;
+
+// ---- Invoke: session.rewind ---- (FEATURE_033 in-memory)
+//
+// 把 session 回退到 rewindPastTurnIdx 处（保留 turns 0..idx 含）：
+//   - main 端 cancel 正在跑的 stream + 取消 pending permission/askUser
+//   - renderer 端截断 eventsBySession/userMessagesBySession 到 idx
+//
+// 写入语义：alpha.1 in-memory truncate；SDK 持久化 API ready 后挂磁盘 atomic write。
+//
+// 若 idx >= 当前 turn 数 → returns ok:false（renderer 不会切到不存在的 turn）。
+export const sessionRewindChannel = {
+  name: 'session.rewind',
+  direction: 'invoke',
+  input: z.object({
+    sessionId: z.string().min(1),
+    rewindPastTurnIdx: z.number().int().nonnegative().max(10_000),
+  }),
+  output: z.object({
+    ok: z.boolean(),
+    reason: z.enum(['session_not_found', 'invalid_index', 'session_busy']).optional(),
   }),
 } as const;
 
