@@ -128,6 +128,10 @@ export class RealKodaXSession implements ManagedSession {
     this.requestPermission = opts.requestPermission;
   }
 
+  isRunning(): boolean {
+    return this.currentAbort !== null;
+  }
+
   async send(prompt: string): Promise<void> {
     if (this.disposed) {
       throw new Error(`[real-session ${this.sessionId}] already disposed`);

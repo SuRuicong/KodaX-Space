@@ -43,6 +43,7 @@
 | 026 | NAPI native-fuzzy | New | Medium | v0.1.4 | Planned | [v0.1.4.md#026](features/v0.1.4.md#feature_026-napi-native-fuzzy) |
 | 027 | 代码签名 + notarize | Internal | Medium | v0.1.5 | Planned | [v0.1.5.md#027](features/v0.1.5.md#feature_027-代码签名--notarize) |
 | 028 | 隐私政策 + 文档站 | Internal | Low | v0.1.5 | Planned | [v0.1.5.md#028](features/v0.1.5.md#feature_028-隐私政策--文档站) |
+| 038 | F033 Sessions 持久化升级（接 KodaX SDK ≥ 0.7.42） | Refactor | High | v0.1.6 | Planned | [v0.1.6.md#038](features/v0.1.6.md#feature_038-f033-sessions-持久化升级接-kodax-sdk--0742) |
 | **029** | **Permission Mode canonical 3 + Auto engine 子档** | Refactor | **Critical** | v0.1.0-alpha.1 | **Planned** | [v0.1.0.md#029](features/v0.1.0.md#feature_029-permission-mode-canonical-3--auto-engine-子档) |
 | 030 | AutoModeToolGuardrail bootstrap | New | Critical | v0.1.1 | Planned | [v0.1.1.md#030](features/v0.1.1.md#feature_030-automodetoolguardrail-bootstrap) |
 | 031 | Slash command runtime + 第一批命令 | New | Critical | v0.1.1 | Planned | [v0.1.1.md#031](features/v0.1.1.md#feature_031-slash-command-runtime--第一批命令) |
@@ -177,6 +178,7 @@ By Category:  New: 31, Enhancement: 3, Refactor: 3, Internal: 2
 | **v0.1.3** | UX polish | 主题 + 通知 + `.mcpb` 安装 + 自动更新 | 2026-Q3 末 |
 | **v0.1.4** | Power features | 多 tab 终端 + 富文件预览 + 更多 Rust 加速器 | 2026-Q4 初 |
 | **v0.1.5** | Release-ready | 签名 + notarize + 文档站；准备 v0.2.0 公开 Beta | 2026-Q4 |
+| **v0.1.6** | Persistence follow-up | F033 sessions tree/fork/rewind 升 KodaX SDK 持久化 API（in-memory → 磁盘） | 与 KodaX SDK ≥ 0.7.42 同步 |
 
 ## ID Conventions
 

@@ -104,6 +104,10 @@ export class MockKodaXSession implements ManagedSession {
     this.requestPermission = opts.requestPermission;
   }
 
+  isRunning(): boolean {
+    return this.currentAbort !== null;
+  }
+
   async send(prompt: string): Promise<void> {
     if (this.disposed) throw new Error(`[mock-session ${this.sessionId}] already disposed`);
     if (this.currentAbort) {

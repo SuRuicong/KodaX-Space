@@ -83,6 +83,13 @@ export interface ManagedSession {
   forkPointTurnIdx?: number;
 
   /**
+   * Reviewer batch HIGH-3: true 表示有正在跑的 send (currentAbort != null)。
+   * host.setPermissionMode 用此判断"切到 auto 时 guardrail bootstrap 是否会延迟到下一次 send"，
+   * 并 emit 一条提示让用户知道当前这一轮不会立即受 AutoModeToolGuardrail 守。
+   */
+  isRunning(): boolean;
+
+  /**
    * 提交一条 prompt 到 session。**严格 fire-and-forget**：
    *
    *   - 实现**必须**在返回的 Promise resolve 前**只做同步建账**（如生成 turn id、

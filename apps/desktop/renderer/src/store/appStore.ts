@@ -377,15 +377,35 @@ export const useAppStore = create<AppState>((set) => ({
     }),
 
   resetSessionMessages: (sessionId) =>
-    set((state) => ({
-      eventsBySession: { ...state.eventsBySession, [sessionId]: [] },
-      userMessagesBySession: { ...state.userMessagesBySession, [sessionId]: [] },
-    })),
+    set((state) => {
+      // 同步剥掉本 session 在 pendingToolPaths 中暂存的 tool_id → path 记录
+      // 否则 /clear 后若一个迟来的 tool_result 带相同 toolId，会触发 FilePanel
+      // 跳到一个用户刚清掉的 diff（F031+F009 交互回归 — reviewer batch HIGH-1）。
+      const events = state.eventsBySession[sessionId] ?? [];
+      const toolIdsInThisSession = new Set<string>();
+      for (const ev of events) {
+        if (ev.kind === 'tool_start') toolIdsInThisSession.add(ev.toolId);
+      }
+      const nextPending: Record<string, string> = {};
+      for (const [tid, path] of Object.entries(state.pendingToolPaths)) {
+        if (!toolIdsInThisSession.has(tid)) nextPending[tid] = path;
+      }
+      return {
+        eventsBySession: { ...state.eventsBySession, [sessionId]: [] },
+        userMessagesBySession: { ...state.userMessagesBySession, [sessionId]: [] },
+        pendingToolPaths: nextPending,
+      };
+    }),
 
   // FEATURE_033: fork = clone full buffer 到 newSessionId。
   // forkPointTurnIdx 当前仅作 metadata 记录（main 端已经写 session 上）；不在 renderer 层
   // 按 turn 切，因为 in-memory 阶段 UX 是 "在当前对话末尾分叉一条平行线"。
   // KodaX SDK 0.7.42 出 forkSession() 后 main 端会接磁盘，renderer 这层直接 setSessions 即可。
+  //
+  // **pendingToolPaths 不复制到 fork**（reviewer batch HIGH-2 的 follow-up）：
+  // toolId 是 per-invocation UUID 全局唯一，永不复用——source 的 in-flight 工具 tool_result
+  // 会路由回 source session（不是 fork），让 source 的 pending 自己清。fork 的"pending tool"
+  // 概念只对 fork 自己产生的新 tool_start 才有意义。所以 fork 启动时 pendingToolPaths 自然为空。
   forkSessionBuffers: (srcSessionId, newSessionId, _forkPointTurnIdx) =>
     set((state) => {
       const srcEvents = state.eventsBySession[srcSessionId] ?? [];

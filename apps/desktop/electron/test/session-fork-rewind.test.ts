@@ -149,3 +149,96 @@ test('rewind: cancels in-flight send and awaits cancel before returning', async 
   const result = await kodaxHost.rewind(sessionId, 0);
   assert.equal(result.ok, true);
 });
+
+// ---- Reviewer batch HIGH-3 ----
+
+test('setPermissionMode→auto mid-run emits session_error informational notice', async () => {
+  // 用本地 captured 数组，beforeEach 已经清掉之前的内容
+  const captured: Array<{ channel: string; payload: unknown }> = [];
+  setRendererTarget(() => ({
+    send: (channel: string, payload: unknown) => {
+      captured.push({ channel, payload });
+      if (channel === 'permission.request') {
+        const p = payload as { reqId: string };
+        setImmediate(() => permissionBroker.resolve(p.reqId, 'allow_once'));
+      }
+    },
+    isDestroyed: () => false,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  }) as any);
+
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+    permissionMode: 'accept-edits',
+  });
+  // 启动一条 send 让 session isRunning()
+  await kodaxHost.get(sessionId)!.send('do something');
+  // mid-run 切到 auto
+  kodaxHost.setPermissionMode(sessionId, 'auto');
+  // 应当 emit 一条 session_error 提示
+  const notices = captured.filter(
+    (c) =>
+      c.channel === 'session.event'
+      && (c.payload as { kind: string }).kind === 'session_error'
+      && ((c.payload as { error: string }).error.includes('mode→auto')),
+  );
+  assert.ok(notices.length >= 1, 'expected mid-run mode→auto notice');
+  // cleanup: cancel in-flight 让测试快速收尾
+  await kodaxHost.cancel(sessionId);
+});
+
+test('setPermissionMode→auto when NOT running does not emit mid-run notice', async () => {
+  const captured: Array<{ channel: string; payload: unknown }> = [];
+  setRendererTarget(() => ({
+    send: (channel: string, payload: unknown) => captured.push({ channel, payload }),
+    isDestroyed: () => false,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  }) as any);
+
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+    permissionMode: 'accept-edits',
+  });
+  // 不调 send，直接切 mode
+  kodaxHost.setPermissionMode(sessionId, 'auto');
+  const notices = captured.filter(
+    (c) =>
+      c.channel === 'session.event'
+      && (c.payload as { kind: string }).kind === 'session_error',
+  );
+  assert.equal(notices.length, 0);
+});
+
+test('setPermissionMode auto→auto idempotent: no notice', async () => {
+  const captured: Array<{ channel: string; payload: unknown }> = [];
+  setRendererTarget(() => ({
+    send: (channel: string, payload: unknown) => {
+      captured.push({ channel, payload });
+      if (channel === 'permission.request') {
+        const p = payload as { reqId: string };
+        setImmediate(() => permissionBroker.resolve(p.reqId, 'allow_once'));
+      }
+    },
+    isDestroyed: () => false,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  }) as any);
+
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+    permissionMode: 'auto',
+  });
+  await kodaxHost.get(sessionId)!.send('do something');
+  // 已是 auto，再切 auto——不该 emit
+  kodaxHost.setPermissionMode(sessionId, 'auto');
+  const notices = captured.filter(
+    (c) =>
+      c.channel === 'session.event'
+      && (c.payload as { kind: string }).kind === 'session_error'
+      && ((c.payload as { error: string }).error.includes('mode→auto')),
+  );
+  assert.equal(notices.length, 0);
+  await kodaxHost.cancel(sessionId);
+});
