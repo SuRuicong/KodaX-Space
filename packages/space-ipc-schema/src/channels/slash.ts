@@ -68,6 +68,12 @@ export const slashExecChannel = {
     message: z.string().max(2048).optional(),
     echo: z.boolean().optional(),
     clearStream: z.boolean().optional(),
+    /**
+     * F035 reviewer HIGH-3: 显式 routing 信号——main 找不到 name 对应的 slash command
+     * 时 true。renderer 据此走 skill fallback (skill.invoke)，**不**再靠 message
+     * 字符串 startsWith 'unknown command' 做隐式判定（i18n / 措辞变更会 break）。
+     */
+    unknownCommand: z.boolean().optional(),
   }),
 } as const;
 

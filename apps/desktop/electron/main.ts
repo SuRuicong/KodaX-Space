@@ -14,6 +14,7 @@ import { registerProjectChannels } from './ipc/project.js';
 import { registerPermissionChannels } from './ipc/permission.js';
 import { registerAskUserChannels } from './ipc/ask-user.js';
 import { registerSlashChannels, registerBuiltinSlashCommands } from './ipc/slash.js';
+import { registerSkillChannels } from './ipc/skill.js';
 import { registerProviderChannels, injectAllKeysToEnv } from './ipc/provider.js';
 import { registerFilesChannels } from './ipc/files.js';
 import { setRendererTarget } from './ipc/push.js';
@@ -154,6 +155,7 @@ app.whenReady().then(() => {
   registerAskUserChannels();
   registerBuiltinSlashCommands();
   registerSlashChannels();
+  registerSkillChannels();
   registerProviderChannels();
   registerFilesChannels();
   // push 目标走 getter 间接拿当前 window——dev HMR / 用户重开窗口都能正确切换

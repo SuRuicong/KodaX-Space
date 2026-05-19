@@ -1,27 +1,39 @@
-// SlashCommandPopover — FEATURE_031.
+// SlashCommandPopover — FEATURE_031 + FEATURE_035.
 //
 // 用户在底部输入框输入 `/` 触发：
-//   - 拉 slash.discover 一次（已缓存就不再拉）
-//   - 显示命令列表 popover，过滤前缀
+//   - 拉 slash.discover + skill.discover 各一次（已缓存就不再拉）
+//   - 合并显示：slash command 与 skill 并列，按 name 字典序
 //   - 上下键选中、回车执行；Esc 关闭
 //
 // 不在 BottomBar 内部直接 inline 实现，独立组件方便 future 让 attach-menu 也复用同补全。
 
 import { useEffect, useRef, useState } from 'react';
-import type { SlashCommandMeta } from '@kodax-space/space-ipc-schema';
+import type { SlashCommandMeta, SkillMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
+
+/**
+ * 统一的 picker 项类型——把 slash command 和 skill 合并成一个列表。
+ *   - kind 'slash' → BottomBar 走 slash.exec
+ *   - kind 'skill' → BottomBar 走 skill.invoke → session.send
+ */
+export type SlashPickerItem =
+  | { readonly kind: 'slash'; readonly meta: SlashCommandMeta }
+  | { readonly kind: 'skill'; readonly meta: SkillMeta };
 
 export interface SlashCommandPopoverProps {
   /** 当前输入框文本（含 leading `/`）。父组件按需 mount/unmount 本组件。*/
   readonly query: string;
   /**
-   * 用户选中命令并按回车（或点击）后回调。父组件接管 input clear + IPC exec。
-   * cmd === null 表示用户按 Esc 关闭弹窗。
+   * 用户选中条目并按回车（或点击）后回调。父组件接管 input clear + IPC exec。
+   * item === null 表示用户按 Esc 关闭弹窗。
    */
-  readonly onPick: (cmd: SlashCommandMeta | null) => void;
+  readonly onPick: (item: SlashPickerItem | null) => void;
 }
 
 let cachedCommands: SlashCommandMeta[] | null = null;
+// FEATURE_035: skill 缓存 per-session—— skill list 由 projectRoot 决定，
+// 切 session 可能进了不同 project（不同 .kodax/skills/）。
+let cachedSkills: { sessionId: string; list: SkillMeta[] } | null = null;
 
 async function loadCommandsOnce(): Promise<SlashCommandMeta[]> {
   if (cachedCommands) return cachedCommands;
@@ -32,6 +44,19 @@ async function loadCommandsOnce(): Promise<SlashCommandMeta[]> {
   return cachedCommands;
 }
 
+async function loadSkillsForSession(sessionId: string): Promise<SkillMeta[]> {
+  if (cachedSkills && cachedSkills.sessionId === sessionId) return cachedSkills.list;
+  if (!window.kodaxSpace) return [];
+  const result = await window.kodaxSpace.invoke('skill.discover', { sessionId });
+  if (!result.ok) {
+    // skill.discover 失败不阻塞 slash 命令——返回空列表即可
+    cachedSkills = { sessionId, list: [] };
+    return [];
+  }
+  cachedSkills = { sessionId, list: [...result.data.skills] };
+  return cachedSkills.list;
+}
+
 /**
  * 测试用：清空缓存让下一次重新拉。
  * 生产构建 no-op，避免运行期被误调导致 popover 重新走一次 IPC discover。
@@ -39,28 +64,47 @@ async function loadCommandsOnce(): Promise<SlashCommandMeta[]> {
 export function _resetSlashCacheForTesting(): void {
   if (process.env.NODE_ENV === 'production') return;
   cachedCommands = null;
+  cachedSkills = null;
 }
 
 export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Element | null {
-  const [commands, setCommands] = useState<readonly SlashCommandMeta[]>([]);
+  const [items, setItems] = useState<readonly SlashPickerItem[]>([]);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const sessionId = useAppStore((s) => s.currentSessionId);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // 启动时拉一次命令列表
+  // 启动时拉两份：slash + skills，合成 unified picker list（按 name 字典序）
   useEffect(() => {
-    void loadCommandsOnce().then(setCommands);
-  }, []);
+    if (!sessionId) {
+      setItems([]);
+      return;
+    }
+    let cancelled = false;
+    void Promise.all([loadCommandsOnce(), loadSkillsForSession(sessionId)]).then(
+      ([cmds, skills]) => {
+        if (cancelled) return;
+        const merged: SlashPickerItem[] = [
+          ...cmds.map((c): SlashPickerItem => ({ kind: 'slash', meta: c })),
+          ...skills.map((s): SlashPickerItem => ({ kind: 'skill', meta: s })),
+        ];
+        merged.sort((a, b) => a.meta.name.localeCompare(b.meta.name));
+        setItems(merged);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
 
   // query 变化重置选中索引
   useEffect(() => {
     setSelectedIdx(0);
   }, [props.query]);
 
-  // 过滤：去掉 leading `/`，前缀匹配命令名 (case-insensitive)。
+  // 过滤：去掉 leading `/`，前缀匹配条目 name (case-insensitive)。
   // KodaX REPL 用 starts-with 不用 fuzzy——简单可预测，符合 user 直觉。
   const prefix = props.query.replace(/^\//, '').toLowerCase();
-  const filtered = commands.filter((c) => c.name.startsWith(prefix));
+  const filtered = items.filter((c) => c.meta.name.startsWith(prefix));
 
   // 上下键 / 回车 / Esc 键盘处理
   useEffect(() => {
@@ -73,10 +117,10 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
         e.preventDefault();
         setSelectedIdx((i) => Math.max(i - 1, 0));
       } else if (e.key === 'Enter') {
-        const cmd = filtered[selectedIdx];
-        if (cmd) {
+        const item = filtered[selectedIdx];
+        if (item) {
           e.preventDefault();
-          props.onPick(cmd);
+          props.onPick(item);
         }
       } else if (e.key === 'Escape') {
         e.preventDefault();
@@ -102,33 +146,45 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
       ref={listRef}
       className="absolute left-3 right-3 bottom-full mb-1 max-h-64 overflow-y-auto bg-zinc-900 border border-zinc-800 rounded shadow-xl text-xs z-40"
       role="listbox"
-      aria-label="Slash commands"
+      aria-label="Slash commands and skills"
     >
-      {filtered.map((c, idx) => {
+      {filtered.map((item, idx) => {
         const selected = idx === selectedIdx;
+        const m = item.meta;
+        const argsHint = item.kind === 'slash' ? item.meta.argsHint : item.meta.argumentHint;
         return (
           <div
-            key={c.name}
+            key={`${item.kind}:${m.name}`}
             data-slash-idx={idx}
             role="option"
             aria-selected={selected}
             onMouseDown={(e) => {
               e.preventDefault();
-              props.onPick(c);
+              props.onPick(item);
             }}
             onMouseEnter={() => setSelectedIdx(idx)}
             className={`px-3 py-1.5 flex items-center gap-3 cursor-pointer ${
               selected ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-850'
             }`}
           >
-            <span className="font-mono text-amber-300 min-w-[110px]">/{c.name}</span>
-            {c.argsHint && (
-              <span className="text-[10px] text-zinc-600 font-mono">{c.argsHint}</span>
+            <span
+              className={`font-mono min-w-[110px] ${
+                item.kind === 'skill' ? 'text-sky-300' : 'text-amber-300'
+              }`}
+            >
+              /{m.name}
+            </span>
+            {argsHint && (
+              <span className="text-[10px] text-zinc-600 font-mono">{argsHint}</span>
             )}
-            <span className="text-zinc-500 truncate">{c.description}</span>
-            {c.source === 'user' && (
-              <span className="ml-auto text-[9px] text-zinc-600 uppercase">user</span>
-            )}
+            <span className="text-zinc-500 truncate">{m.description}</span>
+            <span className="ml-auto text-[9px] text-zinc-600 uppercase">
+              {item.kind === 'slash'
+                ? item.meta.source === 'user'
+                  ? 'user'
+                  : ''
+                : item.meta.source}
+            </span>
           </div>
         );
       })}

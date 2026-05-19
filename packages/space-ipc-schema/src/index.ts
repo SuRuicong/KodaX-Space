@@ -71,6 +71,13 @@ export {
 } from './channels/slash.js';
 
 export {
+  skillDiscoverChannel,
+  skillInvokeChannel,
+  type SkillMeta,
+  type SkillSource,
+} from './channels/skill.js';
+
+export {
   permissionRequestChannel,
   permissionCancelledChannel,
   permissionAnswerChannel,

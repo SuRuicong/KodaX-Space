@@ -1,0 +1,126 @@
+// Space skill registry wrapper — FEATURE_035.
+//
+// 薄壳：包 KodaX SDK 的 SkillRegistry（@kodax-ai/kodax/skills），加 per-projectRoot
+// 缓存 + TTL，避免每次 skill.discover IPC 都做一遍 ~/.kodax/skills + <proj>/.kodax/skills
+// 全盘扫描（小项目 5-20 ms，大 monorepo 可能上百 ms）。
+//
+// 缓存策略：
+//   - key = absolute projectRoot
+//   - value = { registry, expiresAt }
+//   - TTL = 30s（小到能反映 user 新装 skill；够大避免连按 popover 反复扫盘）
+//   - 显式 invalidate()：F035 之后会接 file-watch；alpha.1 走简单 TTL 即可
+//
+// 安全：projectRoot 必须 absolute 且已经过 host.validateProjectRoot 校验，wrapper 不重复
+// 校验（caller responsibility）。SDK 内部对每个 skill 目录读 SKILL.md 失败都 swallow，
+// 不会向 Space main 抛出。
+
+import path from 'node:path';
+import { SkillRegistry, type SkillMetadata } from '@kodax-ai/kodax/skills';
+
+const TTL_MS = 30_000;
+
+// Reviewer F035 HIGH-3: 启动期一次性 probe，保证我们 ambient 声明的方法在
+// 实际 SDK 上确实存在（SDK 升版本删/改方法时 fail-fast，而不是用户调时才"not a function"）。
+{
+  const probe = new SkillRegistry('/tmp');
+  for (const m of ['discover', 'list', 'listUserInvocable', 'loadFull', 'invoke', 'reload'] as const) {
+    const fn = (probe as unknown as Record<string, unknown>)[m];
+    if (typeof fn !== 'function') {
+      throw new Error(
+        `[skill-registry] SDK shape mismatch: SkillRegistry.${m} is ${typeof fn}; ` +
+          `expected function. Update apps/desktop/electron/kodax/kodax-sdk-types.d.ts`,
+      );
+    }
+  }
+}
+
+interface CacheEntry {
+  registry: SkillRegistry;
+  expiresAt: number;
+}
+
+const cache = new Map<string, CacheEntry>();
+
+/**
+ * 取（或生成）给定 projectRoot 的 SkillRegistry，已经 discover() 完毕。
+ * 命中缓存且未过期 → 直接返回；否则 new 一个并触发 discover()。
+ */
+export async function getSkillRegistry(projectRoot: string): Promise<SkillRegistry> {
+  if (!path.isAbsolute(projectRoot)) {
+    throw new Error(`[skill-registry] projectRoot must be absolute: ${projectRoot}`);
+  }
+  const normalized = path.normalize(projectRoot);
+  const now = Date.now();
+  const hit = cache.get(normalized);
+  if (hit && hit.expiresAt > now) {
+    return hit.registry;
+  }
+  const registry = new SkillRegistry(normalized);
+  await registry.discover();
+  cache.set(normalized, { registry, expiresAt: now + TTL_MS });
+  return registry;
+}
+
+/** 显式失效（F037 future file-watch 或测试用）。 */
+export function invalidateSkillCache(projectRoot?: string): void {
+  if (projectRoot === undefined) {
+    cache.clear();
+    return;
+  }
+  cache.delete(path.normalize(projectRoot));
+}
+
+/**
+ * 把 SDK SkillMetadata 映射到 IPC schema SkillMeta 形态。
+ * 过滤 !userInvocable / disableModelInvocation 的 skill —— 用户在 popover 里
+ * 看不到的应当压根别 emit 给 renderer。
+ */
+export function toSkillMeta(m: SkillMetadata): {
+  name: string;
+  description: string;
+  argumentHint?: string;
+  source: SkillMetadata['source'];
+  path: string;
+} {
+  return {
+    name: m.name,
+    description: m.description,
+    argumentHint: m.argumentHint,
+    source: m.source,
+    path: m.path,
+  };
+}
+
+/**
+ * 预扫 skill content 是否含 `` !`...` `` dynamic-context 模板（SDK VariableResolver
+ * 会用 execSync 跑这些命令）。alpha.1 阶段一律拒绝——SDK execSync 完全绕过 F029/F030
+ * permission broker，等同于"任意 SKILL.md 都能拿主进程 fs/network 权限"，违反 KodaX Space
+ * 的同意模型（reviewer F035 CRITICAL-2）。
+ *
+ * 后续若想支持：要么在 SDK 加禁用开关、要么在调用前把命令转成 KodaX tool call 走 broker。
+ *
+ * @returns 含 unsafe token 时返回带说明的拒绝文案；安全则返回 null。
+ */
+export async function refuseIfUnsafeContent(
+  registry: SkillRegistry,
+  skillName: string,
+): Promise<string | null> {
+  let full;
+  try {
+    full = await registry.loadFull(skillName);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return `failed to load skill '${skillName}': ${msg}`;
+  }
+  // 同时扫 content + rawContent —— SDK 解析后两者通常相同，但 alpha.1 防御性都查
+  const hay = `${full.content}\n${full.rawContent}`;
+  // `!` + backtick + 任何内容 + closing backtick（最短匹配以兼容代码块包内的 ! 出现）
+  if (/!`[^`]+`/.test(hay)) {
+    return (
+      `skill '${skillName}' contains dynamic-context shell tokens (\`!\`...\``+
+      `); blocked by KodaX Space safety policy. ` +
+      `These tokens would execute shell commands outside the permission broker.`
+    );
+  }
+  return null;
+}

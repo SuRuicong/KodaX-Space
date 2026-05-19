@@ -388,3 +388,95 @@ declare module '@kodax-ai/kodax/coding' {
     toolName: string,
   ): { toClassifierInput?: (input: unknown) => string } | undefined;
 }
+
+// ============= FEATURE_035 @kodax-ai/kodax/skills =============
+//
+// 同 coding 子包：SDK 内部走 `export * from '@kodax-ai/skills'` 但 @kodax-ai/skills
+// 不是直接 npm 依赖（@kodax-ai/kodax bundled 时把 skills 代码打进 chunks/）。
+// 这里 minimal 声明 Space main 端用到的 surface。
+declare module '@kodax-ai/kodax/skills' {
+  /**
+   * Skill 来源。
+   *   user      — ~/.kodax/skills/
+   *   project   — ${projectRoot}/.kodax/skills/
+   *   plugin    — KodaX plugin 注册的 skill
+   *   builtin   — KodaX 内置 skill（git-workflow / code-review / skill-creator 等）
+   */
+  export type SkillSource = 'user' | 'project' | 'plugin' | 'builtin';
+
+  /** 轻量 metadata，由 loadSkillMetadata / discoverSkills 返回。 */
+  export interface SkillMetadata {
+    readonly name: string;
+    readonly description: string;
+    readonly userInvocable: boolean;
+    readonly argumentHint?: string;
+    readonly path: string;
+    readonly source: SkillSource;
+    readonly disableModelInvocation: boolean;
+  }
+
+  /**
+   * VariableResolver context — Space 端 wire 时填 sessionId / cwd / env。
+   * SDK 内部用 ${VAR}, $1..$N, $ARGUMENTS, !`cmd` 等 token 解析。
+   */
+  export interface VariableContext {
+    readonly sessionId: string;
+    readonly workingDirectory: string;
+    readonly environment: Record<string, string>;
+  }
+
+  /** Skill invoke 结果（SDK SkillRegistry.invoke 返回）。 */
+  export interface SkillInvokeResult {
+    readonly success: boolean;
+    readonly content: string;
+    readonly error?: string;
+  }
+
+  /** Discover 输出 (discoverSkills) 。 */
+  export interface DiscoverSkillsResult {
+    readonly skills: ReadonlyMap<string, SkillMetadata>;
+    readonly errors: ReadonlyArray<{ path: string; error: string }>;
+  }
+
+  export interface DiscoverSkillsOptions {
+    readonly projectPaths?: readonly string[];
+    readonly userPaths?: readonly string[];
+    readonly builtinPaths?: readonly string[];
+  }
+
+  export function discoverSkills(
+    projectRoot: string,
+    options?: DiscoverSkillsOptions,
+  ): Promise<DiscoverSkillsResult>;
+
+  /**
+   * Full skill 体（loadFull 返回；SkillRegistry.loadFull 也用）。
+   * Space wrapper 用 content/rawContent 做 unsafe-token 预扫；不依赖 scripts/references 字段。
+   */
+  export interface LoadedSkill extends SkillMetadata {
+    readonly content: string;
+    readonly rawContent: string;
+    readonly skillFilePath: string;
+    readonly loaded: true;
+  }
+
+  /**
+   * SkillRegistry — Space 用这个高层 API 而不是直接调 discoverSkills / loadFullSkill。
+   * 每个 projectRoot 一个实例（路径不同 → 不同 skill 集合）。
+   */
+  export class SkillRegistry {
+    constructor(projectRoot: string, customPaths?: DiscoverSkillsOptions);
+    discover(): Promise<void>;
+    get(name: string): SkillMetadata | undefined;
+    list(): readonly SkillMetadata[];
+    listUserInvocable(): readonly SkillMetadata[];
+    /** 拿完整 skill 体（含 markdown content）。Space wrapper 用来做 unsafe-token scrub。*/
+    loadFull(name: string): Promise<LoadedSkill>;
+    invoke(
+      name: string,
+      argumentsString: string,
+      context: VariableContext,
+    ): Promise<SkillInvokeResult>;
+    reload(): Promise<void>;
+  }
+}

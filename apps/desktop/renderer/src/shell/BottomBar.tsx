@@ -14,8 +14,7 @@ import { ModelEffortSelector } from './ModelEffortSelector.js';
 import { ModeSelector } from './ModeSelector.js';
 import { ContextWindowIndicator } from './ContextWindowIndicator.js';
 import { AttachMenu } from './AttachMenu.js';
-import { SlashCommandPopover } from './SlashCommandPopover.js';
-import type { SlashCommandMeta } from '@kodax-space/space-ipc-schema';
+import { SlashCommandPopover, type SlashPickerItem } from './SlashCommandPopover.js';
 
 /**
  * F031 helper：按空白切 args，保留双引号包裹的整段。
@@ -51,7 +50,13 @@ export function BottomBar(): JSX.Element {
   const trimmedPrompt = prompt.trimStart();
   const slashMode = trimmedPrompt.startsWith('/') && !/\s/.test(trimmedPrompt);
 
-  async function execSlash(name: string, args: string[]): Promise<void> {
+  /**
+   * Slash 命令分两步：
+   *   1) slash.exec — main 端有 builtin handler 时直接执行
+   *   2) 若 main 返回 unknownCommand:true → 调 execSkill 试 skill registry
+   * busy 状态在外部包裹 (execSlashOrSkill)，避免中间放掉 → 用户能并发触发新命令。
+   */
+  async function execSlashOrSkill(name: string, args: string[]): Promise<void> {
     if (!currentSessionId || !window.kodaxSpace) return;
     setBusy(true);
     setErr(null);
@@ -65,7 +70,13 @@ export function BottomBar(): JSX.Element {
         setErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`);
         return;
       }
-      const { ok, message, echo, clearStream } = result.data;
+      const { ok, message, echo, clearStream, unknownCommand } = result.data;
+      // F035: slash 找不到 → 试 skill。用 unknownCommand 字段（reviewer HIGH-3：
+      // 不再字符串匹配 message）。
+      if (unknownCommand) {
+        await invokeSkill(name, args);
+        return;
+      }
       if (echo && message) {
         // F031: /help /clear 等命令把 message 当 system_notice 显示
         appendUserMessage(currentSessionId, `/${name} ${args.join(' ')}`.trim());
@@ -85,11 +96,57 @@ export function BottomBar(): JSX.Element {
     }
   }
 
+  /** 仅 popover 直接点中 slash 命令（已知 builtin、无 fallback 必要）时用。*/
+  async function execSlashDirect(name: string, args: string[]): Promise<void> {
+    // 这层薄壳保持与原 execSlash 相同的 busy 语义但不做 skill fallback。
+    // 当前实现复用 execSlashOrSkill；future 若需要细分语义可分开。
+    await execSlashOrSkill(name, args);
+  }
+
+  /**
+   * F035: 执行 skill → 拿 resolvedPrompt → 走 session.send。
+   * appendUserMessage 显示 "/<skill> args" 让用户在 stream 里看到调用记录。
+   * Renderer 不再 echo resolvedPrompt 本身（那是 KodaX runtime 输入；显示会很啰嗦）。
+   *
+   * **不**管 setBusy——由调用方 (execSlashOrSkill / onSlashPick) 包 busy 状态，
+   * 避免 slash→skill fallback 时 setBusy(false)→setBusy(true) 中间窗口
+   * (reviewer F035 MEDIUM-1)。
+   */
+  async function invokeSkill(name: string, args: string[]): Promise<void> {
+    if (!currentSessionId || !window.kodaxSpace) return;
+    const result = await window.kodaxSpace.invoke('skill.invoke', {
+      sessionId: currentSessionId,
+      skillName: name,
+      args,
+    });
+    if (!result.ok) {
+      setErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`);
+      return;
+    }
+    const { ok, resolvedPrompt, error } = result.data;
+    if (!ok || resolvedPrompt === undefined) {
+      setErr(error ?? `skill /${name} failed`);
+      return;
+    }
+    // 把 "/skill args" 当一条 user message 显示
+    appendUserMessage(currentSessionId, `/${name} ${args.join(' ')}`.trim());
+    const sendResult = await window.kodaxSpace.invoke('session.send', {
+      sessionId: currentSessionId,
+      prompt: resolvedPrompt,
+    });
+    if (!sendResult.ok) {
+      setErr(`${sendResult.error?.code ?? 'ERR_UNKNOWN'}: ${sendResult.error?.message ?? 'unknown error'}`);
+    }
+  }
+
   async function handleSend(): Promise<void> {
     if (!currentSessionId || !window.kodaxSpace) return;
     const trimmed = prompt.trim();
     if (trimmed === '') return;
     // F031: 以 `/` 起头视为 slash 命令；按空白切 name + args，调 slash.exec
+    // F035: 直接 type `/skill-name args` 也走 slash.exec —— 但 skill 不在 slash registry，
+    // slash.exec 返回 unknown command 后 fall through 到 skill 路径。
+    // 简化：handleSend 仍只走 slash.exec；用户从 popover 选 skill 走 onSlashPick → execSkill。
     if (trimmed.startsWith('/')) {
       const head = trimmed.slice(1);
       const spaceIdx = head.search(/\s/);
@@ -97,7 +154,7 @@ export function BottomBar(): JSX.Element {
       const rest = spaceIdx === -1 ? '' : head.slice(spaceIdx + 1).trim();
       const args = rest === '' ? [] : tokenizeArgs(rest);
       setPrompt('');
-      await execSlash(name, args);
+      await execSlashOrSkill(name, args);
       return;
     }
     setErr(null);
@@ -115,19 +172,27 @@ export function BottomBar(): JSX.Element {
     }
   }
 
-  function onSlashPick(cmd: SlashCommandMeta | null): void {
-    if (cmd === null) {
+  function onSlashPick(item: SlashPickerItem | null): void {
+    if (item === null) {
       setPrompt('');
       return;
     }
-    // 命令选中后：
-    //   - 无参数 hint → 直接执行
-    //   - 有参数 → 把 "/name " 放回输入框等用户继续输入
-    if (!cmd.argsHint) {
+    const hint = item.kind === 'slash' ? item.meta.argsHint : item.meta.argumentHint;
+    if (!hint) {
+      // 无参数 → 直接执行（已知 kind 走对应 IPC）
       setPrompt('');
-      void execSlash(cmd.name, []);
+      if (item.kind === 'slash') {
+        void execSlashDirect(item.meta.name, []);
+      } else {
+        // skill 也用 busy 包裹
+        setBusy(true);
+        setErr(null);
+        void invokeSkill(item.meta.name, []).finally(() => setBusy(false));
+      }
     } else {
-      setPrompt(`/${cmd.name} `);
+      // 有参数 → 把 "/name " 放回输入框等用户继续输入。Enter 后 handleSend → execSlashOrSkill；
+      // 自动按 unknownCommand 信号 fallback 到 skill.invoke，行为对用户一致。
+      setPrompt(`/${item.meta.name} `);
     }
   }
 

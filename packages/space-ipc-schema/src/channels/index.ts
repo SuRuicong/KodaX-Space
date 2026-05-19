@@ -51,6 +51,10 @@ import {
   slashExecChannel,
 } from './slash.js';
 import {
+  skillDiscoverChannel,
+  skillInvokeChannel,
+} from './skill.js';
+import {
   providerListChannel,
   providerSetKeyChannel,
   providerRemoveKeyChannel,
@@ -86,6 +90,8 @@ export const invokeChannels = {
   [askUserReplyChannel.name]: askUserReplyChannel,
   [slashDiscoverChannel.name]: slashDiscoverChannel,
   [slashExecChannel.name]: slashExecChannel,
+  [skillDiscoverChannel.name]: skillDiscoverChannel,
+  [skillInvokeChannel.name]: skillInvokeChannel,
   [providerListChannel.name]: providerListChannel,
   [providerSetKeyChannel.name]: providerSetKeyChannel,
   [providerRemoveKeyChannel.name]: providerRemoveKeyChannel,

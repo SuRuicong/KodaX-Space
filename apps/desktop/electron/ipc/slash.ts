@@ -32,7 +32,13 @@ export function registerSlashChannels(): void {
   registerChannel('slash.exec', async (input) => {
     const handler = getSlashHandler(input.name);
     if (!handler) {
-      return { ok: false, message: `unknown command: /${input.name}` };
+      // F035 reviewer HIGH-3: 加 unknownCommand:true 让 renderer 用结构字段 routing
+      // (而不是 message.includes('unknown command') 这种 i18n-脆弱 的字符串匹配)。
+      return {
+        ok: false,
+        message: `unknown command: /${input.name}`,
+        unknownCommand: true,
+      };
     }
     return handler.handler({
       sessionId: input.sessionId,
