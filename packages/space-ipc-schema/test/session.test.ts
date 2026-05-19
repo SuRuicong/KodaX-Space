@@ -16,6 +16,7 @@ import {
   sessionEventChannel,
   sessionForkChannel,
   sessionRewindChannel,
+  sessionAgentsMdChannel,
 } from '../src/index.js';
 
 test('all 5 session invoke channels are registered', () => {
@@ -298,4 +299,43 @@ test('session.rewind output reason enum is exhaustive', () => {
   assert.equal(sessionRewindChannel.output.safeParse({ ok: false, reason: 'invalid_index' }).success, true);
   assert.equal(sessionRewindChannel.output.safeParse({ ok: false, reason: 'session_busy' }).success, true);
   assert.equal(sessionRewindChannel.output.safeParse({ ok: false, reason: 'rate_limited' }).success, false);
+});
+
+// ---- FEATURE_034 agents-md channel ----
+
+test('session.agentsMd channel is registered', () => {
+  assert.ok(invokeChannels['session.agentsMd']);
+  assert.ok(INVOKE_CHANNEL_NAMES.has('session.agentsMd'));
+});
+
+test('session.agentsMd input requires sessionId', () => {
+  assert.equal(sessionAgentsMdChannel.input.safeParse({ sessionId: 's_1' }).success, true);
+  assert.equal(sessionAgentsMdChannel.input.safeParse({ sessionId: '' }).success, false);
+  assert.equal(sessionAgentsMdChannel.input.safeParse({}).success, false);
+});
+
+test('session.agentsMd output accepts global + project scopes', () => {
+  const out = {
+    files: [
+      { path: '/home/u/.kodax/AGENTS.md', content: '# global', scope: 'global' as const },
+      { path: '/proj/AGENTS.md', content: '# project', scope: 'project' as const },
+    ],
+  };
+  assert.equal(sessionAgentsMdChannel.output.safeParse(out).success, true);
+});
+
+test('session.agentsMd output rejects unknown scope', () => {
+  const out = {
+    files: [{ path: '/x/AGENTS.md', content: '', scope: 'workspace' }],
+  };
+  assert.equal(sessionAgentsMdChannel.output.safeParse(out).success, false);
+});
+
+test('session.agentsMd output enforces array cap (DoS guard)', () => {
+  const files = Array.from({ length: 17 }, (_, i) => ({
+    path: `/p${i}/AGENTS.md`,
+    content: '',
+    scope: 'project' as const,
+  }));
+  assert.equal(sessionAgentsMdChannel.output.safeParse({ files }).success, false);
 });

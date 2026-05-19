@@ -25,6 +25,7 @@ import {
   sessionSetAutoModeEngineChannel,
   sessionForkChannel,
   sessionRewindChannel,
+  sessionAgentsMdChannel,
   sessionEventChannel,
 } from './session.js';
 import {
@@ -74,6 +75,7 @@ export const invokeChannels = {
   [sessionSetAutoModeEngineChannel.name]: sessionSetAutoModeEngineChannel,
   [sessionForkChannel.name]: sessionForkChannel,
   [sessionRewindChannel.name]: sessionRewindChannel,
+  [sessionAgentsMdChannel.name]: sessionAgentsMdChannel,
   [projectListChannel.name]: projectListChannel,
   [projectOpenDialogChannel.name]: projectOpenDialogChannel,
   [projectRecentAddChannel.name]: projectRecentAddChannel,

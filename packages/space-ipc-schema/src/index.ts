@@ -35,6 +35,8 @@ export {
   sessionSetAutoModeEngineChannel,
   sessionForkChannel,
   sessionRewindChannel,
+  sessionAgentsMdChannel,
+  type AgentsFileMeta,
   sessionEventChannel,
   type PermissionMode,
   type AutoModeEngine,

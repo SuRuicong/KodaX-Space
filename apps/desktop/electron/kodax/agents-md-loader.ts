@@ -20,10 +20,13 @@
 //   - **gate on stat.size (byte 计) 而非 content.length (UTF-16 code units 计)**
 //     CJK / emoji 一字符占 2~4 byte，char count guard 会让多字节文件溢出限额；
 //     用 stat.size 才是真 byte 计数
-//   - 缺文件返回空数组（不抛）
-//   - readFileSync 失败（EACCES / EIO 等）记 warning，返回此条 skip
+//   - 缺文件返回 null/[]（不抛）
+//   - read 失败（EACCES / EIO 等）记 warning，返回此条 skip
+//
+// **异步**：走 fs.promises 而非 fs.*Sync——Electron main process 单 IPC 事件循环，
+// 同步 I/O 会卡其他 IPC handler（network 盘 / WSL mount 上 256KB 文件可能慢 50-500ms）。
 
-import fs from 'node:fs';
+import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -39,8 +42,12 @@ export interface AgentsFile {
 }
 
 /** 单个 AGENTS.md byte 硬上限，超过截断 + 加一行 marker */
-const MAX_AGENTS_BYTES = 256 * 1024;
-const TRUNCATION_MARKER = '\n\n[truncated by Space loader at 256KB]';
+export const MAX_AGENTS_BYTES = 256 * 1024;
+/**
+ * 截断 marker。**保持 < 64 chars**——session.ts agentsFileSchema 的 content max
+ * = MAX_AGENTS_BYTES + 64 给 marker 留的 buffer。延长 marker 时同步该 schema cap。
+ */
+export const TRUNCATION_MARKER = '\n\n[truncated by Space loader at 256KB]';
 
 export interface LoadAgentsMdOptions {
   /** 当前 session 的 projectRoot。必须 absolute（已经过 host validateProjectRoot 校验过）*/
@@ -52,8 +59,11 @@ export interface LoadAgentsMdOptions {
 /**
  * 加载 AGENTS.md 文件，按 KodaX 优先级排序：global < project。
  * (KodaX prompt builder 把后面的覆盖前面的，所以 project 应当在数组靠后。)
+ *
+ * **Async**：用 fs.promises 而非 fs.*Sync——Electron main process 单 IPC 事件循环
+ * 不能被同步 I/O 卡住（reviewer F034 HIGH-1）。
  */
-export function loadAgentsMd(opts: LoadAgentsMdOptions): AgentsFile[] {
+export async function loadAgentsMd(opts: LoadAgentsMdOptions): Promise<AgentsFile[]> {
   if (!path.isAbsolute(opts.projectRoot)) {
     console.warn(`[agents-md-loader] projectRoot must be absolute, got: ${opts.projectRoot}`);
     return [];
@@ -63,39 +73,42 @@ export function loadAgentsMd(opts: LoadAgentsMdOptions): AgentsFile[] {
 
   const globalDir = opts.kodaxGlobalDir ?? path.join(os.homedir(), '.kodax');
   const globalPath = path.join(globalDir, 'AGENTS.md');
-  const globalFile = tryReadAgentsFile(globalPath, 'global');
+  const globalFile = await tryReadAgentsFile(globalPath, 'global');
   if (globalFile) out.push(globalFile);
 
   const projectPath = path.join(opts.projectRoot, 'AGENTS.md');
   // 防御：若 projectRoot 本身解析后跟 globalDir 相同（罕见，但比如把 ~/.kodax 当作项目根），
   // 不重复加载同一个文件
   if (path.resolve(projectPath) !== path.resolve(globalPath)) {
-    const projectFile = tryReadAgentsFile(projectPath, 'project');
+    const projectFile = await tryReadAgentsFile(projectPath, 'project');
     if (projectFile) out.push(projectFile);
   }
 
   return out;
 }
 
-function tryReadAgentsFile(filePath: string, scope: AgentsFile['scope']): AgentsFile | null {
+async function tryReadAgentsFile(
+  filePath: string,
+  scope: AgentsFile['scope'],
+): Promise<AgentsFile | null> {
   try {
-    const stat = fs.statSync(filePath);
+    const stat = await fsp.stat(filePath);
     if (!stat.isFile()) return null;
     if (stat.size > MAX_AGENTS_BYTES) {
       // 文件超过 byte 上限：只读前 MAX_AGENTS_BYTES byte，避免把整个大文件读进内存。
-      // 用 fd + readSync 读固定 byte 数；slice 在 utf-8 边界可能切到半 char (如 CJK 3 byte 第 2 个 byte
-      // 处)，那个尾巴 char 会被 utf-8 decoder 替换为 U+FFFD —— 我们再加 marker，所以这种少量乱码可接受。
-      const fd = fs.openSync(filePath, 'r');
+      // utf-8 边界可能切到半 char (CJK 3 byte 第 2 byte 处)，尾巴 char 被 utf-8 decoder
+      // 替换为 U+FFFD —— 再加 marker，少量乱码可接受。
+      const handle = await fsp.open(filePath, 'r');
       try {
         const buf = Buffer.alloc(MAX_AGENTS_BYTES);
-        const bytesRead = fs.readSync(fd, buf, 0, MAX_AGENTS_BYTES, 0);
+        const { bytesRead } = await handle.read(buf, 0, MAX_AGENTS_BYTES, 0);
         const content = buf.slice(0, bytesRead).toString('utf8') + TRUNCATION_MARKER;
         return { path: filePath, content, scope };
       } finally {
-        fs.closeSync(fd);
+        await handle.close();
       }
     }
-    const content = fs.readFileSync(filePath, 'utf8');
+    const content = await fsp.readFile(filePath, 'utf8');
     return { path: filePath, content, scope };
   } catch (err) {
     if (isNotFound(err)) return null;

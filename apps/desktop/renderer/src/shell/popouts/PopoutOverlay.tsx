@@ -11,6 +11,7 @@ import { DiffPanel } from './DiffPanel.js';
 import { TerminalPanel } from './TerminalPanel.js';
 import { TasksPanel } from './TasksPanel.js';
 import { PlanPanel } from './PlanPanel.js';
+import { AgentsMdPanel } from './AgentsMdPanel.js';
 
 interface PopoutOverlayProps {
   kind: PopoutKind;
@@ -43,6 +44,7 @@ export function PopoutOverlay({ kind, onClose }: PopoutOverlayProps): JSX.Elemen
           {kind === 'terminal' && <TerminalPanel />}
           {kind === 'tasks' && <TasksPanel />}
           {kind === 'plan' && <PlanPanel />}
+          {kind === 'agents' && <AgentsMdPanel />}
         </div>
       </aside>
     </>

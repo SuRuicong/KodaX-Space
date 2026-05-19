@@ -7,9 +7,21 @@ import path from 'node:path';
 import { registerChannel } from './register.js';
 import { validateProjectRoot } from './validate.js';
 import { kodaxHost } from '../kodax/host.js';
+import { loadAgentsMd, type AgentsFile } from '../kodax/agents-md-loader.js';
 import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
-import type { SessionMeta } from '@kodax-space/space-ipc-schema';
+import type { AgentsFileMeta, SessionMeta } from '@kodax-space/space-ipc-schema';
+
+// FEATURE_034 reviewer MEDIUM-2: 编译期保证 loader 的 AgentsFile 与 schema 的 AgentsFileMeta
+// 结构一致——加字段、改 scope enum 等都会立即编译报错，不让 schema/loader 漂移。
+// (双向 assignability：a→b 和 b→a 都必须成立，等同于结构等价。)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _AssertAgentsFileShapeEqual =
+  AgentsFile extends AgentsFileMeta
+    ? AgentsFileMeta extends AgentsFile
+      ? true
+      : never
+    : never;
 
 /**
  * 校验 providerId 实际存在于 catalog / custom-providers / 是 'mock'。
@@ -152,5 +164,20 @@ export function registerSessionChannels(): void {
   // alpha.1 in-memory only：main 端 cancel in-flight（await）；renderer 截断 events。
   registerChannel('session.rewind', async (input) => {
     return kodaxHost.rewind(input.sessionId, input.rewindPastTurnIdx);
+  });
+
+  // session.agentsMd — FEATURE_034
+  // 拉取 session.projectRoot 下当前的 AGENTS.md 列表 (global + project)。
+  // 每次都重 load（disk stat + read）—— 不缓存，让 AGENTS.md 修改后下次 popout 打开即生效。
+  // 安全：projectRoot 在 session.create 已经 validateProjectRoot 过，这里复用 session 持有的值，
+  // 不让 renderer 直接传任意路径。
+  // **async**：loadAgentsMd 是 fs.promises 异步（reviewer F034 HIGH-1）。
+  registerChannel('session.agentsMd', async (input) => {
+    const session = kodaxHost.get(input.sessionId);
+    if (!session) {
+      throw new Error(`session not found: ${input.sessionId}`);
+    }
+    const files = await loadAgentsMd({ projectRoot: session.projectRoot });
+    return { files };
   });
 }

@@ -42,51 +42,51 @@ function cleanFiles(): void {
   }
 }
 
-test('neither file exists → empty array', () => {
+test('neither file exists → empty array', async () => {
   cleanFiles();
-  const result = loadAgentsMd({ projectRoot, kodaxGlobalDir });
+  const result = await loadAgentsMd({ projectRoot, kodaxGlobalDir });
   assert.deepEqual(result, []);
 });
 
-test('only global exists → one entry with scope=global', () => {
+test('only global exists → one entry with scope=global', async () => {
   cleanFiles();
   fs.writeFileSync(path.join(kodaxGlobalDir, 'AGENTS.md'), '# Global rules');
-  const result = loadAgentsMd({ projectRoot, kodaxGlobalDir });
+  const result = await loadAgentsMd({ projectRoot, kodaxGlobalDir });
   assert.equal(result.length, 1);
   assert.equal(result[0].scope, 'global');
   assert.equal(result[0].content, '# Global rules');
 });
 
-test('only project exists → one entry with scope=project', () => {
+test('only project exists → one entry with scope=project', async () => {
   cleanFiles();
   fs.writeFileSync(path.join(projectRoot, 'AGENTS.md'), '# Project rules');
-  const result = loadAgentsMd({ projectRoot, kodaxGlobalDir });
+  const result = await loadAgentsMd({ projectRoot, kodaxGlobalDir });
   assert.equal(result.length, 1);
   assert.equal(result[0].scope, 'project');
   assert.equal(result[0].content, '# Project rules');
 });
 
-test('both exist → global first, project second (KodaX prompt builder priority)', () => {
+test('both exist → global first, project second (KodaX prompt builder priority)', async () => {
   cleanFiles();
   fs.writeFileSync(path.join(kodaxGlobalDir, 'AGENTS.md'), '# Global');
   fs.writeFileSync(path.join(projectRoot, 'AGENTS.md'), '# Project');
-  const result = loadAgentsMd({ projectRoot, kodaxGlobalDir });
+  const result = await loadAgentsMd({ projectRoot, kodaxGlobalDir });
   assert.equal(result.length, 2);
   assert.equal(result[0].scope, 'global');
   assert.equal(result[1].scope, 'project');
 });
 
-test('file over 256KB (ASCII) is truncated with marker', () => {
+test('file over 256KB (ASCII) is truncated with marker', async () => {
   cleanFiles();
   const big = 'x'.repeat(256 * 1024 + 100);
   fs.writeFileSync(path.join(projectRoot, 'AGENTS.md'), big);
-  const result = loadAgentsMd({ projectRoot, kodaxGlobalDir });
+  const result = await loadAgentsMd({ projectRoot, kodaxGlobalDir });
   assert.equal(result.length, 1);
   assert.ok(result[0].content.endsWith('[truncated by Space loader at 256KB]'));
   assert.ok(result[0].content.length < big.length);
 });
 
-test('file over 256KB (CJK / multi-byte) is truncated by byte not char count', () => {
+test('file over 256KB (CJK / multi-byte) is truncated by byte not char count', async () => {
   // 防 byte-vs-char 退化：一个汉字在 UTF-8 是 3 byte。
   // 100K 汉字 ≈ 300KB byte，但 string.length 只有 100K UTF-16 unit。
   // stat.size guard 必须能命中（byte 计量），否则整文件读进内存破坏 size cap。
@@ -95,7 +95,7 @@ test('file over 256KB (CJK / multi-byte) is truncated by byte not char count', (
   const written = Buffer.byteLength(cjk, 'utf8');
   assert.ok(written > 256 * 1024, 'sanity: CJK fixture must exceed 256KB byte');
   fs.writeFileSync(path.join(projectRoot, 'AGENTS.md'), cjk);
-  const result = loadAgentsMd({ projectRoot, kodaxGlobalDir });
+  const result = await loadAgentsMd({ projectRoot, kodaxGlobalDir });
   assert.equal(result.length, 1);
   assert.ok(result[0].content.endsWith('[truncated by Space loader at 256KB]'),
     'CJK over-size must trigger byte-based truncation');
@@ -104,14 +104,14 @@ test('file over 256KB (CJK / multi-byte) is truncated by byte not char count', (
   assert.ok(truncatedBytes <= 256 * 1024 + 100, `truncated byte length ${truncatedBytes} should be near 256KB`);
 });
 
-test('non-absolute projectRoot is rejected with warning, returns []', () => {
+test('non-absolute projectRoot is rejected with warning, returns []', async () => {
   cleanFiles();
   fs.writeFileSync(path.join(projectRoot, 'AGENTS.md'), 'will not be read');
   const originalWarn = console.warn;
   const warnings: string[] = [];
   console.warn = (msg: string) => warnings.push(msg);
   try {
-    const result = loadAgentsMd({ projectRoot: 'relative/path', kodaxGlobalDir });
+    const result = await loadAgentsMd({ projectRoot: 'relative/path', kodaxGlobalDir });
     assert.deepEqual(result, []);
     assert.ok(warnings.some((w) => w.includes('must be absolute')), 'should warn about non-absolute');
   } finally {
@@ -119,43 +119,43 @@ test('non-absolute projectRoot is rejected with warning, returns []', () => {
   }
 });
 
-test('projectRoot === kodaxGlobalDir does not duplicate', () => {
+test('projectRoot === kodaxGlobalDir does not duplicate', async () => {
   cleanFiles();
   const samePath = path.join(tmpRoot, 'same');
   fs.mkdirSync(samePath, { recursive: true });
   fs.writeFileSync(path.join(samePath, 'AGENTS.md'), '# Just one');
-  const result = loadAgentsMd({ projectRoot: samePath, kodaxGlobalDir: samePath });
+  const result = await loadAgentsMd({ projectRoot: samePath, kodaxGlobalDir: samePath });
   assert.equal(result.length, 1, 'must not double-count the same physical file');
 });
 
-test('AGENTS.md is a directory not a file → skipped', () => {
+test('AGENTS.md is a directory not a file → skipped', async () => {
   cleanFiles();
   const trickyPath = path.join(projectRoot, 'AGENTS.md');
   // 把 AGENTS.md 制造成目录
   fs.mkdirSync(trickyPath);
   try {
-    const result = loadAgentsMd({ projectRoot, kodaxGlobalDir });
+    const result = await loadAgentsMd({ projectRoot, kodaxGlobalDir });
     assert.equal(result.length, 0, 'directory at expected file path should be skipped');
   } finally {
     fs.rmdirSync(trickyPath);
   }
 });
 
-test('exact 256KB file is not truncated (boundary case)', () => {
+test('exact 256KB file is not truncated (boundary case)', async () => {
   cleanFiles();
   const exactSize = 'y'.repeat(256 * 1024);
   fs.writeFileSync(path.join(projectRoot, 'AGENTS.md'), exactSize);
-  const result = loadAgentsMd({ projectRoot, kodaxGlobalDir });
+  const result = await loadAgentsMd({ projectRoot, kodaxGlobalDir });
   assert.equal(result.length, 1);
   assert.equal(result[0].content.length, 256 * 1024, 'exact 256KB should not trigger truncation');
   assert.ok(!result[0].content.includes('truncated'), 'no truncation marker at boundary');
 });
 
-test('returns absolute paths in path field', () => {
+test('returns absolute paths in path field', async () => {
   cleanFiles();
   fs.writeFileSync(path.join(projectRoot, 'AGENTS.md'), '# P');
   fs.writeFileSync(path.join(kodaxGlobalDir, 'AGENTS.md'), '# G');
-  const result = loadAgentsMd({ projectRoot, kodaxGlobalDir });
+  const result = await loadAgentsMd({ projectRoot, kodaxGlobalDir });
   for (const f of result) {
     assert.ok(path.isAbsolute(f.path), `path must be absolute: ${f.path}`);
   }

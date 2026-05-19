@@ -269,6 +269,38 @@ export const sessionSetProviderChannel = {
   }),
 } as const;
 
+// ---- Invoke: session.agentsMd ---- (FEATURE_034)
+//
+// 拉取当前 session 已加载的 AGENTS.md 文件列表。renderer 在 AgentsMd popout 打开
+// 时调一次拿数据；不缓存，每次走 disk 重新 stat + read——满足"AGENTS.md 修改后
+// 下次拉取就生效"的语义（KodaX REPL 同步行为）。
+//
+// scope 枚举与 KodaX `@kodax-ai/coding` AgentsFile 严格对齐：
+//   - 'global'    ~/.kodax/AGENTS.md
+//   - 'project'   ${projectRoot}/AGENTS.md
+//   - 'directory' 暂不扫，留扩展位（KodaX REPL cwd→root 递归 + .kodax 子目录 用过）
+//
+// content 上限：256KB / file（main loader 已 truncate + marker），数组 ≤ 16 file
+// 兜底 DoS。
+const agentsFileSchema = z.object({
+  path: z.string().min(1).max(4096),
+  content: z.string().max(262_144 + 64),
+  scope: z.enum(['global', 'project', 'directory']),
+});
+
+export const sessionAgentsMdChannel = {
+  name: 'session.agentsMd',
+  direction: 'invoke',
+  input: z.object({
+    sessionId: z.string().min(1),
+  }),
+  output: z.object({
+    files: z.array(agentsFileSchema).max(16),
+  }),
+} as const;
+
+export type AgentsFileMeta = z.infer<typeof agentsFileSchema>;
+
 // ---- Invoke: session.fork ---- (FEATURE_033 in-memory)
 //
 // 从 sourceSessionId 在 forkPointTurnIdx 处 fork：

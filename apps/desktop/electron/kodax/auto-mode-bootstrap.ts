@@ -83,8 +83,8 @@ export async function bootstrapAutoMode(
     projectRoot,
   });
 
-  // AGENTS.md snapshot（Space 自己的 loader；F034 stub）
-  const agentsFiles: AgentsFile[] = loadAgentsMd({ projectRoot });
+  // AGENTS.md snapshot（Space 自己的 loader；F034）
+  const agentsFiles: AgentsFile[] = await loadAgentsMd({ projectRoot });
   const claudeMd = formatAgentsForPrompt(agentsFiles);
 
   let guardrail: AutoModeToolGuardrail | undefined;

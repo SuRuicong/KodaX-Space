@@ -8,7 +8,7 @@
 //
 // 当前 alpha.1 只做按钮 + popout 切换；具体每个 popout 内部业务在 popouts/ 单独实现。
 
-export type PopoutKind = 'preview' | 'diff' | 'terminal' | 'tasks' | 'plan';
+export type PopoutKind = 'preview' | 'diff' | 'terminal' | 'tasks' | 'plan' | 'agents';
 
 interface CommandToolbarProps {
   active: PopoutKind | null;
@@ -21,6 +21,8 @@ const POPOUTS: Array<{ kind: PopoutKind; label: string; icon: string; shortcut: 
   { kind: 'terminal', label: 'Terminal', icon: '>_', shortcut: 'Ctrl+`' },
   { kind: 'tasks', label: 'Tasks', icon: '✓', shortcut: '' },
   { kind: 'plan', label: 'Plan', icon: '☰', shortcut: '' },
+  // FEATURE_034: AGENTS.md popout — 显示当前 session 已加载的 AGENTS.md（global + project）
+  { kind: 'agents', label: 'Agents', icon: '⌬', shortcut: '' },
 ];
 
 export function CommandToolbar({ active, onToggle }: CommandToolbarProps): JSX.Element {
