@@ -15,6 +15,7 @@ import { registerPermissionChannels } from './ipc/permission.js';
 import { registerAskUserChannels } from './ipc/ask-user.js';
 import { registerSlashChannels, registerBuiltinSlashCommands } from './ipc/slash.js';
 import { registerSkillChannels } from './ipc/skill.js';
+import { probeKodaxSdk } from './kodax/kodax-sdk-probe.js';
 import { registerProviderChannels, injectAllKeysToEnv } from './ipc/provider.js';
 import { registerFilesChannels } from './ipc/files.js';
 import { setRendererTarget } from './ipc/push.js';
@@ -147,6 +148,9 @@ function createMainWindow(): void {
 
 app.whenReady().then(() => {
   applyCsp();
+  // KodaX SDK shape 漂移 fail-fast：若 ambient .d.ts 与运行时 SDK 不一致，
+  // 启动期就 throw 比"用户发第一条 prompt 时白屏"更早被发现 (reviewer batch HIGH-2)。
+  probeKodaxSdk();
   // IPC handlers 必须在窗口创建前注册——否则 renderer 启动后立刻调 invoke 会撞上 "No handler registered"
   registerVersionChannel();
   registerSessionChannels();

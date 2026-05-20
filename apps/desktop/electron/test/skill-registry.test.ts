@@ -87,7 +87,7 @@ test('registry: listUserInvocable filters user-invocable:false skills', async ()
   );
 });
 
-test('registry: invoke resolves $ARGUMENTS in skill body', async () => {
+test('registry: invoke resolves $ARGUMENTS in skill body (with SAFE_ENV={} like production)', async () => {
   const skillsDir = path.join(tmpProjectRoot, '.kodax', 'skills');
   fs.mkdirSync(skillsDir, { recursive: true });
   writeSkill(
@@ -97,11 +97,14 @@ test('registry: invoke resolves $ARGUMENTS in skill body', async () => {
     'Hello, $ARGUMENTS!',
   );
 
+  // reviewer F034-F037 batch HIGH-1: 测试要复现生产的 SAFE_ENV={} 路径，
+  // 否则测试通过不代表生产 OK (生产用空 env，测试用 process.env 全量 → 不一致)。
+  // 如果 $ARGUMENTS 解析依赖 env，把空 env 传进去会暴露问题。
   const reg = await getSkillRegistry(tmpProjectRoot);
   const result = await reg.invoke('greet', 'world', {
     sessionId: 's_test',
     workingDirectory: tmpProjectRoot,
-    environment: { ...process.env } as Record<string, string>,
+    environment: {},
   });
   assert.equal(result.success, true);
   assert.ok(result.content.includes('Hello, world!'), `expected resolved content; got: ${result.content}`);
