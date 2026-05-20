@@ -1,6 +1,6 @@
-// TasksPanel — F012-revised / alpha.1
+// TasksPanel — F012-revised (alpha.1) + F037 Subagent tree
 //
-// 装 KodaX managed task status：Work budget / harness profile / 当前 worker / 子 fanout / idle waiting。
+// 装 KodaX managed task status：Work budget / harness profile / worker tree / idle waiting。
 // 数据来自 main 推送的 managed_task_status 事件（KodaX KodaXEvents.onManagedTaskStatus 直接映射）。
 //
 // 数据流：
@@ -10,12 +10,35 @@
 //     ─ pushToRenderer ─►
 //   appStore.appendEvent → managedTaskStatusBySession[sid] = status
 //     ─ subscribe ─►
-//   TasksPanel 渲染
+//   TasksPanel 渲染 + buildWorkerTree 聚合 events → 树状视图
 //
-// 老 work_budget / harness_profile 事件继续保留，store 也从 managed_task_status 派生它们，
-// 因此两条路并存（mock-session 走老路；real-session 走 managed_task_status）。
+// 老 work_budget / harness_profile 事件继续保留，store 也从 managed_task_status 派生它们。
+//
+// F037 替换原 "Subagents" + "Recent events" 两节为单一 worker tree：
+//   每个 worker 一行（title + 状态 dot + phase）；点击展开看该 worker 的所有事件。
+//   activeWorker 永远首位 + sky 高亮。
 
+import { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../../store/appStore.js';
+import { buildWorkerTree, type WorkerNode } from './worker-tree.js';
+
+type ManagedLiveKind = WorkerNode['latestKind'];
+
+function kindDotClass(kind: ManagedLiveKind, isActive: boolean): string {
+  if (isActive) return 'bg-sky-500 animate-pulse';
+  switch (kind) {
+    case 'completed':
+      return 'bg-emerald-500';
+    case 'warning':
+      return 'bg-amber-500';
+    case 'notification':
+      return 'bg-sky-500';
+    case 'progress':
+      return 'bg-zinc-400';
+    default:
+      return 'bg-zinc-600';
+  }
+}
 
 export function TasksPanel(): JSX.Element {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
@@ -37,24 +60,11 @@ export function TasksPanel(): JSX.Element {
     );
   }
 
+  // F037 reviewer MEDIUM-3: memoize 防 managed_task_status 高频更新时反复跑 grouping + sort。
+  const workers = useMemo(() => buildWorkerTree(status), [status]);
+
   return (
     <div className="h-full overflow-y-auto p-3 space-y-4 text-xs">
-      {/* Active worker — 直接来自 managed_task_status */}
-      {status?.activeWorkerTitle && (
-        <section>
-          <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1.5">
-            Active worker
-          </div>
-          <div className="text-zinc-200 font-medium">
-            {status.activeWorkerTitle}
-            {status.phase && (
-              <span className="text-zinc-500 font-normal"> · {status.phase}</span>
-            )}
-          </div>
-          {status.note && <div className="text-zinc-400 mt-0.5">{status.note}</div>}
-        </section>
-      )}
-
       <section>
         <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1.5">
           Work budget
@@ -96,7 +106,6 @@ export function TasksPanel(): JSX.Element {
             )}
           </div>
         ) : status?.harnessProfile ? (
-          // KodaX 发的 harnessProfile 字符串可能不在老 enum 里 — fallback 显示原值
           <div className="text-zinc-300 font-mono">
             {status.harnessProfile}
             {status.currentRound !== undefined && (
@@ -108,64 +117,101 @@ export function TasksPanel(): JSX.Element {
         )}
       </section>
 
-      {/* Subagent / child fanout */}
+      {/* FEATURE_037: Worker tree —— 替代原 "Subagents" + "Recent events" */}
       <section>
-        <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1.5">
-          Subagents
+        <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1.5 flex items-center justify-between">
+          <span>Workers</span>
+          {status?.idleWaiting && (
+            <span className="text-zinc-500 normal-case">
+              idle · waiting {status.idleWaitingPendingCount ?? 0}
+            </span>
+          )}
+          {!status?.idleWaiting && status?.childFanoutCount !== undefined && status.childFanoutCount > 0 && (
+            <span className="text-zinc-500 normal-case">
+              {status.childFanoutCount} active
+              {status.childFanoutClass ? ` · ${status.childFanoutClass}` : ''}
+            </span>
+          )}
         </div>
-        {status?.idleWaiting ? (
-          <div className="text-zinc-400">
-            Idle — waiting for {status.idleWaitingPendingCount ?? 0} child task
-            {(status.idleWaitingPendingCount ?? 0) === 1 ? '' : 's'}
-          </div>
-        ) : status?.childFanoutCount !== undefined && status.childFanoutCount > 0 ? (
-          <div className="text-zinc-300">
-            <span className="font-mono">{status.childFanoutCount}</span> child task
-            {status.childFanoutCount === 1 ? '' : 's'} active
-            {status.childFanoutClass && (
-              <span className="text-zinc-500"> · {status.childFanoutClass}</span>
-            )}
-          </div>
+        {workers.length === 0 ? (
+          <div className="text-zinc-600">No workers yet.</div>
         ) : (
-          <div className="text-zinc-600">No child tasks.</div>
-        )}
-      </section>
-
-      {/* Recent managed events */}
-      {status?.events && status.events.length > 0 && (
-        <section>
-          <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1.5">
-            Recent events
-          </div>
-          <ul className="space-y-1.5">
-            {status.events.slice(-8).map((ev) => (
-              <li key={ev.key} className="flex gap-2 items-start">
-                <span
-                  className={
-                    'inline-block w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ' +
-                    (ev.kind === 'completed'
-                      ? 'bg-emerald-500'
-                      : ev.kind === 'warning'
-                        ? 'bg-amber-500'
-                        : ev.kind === 'notification'
-                          ? 'bg-sky-500'
-                          : 'bg-zinc-500')
-                  }
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="text-zinc-300 truncate">{ev.summary}</div>
-                  {ev.workerTitle && (
-                    <div className="text-[10px] text-zinc-600">
-                      {ev.workerTitle}
-                      {ev.phase && ` · ${ev.phase}`}
-                    </div>
-                  )}
-                </div>
-              </li>
+          <ul className="space-y-0.5">
+            {workers.map((w) => (
+              <WorkerRow key={w.workerId} node={w} />
             ))}
           </ul>
-        </section>
-      )}
+        )}
+      </section>
     </div>
+  );
+}
+
+function WorkerRow({ node }: { node: WorkerNode }): JSX.Element {
+  // 默认 expand：active worker；其它折叠
+  const [expanded, setExpanded] = useState(node.isActive);
+
+  // F037 reviewer MEDIUM-2: worker 从 inactive→active 切换时（KodaX 把控制权交给它）
+  // 自动展开。用户后续可以再折叠——不强制保持展开。
+  useEffect(() => {
+    if (node.isActive) setExpanded(true);
+  }, [node.isActive]);
+
+  return (
+    <li className="rounded">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className={`w-full text-left px-2 py-1 rounded flex items-center gap-2 hover:bg-zinc-900 ${
+          node.isActive ? 'bg-sky-950/30' : ''
+        }`}
+      >
+        <span
+          className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${kindDotClass(
+            node.latestKind,
+            node.isActive,
+          )}`}
+          aria-label={`status: ${node.latestKind ?? 'pending'}`}
+        />
+        <span className="text-zinc-300 truncate flex-1">
+          {node.workerTitle}
+          {node.events.length > 0 && (
+            <span className="text-zinc-600 ml-1.5">({node.events.length})</span>
+          )}
+        </span>
+        {node.latestPhase && (
+          <span className="text-[10px] text-zinc-500 font-mono">{node.latestPhase}</span>
+        )}
+        <span className="text-zinc-600 text-[10px]" aria-hidden>
+          {expanded ? '▾' : '▸'}
+        </span>
+      </button>
+      {expanded && node.events.length > 0 && (
+        <ul className="ml-3 mt-0.5 mb-1 border-l border-zinc-800/60 pl-2 space-y-1">
+          {node.events.map((ev) => (
+            <li key={ev.key} className="flex gap-2 items-start">
+              <span
+                className={`inline-block w-1 h-1 rounded-full mt-1.5 flex-shrink-0 ${kindDotClass(
+                  ev.kind,
+                  false,
+                )}`}
+              />
+              <div className="flex-1 min-w-0">
+                <div className="text-zinc-300 truncate" title={ev.summary}>
+                  {ev.summary}
+                </div>
+                {ev.phase && <div className="text-[10px] text-zinc-600">{ev.phase}</div>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {expanded && node.events.length === 0 && (
+        <div className="ml-5 mt-0.5 mb-1 text-[10px] text-zinc-600">
+          No events yet.
+        </div>
+      )}
+    </li>
   );
 }
