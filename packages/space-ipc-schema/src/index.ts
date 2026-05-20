@@ -78,6 +78,12 @@ export {
 } from './channels/skill.js';
 
 export {
+  mcpDiscoverChannel,
+  type McpServerMeta,
+  type McpTransport,
+} from './channels/mcp.js';
+
+export {
   permissionRequestChannel,
   permissionCancelledChannel,
   permissionAnswerChannel,

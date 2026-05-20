@@ -12,6 +12,7 @@ import { TerminalPanel } from './TerminalPanel.js';
 import { TasksPanel } from './TasksPanel.js';
 import { PlanPanel } from './PlanPanel.js';
 import { AgentsMdPanel } from './AgentsMdPanel.js';
+import { McpPanel } from './McpPanel.js';
 
 interface PopoutOverlayProps {
   kind: PopoutKind;
@@ -45,6 +46,7 @@ export function PopoutOverlay({ kind, onClose }: PopoutOverlayProps): JSX.Elemen
           {kind === 'tasks' && <TasksPanel />}
           {kind === 'plan' && <PlanPanel />}
           {kind === 'agents' && <AgentsMdPanel />}
+          {kind === 'mcp' && <McpPanel />}
         </div>
       </aside>
     </>

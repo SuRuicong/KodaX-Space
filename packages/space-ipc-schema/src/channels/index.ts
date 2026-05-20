@@ -54,6 +54,7 @@ import {
   skillDiscoverChannel,
   skillInvokeChannel,
 } from './skill.js';
+import { mcpDiscoverChannel } from './mcp.js';
 import {
   providerListChannel,
   providerSetKeyChannel,
@@ -92,6 +93,7 @@ export const invokeChannels = {
   [slashExecChannel.name]: slashExecChannel,
   [skillDiscoverChannel.name]: skillDiscoverChannel,
   [skillInvokeChannel.name]: skillInvokeChannel,
+  [mcpDiscoverChannel.name]: mcpDiscoverChannel,
   [providerListChannel.name]: providerListChannel,
   [providerSetKeyChannel.name]: providerSetKeyChannel,
   [providerRemoveKeyChannel.name]: providerRemoveKeyChannel,
