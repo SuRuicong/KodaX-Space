@@ -12,13 +12,28 @@
 // （SDK 内部已优化为 hot path），不需要再包 async。
 
 import path from 'node:path';
-import { loadAgentsFiles, type AgentsFile as SdkAgentsFile } from '@kodax-ai/kodax/coding';
+
+// **静态 import 改 dynamic**：SDK 的 subpath exports 只声明 "import" 条件，CJS-built
+// main 进程 require() 会撞 ERR_PACKAGE_PATH_NOT_EXPORTED。
+// `import type` 仅 compile-time，runtime 无 require；运行时调用走 dynamic import 命中
+// "import" 条件正常工作。
+import type { AgentsFile as SdkAgentsFile } from '@kodax-ai/kodax/coding';
+type SdkCodingModule = typeof import('@kodax-ai/kodax/coding');
 
 /**
  * 与 schema agentsFileSchema + SDK AgentsFile 严格对齐。
  * scope: 'global' (~/.kodax) / 'project' (projectRoot) / 'directory' (递归扫到的子目录)
  */
 export type AgentsFile = SdkAgentsFile;
+
+// Lazy load + cache。生产 runtime 第一次调时 dynamic import 走一遍，之后命中 cache。
+let sdkModuleCache: SdkCodingModule | null = null;
+async function loadSdkCodingModule(): Promise<SdkCodingModule> {
+  if (sdkModuleCache === null) {
+    sdkModuleCache = await import('@kodax-ai/kodax/coding');
+  }
+  return sdkModuleCache;
+}
 
 export interface LoadAgentsMdOptions {
   /** 当前 session 的 projectRoot。必须 absolute（host validateProjectRoot 校验过）*/
@@ -45,7 +60,8 @@ export async function loadAgentsMd(opts: LoadAgentsMdOptions): Promise<AgentsFil
     return [];
   }
   try {
-    return loadAgentsFiles({
+    const sdk = await loadSdkCodingModule();
+    return sdk.loadAgentsFiles({
       projectRoot: opts.projectRoot,
       kodaxDir: opts.kodaxGlobalDir,
       cwd: opts.projectRoot, // SDK 默认 process.cwd()——Space 强制 cwd=projectRoot 让递归扫只从项目根开始

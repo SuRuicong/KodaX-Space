@@ -16,7 +16,16 @@
 //      Plan-mode 由 context.planModeBlockCheck 把 write 工具拦在 KodaX 入口处。
 //      Exit plan mode 由 events.exitPlanMode 让 Space 弹 modal（v0.1.x 中先 stub allow）。
 
-import { runKodaX, isToolPlanModeAllowed } from '@kodax-ai/kodax/coding';
+// **静态 import 改 dynamic**：SDK subpath exports 只有 "import" 条件，CJS main require 会撞
+// ERR_PACKAGE_PATH_NOT_EXPORTED。下面用 lazy load + cache，type-only 用 type import 不产生 runtime require。
+type SdkCodingModule = typeof import('@kodax-ai/kodax/coding');
+let sdkCodingCache: SdkCodingModule | null = null;
+async function loadSdkCoding(): Promise<SdkCodingModule> {
+  if (sdkCodingCache === null) {
+    sdkCodingCache = await import('@kodax-ai/kodax/coding');
+  }
+  return sdkCodingCache;
+}
 import type {
   AutoModeAskUser,
   AutoModeAskUserVerdict,
@@ -171,6 +180,9 @@ export class RealKodaXSession implements ManagedSession {
 
   private async runRealStream(prompt: string, signal: AbortSignal): Promise<void> {
     const sid = this.sessionId;
+    // SDK subpath dynamic load — 首次调时拉 chunks，后续命中 cache。
+    // planModeBlockCheck (同步) 和 runKodaX (异步) 都需要这个 module。
+    const sdk = await loadSdkCoding();
 
     // Permission 统一钩子。KodaX 在工具实际执行前调这个，返回 false → 跳过执行，
     // 返回 true → 正常执行，返回 string → 直接当作 tool result（覆盖执行）。
@@ -221,7 +233,7 @@ export class RealKodaXSession implements ManagedSession {
       if (this.permissionMode !== 'plan') return null;
       // SDK isToolPlanModeAllowed: readonly / planModeAllowed:true → allowed; 其他 → blocked
       // Fail-closed: 未知 tool 返回 false（一律 block）
-      if (isToolPlanModeAllowed(tool)) return null;
+      if (sdk.isToolPlanModeAllowed(tool)) return null;
       return `[plan] tool '${tool}' is blocked. Plan mode allows only read/search tools — describe the plan instead of executing it.`;
     };
 
@@ -568,7 +580,7 @@ export class RealKodaXSession implements ManagedSession {
     };
 
     try {
-      await runKodaX(options, prompt);
+      await sdk.runKodaX(options, prompt);
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         this.emit({ kind: 'session_error', sessionId: sid, error: 'cancelled' });

@@ -13,16 +13,37 @@
 // 安全：projectRoot 必须 absolute 且已经过 host.validateProjectRoot 校验，wrapper 不重复
 // 校验（caller responsibility）。SDK 内部对每个 skill 目录读 SKILL.md 失败都 swallow，
 // 不会向 Space main 抛出。
+//
+// **静态 import 改 dynamic**：SDK subpath exports 只有 "import" 条件；CJS-built main 静态
+// require 会撞 ERR_PACKAGE_PATH_NOT_EXPORTED。lazy dynamic import + cache 是 SDK module
+// 加载的统一模式（见 mcp/config-reader.ts / user-config.ts / agents-md-loader.ts）。
+// shape probe 改为 export async function，main.ts boot 时调一次。
 
 import path from 'node:path';
-import { SkillRegistry, type SkillMetadata } from '@kodax-ai/kodax/skills';
+
+// `import type`：仅 compile-time，runtime 不生 require —— 配合 dynamic import 命中 "import" 条件。
+import type { SkillRegistry as SkillRegistryT, SkillMetadata as SdkSkillMetadata } from '@kodax-ai/kodax/skills';
+export type SkillMetadata = SdkSkillMetadata;
+type SdkSkillsModule = typeof import('@kodax-ai/kodax/skills');
+
+let sdkModuleCache: SdkSkillsModule | null = null;
+async function loadSdkSkills(): Promise<SdkSkillsModule> {
+  if (sdkModuleCache === null) {
+    sdkModuleCache = await import('@kodax-ai/kodax/skills');
+  }
+  return sdkModuleCache;
+}
 
 const TTL_MS = 30_000;
 
-// Reviewer F035 HIGH-3: 启动期一次性 probe，保证我们 ambient 声明的方法在
-// 实际 SDK 上确实存在（SDK 升版本删/改方法时 fail-fast，而不是用户调时才"not a function"）。
-{
-  const probe = new SkillRegistry('/tmp');
+/**
+ * 启动期一次性 probe — 保证 ambient 声明的 SkillRegistry 方法在实际 SDK 上确实存在
+ * （SDK 升版本删/改方法时 fail-fast，而不是用户调时才"not a function"）。
+ * main.ts 启动期调一次；reviewer F035 HIGH-3。
+ */
+export async function probeSkillRegistry(): Promise<void> {
+  const sdk = await loadSdkSkills();
+  const probe = new sdk.SkillRegistry('/tmp');
   for (const m of ['discover', 'list', 'listUserInvocable', 'loadFull', 'invoke', 'reload'] as const) {
     const fn = (probe as unknown as Record<string, unknown>)[m];
     if (typeof fn !== 'function') {
@@ -35,7 +56,7 @@ const TTL_MS = 30_000;
 }
 
 interface CacheEntry {
-  registry: SkillRegistry;
+  registry: SkillRegistryT;
   expiresAt: number;
 }
 
@@ -45,7 +66,7 @@ const cache = new Map<string, CacheEntry>();
  * 取（或生成）给定 projectRoot 的 SkillRegistry，已经 discover() 完毕。
  * 命中缓存且未过期 → 直接返回；否则 new 一个并触发 discover()。
  */
-export async function getSkillRegistry(projectRoot: string): Promise<SkillRegistry> {
+export async function getSkillRegistry(projectRoot: string): Promise<SkillRegistryT> {
   if (!path.isAbsolute(projectRoot)) {
     throw new Error(`[skill-registry] projectRoot must be absolute: ${projectRoot}`);
   }
@@ -55,7 +76,8 @@ export async function getSkillRegistry(projectRoot: string): Promise<SkillRegist
   if (hit && hit.expiresAt > now) {
     return hit.registry;
   }
-  const registry = new SkillRegistry(normalized);
+  const sdk = await loadSdkSkills();
+  const registry = new sdk.SkillRegistry(normalized);
   await registry.discover();
   cache.set(normalized, { registry, expiresAt: now + TTL_MS });
   return registry;
@@ -102,7 +124,7 @@ export function toSkillMeta(m: SkillMetadata): {
  * @returns 含 unsafe token 时返回带说明的拒绝文案；安全则返回 null。
  */
 export async function refuseIfUnsafeContent(
-  registry: SkillRegistry,
+  registry: SkillRegistryT,
   skillName: string,
 ): Promise<string | null> {
   let full;

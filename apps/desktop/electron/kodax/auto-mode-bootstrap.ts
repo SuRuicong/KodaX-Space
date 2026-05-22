@@ -15,15 +15,8 @@
 // 结果 push 进 KodaXOptions.guardrails 数组。
 
 import path from 'node:path';
-import {
-  createAutoModeToolGuardrail,
-  formatAgentsForPrompt,
-  getBuiltinRegisteredToolDefinition,
-  getKodaxGlobalDir,
-  getRegisteredToolDefinition,
-  loadAutoRules,
-  resolveProvider as resolveCodingProvider,
-} from '@kodax-ai/kodax/coding';
+// **静态 import 改 dynamic** — SDK subpath exports 仅 "import" 条件，CJS-built main require 撞 ERR_PACKAGE_PATH_NOT_EXPORTED；
+// dynamic import 命中 "import" 条件正常工作。type-only 用 `import type` 不产生 runtime require。
 import type {
   AgentsFile,
   AutoModeAskUser,
@@ -34,6 +27,15 @@ import type {
   RulesLoadResult,
 } from '@kodax-ai/kodax/coding';
 import { loadAgentsMd } from './agents-md-loader.js';
+
+type SdkCodingModule = typeof import('@kodax-ai/kodax/coding');
+let sdkCodingCache: SdkCodingModule | null = null;
+async function loadSdkCoding(): Promise<SdkCodingModule> {
+  if (sdkCodingCache === null) {
+    sdkCodingCache = await import('@kodax-ai/kodax/coding');
+  }
+  return sdkCodingCache;
+}
 
 export interface SpaceAutoModeBootstrapDeps {
   readonly askUser: AutoModeAskUser;
@@ -78,14 +80,15 @@ export async function bootstrapAutoMode(
     ? deps.projectRoot
     : path.resolve(deps.projectRoot);
 
-  const rulesLoadResult = await loadAutoRules({
-    userKodaxDir: getKodaxGlobalDir(),
+  const sdk = await loadSdkCoding();
+  const rulesLoadResult = await sdk.loadAutoRules({
+    userKodaxDir: sdk.getKodaxGlobalDir(),
     projectRoot,
   });
 
   // AGENTS.md snapshot（Space 自己的 loader；F034）
   const agentsFiles: AgentsFile[] = await loadAgentsMd({ projectRoot });
-  const claudeMd = formatAgentsForPrompt(agentsFiles);
+  const claudeMd = sdk.formatAgentsForPrompt(agentsFiles);
 
   let guardrail: AutoModeToolGuardrail | undefined;
 
@@ -95,19 +98,19 @@ export async function bootstrapAutoMode(
     const initialProvider = deps.getCurrentProviderName();
     const initialModel = deps.getCurrentModel();
 
-    guardrail = createAutoModeToolGuardrail({
+    guardrail = sdk.createAutoModeToolGuardrail({
       rules: rulesLoadResult.merged,
       claudeMd,
       askUser: deps.askUser,
       getToolProjection: (toolName) => {
         const def =
-          getRegisteredToolDefinition(toolName)
-          ?? getBuiltinRegisteredToolDefinition(toolName);
+          sdk.getRegisteredToolDefinition(toolName)
+          ?? sdk.getBuiltinRegisteredToolDefinition(toolName);
         return def?.toClassifierInput;
       },
       resolveProvider: (name): KodaXBaseProvider | undefined => {
         try {
-          return resolveCodingProvider(name);
+          return sdk.resolveProvider(name);
         } catch {
           return undefined;
         }

@@ -20,6 +20,7 @@ import { prewarmSdkMcpStore } from './mcp/config-reader.js';
 import { registerKodaxChannels } from './ipc/kodax.js';
 import { prewarmKodaxUserConfig, registerKodaxCustomProviders } from './kodax/user-config.js';
 import { probeKodaxSdk } from './kodax/kodax-sdk-probe.js';
+import { probeSkillRegistry } from './skill/registry.js';
 import { registerProviderChannels, injectAllKeysToEnv } from './ipc/provider.js';
 import { registerFilesChannels } from './ipc/files.js';
 import { setRendererTarget } from './ipc/push.js';
@@ -150,11 +151,13 @@ function createMainWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   applyCsp();
   // KodaX SDK shape 漂移 fail-fast：若 ambient .d.ts 与运行时 SDK 不一致，
   // 启动期就 throw 比"用户发第一条 prompt 时白屏"更早被发现 (reviewer batch HIGH-2)。
-  probeKodaxSdk();
+  // v0.1.6：probe 改 async（dynamic import SDK subpath，避 CJS require 撞 exports）。
+  await probeKodaxSdk();
+  await probeSkillRegistry();
   // IPC handlers 必须在窗口创建前注册——否则 renderer 启动后立刻调 invoke 会撞上 "No handler registered"
   registerVersionChannel();
   registerSessionChannels();

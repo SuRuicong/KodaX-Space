@@ -47,7 +47,14 @@ const sharedOptions = {
   // （KodaX 自带 React/Ink/openai-sdk/anthropic-sdk 等大依赖）。external 后 require 时
   // 直接走 node_modules，electron-builder 把整个 @kodax-ai/kodax 塞进 asar——大小没变
   // 但 main.js 启动快很多，dev watch 重 bundle 也快。
-  external: ['electron', 'keytar', '@kodax-ai/kodax', '@kodax-ai/kodax/coding'],
+  //
+  // **注意**：SDK 的 subpath exports（/coding /skills /repl /session 等）只声明了
+  // `"import"` 条件（ESM），没声明 `"require"`。Space main 输出 CJS，静态 require 会撞
+  // ERR_PACKAGE_PATH_NOT_EXPORTED。修复办法：所有从 SDK subpath 的 import 必须用
+  // 动态 `await import('@kodax-ai/kodax/coding')` —— 动态 import 走 ESM 解析规则，
+  // 即使在 CJS 上下文也能命中 `"import"` 条件。static `import` 只能用类型 (typeof import())。
+  // 详见 apps/desktop/electron/kodax/{user-config,mcp/config-reader}.ts 的 lazy 模式。
+  external: ['electron', 'keytar', '@kodax-ai/kodax', '@kodax-ai/kodax/coding', '@kodax-ai/kodax/skills', '@kodax-ai/kodax/repl', '@kodax-ai/kodax/session', '@kodax-ai/kodax/mcp', '@kodax-ai/kodax/llm', '@kodax-ai/kodax/agent'],
   logLevel: 'info',
 };
 
