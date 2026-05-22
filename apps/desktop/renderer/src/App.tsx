@@ -44,6 +44,7 @@ export default function App(): JSX.Element {
   const enqueueAskUser = useAppStore((s) => s.enqueueAskUser);
   const dequeueAskUser = useAppStore((s) => s.dequeueAskUser);
   const setProviders = useAppStore((s) => s.setProviders);
+  const setKodaxDefaults = useAppStore((s) => s.setKodaxDefaults);
   const providers = useAppStore((s) => s.providers);
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
   const unsubsRef = useRef<Array<() => void>>([]);
@@ -61,6 +62,15 @@ export default function App(): JSX.Element {
     bridge.invoke('provider.list', undefined).then((result) => {
       if (result.ok) {
         setProviders(result.data.providers, result.data.defaultProviderId, result.data.keychainBackend);
+      }
+    });
+
+    // v0.1.6 cleanup: 同时拉 ~/.kodax/config.json 的默认值（provider / model / thinking 等）
+    // Space defaultProviderId 为 null 时 SessionList 会 fallback 到这里的 provider；
+    // session 创建时也用这里的 reasoningMode / model 作为初值。失败静默 — 用 Space 自己的 default。
+    bridge.invoke('kodax.getDefaults', {}).then((result) => {
+      if (result.ok) {
+        setKodaxDefaults(result.data);
       }
     });
 
@@ -108,6 +118,7 @@ export default function App(): JSX.Element {
     enqueueAskUser,
     dequeueAskUser,
     setProviders,
+    setKodaxDefaults,
   ]);
 
   // Esc 关 settings 面板

@@ -84,6 +84,11 @@ export {
 } from './channels/mcp.js';
 
 export {
+  kodaxGetDefaultsChannel,
+  type KodaxUserDefaults,
+} from './channels/kodax.js';
+
+export {
   permissionRequestChannel,
   permissionCancelledChannel,
   permissionAnswerChannel,

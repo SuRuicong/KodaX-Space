@@ -8,6 +8,7 @@ import { registerChannel } from './register.js';
 import { validateProjectRoot } from './validate.js';
 import { kodaxHost } from '../kodax/host.js';
 import { loadAgentsMd, type AgentsFile } from '../kodax/agents-md-loader.js';
+import { loadKodaxUserDefaults } from '../kodax/user-config.js';
 import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
 import type { AgentsFileMeta, SessionMeta } from '@kodax-space/space-ipc-schema';
@@ -47,6 +48,21 @@ export function registerSessionChannels(): void {
       permissionMode: input.permissionMode,
       autoModeEngine: input.autoModeEngine,
     });
+    // v0.1.6 cleanup: 用 ~/.kodax/config.json 的 thinking 默认值初始化新 session。
+    // 不传 schema 改动——renderer 没必要知道 thinking 默认值，main 直接 fill 即可。
+    // model 不在这里 fill：跨 provider 切换时 KodaX config 里的 model 名通常对不上
+    // 用户在 Space 选的 provider；要正确填要做 provider×model 映射，留 v0.1.7+。
+    try {
+      const kodaxDefaults = await loadKodaxUserDefaults();
+      if (kodaxDefaults.thinking !== undefined) {
+        kodaxHost.setThinking(sessionId, kodaxDefaults.thinking);
+      }
+    } catch (err) {
+      console.warn(
+        '[session.create] kodax defaults fill failed:',
+        err instanceof Error ? err.message : err,
+      );
+    }
     return { sessionId, createdAt };
   });
 

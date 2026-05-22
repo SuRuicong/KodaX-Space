@@ -17,6 +17,8 @@ import { registerSlashChannels, registerBuiltinSlashCommands } from './ipc/slash
 import { registerSkillChannels } from './ipc/skill.js';
 import { registerMcpChannels } from './ipc/mcp.js';
 import { prewarmSdkMcpStore } from './mcp/config-reader.js';
+import { registerKodaxChannels } from './ipc/kodax.js';
+import { prewarmKodaxUserConfig, registerKodaxCustomProviders } from './kodax/user-config.js';
 import { probeKodaxSdk } from './kodax/kodax-sdk-probe.js';
 import { registerProviderChannels, injectAllKeysToEnv } from './ipc/provider.js';
 import { registerFilesChannels } from './ipc/files.js';
@@ -163,9 +165,14 @@ app.whenReady().then(() => {
   registerSlashChannels();
   registerSkillChannels();
   registerMcpChannels();
+  registerKodaxChannels();
   // v0.1.6 cleanup: 预热 SDK MCP module 让首次 mcp.discover 不命中空 fallback
   // （DEFAULT_IMPL 首次同步调返回 {}，prewarm 异步触发后续调用走真 SDK）
   void prewarmSdkMcpStore();
+  // v0.1.6 cleanup: 同上，预热 root SDK module + 把 ~/.kodax/config.json 的 customProviders
+  // 注册进 SDK runtime LLM registry。完成后 `/provider <name>` 可切到 KodaX-CLI 配的
+  // 自定义 provider（如用户的 newapi-anthropic / openrouter-xxx）。失败不阻塞启动。
+  void prewarmKodaxUserConfig().then(() => registerKodaxCustomProviders());
   registerProviderChannels();
   registerFilesChannels();
   // push 目标走 getter 间接拿当前 window——dev HMR / 用户重开窗口都能正确切换

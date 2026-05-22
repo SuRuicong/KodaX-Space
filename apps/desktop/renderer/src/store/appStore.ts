@@ -18,6 +18,7 @@ import type {
   SessionEvent,
   PermissionRequestPayload,
   AskUserRequestPayload,
+  KodaxUserDefaults,
 } from '@kodax-space/space-ipc-schema';
 
 /**
@@ -59,6 +60,12 @@ interface AppState {
   /** Provider catalog（built-in + custom）+ configured 状态。FEATURE_004。*/
   providers: readonly ProviderInfo[];
   defaultProviderId: string | null;
+  /**
+   * v0.1.6 cleanup：~/.kodax/config.json 的默认值（main 启动期一次性拉过来）。
+   * Space defaultProviderId === null 时这里 fallback；用户改 Space 设置 / 切 picker 后用 Space 值。
+   * null = 还没拉到或 SDK loadConfig 失败；undefined 字段 = config 没设那项。
+   */
+  kodaxDefaults: KodaxUserDefaults | null;
   /**
    * Keychain backend 状态。'memory' 表示 key 仅在本进程内有效；
    * UI 应显著告警，否则用户以为配了 key 但重启就丢（review M1-sec）。
@@ -141,6 +148,8 @@ interface AppState {
     defaultProviderId: string | null,
     keychainBackend: 'keychain' | 'memory' | 'unknown',
   ): void;
+  /** v0.1.6 cleanup: 启动期 main 推 kodax.getDefaults 结果进来。 */
+  setKodaxDefaults(defaults: KodaxUserDefaults): void;
   /** 切项目时清空当前 session 选择和事件 buffer（事件留主进程的；renderer 只清缓存）。*/
   resetSessionView(): void;
   /** FEATURE_031: /clear 命令清空指定 session 的事件 / 用户消息 buffer (session 本体保留)。*/
@@ -177,6 +186,7 @@ export const useAppStore = create<AppState>((set) => ({
   providers: [],
   defaultProviderId: null,
   keychainBackend: 'unknown',
+  kodaxDefaults: null,
   workBudgetBySession: {},
   harnessProfileBySession: {},
   todoListBySession: {},
@@ -357,6 +367,8 @@ export const useAppStore = create<AppState>((set) => ({
 
   setProviders: (providers, defaultProviderId, keychainBackend) =>
     set({ providers, defaultProviderId, keychainBackend }),
+
+  setKodaxDefaults: (defaults) => set({ kodaxDefaults: defaults }),
 
   clearLastDiffPath: () => set({ lastDiffPath: null }),
 

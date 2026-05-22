@@ -55,6 +55,7 @@ import {
   skillInvokeChannel,
 } from './skill.js';
 import { mcpDiscoverChannel } from './mcp.js';
+import { kodaxGetDefaultsChannel } from './kodax.js';
 import {
   providerListChannel,
   providerSetKeyChannel,
@@ -94,6 +95,7 @@ export const invokeChannels = {
   [skillDiscoverChannel.name]: skillDiscoverChannel,
   [skillInvokeChannel.name]: skillInvokeChannel,
   [mcpDiscoverChannel.name]: mcpDiscoverChannel,
+  [kodaxGetDefaultsChannel.name]: kodaxGetDefaultsChannel,
   [providerListChannel.name]: providerListChannel,
   [providerSetKeyChannel.name]: providerSetKeyChannel,
   [providerRemoveKeyChannel.name]: providerRemoveKeyChannel,

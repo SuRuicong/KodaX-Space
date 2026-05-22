@@ -24,6 +24,7 @@ export function SessionList(): JSX.Element {
   const removeSession = useAppStore((s) => s.removeSession);
   const providers = useAppStore((s) => s.providers);
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
+  const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
   const [creating, setCreating] = useState<boolean>(false);
 
   // 下拉选项：Mock 永远第一项；之后按"已配 key 的 provider 在前，未配 key 的在后"
@@ -49,13 +50,16 @@ export function SessionList(): JSX.Element {
   const hasAutoSelectedRef = useRef(false);
   useEffect(() => {
     if (hasAutoSelectedRef.current) return;
-    if (defaultProviderId === null) return;
-    const p = providers.find((x) => x.id === defaultProviderId);
+    // 优先 Space defaultProviderId；若 null 再 fallback 到 KodaX ~/.kodax/config.json 的 provider
+    // （v0.1.6 cleanup —— 首次 Space 无设置时跟随 KodaX CLI 默认）
+    const candidateId = defaultProviderId ?? kodaxDefaults?.provider;
+    if (!candidateId) return;
+    const p = providers.find((x) => x.id === candidateId);
     if (p?.configured) {
       hasAutoSelectedRef.current = true;
-      setProvider(defaultProviderId);
+      setProvider(candidateId);
     }
-  }, [defaultProviderId, providers]);
+  }, [defaultProviderId, kodaxDefaults, providers]);
   // 改名 UI：renaming = 当前正在改的 sessionId；draft = 输入框值。
   // 用 inline 输入而不是 window.prompt——后者在 Electron sandbox=true 下被禁用，会静默失败。
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -74,11 +78,15 @@ export function SessionList(): JSX.Element {
     const bridge = window.kodaxSpace;
     if (!bridge) return;
     setCreating(true);
+    // v0.1.6 cleanup: session 初值跟随 ~/.kodax/config.json（KodaX CLI 设过的话）
+    const reasoningMode = kodaxDefaults?.reasoningMode ?? 'auto';
+    const permissionMode = kodaxDefaults?.permissionMode ?? 'accept-edits';
     try {
       const result = await bridge.invoke('session.create', {
         projectRoot: currentProjectPath,
         provider,
-        reasoningMode: 'auto',
+        reasoningMode,
+        permissionMode,
       });
       if (!result.ok) {
         console.error('[SessionList] create failed:', result.error);
@@ -90,8 +98,8 @@ export function SessionList(): JSX.Element {
         sessionId: result.data.sessionId,
         projectRoot: currentProjectPath,
         provider,
-        reasoningMode: 'auto',
-        permissionMode: 'accept-edits',
+        reasoningMode,
+        permissionMode,
         autoModeEngine: 'llm',
         title: undefined,
         createdAt: result.data.createdAt,
