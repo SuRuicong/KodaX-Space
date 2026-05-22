@@ -1,8 +1,8 @@
 // PermissionBroker mode-aware policy tests — FEATURE_029 canonical 3 mode
 //
 // 对齐 KodaX REPL canonical (ADR-005)：
-//   'plan'         → 全 deny（即便不在 PLAN_MODE_BLOCKED_TOOLS 也 deny，
-//                    因为 plan mode 的不变量是"agent 不动手"）
+//   'plan'         → 全 deny（broker 层不区分 tool；plan-mode 拦截在 KodaX 入口
+//                    `planModeBlockCheck` → SDK isToolPlanModeAllowed v0.7.42）
 //   'accept-edits' → edit/write/multi_edit/insert_after_anchor 自动批；
 //                    其他 (bash/web_fetch/...) 走 ask modal；
 //                    dangerous (rm -rf 等) 即便是 edit 工具也 ask
@@ -69,9 +69,9 @@ test('plan denies edit/write/multi_edit/web_fetch/mcp_call — strict gate', asy
 
 test('plan denies even safe tools (no allowlist short-circuit)', async () => {
   // plan mode 不区分 read-only / mutating —— 全 deny。
-  // (planModeBlockCheck 在 KodaX 侧已经 fork read-only 工具放行；
-  // broker 这一层简单 deny 是 defense-in-depth：万一 KodaX 钩子没被 wire 上，
-  // broker 仍兜底)
+  // (planModeBlockCheck 在 KodaX 入口已用 SDK isToolPlanModeAllowed 把
+  // read-only 工具放行；broker 这层简单 deny 是 defense-in-depth：万一
+  // KodaX 钩子没被 wire 上，broker 仍兜底)
   const result = await permissionBroker.request({
     sessionId: 's_plan',
     toolId: 't_read',

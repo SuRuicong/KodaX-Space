@@ -63,6 +63,16 @@ export interface ManagedSession {
   permissionMode: PermissionMode;
   /** 仅当 permissionMode === 'auto' 时有意义；缺省 'llm'。*/
   autoModeEngine: AutoModeEngine;
+  /**
+   * SDK 0.7.42 setModel: model 覆盖 provider 默认；undefined = 用 provider 默认。
+   * 切换不重启 session——下一次 send 时传入 runKodaX options.model。
+   */
+  model?: string;
+  /**
+   * SDK 0.7.42 setThinkingLevel 对齐：true / false 控制 thinking 输出；
+   * undefined = 用 KodaX 默认。切换不重启 session——下一次 send 时传入 options.thinking。
+   */
+  thinking?: boolean;
   readonly createdAt: number;
   /** 最后一次发送 prompt / 收到事件的时间戳。`session.list` 用它排序。*/
   lastActivityAt: number;

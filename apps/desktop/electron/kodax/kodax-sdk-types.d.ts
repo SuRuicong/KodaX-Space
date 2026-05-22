@@ -387,6 +387,17 @@ declare module '@kodax-ai/kodax/coding' {
   export function getBuiltinRegisteredToolDefinition(
     toolName: string,
   ): { toClassifierInput?: (input: unknown) => string } | undefined;
+
+  /**
+   * v0.7.42 — plan-mode permit check driven by tool metadata.
+   *   - `sideEffect === 'readonly'` ⇒ allowed (unless `planModeAllowed: false`)
+   *   - `planModeAllowed: true` ⇒ allowed (overrides non-readonly)
+   *   - any other sideEffect ⇒ blocked
+   *   - unknown tool name ⇒ false (fail-closed)
+   *
+   * 替换之前 Space 端 hardcoded `Set<string>` blocklist——新增 'mutates-fs' tool 自动流过。
+   */
+  export function isToolPlanModeAllowed(name: string): boolean;
 }
 
 // ============= FEATURE_035 @kodax-ai/kodax/skills =============

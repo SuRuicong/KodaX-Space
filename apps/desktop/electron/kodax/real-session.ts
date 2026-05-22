@@ -16,7 +16,7 @@
 //      Plan-mode 由 context.planModeBlockCheck 把 write 工具拦在 KodaX 入口处。
 //      Exit plan mode 由 events.exitPlanMode 让 Space 弹 modal（v0.1.x 中先 stub allow）。
 
-import { runKodaX } from '@kodax-ai/kodax/coding';
+import { runKodaX, isToolPlanModeAllowed } from '@kodax-ai/kodax/coding';
 import type {
   AutoModeAskUser,
   AutoModeAskUserVerdict,
@@ -38,60 +38,12 @@ import type {
 
 type SpaceReasoning = 'off' | 'auto' | 'quick' | 'balanced' | 'deep';
 
-// Plan-mode 阻止的工具集 — 任何"会改世界 / 触发外部副作用 / 启动可写子进程"的工具。
-// KodaX context.planModeBlockCheck 返回非 null reason 则 KodaX 立刻 deny 这次调用。
+// Plan-mode 工具拦截：v0.7.42 切到 SDK `isToolPlanModeAllowed`，基于工具注册时的
+// `sideEffect` / `planModeAllowed` 元数据自动判定——SDK 新增 'mutates-fs' 工具
+// 自动流过，Space 不再硬编码 Set。fail-closed：未知 tool 一律 block。
 //
-// 来源：c:/Works/GitWorks/KodaX-author/KodaX/packages/coding/src/tools/*.ts 完整 tool 名表。
-// 分类：
-//   - 文件写入：edit / write / multi_edit / insert_after_anchor / undo
-//   - 外部副作用：bash / web_fetch / web_search（web_search 可能调付费 API + 数据外泄）
-//   - MCP 任意调用：mcp_call（mcp_search/describe/read_resource/get_prompt 是只读，放行）
-//   - Worktree 操作：worktree_create / worktree_remove
-//   - 自构造（写 ~/.kodax/constructed/）：scaffold_agent / scaffold_tool / activate_agent /
-//     activate_tool / stage_agent_construction / stage_construction（validate_* 是只读）
-//   - Child 派发：dispatch_child_task（child 可能 readOnly:false，里面写文件；plan-mode
-//     不允许 fanout 出可写 child）
-//   - 协调器：send_message / task_stop（对已跑 child 发指令；plan-mode 不应当干预执行）
-//
-// 不在此表 = plan-mode 放行（read/grep/glob/code_search/semantic_lookup/symbol_context/
-// module_context/process_context/impact_estimate/changed_scope/changed_diff*/repo_overview/
-// ask_user_question/todo_*/exit_plan_mode/emit_managed_protocol/mcp_search/mcp_describe/
-// mcp_read_resource/mcp_get_prompt/validate_*）。
-//
-// 设计权衡 — blocklist vs allowlist：
-//   选 blocklist 因为 KodaX 新增 tool 时漏加 allowlist 会让 plan-mode "锁死所有工具"
-//   把用户卡住；漏加 blocklist 会让某个新 tool 在 plan-mode 跑（功能影响 < 锁死）。
-//   每次 KodaX 升级 SDK 都 review tool 表对照本 set —— 见 docs/ADR/ADR-005-plan-mode-policy.md
-//   （TODO 补 ADR）。
-const PLAN_MODE_BLOCKED_TOOLS = new Set([
-  // 文件写入
-  'edit',
-  'write',
-  'multi_edit',
-  'str_replace',
-  'insert_after_anchor',
-  'undo',
-  // 外部副作用 / shell
-  'bash',
-  'web_fetch',
-  'web_search',
-  // MCP 任意调用
-  'mcp_call',
-  // Worktree
-  'worktree_create',
-  'worktree_remove',
-  // 自构造（写盘 + 改 agent/tool 注册表）
-  'scaffold_agent',
-  'scaffold_tool',
-  'activate_agent',
-  'activate_tool',
-  'stage_agent_construction',
-  'stage_construction',
-  // Child 派发 + 协调器
-  'dispatch_child_task',
-  'send_message',
-  'task_stop',
-]);
+// 之前 v0.1.1~v0.1.5 维护过一个 20+ tool 名 hardcoded Set（每次 KodaX 升 SDK
+// 都要 review 漏没漏新工具）；v0.1.6 升 SDK 0.7.42 时切到本路径（cleanup gap）。
 
 export class RealKodaXSession implements ManagedSession {
   readonly sessionId: string;
@@ -101,6 +53,10 @@ export class RealKodaXSession implements ManagedSession {
   permissionMode: ManagedSession['permissionMode'];
   /** FEATURE_029：auto mode 子档；非 auto mode 时持有也无害（下次切 auto 时生效）。*/
   autoModeEngine: ManagedSession['autoModeEngine'];
+  /** SDK 0.7.42 wired: 用户 /model 设的覆盖；undefined 走 provider 默认。*/
+  model?: string;
+  /** SDK 0.7.42 wired: 用户 /thinking 设的开关；undefined 走 KodaX 默认。*/
+  thinking?: boolean;
   readonly createdAt: number;
   lastActivityAt: number;
   title: string | undefined = undefined;
@@ -263,7 +219,9 @@ export class RealKodaXSession implements ManagedSession {
       _input: Record<string, unknown>,
     ): string | null => {
       if (this.permissionMode !== 'plan') return null;
-      if (!PLAN_MODE_BLOCKED_TOOLS.has(tool)) return null;
+      // SDK isToolPlanModeAllowed: readonly / planModeAllowed:true → allowed; 其他 → blocked
+      // Fail-closed: 未知 tool 返回 false（一律 block）
+      if (isToolPlanModeAllowed(tool)) return null;
       return `[plan] tool '${tool}' is blocked. Plan mode allows only read/search tools — describe the plan instead of executing it.`;
     };
 
@@ -525,7 +483,8 @@ export class RealKodaXSession implements ManagedSession {
           askUser: this.makeAskUserBridge(),
           projectRoot: this.projectRoot,
           getCurrentProviderName: () => this.provider,
-          getCurrentModel: () => '', // F029 schema 暂未引入 session.model 字段；F-future
+          // v0.7.42 SDK wired (P0): 用户 /model 设的值或 provider 默认（''）
+          getCurrentModel: () => this.model ?? '',
           initialEngine: this.autoModeEngine as AutoModeEngineKodaX,
           timeoutMs: 30_000,
           onEngineChange: (engine) => {
@@ -592,6 +551,9 @@ export class RealKodaXSession implements ManagedSession {
     const options: KodaXOptions = {
       provider: this.provider,
       reasoningMode: this.reasoningMode,
+      // SDK 0.7.42 wired (P0): /model + /thinking 设置在下一 turn 生效
+      ...(this.model !== undefined ? { model: this.model } : {}),
+      ...(this.thinking !== undefined ? { thinking: this.thinking } : {}),
       events,
       abortSignal: signal,
       session: { id: sid },

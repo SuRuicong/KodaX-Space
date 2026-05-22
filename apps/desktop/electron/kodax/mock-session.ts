@@ -77,6 +77,10 @@ export class MockKodaXSession implements ManagedSession {
   permissionMode: ManagedSession['permissionMode'];
   /** FEATURE_029: auto-mode 子档；mock 不实际跑 guardrail 但需要持有字段供 host setter。*/
   autoModeEngine: ManagedSession['autoModeEngine'];
+  /** v0.7.42 P0 wire：mock 不实际用 model，只持有字段供 host setter。*/
+  model?: string;
+  /** v0.7.42 P0 wire：mock 不实际用 thinking，只持有字段供 host setter。*/
+  thinking?: boolean;
   readonly createdAt: number;
   lastActivityAt: number;
   title: string | undefined = undefined;

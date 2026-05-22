@@ -125,38 +125,41 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
 
   {
     name: 'model',
-    description: 'Switch model (FEATURE_029 schema not yet introduces per-session model; preview only)',
-    argsHint: '<model-name>',
+    description: 'Override model for next turn (v0.7.42 SDK wired). Use /model default to clear.',
+    argsHint: '<model-name | default>',
     source: 'builtin',
     handler: async (ctx) => {
       const target = ctx.args[0];
       if (!target) {
-        return { ok: false, message: 'Usage: /model <model-name>' };
+        return { ok: false, message: 'Usage: /model <model-name | default>' };
       }
-      // F-future: schema 引入 session.model 后调 host.setModel；此前返回 not-supported
+      // 仅保留 'default' 作为清除关键字（reviewer LOW-1：'clear'/'reset' 是常见英文词
+      // 未来可能与真实 model slug 冲突；只锁 'default' 与 Claude Code 等同行做法一致）
+      const isClear = target === 'default';
+      const ok = kodaxHost.setModel(ctx.sessionId, isClear ? undefined : target);
+      if (!ok) return { ok: false, message: `session not found: ${ctx.sessionId}` };
       return {
-        ok: false,
-        message: `not supported yet — current session uses provider default. ` +
-          `Tracked in FEATURE_029 follow-up (per-session model setter).`,
+        ok: true,
+        message: isClear
+          ? `model → provider default (cleared override)`
+          : `model → ${target} (applies on next send)`,
       };
     },
   },
 
   {
     name: 'thinking',
-    description: 'Toggle thinking output (FEATURE_029 schema not yet introduces per-session thinking flag; preview only)',
-    argsHint: '<on|off>',
+    description: 'Toggle thinking output for next turn (v0.7.42 SDK wired).',
+    argsHint: '<on | off>',
     source: 'builtin',
     handler: async (ctx) => {
       const target = ctx.args[0];
       if (target !== 'on' && target !== 'off') {
-        return { ok: false, message: 'Usage: /thinking <on|off>' };
+        return { ok: false, message: 'Usage: /thinking <on | off>' };
       }
-      return {
-        ok: false,
-        message: `not supported yet — KodaX provider default applies. ` +
-          `Tracked in FEATURE_029 follow-up (per-session thinking toggle).`,
-      };
+      const ok = kodaxHost.setThinking(ctx.sessionId, target === 'on');
+      if (!ok) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      return { ok: true, message: `thinking → ${target} (applies on next send)` };
     },
   },
 

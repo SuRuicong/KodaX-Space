@@ -1,6 +1,6 @@
 # KodaX Space Feature List
 
-> Last Updated: 2026-05-18 (TUI 对齐 plan 锁定 — FEATURE_029 alpha.1 + FEATURE_030~037 v0.1.1)
+> Last Updated: 2026-05-22 (v0.1.1 TUI 对齐 batch 完成 + v0.1.6 持久化 + 0.7.42 升级)
 >
 > **2026-05-18 form-factor reset**：alpha.0 的 UI 形态偏 IDE，alpha.1 按 [ADR-004](ADR/ADR-004-panel-model.md) 重构对齐 Claude Desktop 中的 Claude Code。F006/F008/F009 标记重做（main 端保留）；新增 F011-revised / F012-revised。详见下面 "v0.1.0-alpha.1 重构 plan" 区段。
 >
@@ -43,17 +43,17 @@
 | 026 | NAPI native-fuzzy | New | Medium | v0.1.4 | Planned | [v0.1.4.md#026](features/v0.1.4.md#feature_026-napi-native-fuzzy) |
 | 027 | 代码签名 + notarize | Internal | Medium | v0.1.5 | Planned | [v0.1.5.md#027](features/v0.1.5.md#feature_027-代码签名--notarize) |
 | 028 | 隐私政策 + 文档站 | Internal | Low | v0.1.5 | Planned | [v0.1.5.md#028](features/v0.1.5.md#feature_028-隐私政策--文档站) |
-| 038 | F033 Sessions 持久化升级（接 KodaX SDK ≥ 0.7.42） | Refactor | High | v0.1.6 | Planned | [v0.1.6.md#038](features/v0.1.6.md#feature_038-f033-sessions-持久化升级接-kodax-sdk--0742) |
+| 029 | Permission Mode canonical 3 + Auto engine 子档 | Refactor | Critical | v0.1.0-alpha.1 | Completed | [v0.1.0.md#029](features/v0.1.0.md#feature_029-permission-mode-canonical-3--auto-engine-子档) |
+| 030 | AutoModeToolGuardrail bootstrap | New | Critical | v0.1.1 | Completed | [v0.1.1.md#030](features/v0.1.1.md#feature_030-automodetoolguardrail-bootstrap) |
+| 031 | Slash command runtime + 第一批命令 | New | Critical | v0.1.1 | Completed | [v0.1.1.md#031](features/v0.1.1.md#feature_031-slash-command-runtime--第一批命令) |
+| 032 | askUser modal + IPC | New | Critical | v0.1.1 | Completed | [v0.1.1.md#032](features/v0.1.1.md#feature_032-askuser-modal--ipc) |
+| 033 | Sessions tree + fork + rewind (in-memory) | New | High | v0.1.1 | Completed | [v0.1.1.md#033](features/v0.1.1.md#feature_033-sessions-tree--fork--rewind) |
+| 034 | AGENTS.md auto-load + 显示 | New | High | v0.1.1 | Completed | [v0.1.1.md#034](features/v0.1.1.md#feature_034-agentsmd-auto-load--显示) |
+| 035 | Skills 发现 + 执行 | New | High | v0.1.1 | Completed | [v0.1.1.md#035](features/v0.1.1.md#feature_035-skills-发现--执行) |
+| 036 | MCP 管理 UI (read-only listing；F039 出 SDK manager 后升级) | New | High | v0.1.1 | Completed | [v0.1.1.md#036](features/v0.1.1.md#feature_036-mcp-管理-ui-替换原-feature_013-计划) |
+| 037 | Subagent tree 视图 | New | High | v0.1.1 | Completed | [v0.1.1.md#037](features/v0.1.1.md#feature_037-subagent-tree-视图-refine-原-feature_012) |
+| 038 | F033 Sessions 持久化升级（SDK ≥ 0.7.42） | Refactor | High | v0.1.6 | Completed | [v0.1.6.md#038](features/v0.1.6.md#feature_038-f033-sessions-持久化升级接-kodax-sdk--0742) |
 | 039 | F036 MCP 管理完整版（start/stop/log/tool catalog；接 KodaX SDK MCP manager） | Refactor | High | v0.1.7 | Planned | [v0.1.7.md#039](features/v0.1.7.md#feature_039-f036-mcp-管理完整版) |
-| **029** | **Permission Mode canonical 3 + Auto engine 子档** | Refactor | **Critical** | v0.1.0-alpha.1 | **Planned** | [v0.1.0.md#029](features/v0.1.0.md#feature_029-permission-mode-canonical-3--auto-engine-子档) |
-| 030 | AutoModeToolGuardrail bootstrap | New | Critical | v0.1.1 | Planned | [v0.1.1.md#030](features/v0.1.1.md#feature_030-automodetoolguardrail-bootstrap) |
-| 031 | Slash command runtime + 第一批命令 | New | Critical | v0.1.1 | Planned | [v0.1.1.md#031](features/v0.1.1.md#feature_031-slash-command-runtime--第一批命令) |
-| 032 | askUser modal + IPC | New | Critical | v0.1.1 | Planned | [v0.1.1.md#032](features/v0.1.1.md#feature_032-askuser-modal--ipc) |
-| 033 | Sessions tree + fork + rewind | New | High | v0.1.1 | Planned | [v0.1.1.md#033](features/v0.1.1.md#feature_033-sessions-tree--fork--rewind) |
-| 034 | AGENTS.md auto-load + 显示 | New | High | v0.1.1 | Planned | [v0.1.1.md#034](features/v0.1.1.md#feature_034-agentsmd-auto-load--显示) |
-| 035 | Skills 发现 + 执行 | New | High | v0.1.1 | Planned | [v0.1.1.md#035](features/v0.1.1.md#feature_035-skills-发现--执行) |
-| 036 | MCP 管理 UI（替换原 F013 计划） | New | High | v0.1.1 | Planned | [v0.1.1.md#036](features/v0.1.1.md#feature_036-mcp-管理-ui-替换原-feature_013-计划) |
-| 037 | Subagent tree 视图（refine F012）| New | High | v0.1.1 | Planned | [v0.1.1.md#037](features/v0.1.1.md#feature_037-subagent-tree-视图-refine-原-feature_012) |
 
 ## v0.1.0-alpha.1 重构 plan（2026-05-18）
 
@@ -102,20 +102,23 @@
 
 ```
 === FEATURE LIST ===
-Last Updated: 2026-05-18
+Last Updated: 2026-05-22
 
---- PLANNED (18) ---
+--- PLANNED (15) ---
 
 v0.1.0 (alpha foundation): ✅ 10/10 完成 — alpha 可发布
-v0.1.1 (alpha+):            4 features
-v0.1.2 (beta foundation):   4 features
-v0.1.3 (beta polish):       4 features
-v0.1.4 (release-ready):     4 features
-v0.1.5 (release polish):    2 features
+v0.1.0-alpha.1 + v0.1.1:   ✅ 10/10 TUI 对齐 batch 完成 (F029-F037 + F003R)
+v0.1.1 originals:           3 features (F011 terminal, F012 subagent tree (refined via F037), F014 napi)
+v0.1.2 (生态打通):          4 features (F015-F018)
+v0.1.3 (UX polish):         4 features (F019-F022)
+v0.1.4 (release-ready):     4 features (F023-F026)
+v0.1.5 (release polish):    2 features (F027-F028)
+v0.1.6 (持久化):           ✅ 1/1 完成 (F038)
+v0.1.7 (MCP 完整版):        1 feature (F039 — 等 SDK MCP manager)
 
 --- IN PROGRESS (0) ---
 
---- COMPLETED (10) ---
+--- COMPLETED (21) ---
 
 [NEW, CRITICAL] 001: Electron 工程骨架 (COMPLETED 2026-05-16)
   Planned: v0.1.0 → Released: v0.1.0-alpha.0
@@ -146,27 +149,34 @@ v0.1.5 (release polish):    2 features
   Planned: v0.1.0 → Released: v0.1.0-alpha.0
   Note: Win NSIS x64 (79 MB) + macOS DMG universal; release workflow on tag v*; smoke-pack 校验 asar 内容 / size cap
 
+[REFACTOR, CRITICAL] 029: Permission Mode canonical 3 + Auto engine 子档 (COMPLETED 2026-05-19)
+  Note: ADR-005 canonical 3 mode (plan/accept-edits/auto + llm|rules 子档)
+[NEW, CRITICAL] 030: AutoModeToolGuardrail bootstrap (COMPLETED 2026-05-19)
+[NEW, CRITICAL] 031: Slash command runtime + 8 builtin (COMPLETED 2026-05-20)
+[NEW, CRITICAL] 032: askUser modal + IPC (COMPLETED 2026-05-20)
+[NEW, HIGH] 033: Sessions tree + fork + rewind (in-memory) (COMPLETED 2026-05-20)
+  Note: 持久化升级在 v0.1.6 F038 完成
+[NEW, HIGH] 034: AGENTS.md auto-load + 显示 (COMPLETED 2026-05-21)
+[NEW, HIGH] 035: Skills 发现 + 执行 (COMPLETED 2026-05-21)
+[NEW, HIGH] 036: MCP 管理 UI (read-only listing) (COMPLETED 2026-05-21)
+  Note: 完整版（start/stop/log/tool catalog）在 v0.1.7 F039
+[NEW, HIGH] 037: Subagent tree 视图 (COMPLETED 2026-05-21)
+[REFACTOR, HIGH] 038: F033 Sessions 持久化升级 (COMPLETED 2026-05-22)
+  Note: SDK 0.7.42 /session subpath；in-flight 仍 in-memory，historical 走 SDK 持久化
+
 === SUMMARY ===
-Total: 38 | Planned: 27 | InProgress: 0 | Completed: 11 ✅ alpha.0 完成 + alpha.1 接通真 LLM
-By Priority: Critical: 13, High: 17, Medium: 8, Low: 1
-By Category:  New: 31, Enhancement: 3, Refactor: 3, Internal: 2
+Total: 39 | Planned: 15 | InProgress: 0 | Completed: 21
+By Priority: Critical: 13 (✅12/13), High: 17 (✅8/17), Medium: 8, Low: 1
+By Category:  New: 31, Enhancement: 3, Refactor: 4, Internal: 2
 
---- ALPHA.1 IN-FLIGHT (1 critical) ---
+--- REMAINING PLANNED ---
 
-[REFACTOR, CRITICAL] 029: Permission Mode canonical 3 + Auto engine 子档
-  Reason: ADR-005 锁定，对齐 KodaX REPL canonical；alpha.1 schema breaking 影响 0；阻塞 030
-  Depends on: (本身) → 解锁 F030
-
---- V0.1.1 P0 TUI ALIGNMENT BATCH (3 critical + 5 high) ---
-
-[NEW, CRITICAL] 030: AutoModeToolGuardrail bootstrap — F029 运行时配套
-[NEW, CRITICAL] 031: Slash command runtime + 8 builtin 命令
-[NEW, CRITICAL] 032: askUser modal + IPC — agent 主动问用户路径
-[NEW, HIGH] 033: Sessions tree + fork + rewind
-[NEW, HIGH] 034: AGENTS.md auto-load + 显示
-[NEW, HIGH] 035: Skills 发现 + 执行
-[NEW, HIGH] 036: MCP 管理 UI (顶替原 F013 计划)
-[NEW, HIGH] 037: Subagent tree (refine 原 F012)
+v0.1.1 originals (2): F011 terminal popout, F014 napi tokenizer
+v0.1.2 生态打通 (4): F015 Repointel, F016 lineage 图, F017 CLI teleport, F018 Quick Ask
+v0.1.3 UX polish (4): 主题 / 通知 / .mcpb / 自动更新
+v0.1.4 power (4): 多 tab 终端 / 富预览 / NAPI native-diff + fuzzy
+v0.1.5 release (2): 签名 + notarize / 文档
+v0.1.7 (1): F039 MCP 完整版 (等 SDK MCP manager runtime API)
 ```
 
 ## Version Roadmap

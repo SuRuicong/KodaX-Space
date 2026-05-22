@@ -190,23 +190,68 @@ test('/help returns echo=true with command list', async () => {
   assert.ok(result.message?.includes('/auto-engine'));
 });
 
-test('/model returns not-supported message (placeholder)', async () => {
+test('/model sets model override on session (v0.7.42 SDK wired)', async () => {
   const { sessionId } = kodaxHost.createSession({
     projectRoot: 'C:\\tmp\\proj',
     provider: 'mock',
   });
-  const result = await runCmd('model', sessionId, ['some-model']);
-  assert.equal(result.ok, false);
-  assert.ok(result.message?.includes('not supported'));
+  const result = await runCmd('model', sessionId, ['claude-opus-4-7']);
+  assert.equal(result.ok, true);
+  assert.ok(result.message?.includes('claude-opus-4-7'));
+  assert.equal(kodaxHost.get(sessionId)?.model, 'claude-opus-4-7');
 });
 
-test('/thinking returns not-supported message (placeholder)', async () => {
+test('/model default clears the override', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  await runCmd('model', sessionId, ['claude-opus-4-7']);
+  const result = await runCmd('model', sessionId, ['default']);
+  assert.equal(result.ok, true);
+  assert.equal(kodaxHost.get(sessionId)?.model, undefined);
+});
+
+test('/model without arg returns usage', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  const result = await runCmd('model', sessionId, []);
+  assert.equal(result.ok, false);
+  assert.ok(result.message?.includes('Usage'));
+});
+
+test('/thinking on sets thinking=true on session', async () => {
   const { sessionId } = kodaxHost.createSession({
     projectRoot: 'C:\\tmp\\proj',
     provider: 'mock',
   });
   const result = await runCmd('thinking', sessionId, ['on']);
+  assert.equal(result.ok, true);
+  assert.equal(kodaxHost.get(sessionId)?.thinking, true);
+});
+
+test('/thinking off sets thinking=false on session', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  const result = await runCmd('thinking', sessionId, ['off']);
+  assert.equal(result.ok, true);
+  assert.equal(kodaxHost.get(sessionId)?.thinking, false);
+});
+
+test('/model on unknown session returns session_not_found', async () => {
+  const result = await runCmd('model', 's_does_not_exist', ['some-model']);
   assert.equal(result.ok, false);
+  assert.ok(result.message?.includes('session not found'));
+});
+
+test('/thinking on unknown session returns session_not_found', async () => {
+  const result = await runCmd('thinking', 's_does_not_exist', ['on']);
+  assert.equal(result.ok, false);
+  assert.ok(result.message?.includes('session not found'));
 });
 
 test('/thinking with invalid arg returns Usage', async () => {
