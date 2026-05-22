@@ -12,8 +12,12 @@ import assert from 'node:assert/strict';
 import { kodaxHost } from '../kodax/host.js';
 import { setRendererTarget } from '../ipc/push.js';
 import { permissionBroker } from '../permission/broker.js';
+import { installSessionStoreMock, type MockSessionState } from './_helpers/session-store-mock.js';
+
+let mockState: MockSessionState;
 
 beforeEach(async () => {
+  mockState = installSessionStoreMock();
   await kodaxHost.disposeAll();
   setRendererTarget(() => ({
     send: (channel: string, payload: unknown) => {
@@ -30,14 +34,19 @@ beforeEach(async () => {
 afterEach(async () => {
   await kodaxHost.disposeAll();
   setRendererTarget(() => null);
+  mockState.reset();
 });
 
-test('fork: unknown source returns null', () => {
-  const result = kodaxHost.fork('s_nope', 0);
+function seedPersistedSession(id: string, gitRoot: string, title = 'Untitled'): void {
+  mockState.seed(id, gitRoot, title);
+}
+
+test('fork: unknown in-memory source returns null', async () => {
+  const result = await kodaxHost.fork('s_nope', 0);
   assert.equal(result, null);
 });
 
-test('fork: child inherits provider / reasoningMode / permissionMode / autoModeEngine', () => {
+test('fork: child inherits provider / reasoningMode / permissionMode / autoModeEngine', async () => {
   const { sessionId: src } = kodaxHost.createSession({
     projectRoot: 'C:\\tmp\\proj',
     provider: 'mock',
@@ -45,7 +54,8 @@ test('fork: child inherits provider / reasoningMode / permissionMode / autoModeE
     permissionMode: 'plan',
     autoModeEngine: 'rules',
   });
-  const result = kodaxHost.fork(src, 3);
+  seedPersistedSession(src, 'C:\\tmp\\proj');
+  const result = await kodaxHost.fork(src, 3);
   assert.ok(result, 'fork should succeed');
   const child = kodaxHost.get(result.newSessionId);
   assert.ok(child, 'child session should be retrievable');
@@ -56,66 +66,95 @@ test('fork: child inherits provider / reasoningMode / permissionMode / autoModeE
   assert.equal(child.autoModeEngine, 'rules');
 });
 
-test('fork: child has parentSessionId + forkPointTurnIdx metadata', () => {
+test('fork: child has parentSessionId + forkPointTurnIdx metadata', async () => {
   const { sessionId: src } = kodaxHost.createSession({
     projectRoot: 'C:\\tmp\\proj',
     provider: 'mock',
   });
-  const result = kodaxHost.fork(src, 5);
+  seedPersistedSession(src, 'C:\\tmp\\proj');
+  const result = await kodaxHost.fork(src, 5);
   assert.ok(result);
   const child = kodaxHost.get(result.newSessionId);
   assert.equal(child?.parentSessionId, src);
   assert.equal(child?.forkPointTurnIdx, 5);
 });
 
-test('fork: child title is "<src title> (fork)" when source has title', () => {
+test('fork: child title is "<src title> (fork)" when source has title', async () => {
   const { sessionId: src } = kodaxHost.createSession({
     projectRoot: 'C:\\tmp\\proj',
     provider: 'mock',
   });
   kodaxHost.setTitle(src, 'Investigate bug');
-  const result = kodaxHost.fork(src, 0);
+  seedPersistedSession(src, 'C:\\tmp\\proj', 'Investigate bug');
+  const result = await kodaxHost.fork(src, 0);
   assert.ok(result);
   assert.equal(kodaxHost.get(result.newSessionId)?.title, 'Investigate bug (fork)');
 });
 
-test('fork: title does not accumulate "(fork) (fork)" on repeat fork', () => {
+test('fork: title does not accumulate "(fork) (fork)" on repeat fork', async () => {
   const { sessionId: src } = kodaxHost.createSession({
     projectRoot: 'C:\\tmp\\proj',
     provider: 'mock',
   });
   kodaxHost.setTitle(src, 'X');
-  const r1 = kodaxHost.fork(src, 0);
+  seedPersistedSession(src, 'C:\\tmp\\proj', 'X');
+  const r1 = await kodaxHost.fork(src, 0);
   assert.ok(r1);
   assert.equal(kodaxHost.get(r1.newSessionId)?.title, 'X (fork)');
   // fork 第一次的 child（title 已是 "X (fork)") 再 fork 一次——不应变 "X (fork) (fork)"
-  const r2 = kodaxHost.fork(r1.newSessionId, 0);
+  const r2 = await kodaxHost.fork(r1.newSessionId, 0);
   assert.ok(r2);
   assert.equal(kodaxHost.get(r2.newSessionId)?.title, 'X (fork)');
 });
 
-test('fork: child title stays undefined when source has none', () => {
+test('fork: child title stays undefined when source has none', async () => {
   const { sessionId: src } = kodaxHost.createSession({
     projectRoot: 'C:\\tmp\\proj',
     provider: 'mock',
   });
   // 不调 setTitle / send，title 保持 undefined
-  const result = kodaxHost.fork(src, 0);
+  seedPersistedSession(src, 'C:\\tmp\\proj', ''); // SDK title fallback 到空串
+  const result = await kodaxHost.fork(src, 0);
   assert.ok(result);
+  // F038 行为：src title undefined → fork 不加 "(fork)" 后缀；child title 也是 undefined
   assert.equal(kodaxHost.get(result.newSessionId)?.title, undefined);
 });
 
-test('fork: source and child have different sessionIds, both listed', () => {
+test('fork: source and child have different sessionIds, both listed in-flight', async () => {
   const { sessionId: src } = kodaxHost.createSession({
     projectRoot: 'C:\\tmp\\proj',
     provider: 'mock',
   });
-  const result = kodaxHost.fork(src, 0);
+  seedPersistedSession(src, 'C:\\tmp\\proj');
+  const result = await kodaxHost.fork(src, 0);
   assert.ok(result);
   assert.notEqual(result.newSessionId, src);
-  const ids = kodaxHost.list().map((s) => s.sessionId);
+  const ids = kodaxHost.listInFlight().map((s) => s.sessionId);
   assert.ok(ids.includes(src));
   assert.ok(ids.includes(result.newSessionId));
+});
+
+test('listMerged: in-flight overrides persisted on same sessionId (no dup)', async () => {
+  // 在 storage 注入 id=s_X，然后用同 id createSession 模拟"被加载到内存的 historical session"
+  const sharedId = 's_shared_xyz';
+  seedPersistedSession(sharedId, '/proj', 'Persisted Title');
+  // createSession 自己生成 randomUUID 所以不能直接用——用 in-flight Map 模拟手工 set
+  // 通过 fork 把 sharedId 拉成 in-memory（fork 从 source 拿 setting；newSessionId 由 SDK 决定）
+  // 简单点：seed persisted + seed in-flight via createSession (id 不同)，验证两条都在
+  // 然后单独验证 same-id 场景用直接 Map set
+  const { sessionId: liveId } = kodaxHost.createSession({
+    projectRoot: '/proj',
+    provider: 'mock',
+  });
+  seedPersistedSession(liveId, '/proj', 'Disk-Side Title'); // 同 id 两边都有
+  const merged = await kodaxHost.listMerged({ projectRoot: '/proj' });
+  const liveCopies = merged.filter((m) => m.sessionId === liveId);
+  assert.equal(liveCopies.length, 1, 'in-flight should dedupe persisted with same id');
+  assert.equal(liveCopies[0].kind, 'in-flight', 'in-flight wins on dedup');
+  // 不重叠的 historical session 也出现在结果里
+  const persistedOnly = merged.filter((m) => m.sessionId === sharedId);
+  assert.equal(persistedOnly.length, 1, 'persisted-only session appears');
+  assert.equal(persistedOnly[0].kind, 'persisted');
 });
 
 test('rewind: unknown session returns ok:false + reason="session_not_found"', async () => {
@@ -136,6 +175,49 @@ test('rewind: known session returns ok:true and bumps lastActivityAt', async () 
   assert.equal(result.ok, true);
   assert.equal(result.reason, undefined);
   assert.ok(kodaxHost.get(sessionId)!.lastActivityAt >= initial);
+});
+
+test('rewind: diskRewound=true when SDK has the session, false when not (reviewer HIGH-3)', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  // 未 seed 到 storage → SDK rewindSession 返回 null → diskRewound=false
+  const r1 = await kodaxHost.rewind(sessionId, 0);
+  assert.equal(r1.ok, true);
+  assert.equal(r1.diskRewound, false, 'disk rewind should report failure when SDK has no record');
+
+  // 再 seed 后重试
+  seedPersistedSession(sessionId, 'C:\\tmp\\proj');
+  const r2 = await kodaxHost.rewind(sessionId, 0);
+  assert.equal(r2.ok, true);
+  assert.equal(r2.diskRewound, true, 'disk rewind should succeed when SDK has the record');
+});
+
+test('fork: factory failure rolls back persisted entry (reviewer HIGH-1)', async () => {
+  const { sessionId: src } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  seedPersistedSession(src, 'C:\\tmp\\proj');
+
+  // 注入一个会抛的 factory，模拟 RealKodaXSession 构造时 SDK 内部某条路径抛
+  kodaxHost.setFactory(() => {
+    throw new Error('factory blew up');
+  });
+
+  try {
+    await assert.rejects(() => kodaxHost.fork(src, 0), /factory blew up/);
+
+    // 验证 persisted 端被回滚——之前 forkSession 写盘的新 id 应该已被 deleteSession 擦掉
+    // 通过 listMerged 间接验证：除了 src 之外不应有其他 persisted session
+    const merged = await kodaxHost.listMerged({});
+    const extras = merged.filter((m) => m.kind === 'persisted' && m.sessionId !== src);
+    assert.equal(extras.length, 0, 'orphaned persisted session should be rolled back');
+  } finally {
+    // 恢复默认 factory，否则污染后续 test case（共享 kodaxHost 单例）
+    kodaxHost.setFactory(null);
+  }
 });
 
 test('rewind: cancels in-flight send and awaits cancel before returning', async () => {

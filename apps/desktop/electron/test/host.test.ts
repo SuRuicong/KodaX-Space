@@ -9,13 +9,19 @@ import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { kodaxHost } from '../kodax/host.js';
 import { setRendererTarget } from '../ipc/push.js';
 import { permissionBroker } from '../permission/broker.js';
+import { installSessionStoreMock, type MockSessionState } from './_helpers/session-store-mock.js';
 
 // Stub webContents：捕获所有 session.event payload 到数组里
 type CapturedSend = { channel: string; payload: unknown };
 const captured: CapturedSend[] = [];
 
+// FEATURE_038: host.delete 现在调 SDK deleteSession；测试注入 mock 避免触发
+// 真 SDK 加载（tsx/esm + cli-boxes JSON-as-JS bug）。
+let mockState: MockSessionState;
+
 beforeEach(async () => {
   captured.length = 0;
+  mockState = installSessionStoreMock();
   await kodaxHost.disposeAll();
   setRendererTarget(() => ({
     send: (channel: string, payload: unknown) => {
@@ -37,6 +43,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await kodaxHost.disposeAll();
   setRendererTarget(() => null);
+  mockState.reset();
 });
 
 function getEvents(): readonly SessionEvent[] {
@@ -70,7 +77,7 @@ test('createSession applies default reasoningMode = auto', () => {
 test('list: enumerates all created sessions', () => {
   kodaxHost.createSession({ projectRoot: '/r1', provider: 'mock' });
   kodaxHost.createSession({ projectRoot: '/r2', provider: 'mock', reasoningMode: 'deep' });
-  const list = kodaxHost.list();
+  const list = kodaxHost.listInFlight();
   assert.equal(list.length, 2);
 });
 
@@ -139,15 +146,17 @@ test('concurrent send on same session is rejected (no queueing in F003 Mock)', a
   await waitFor(() => getEvents().some((e) => e.kind === 'session_complete'));
 });
 
-test('delete: removes session from list and dispose is idempotent', async () => {
+test('delete: removes session from list (in-memory + persisted)', async () => {
   const { sessionId } = kodaxHost.createSession({ projectRoot: '/r', provider: 'mock' });
-  assert.equal(kodaxHost.list().length, 1);
+  assert.equal(kodaxHost.listInFlight().length, 1);
   const deleted = await kodaxHost.delete(sessionId);
   assert.equal(deleted, true);
-  assert.equal(kodaxHost.list().length, 0);
-  // 再 delete 不存在的 session 返回 false
+  assert.equal(kodaxHost.listInFlight().length, 0);
+  // FEATURE_038: SDK deleteSession 幂等（"ok: true even if session doesn't exist"），
+  // host.delete 也是幂等的——第二次 delete 仍 ok（磁盘已确保不存在）。这与 F033
+  // 旧 in-memory-only 语义（"second delete returns false"）不同；符合 REST DELETE 惯例。
   const second = await kodaxHost.delete(sessionId);
-  assert.equal(second, false);
+  assert.equal(second, true);
 });
 
 // ---- FEATURE_005: title + filtered list + setTitle ----

@@ -79,32 +79,72 @@ export function registerSessionChannels(): void {
   //     不验证 abs path / no NUL / no ..
   //   - 用 path.normalize 后比较——避免 trailing slash / 大小写差异导致 filter miss
   //     （比如 session 存了 /Users/foo/proj，renderer 传 /Users/foo/proj/ 应该匹配）
-  registerChannel('session.list', (input) => {
+  registerChannel('session.list', async (input) => {
+    // reviewer MEDIUM-3: projectFilter 必须在传给 listMerged 前 normalize，
+    // 让 SDK 层和 IPC 层比较同一形态（避免 Windows 路径 / 大小写 / trailing
+    // slash 不一致让 persisted session 静默丢失）。
     let projectFilter: string | undefined;
     if (input?.projectRoot !== undefined) {
       projectFilter = path.normalize(validateProjectRoot(input.projectRoot));
     }
-    let list = kodaxHost.list();
-    if (projectFilter !== undefined) {
-      list = list.filter((s) => path.normalize(s.projectRoot) === projectFilter);
-    }
-    const sessions: SessionMeta[] = list
-      .slice()
-      .sort((a, b) => b.lastActivityAt - a.lastActivityAt)
-      .map((s) => ({
-        sessionId: s.sessionId,
-        projectRoot: s.projectRoot,
-        provider: s.provider,
-        reasoningMode: s.reasoningMode,
-        permissionMode: s.permissionMode,
-        autoModeEngine: s.autoModeEngine,
-        title: s.title,
-        createdAt: s.createdAt,
-        lastActivityAt: s.lastActivityAt,
-        // FEATURE_033：fork child 才有；root 不带（undefined 经 zod 不出现在 JSON）
-        parentSessionId: s.parentSessionId,
-        forkPointTurnIdx: s.forkPointTurnIdx,
-      }));
+    // FEATURE_038: 合并视图 — in-flight (in-memory) ∪ SDK persisted
+    const merged = await kodaxHost.listMerged({ projectRoot: projectFilter });
+    // persisted session 没有 lastActivityAt——用 createdAt 占位（同一时间精度排序）
+    const withTs = merged
+      .filter((m) => {
+        if (projectFilter === undefined) return true;
+        if (m.kind === 'in-flight') {
+          return path.normalize(m.projectRoot) === projectFilter;
+        }
+        // persisted 的 projectRoot 来自 SDK runtimeInfo.workspaceRoot ?? gitRoot；
+        // 缺省时 acceptable 过掉——SDK 应当在 listSessions(projectRoot) 那层已过滤
+        return m.projectRoot !== undefined && path.normalize(m.projectRoot) === projectFilter;
+      })
+      .map((m) => {
+        if (m.kind === 'in-flight') {
+          return { item: m, sortKey: m.lastActivityAt };
+        }
+        // persisted: SDK 给 ISO date string；缺省 → 0（最旧）
+        const ts = m.createdAt !== undefined ? Date.parse(m.createdAt) : 0;
+        return { item: m, sortKey: Number.isFinite(ts) ? ts : 0 };
+      })
+      .sort((a, b) => b.sortKey - a.sortKey);
+    const sessions: SessionMeta[] = withTs.map(({ item, sortKey }) => {
+      if (item.kind === 'in-flight') {
+        return {
+          sessionId: item.sessionId,
+          projectRoot: item.projectRoot,
+          provider: item.provider,
+          reasoningMode: item.reasoningMode,
+          permissionMode: item.permissionMode,
+          autoModeEngine: item.autoModeEngine,
+          title: item.title,
+          createdAt: item.createdAt,
+          lastActivityAt: item.lastActivityAt,
+          parentSessionId: item.parentSessionId,
+          forkPointTurnIdx: item.forkPointTurnIdx,
+        };
+      }
+      // persisted: 运行时设置用 schema default 占位（permissionMode/autoModeEngine 走 .default()）；
+      // provider/reasoningMode 没 default——schema 要求 → 给 'mock' 与 'auto' 占位。
+      //
+      // TODO(F039 / v0.1.7) reviewer MEDIUM-1: 用户在 sidebar 点 historical session
+      // 触发"加载到内存"流程时会替换为真实运行时设置；在那之前 'mock' provider 占位
+      // 是 latent footgun（renderer 若直接拿来 setProvider 之类操作可能误路由）。
+      // 选项：换成 '__unloaded__' 之类 sentinel 让 schema 拒绝、强制 renderer 走
+      // activate flow 才能用这条 session。
+      return {
+        sessionId: item.sessionId,
+        projectRoot: item.projectRoot ?? '/',
+        provider: 'mock',
+        reasoningMode: 'auto',
+        permissionMode: 'accept-edits',
+        autoModeEngine: 'llm',
+        title: item.title,
+        createdAt: sortKey,
+        lastActivityAt: sortKey,
+      };
+    });
     return { sessions };
   });
 
@@ -149,19 +189,21 @@ export function registerSessionChannels(): void {
     return { ok };
   });
 
-  // session.fork — FEATURE_033 (in-memory)
-  // alpha.1 in-memory only：fork 出新 session，inherit source 运行时设置 + 标
-  // parentSessionId/forkPointTurnIdx 元数据；events 复制由 renderer 完成。
-  registerChannel('session.fork', (input) => {
-    const result = kodaxHost.fork(input.sessionId, input.forkPointTurnIdx);
+  // session.fork — FEATURE_038 (持久化)
+  // v0.1.6: SDK forkSession 写盘出新 sessionId；host 用 source 运行时设置实例化
+  // 新 ManagedSession 入 in-memory map。events 复制仍由 renderer 完成（重启后从
+  // SDK loadSession 重放是 v0.1.7+ 优化）。
+  registerChannel('session.fork', async (input) => {
+    const result = await kodaxHost.fork(input.sessionId, input.forkPointTurnIdx);
     if (!result) {
       throw new Error(`session not found: ${input.sessionId}`);
     }
     return result;
   });
 
-  // session.rewind — FEATURE_033 (in-memory)
-  // alpha.1 in-memory only：main 端 cancel in-flight（await）；renderer 截断 events。
+  // session.rewind — FEATURE_038 (持久化)
+  // v0.1.6: main 端 cancel in-flight (await)，然后 SDK rewindSession 写盘截断；
+  // renderer 截断 events 数组。
   registerChannel('session.rewind', async (input) => {
     return kodaxHost.rewind(input.sessionId, input.rewindPastTurnIdx);
   });

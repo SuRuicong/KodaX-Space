@@ -1,0 +1,77 @@
+// FEATURE_038 testing helper.
+//
+// Provide an in-memory SessionStoreImpl that test files inject via
+// setSessionStoreImpl(). Avoids touching real ~/.kodax/sessions/ + sidesteps
+// the cli-boxes JSON-as-JS tsx/esm bug that fires the moment SDK
+// `@kodax-ai/kodax/session` is dynamically imported.
+//
+// Usage in a test file:
+//   import { installSessionStoreMock } from './_helpers/session-store-mock.js';
+//   const mockState = installSessionStoreMock();
+//   // (optionally) mockState.seed(id, gitRoot, title)
+//   afterEach(() => mockState.reset());
+
+import { randomUUID } from 'node:crypto';
+import { setSessionStoreImpl, type SessionStoreImpl } from '../../kodax/session-store.js';
+
+export interface MockSessionState {
+  /** Inject a 'persisted' session so SDK forkSession finds it. */
+  seed(id: string, gitRoot: string, title?: string): void;
+  /** Wipe storage + restore default SDK impl. Call from afterEach. */
+  reset(): void;
+}
+
+export function installSessionStoreMock(): MockSessionState {
+  const storage = new Map<string, { id: string; title: string; gitRoot: string }>();
+
+  const impl: SessionStoreImpl = {
+    listSessions: async (opts) => {
+      const root = opts?.projectRoot;
+      const all = [...storage.values()];
+      const filtered = root === undefined ? all : all.filter((s) => s.gitRoot === root);
+      return filtered.map((s) => ({
+        id: s.id,
+        title: s.title,
+        msgCount: 0,
+        runtimeInfo: { workspaceRoot: s.gitRoot },
+      }));
+    },
+    forkSession: async (srcId, opts) => {
+      const src = storage.get(srcId);
+      if (!src) return null;
+      const newId = `s_${randomUUID()}`;
+      const newData = { id: newId, title: opts?.title ?? src.title, gitRoot: src.gitRoot };
+      storage.set(newId, newData);
+      return {
+        sessionId: newId,
+        data: { title: newData.title, messages: [], gitRoot: newData.gitRoot } as never,
+      };
+    },
+    rewindSession: async (id) => {
+      const s = storage.get(id);
+      if (!s) return null;
+      return { title: s.title, messages: [], gitRoot: s.gitRoot } as never;
+    },
+    deleteSession: async (id) => {
+      storage.delete(id);
+      return { ok: true };
+    },
+    loadSession: async (id) => {
+      const s = storage.get(id);
+      if (!s) return null;
+      return { title: s.title, messages: [], gitRoot: s.gitRoot } as never;
+    },
+    watchSessions: () => ({ close: () => undefined }),
+  };
+
+  setSessionStoreImpl(impl);
+  return {
+    seed(id, gitRoot, title = 'Untitled'): void {
+      storage.set(id, { id, title, gitRoot });
+    },
+    reset(): void {
+      storage.clear();
+      setSessionStoreImpl(null);
+    },
+  };
+}

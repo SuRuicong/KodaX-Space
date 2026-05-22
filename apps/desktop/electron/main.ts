@@ -199,7 +199,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', (event) => {
   permissionBroker.cancelAll('shutdown');
   askUserBroker.cancelAll('shutdown');
-  if (kodaxHost.list().length === 0) return;
+  if (kodaxHost.listInFlight().length === 0) return;
   event.preventDefault();
   void kodaxHost
     .disposeAll()
