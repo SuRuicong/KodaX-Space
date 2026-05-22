@@ -15,8 +15,8 @@ import type { AgentsFileMeta, SessionMeta } from '@kodax-space/space-ipc-schema'
 // FEATURE_034 reviewer MEDIUM-2: 编译期保证 loader 的 AgentsFile 与 schema 的 AgentsFileMeta
 // 结构一致——加字段、改 scope enum 等都会立即编译报错，不让 schema/loader 漂移。
 // (双向 assignability：a→b 和 b→a 都必须成立，等同于结构等价。)
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-type _AssertAgentsFileShapeEqual =
+// 用 export 让 tsc noUnusedLocals 不报错（type-only export 不影响 runtime）
+export type _AssertAgentsFileShapeEqual =
   AgentsFile extends AgentsFileMeta
     ? AgentsFileMeta extends AgentsFile
       ? true
