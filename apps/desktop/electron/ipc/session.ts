@@ -213,7 +213,8 @@ export function registerSessionChannels(): void {
   // 每次都重 load（disk stat + read）—— 不缓存，让 AGENTS.md 修改后下次 popout 打开即生效。
   // 安全：projectRoot 在 session.create 已经 validateProjectRoot 过，这里复用 session 持有的值，
   // 不让 renderer 直接传任意路径。
-  // **async**：loadAgentsMd 是 fs.promises 异步（reviewer F034 HIGH-1）。
+  // **async**：v0.1.6 后 loadAgentsMd 走 SDK loadAgentsFiles (同步 I/O)，保留 async
+  // 包装兼容 handler 签名；SDK 抛任何异常都被 loader try/catch 转空数组 (reviewer HIGH-2)。
   registerChannel('session.agentsMd', async (input) => {
     const session = kodaxHost.get(input.sessionId);
     if (!session) {

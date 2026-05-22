@@ -62,7 +62,7 @@ async function loadSkillsForSession(sessionId: string): Promise<SkillMeta[]> {
  * 生产构建 no-op，避免运行期被误调导致 popover 重新走一次 IPC discover。
  */
 export function _resetSlashCacheForTesting(): void {
-  if (process.env.NODE_ENV === 'production') return;
+  if (import.meta.env.PROD) return;
   cachedCommands = null;
   cachedSkills = null;
 }

@@ -380,6 +380,18 @@ declare module '@kodax-ai/kodax/coding' {
 
   export function formatAgentsForPrompt(files: readonly AgentsFile[]): string;
   export function getKodaxGlobalDir(): string;
+
+  /**
+   * v0.7.42 SDK 出口 — 加载 AGENTS.md 文件，按优先级 global < root < ... < cwd < .kodax/。
+   * 比 Space 自己写的"只扫 projectRoot + global" loader 行为更完整（递归向上扫）。
+   * 同步实现（SDK 内部为 hot path，sync I/O 但快）。
+   */
+  export interface LoadAgentsOptions {
+    cwd?: string;
+    kodaxDir?: string;
+    projectRoot?: string;
+  }
+  export function loadAgentsFiles(options?: LoadAgentsOptions): AgentsFile[];
   export function resolveProvider(name: string): KodaXBaseProvider;
   export function getRegisteredToolDefinition(
     toolName: string,

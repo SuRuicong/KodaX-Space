@@ -1,23 +1,76 @@
-// MCP config reader — FEATURE_036 alpha.1 (read-only).
+// MCP config reader — v0.1.6 cleanup (global 走 SDK listMcpServers)
 //
-// 读 KodaX 的 user-level 和 project-level config，提取 mcpServers 字段。
-// **不**用 SDK API（KodaX 0.7.40 没暴露 MCP 管理 surface；REPL 走 capabilityProviders
-// 内部 API，没 export）。等 v0.1.7 SDK ready 后接 F039 完整版（启停 / 日志 / tool catalog）。
+// 读 KodaX 的 user-level 和 project-level config，提取 mcpServers 字段：
+//   ~/.kodax/config.json                — global，走 SDK 0.7.42 listMcpServers
+//   ${projectRoot}/.kodax/config.json   — project，仍 Space 自己 parse
+//                                          （SDK 不读 project config）
 //
-// 文件路径（与 KodaX REPL 0.7.40 实际行为对齐）：
-//   ~/.kodax/config.json                — global
-//   ${projectRoot}/.kodax/config.json   — project（可选；KodaX 自己 merge）
+// 切到 SDK 的好处：
+//   - 用户在 KodaX CLI 用 `kodax mcp add` 配的 server 在 Space 自动出现
+//   - JSON parse + shape 验证 + 错误处理交给 SDK，Space 只做"展示投影"
 //
-// 安全：
+// 安全（不变）：
 //   - 文件不存在 → 不抛，返回空
-//   - JSON 损坏 → errors 数组带 path + reason，UI 给用户提示
-//   - 单个 server 条目 shape 不对 → 跳过该条 + 加 errors 项；其他正常 server 仍出
-//   - 不读 envCount 里的实际 env value（可能含 secrets）；只暴露 count
+//   - JSON 损坏 → errors 数组带 path + reason
+//   - 不读 env value（可能含 secrets）；只暴露 envCount
+//
+// **Lazy load + DI**：sdk-repl.js 共享 chunk-ZZ4KRK2B（与 /coding 同），生产 runtime
+// 已 hot；测试用 setMcpStoreImpl(mock) 注入避免 tsx/esm cli-boxes JSON bug。
 
 import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { McpServerMeta } from '@kodax-space/space-ipc-schema';
+
+type SdkReplModule = typeof import('@kodax-ai/kodax/repl');
+type SdkMcpServersConfig = ReturnType<SdkReplModule['listMcpServers']>;
+
+export interface McpStoreImpl {
+  /** SDK listMcpServers — 返回 Record<name, McpServerConfig> for ~/.kodax/config.json */
+  readonly listMcpServers: () => SdkMcpServersConfig;
+}
+
+let sdkModuleCache: SdkReplModule | null = null;
+async function loadSdkReplModule(): Promise<SdkReplModule> {
+  if (sdkModuleCache === null) {
+    sdkModuleCache = await import('@kodax-ai/kodax/repl');
+  }
+  return sdkModuleCache;
+}
+
+const DEFAULT_IMPL: McpStoreImpl = {
+  // 同步路径：cache hit 直接返回真 SDK，cache miss 返回空 + 触发异步 load。
+  // 注：discoverMcpServers 走 ensureSdkReplModuleLoaded 异步预拉，所以正常路径不会命中 {}；
+  // 此 {} fallback 仅给 prewarm 失败后的极端兜底用，不阻塞 IPC。
+  listMcpServers: () => {
+    if (sdkModuleCache === null) {
+      void loadSdkReplModule(); // 触发 lazy load (不 await)
+      return {};
+    }
+    return sdkModuleCache.listMcpServers();
+  },
+};
+
+let activeImpl: McpStoreImpl = DEFAULT_IMPL;
+
+/** 测试用：注入 mock。 */
+export function setMcpStoreImpl(impl: McpStoreImpl | null): void {
+  activeImpl = impl ?? DEFAULT_IMPL;
+}
+
+/**
+ * 异步确保 SDK 模块加载完——main.ts 启动后调一次让首次 IPC 不命中空 fallback。
+ * 测试不调（DI 注入的 mock 不需要 SDK 模块）。
+ */
+export async function prewarmSdkMcpStore(): Promise<void> {
+  if (sdkModuleCache !== null) return; // 已加载过
+  try {
+    await loadSdkReplModule();
+  } catch (err) {
+    // 加载失败不致命——下次 discoverMcpServers 会返回 SDK 端的空 + Space project parse
+    console.warn('[mcp-config-reader] prewarm failed:', err instanceof Error ? err.message : err);
+  }
+}
 
 const MAX_CONFIG_BYTES = 1_048_576; // 1 MB 大配置文件兜底
 const MAX_SERVERS_PER_FILE = 128;
@@ -48,7 +101,12 @@ export interface DiscoverResult {
 }
 
 /**
- * 读 global + project config 的 mcpServers，合并返回。同名 server project 覆盖 global。
+ * 读 global (SDK) + project (Space 自己 parse) 的 mcpServers，合并返回。
+ * 同名 server project 覆盖 global。
+ *
+ * **冷启动同步化**：discoverMcpServers 调用前先 await ensureSdkReplModuleLoaded()，
+ * 防止 prewarm 还没完成就来 IPC 时 DEFAULT_IMPL 返回 {} 静默丢失 global server (reviewer HIGH-1)。
+ * 测试通过 setMcpStoreImpl 注入 mock 跳过 SDK 加载——activeImpl !== DEFAULT_IMPL 时 await 直接 short-circuit。
  */
 export async function discoverMcpServers(opts: DiscoverOptions): Promise<DiscoverResult> {
   if (!path.isAbsolute(opts.projectRoot)) {
@@ -65,8 +123,21 @@ export async function discoverMcpServers(opts: DiscoverOptions): Promise<Discove
   const globalPath = path.join(globalDir, 'config.json');
   const projectPath = path.join(opts.projectRoot, '.kodax', 'config.json');
 
-  // global 先读，project 后读——project 覆盖同名 global
-  const globalServers = await readServersFromFile(globalPath, 'global', errors);
+  // 冷启动同步化：mock 注入 (test) 时直接 short-circuit；生产首次调用 await SDK chunk load
+  if (activeImpl === DEFAULT_IMPL && sdkModuleCache === null) {
+    try {
+      await loadSdkReplModule();
+    } catch (err) {
+      errors.push({
+        path: globalPath,
+        error: `SDK load failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
+  // global 走 SDK listMcpServers（KodaX CLI 配的 server 自动复用）
+  const globalServers = readGlobalServersFromSdk(globalPath, errors);
+  // project 仍 Space 自己 parse —— SDK 0.7.42 没暴露 project 级 config 读取
   const projectServers =
     path.resolve(projectPath) === path.resolve(globalPath)
       ? [] // 罕见但防御：projectRoot 恰好等于 globalDir
@@ -77,6 +148,68 @@ export async function discoverMcpServers(opts: DiscoverOptions): Promise<Discove
   for (const s of projectServers) byName.set(s.name, s); // project 覆盖 global
 
   return { servers: [...byName.values()], errors };
+}
+
+/**
+ * 从 SDK listMcpServers() 投影成 Space McpServerMeta[]，标 source='global'。
+ * env 值不进 Meta（schema 也不允许）；只暴露 envCount。
+ *
+ * **错误对称**：项目级条目 shape 异常会进 errors[]（见 readServersFromFile）；
+ * global 同样走 errors[]，否则用户看不到 SDK 端的坏 entry——reviewer MEDIUM-1。
+ */
+function readGlobalServersFromSdk(
+  globalPath: string,
+  errors: Array<{ path: string; error: string }>,
+): McpServerMeta[] {
+  const sdkConfig = activeImpl.listMcpServers();
+  const out: McpServerMeta[] = [];
+  // sdkConfig: Record<name, McpServerConfig>
+  for (const [name, cfg] of Object.entries(sdkConfig)) {
+    if (out.length >= MAX_SERVERS_PER_FILE) {
+      errors.push({
+        path: globalPath,
+        error: `more than ${MAX_SERVERS_PER_FILE} servers; truncating`,
+      });
+      break;
+    }
+    const projection = projectSdkServerEntry(name, cfg as Record<string, unknown>, 'global');
+    if (projection) {
+      out.push(projection);
+    } else {
+      errors.push({
+        path: `${globalPath}#${sanitizeKeyForErrorPath(name)}`,
+        error: 'server config has neither "command" nor "url" (SDK shape unexpected)',
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * SDK McpServerConfig → Space McpServerMeta。
+ * SDK shape: { type?, command?, args?, url?, env?, cwd?, headers?, connect? }
+ * Space 只保留展示需要的子集：name / transport / command / args / url / envCount / source
+ */
+function projectSdkServerEntry(
+  name: string,
+  cfg: Record<string, unknown>,
+  source: 'global' | 'project',
+): McpServerMeta | null {
+  const envCount =
+    cfg.env && typeof cfg.env === 'object' && !Array.isArray(cfg.env)
+      ? Object.keys(cfg.env as Record<string, unknown>).length
+      : 0;
+  // url 优先（SDK 的 sse / streamable-http）
+  if (typeof cfg.url === 'string' && cfg.url.length > 0) {
+    return { name, transport: 'http', url: cfg.url, envCount, source };
+  }
+  if (typeof cfg.command === 'string' && cfg.command.length > 0) {
+    const args = Array.isArray(cfg.args)
+      ? (cfg.args.filter((a) => typeof a === 'string') as string[])
+      : undefined;
+    return { name, transport: 'stdio', command: cfg.command, args, envCount, source };
+  }
+  return null; // SDK 应当已 validate；caller (readGlobalServersFromSdk) 把 null 推到 errors[]
 }
 
 async function readServersFromFile(

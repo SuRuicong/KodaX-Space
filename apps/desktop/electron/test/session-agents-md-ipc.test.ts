@@ -12,10 +12,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { kodaxHost } from '../kodax/host.js';
-import {
-  loadAgentsMd,
-  TRUNCATION_MARKER,
-} from '../kodax/agents-md-loader.js';
+import { loadAgentsMd } from '../kodax/agents-md-loader.js';
 import { setRendererTarget } from '../ipc/push.js';
 
 let tmpProjectRoot: string;
@@ -49,28 +46,32 @@ test('loadAgentsMd: returns empty when no AGENTS.md exists', async () => {
   }
 });
 
-test('loadAgentsMd: picks up project AGENTS.md', async () => {
+test('loadAgentsMd: picks up project AGENTS.md (scope: project or directory)', async () => {
   fs.writeFileSync(path.join(tmpProjectRoot, 'AGENTS.md'), '# project rules');
   const tmpGlobal = fs.mkdtempSync(path.join(os.tmpdir(), 'kodax-global-empty-'));
   try {
     const files = await loadAgentsMd({ projectRoot: tmpProjectRoot, kodaxGlobalDir: tmpGlobal });
-    assert.equal(files.length, 1);
-    assert.equal(files[0].scope, 'project');
-    assert.equal(files[0].content, '# project rules');
+    // SDK 视 projectRoot/AGENTS.md 为 scope='directory'（递归扫上下文），UI 已支持三种 scope
+    const projectFile = files.find((f) => f.path.endsWith('AGENTS.md') && f.scope !== 'global');
+    assert.ok(projectFile, 'project AGENTS.md should be returned');
+    assert.equal(projectFile.content, '# project rules');
   } finally {
     fs.rmSync(tmpGlobal, { recursive: true, force: true });
   }
 });
 
-test('loadAgentsMd: picks up global + project, global first (KodaX prompt builder order)', async () => {
+test('loadAgentsMd: picks up global + project, global comes first', async () => {
   const tmpGlobal = fs.mkdtempSync(path.join(os.tmpdir(), 'kodax-global-'));
   fs.writeFileSync(path.join(tmpGlobal, 'AGENTS.md'), '# global rules');
   fs.writeFileSync(path.join(tmpProjectRoot, 'AGENTS.md'), '# project rules');
   try {
     const files = await loadAgentsMd({ projectRoot: tmpProjectRoot, kodaxGlobalDir: tmpGlobal });
-    assert.equal(files.length, 2);
-    assert.equal(files[0].scope, 'global');
-    assert.equal(files[1].scope, 'project');
+    // SDK 顺序：global 在前
+    const globalIdx = files.findIndex((f) => f.scope === 'global');
+    const projectIdx = files.findIndex((f) => f.scope !== 'global' && f.content === '# project rules');
+    assert.ok(globalIdx >= 0, 'global AGENTS.md found');
+    assert.ok(projectIdx >= 0, 'project AGENTS.md found');
+    assert.ok(globalIdx < projectIdx, 'global must come before project');
   } finally {
     fs.rmSync(tmpGlobal, { recursive: true, force: true });
   }
@@ -112,18 +113,14 @@ test('IPC integration: createSession then session.agentsMd works via kodaxHost.g
       projectRoot: session.projectRoot,
       kodaxGlobalDir: tmpGlobal,
     });
-    assert.equal(files.length, 1);
-    assert.equal(files[0].scope, 'project');
-    assert.equal(files[0].content, '# IPC integration');
+    const projectFile = files.find((f) => f.content === '# IPC integration');
+    assert.ok(projectFile, 'project AGENTS.md should be returned by SDK');
+    assert.ok(projectFile.scope === 'project' || projectFile.scope === 'directory');
   } finally {
     fs.rmSync(tmpGlobal, { recursive: true, force: true });
   }
 });
 
-// reviewer F034 LOW-1: TRUNCATION_MARKER must fit within the schema's 64-byte buffer
-test('TRUNCATION_MARKER stays under 64 chars (schema buffer invariant)', () => {
-  assert.ok(
-    TRUNCATION_MARKER.length < 64,
-    `marker length ${TRUNCATION_MARKER.length} must be < 64 (agentsFileSchema content buffer)`,
-  );
-});
+// v0.1.6 cleanup: AGENTS.md 截断由 SDK loadAgentsFiles 负责，Space 不再持有
+// MAX_AGENTS_BYTES / TRUNCATION_MARKER 常量。schema agentsFileSchema 的 content
+// max（256KB + 64 byte buffer）配的是 SDK 实际截断行为——SDK 改截断尺寸时同步该 schema cap。

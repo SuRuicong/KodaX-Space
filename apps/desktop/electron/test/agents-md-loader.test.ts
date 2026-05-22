@@ -1,16 +1,13 @@
-// agents-md-loader tests — FEATURE_034 stub for FEATURE_030 bootstrap.
+// agents-md-loader wrapper tests — v0.1.6 cleanup (切到 SDK loadAgentsFiles)
 //
-// 覆盖：
-//   1. 两处都不存在 → []
-//   2. 仅 global 存在 → [global]
-//   3. 仅 project 存在 → [project]
-//   4. 都存在 → [global, project]（顺序为 KodaX prompt builder 期望）
-//   5. 文件超 256KB → 内容被截断 + marker
-//   6. projectRoot 非 absolute → [] + warning
-//   7. project 与 global 物理同文件 → 不重复
-//   8. permission error / 非文件 → skip + warning，不抛
+// 实际 AGENTS.md 加载/截断/递归扫等行为由 SDK loadAgentsFiles 负责，本文件仅测
+// Space wrapper 层的契约：
+//   1. projectRoot 非 absolute → [] + warning (Space defense-in-depth)
+//   2. SDK 调用成功返回 → wrapper 透传
+//
+// 不再测 SDK 内部行为（truncation/byte size/dir check/dedup）—— 那些归 SDK 测。
 
-import { test, before, after } from 'node:test';
+import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -33,79 +30,17 @@ after(() => {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 });
 
-function cleanFiles(): void {
+beforeEach(() => {
+  // 清理 fixture 文件让每个 case 起点干净
   for (const p of [
     path.join(projectRoot, 'AGENTS.md'),
     path.join(kodaxGlobalDir, 'AGENTS.md'),
   ]) {
     try { fs.unlinkSync(p); } catch { /* ignore */ }
   }
-}
-
-test('neither file exists → empty array', async () => {
-  cleanFiles();
-  const result = await loadAgentsMd({ projectRoot, kodaxGlobalDir });
-  assert.deepEqual(result, []);
-});
-
-test('only global exists → one entry with scope=global', async () => {
-  cleanFiles();
-  fs.writeFileSync(path.join(kodaxGlobalDir, 'AGENTS.md'), '# Global rules');
-  const result = await loadAgentsMd({ projectRoot, kodaxGlobalDir });
-  assert.equal(result.length, 1);
-  assert.equal(result[0].scope, 'global');
-  assert.equal(result[0].content, '# Global rules');
-});
-
-test('only project exists → one entry with scope=project', async () => {
-  cleanFiles();
-  fs.writeFileSync(path.join(projectRoot, 'AGENTS.md'), '# Project rules');
-  const result = await loadAgentsMd({ projectRoot, kodaxGlobalDir });
-  assert.equal(result.length, 1);
-  assert.equal(result[0].scope, 'project');
-  assert.equal(result[0].content, '# Project rules');
-});
-
-test('both exist → global first, project second (KodaX prompt builder priority)', async () => {
-  cleanFiles();
-  fs.writeFileSync(path.join(kodaxGlobalDir, 'AGENTS.md'), '# Global');
-  fs.writeFileSync(path.join(projectRoot, 'AGENTS.md'), '# Project');
-  const result = await loadAgentsMd({ projectRoot, kodaxGlobalDir });
-  assert.equal(result.length, 2);
-  assert.equal(result[0].scope, 'global');
-  assert.equal(result[1].scope, 'project');
-});
-
-test('file over 256KB (ASCII) is truncated with marker', async () => {
-  cleanFiles();
-  const big = 'x'.repeat(256 * 1024 + 100);
-  fs.writeFileSync(path.join(projectRoot, 'AGENTS.md'), big);
-  const result = await loadAgentsMd({ projectRoot, kodaxGlobalDir });
-  assert.equal(result.length, 1);
-  assert.ok(result[0].content.endsWith('[truncated by Space loader at 256KB]'));
-  assert.ok(result[0].content.length < big.length);
-});
-
-test('file over 256KB (CJK / multi-byte) is truncated by byte not char count', async () => {
-  // 防 byte-vs-char 退化：一个汉字在 UTF-8 是 3 byte。
-  // 100K 汉字 ≈ 300KB byte，但 string.length 只有 100K UTF-16 unit。
-  // stat.size guard 必须能命中（byte 计量），否则整文件读进内存破坏 size cap。
-  cleanFiles();
-  const cjk = '中'.repeat(100 * 1024); // ≈ 300 KB UTF-8
-  const written = Buffer.byteLength(cjk, 'utf8');
-  assert.ok(written > 256 * 1024, 'sanity: CJK fixture must exceed 256KB byte');
-  fs.writeFileSync(path.join(projectRoot, 'AGENTS.md'), cjk);
-  const result = await loadAgentsMd({ projectRoot, kodaxGlobalDir });
-  assert.equal(result.length, 1);
-  assert.ok(result[0].content.endsWith('[truncated by Space loader at 256KB]'),
-    'CJK over-size must trigger byte-based truncation');
-  // 截断后的内容（含 marker）byte 数应小于原 + marker 余量
-  const truncatedBytes = Buffer.byteLength(result[0].content, 'utf8');
-  assert.ok(truncatedBytes <= 256 * 1024 + 100, `truncated byte length ${truncatedBytes} should be near 256KB`);
 });
 
 test('non-absolute projectRoot is rejected with warning, returns []', async () => {
-  cleanFiles();
   fs.writeFileSync(path.join(projectRoot, 'AGENTS.md'), 'will not be read');
   const originalWarn = console.warn;
   const warnings: string[] = [];
@@ -119,42 +54,28 @@ test('non-absolute projectRoot is rejected with warning, returns []', async () =
   }
 });
 
-test('projectRoot === kodaxGlobalDir does not duplicate', async () => {
-  cleanFiles();
-  const samePath = path.join(tmpRoot, 'same');
-  fs.mkdirSync(samePath, { recursive: true });
-  fs.writeFileSync(path.join(samePath, 'AGENTS.md'), '# Just one');
-  const result = await loadAgentsMd({ projectRoot: samePath, kodaxGlobalDir: samePath });
-  assert.equal(result.length, 1, 'must not double-count the same physical file');
-});
-
-test('AGENTS.md is a directory not a file → skipped', async () => {
-  cleanFiles();
-  const trickyPath = path.join(projectRoot, 'AGENTS.md');
-  // 把 AGENTS.md 制造成目录
-  fs.mkdirSync(trickyPath);
-  try {
-    const result = await loadAgentsMd({ projectRoot, kodaxGlobalDir });
-    assert.equal(result.length, 0, 'directory at expected file path should be skipped');
-  } finally {
-    fs.rmdirSync(trickyPath);
-  }
-});
-
-test('exact 256KB file is not truncated (boundary case)', async () => {
-  cleanFiles();
-  const exactSize = 'y'.repeat(256 * 1024);
-  fs.writeFileSync(path.join(projectRoot, 'AGENTS.md'), exactSize);
+test('empty projectRoot has no project-scope AGENTS.md', async () => {
+  // 注：SDK 用 cwd=projectRoot 递归扫到 root；tmp 路径上没有 AGENTS.md，但 kodaxGlobalDir 可能有
+  // (此 fixture beforeEach 清掉了)。断言 project 范围空——global 范围如果 ~/.kodax 有真文件可能命中。
   const result = await loadAgentsMd({ projectRoot, kodaxGlobalDir });
-  assert.equal(result.length, 1);
-  assert.equal(result[0].content.length, 256 * 1024, 'exact 256KB should not trigger truncation');
-  assert.ok(!result[0].content.includes('truncated'), 'no truncation marker at boundary');
+  const projectFiles = result.filter((f) => f.scope === 'project');
+  assert.equal(projectFiles.length, 0);
+});
+
+test('project AGENTS.md is picked up by SDK', async () => {
+  fs.writeFileSync(path.join(projectRoot, 'AGENTS.md'), '# Project rules');
+  const result = await loadAgentsMd({ projectRoot, kodaxGlobalDir });
+  // SDK 可能标 scope='directory'（递归扫到 projectRoot）或 'project'
+  const projectFile = result.find((f) => f.content === '# Project rules');
+  assert.ok(projectFile, 'project AGENTS.md must be returned');
+  assert.ok(
+    projectFile.scope === 'project' || projectFile.scope === 'directory',
+    `expected scope project|directory, got ${projectFile.scope}`,
+  );
 });
 
 test('returns absolute paths in path field', async () => {
-  cleanFiles();
   fs.writeFileSync(path.join(projectRoot, 'AGENTS.md'), '# P');
-  fs.writeFileSync(path.join(kodaxGlobalDir, 'AGENTS.md'), '# G');
   const result = await loadAgentsMd({ projectRoot, kodaxGlobalDir });
   for (const f of result) {
     assert.ok(path.isAbsolute(f.path), `path must be absolute: ${f.path}`);
