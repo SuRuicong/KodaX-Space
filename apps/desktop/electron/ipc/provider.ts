@@ -148,8 +148,18 @@ export function registerProviderChannels(): void {
   // provider.list
   registerChannel('provider.list', async () => {
     await providerConfigStore.load();
-    const configured = new Set(await listAccounts());
+    const keychainAccounts = new Set(await listAccounts());
     const defaultId = providerConfigStore.getDefaultProviderId();
+
+    // v0.1.6：configured 同时认两种来源——
+    //   1) Space keychain 里存了 key (写时同时注入 process.env[apiKeyEnv])
+    //   2) Space 启动前 shell 已经 export 了 apiKeyEnv (用户本地直接配 env，不走 Space 设置)
+    // 之前只看 keychain，导致用户在 shell export 过 KIMI_API_KEY/ARK_API_KEY 等的 provider
+    // 显示成 not configured，UI 让人困惑。
+    const hasEnvKey = (apiKeyEnv: string): boolean => {
+      const v = process.env[apiKeyEnv];
+      return typeof v === 'string' && v.length > 0;
+    };
 
     const list: ProviderInfo[] = [];
 
@@ -161,7 +171,7 @@ export function registerProviderChannels(): void {
         protocol: b.protocol,
         defaultModel: b.defaultModel,
         models: b.models ? [...b.models] : undefined,
-        configured: configured.has(b.id),
+        configured: keychainAccounts.has(b.id) || hasEnvKey(b.apiKeyEnv),
         isDefault: defaultId === b.id,
         isCustom: false,
       });
@@ -174,7 +184,7 @@ export function registerProviderChannels(): void {
         protocol: c.protocol,
         defaultModel: c.defaultModel,
         models: c.models ? [...c.models] : undefined,
-        configured: configured.has(c.id),
+        configured: keychainAccounts.has(c.id) || hasEnvKey(c.apiKeyEnv),
         isDefault: defaultId === c.id,
         isCustom: true,
         baseUrl: c.baseUrl,

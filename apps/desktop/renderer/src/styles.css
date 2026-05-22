@@ -1,10 +1,11 @@
+/* highlight.js dark theme for code blocks in markdown.
+   atom-one-dark 与项目 zinc-950 配色协调；rehype-highlight 注入 .hljs-* class，这里提供颜色。
+   @import 必须放在最前——postcss 规则：@import 之前只能有 @charset / @layer 声明。 */
+@import 'highlight.js/styles/atom-one-dark.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* highlight.js dark theme for code blocks in markdown.
-   atom-one-dark 与项目 zinc-950 配色协调；rehype-highlight 注入 .hljs-* class，这里提供颜色。 */
-@import 'highlight.js/styles/atom-one-dark.css';
 
 @layer base {
   html,
