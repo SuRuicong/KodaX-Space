@@ -16,7 +16,10 @@
 // 会丢）；KodaX SDK 0.7.42 出 forkSession()/rewindSession() 后接磁盘。
 
 import { useEffect, useState } from 'react';
-import { useAppStore } from '../store/appStore.js';
+import { useAppStore, type UserMessage } from '../store/appStore.js';
+
+// 稳定空数组，防 selector `?? []` literal 每次新引用触发 zustand re-render loop (React #185)。
+const EMPTY_USER_MESSAGES: readonly UserMessage[] = [];
 
 interface SessionMenuProps {
   sessionId: string;
@@ -30,7 +33,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
   const setCurrentSession = useAppStore((s) => s.setCurrentSession);
   const forkSessionBuffers = useAppStore((s) => s.forkSessionBuffers);
   const rewindSessionBuffers = useAppStore((s) => s.rewindSessionBuffers);
-  const userMessages = useAppStore((s) => s.userMessagesBySession[sessionId] ?? []);
+  const userMessages = useAppStore((s) => s.userMessagesBySession[sessionId] ?? EMPTY_USER_MESSAGES);
   const session = sessions.find((x) => x.sessionId === sessionId);
 
   const [renaming, setRenaming] = useState(false);

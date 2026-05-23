@@ -9,17 +9,22 @@
 //   - "跳回底部" 浮动按钮：在用户向上滚 > 100px 时出现
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useAppStore } from '../../../store/appStore.js';
+import type { SessionEvent } from '@kodax-space/space-ipc-schema';
+import { useAppStore, type UserMessage } from '../../../store/appStore.js';
 import { composeMessages } from '../composeMessages.js';
 import { AssistantBubble, SystemNotice, ToolCallCard, UserBubble } from './bubbles.js';
+
+// 稳定空数组，防 selector `?? []` literal 每次新引用触发 zustand re-render loop (React #185)。
+const EMPTY_EVENTS: readonly SessionEvent[] = [];
+const EMPTY_USER_MESSAGES: readonly UserMessage[] = [];
 
 interface ConversationStreamProps {
   readonly sessionId: string;
 }
 
 export function ConversationStream({ sessionId }: ConversationStreamProps): JSX.Element {
-  const events = useAppStore((s) => s.eventsBySession[sessionId] ?? []);
-  const userMessages = useAppStore((s) => s.userMessagesBySession[sessionId] ?? []);
+  const events = useAppStore((s) => s.eventsBySession[sessionId] ?? EMPTY_EVENTS);
+  const userMessages = useAppStore((s) => s.userMessagesBySession[sessionId] ?? EMPTY_USER_MESSAGES);
 
   const messages = useMemo(() => composeMessages({ events, userMessages }), [events, userMessages]);
 

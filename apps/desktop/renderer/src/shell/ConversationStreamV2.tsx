@@ -10,8 +10,15 @@
 // 点击聚合行展开 = 显示组里每个 tool 的细节卡。
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useAppStore } from '../store/appStore.js';
+import type { SessionEvent } from '@kodax-space/space-ipc-schema';
+import { useAppStore, type UserMessage } from '../store/appStore.js';
 import { composeMessages, type ConversationMessage } from '../features/session/composeMessages.js';
+
+// **稳定空数组**：useAppStore selector 里返回 `?? []` literal 会每次 render 创建新引用，
+// zustand 默认 Object.is 比对触发 subscribe re-render → re-eval selector → 又新 [] → 无限循环
+// (React error #185)。module-level const 让"空"case 复用同一引用。
+const EMPTY_EVENTS: readonly SessionEvent[] = [];
+const EMPTY_USER_MESSAGES: readonly UserMessage[] = [];
 import {
   AssistantBubble,
   SystemNotice,
@@ -59,10 +66,10 @@ function groupTools(messages: ConversationMessage[]): ViewMessage[] {
 export function ConversationStreamV2(): JSX.Element {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const events = useAppStore((s) =>
-    currentSessionId ? s.eventsBySession[currentSessionId] ?? [] : [],
+    currentSessionId ? s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS : EMPTY_EVENTS,
   );
   const userMessages = useAppStore((s) =>
-    currentSessionId ? s.userMessagesBySession[currentSessionId] ?? [] : [],
+    currentSessionId ? s.userMessagesBySession[currentSessionId] ?? EMPTY_USER_MESSAGES : EMPTY_USER_MESSAGES,
   );
 
   const messages = useMemo(() => composeMessages({ events, userMessages }), [events, userMessages]);

@@ -7,15 +7,19 @@
 // 这里取最新值作为"已用 token"。cap 默认 1M（Opus 4.7 1M 等长上下文 model；其他 model
 // 不同 cap 可后续从 provider catalog 取）。
 
+import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 
 // 默认 cap：1M tokens（Opus 4.7 1M / Sonnet 1M / Gemini 1M 等长 context 模型）。
 // 后续从 provider catalog 的 model spec 拿真实 cap。
 const DEFAULT_CONTEXT_CAP = 1_000_000;
 
+// 稳定空数组，防 selector `?? []` literal 每次新引用触发 zustand re-render loop (React #185)。
+const EMPTY_EVENTS: readonly SessionEvent[] = [];
+
 export function ContextWindowIndicator(): JSX.Element | null {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
-  const events = useAppStore((s) => (currentSessionId ? s.eventsBySession[currentSessionId] ?? [] : []));
+  const events = useAppStore((s) => (currentSessionId ? s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS : EMPTY_EVENTS));
 
   if (!currentSessionId) return null;
 
