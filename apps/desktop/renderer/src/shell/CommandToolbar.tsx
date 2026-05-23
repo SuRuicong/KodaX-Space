@@ -36,7 +36,7 @@ export function CommandToolbar({ active, onToggle }: CommandToolbarProps): JSX.E
           type="button"
           onClick={() => onToggle(active === p.kind ? null : p.kind)}
           className={`px-2 py-1 text-[11px] rounded font-mono ${
-            active === p.kind ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
+            active === p.kind ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-300 hover:text-zinc-100'
           }`}
           title={p.shortcut ? `${p.label} (${p.shortcut})` : p.label}
         >

@@ -17,10 +17,12 @@
 //
 // ADR-004 v2 决策：M0 就显示 Coder/Partner tab；Partner 灰 + "Coming"。
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Mode } from './Shell.js';
 import { useAppStore } from '../store/appStore.js';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
+
+const MOCK_PROVIDER = 'mock';
 
 interface LeftSidebarProps {
   mode: Mode;
@@ -31,7 +33,13 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
   const sessions = useAppStore((s) => s.sessions);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const setCurrentSession = useAppStore((s) => s.setCurrentSession);
+  const upsertSession = useAppStore((s) => s.upsertSession);
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
+  const providers = useAppStore((s) => s.providers);
+  const defaultProviderId = useAppStore((s) => s.defaultProviderId);
+  const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
+  const [creating, setCreating] = useState(false);
+  const [createErr, setCreateErr] = useState<string | null>(null);
 
   // 启动期拉一次 session list（暂时这里做，后续 Shell 顶层 useEffect 统一管理）
   useEffect(() => {
@@ -42,6 +50,68 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
     });
   }, [currentProjectPath]);
 
+  /**
+   * + New session：创建新 session。
+   * Provider 优先级：Space defaultProviderId → KodaX config provider → mock（保证总能创建）。
+   * reasoning/permission 默认从 KodaX config 拿（v0.1.6 cleanup A）。
+   */
+  async function handleNewSession(): Promise<void> {
+    const bridge = window.kodaxSpace;
+    if (!bridge) return;
+    if (!currentProjectPath) {
+      setCreateErr('Open a folder first.');
+      return;
+    }
+    setCreating(true);
+    setCreateErr(null);
+    try {
+      // 选 provider：Space default → KodaX default → 已配的 → mock
+      let provider: string = MOCK_PROVIDER;
+      const candidate = defaultProviderId ?? kodaxDefaults?.provider ?? null;
+      if (candidate) {
+        const p = providers.find((x) => x.id === candidate);
+        if (p?.configured) provider = candidate;
+      }
+      if (provider === MOCK_PROVIDER) {
+        // 找第一个已配置的非 mock provider 作为更友好的 default
+        const firstConfigured = providers.find((p) => p.configured && p.id !== MOCK_PROVIDER);
+        if (firstConfigured) provider = firstConfigured.id;
+      }
+
+      const reasoningMode = kodaxDefaults?.reasoningMode ?? 'auto';
+      const permissionMode = kodaxDefaults?.permissionMode ?? 'accept-edits';
+
+      const result = await bridge.invoke('session.create', {
+        projectRoot: currentProjectPath,
+        provider,
+        reasoningMode,
+        permissionMode,
+      });
+      if (!result.ok) {
+        setCreateErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'create failed'}`);
+        return;
+      }
+      const stub: SessionMeta = {
+        sessionId: result.data.sessionId,
+        projectRoot: currentProjectPath,
+        provider,
+        reasoningMode,
+        permissionMode,
+        autoModeEngine: 'llm',
+        title: undefined,
+        createdAt: result.data.createdAt,
+        lastActivityAt: result.data.createdAt,
+      };
+      upsertSession(stub);
+      setCurrentSession(stub.sessionId);
+      // 刷新权威列表
+      const listResult = await bridge.invoke('session.list', { projectRoot: currentProjectPath });
+      if (listResult.ok) useAppStore.getState().setSessions(listResult.data.sessions);
+    } finally {
+      setCreating(false);
+    }
+  }
+
   return (
     <aside className="w-60 flex flex-col border-r border-zinc-900 bg-zinc-950 flex-shrink-0">
       {/* Mode tab */}
@@ -50,7 +120,7 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
           type="button"
           onClick={() => onModeChange('coder')}
           className={`flex-1 text-xs py-1.5 rounded ${
-            mode === 'coder' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
+            mode === 'coder' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-100'
           }`}
         >
           <span aria-hidden>≡</span> Coder
@@ -58,11 +128,11 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
         <button
           type="button"
           disabled
-          className="flex-1 text-xs py-1.5 rounded text-zinc-700 cursor-not-allowed relative"
+          className="flex-1 text-xs py-1.5 rounded text-zinc-500 cursor-not-allowed relative"
           title="Partner — Coming in v0.1.x"
         >
           <span aria-hidden>◐</span> Partner
-          <span className="absolute -top-0.5 -right-0.5 text-[8px] text-amber-700">soon</span>
+          <span className="absolute -top-0.5 -right-0.5 text-[8px] text-amber-500">soon</span>
         </button>
       </div>
 
@@ -70,24 +140,30 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
       <div className="p-2 space-y-0.5">
         <button
           type="button"
-          onClick={() => setCurrentSession(null)}
-          className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-zinc-900 text-zinc-300 flex items-center gap-2"
+          onClick={() => void handleNewSession()}
+          disabled={creating || !currentProjectPath}
+          className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-zinc-800 text-zinc-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+          title={!currentProjectPath ? 'Open a folder first' : 'Create new session'}
         >
-          <span aria-hidden>＋</span> New session
+          <span aria-hidden>＋</span>
+          {creating ? 'Creating…' : 'New session'}
         </button>
+        {createErr && (
+          <div className="text-[10px] text-red-400 px-2 py-1 font-mono">{createErr}</div>
+        )}
         <DisabledMenuItem icon="⏰" label="Scheduled" hint="v0.1.x" />
         <DisabledMenuItem icon="💼" label="Customize" hint="v0.1.x" />
         <DisabledMenuItem icon="▾" label="More" hint="" />
       </div>
 
       {/* Recents */}
-      <div className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-wider text-zinc-600 flex justify-between flex-shrink-0">
+      <div className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-wider text-zinc-400 flex justify-between flex-shrink-0">
         <span>Recents</span>
       </div>
 
       <div className="flex-1 overflow-y-auto px-1.5 pb-2">
         {sessions.length === 0 && (
-          <div className="text-xs text-zinc-600 px-2 py-3">
+          <div className="text-xs text-zinc-400 px-2 py-3">
             {currentProjectPath ? 'No sessions yet.' : 'Open a folder to start.'}
           </div>
         )}
@@ -99,9 +175,9 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
       </div>
 
       {/* Bottom: mode/gateway label */}
-      <div className="border-t border-zinc-900 px-3 py-2 text-[10px] text-zinc-600 flex justify-between flex-shrink-0">
+      <div className="border-t border-zinc-900 px-3 py-2 text-[10px] text-zinc-400 flex justify-between flex-shrink-0">
         <span className="truncate">KodaX Space · Gateway</span>
-        <button type="button" className="hover:text-zinc-400" aria-label="Settings">⚙</button>
+        <button type="button" className="text-zinc-300 hover:text-zinc-100" aria-label="Settings">⚙</button>
       </div>
     </aside>
   );
@@ -193,12 +269,12 @@ function SessionRow({
       type="button"
       onClick={() => onSelect(session.sessionId)}
       className={`w-full text-left text-xs px-2 py-1 rounded truncate ${
-        isSelected ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-900'
+        isSelected ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100'
       }`}
       style={{ paddingLeft: `${0.5 + indent * 0.8}rem` }}
       title={session.title ?? session.sessionId}
     >
-      <span className="text-zinc-600 mr-1" aria-hidden>{isFork ? '⑂' : '·'}</span>
+      <span className="text-zinc-500 mr-1" aria-hidden>{isFork ? '⑂' : '·'}</span>
       {session.title ?? 'Untitled session'}
     </button>
   );
@@ -207,12 +283,12 @@ function SessionRow({
 function DisabledMenuItem({ icon, label, hint }: { icon: string; label: string; hint: string }): JSX.Element {
   return (
     <div
-      className="w-full text-xs px-2 py-1.5 rounded text-zinc-600 cursor-not-allowed flex items-center gap-2"
+      className="w-full text-xs px-2 py-1.5 rounded text-zinc-500 cursor-not-allowed flex items-center gap-2"
       title={hint ? `${label} — ${hint}` : label}
     >
       <span aria-hidden>{icon}</span>
       <span>{label}</span>
-      {hint && <span className="ml-auto text-[9px] text-zinc-700">{hint}</span>}
+      {hint && <span className="ml-auto text-[9px] text-zinc-500">{hint}</span>}
     </div>
   );
 }

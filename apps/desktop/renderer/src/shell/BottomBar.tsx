@@ -233,7 +233,7 @@ export function BottomBar(): JSX.Element {
               ? 'Describe a task or ask a question — Type / for commands'
               : 'Select or create a session first'
           }
-          className="w-full bg-transparent text-sm text-zinc-200 placeholder-zinc-600 resize-none focus:outline-none px-1 py-1 pr-44 disabled:opacity-50"
+          className="w-full bg-transparent text-sm text-zinc-100 placeholder-zinc-400 resize-none focus:outline-none px-1 py-1 pr-44 disabled:opacity-50"
         />
         {/* Context window indicator 浮在输入框右下角 — Claude Desktop 截图 3 同款位置 */}
         <div className="absolute right-1 bottom-1 pointer-events-auto">
@@ -251,7 +251,7 @@ export function BottomBar(): JSX.Element {
             type="button"
             onClick={() => setAttachOpen((v) => !v)}
             disabled={!currentSessionId}
-            className="w-5 h-5 rounded text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 disabled:text-zinc-700 disabled:cursor-not-allowed text-sm flex items-center justify-center"
+            className="w-5 h-5 rounded text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 disabled:text-zinc-500 disabled:cursor-not-allowed text-sm flex items-center justify-center"
             title="Attach / Commands"
             aria-label="Open attach menu"
           >
@@ -268,7 +268,7 @@ export function BottomBar(): JSX.Element {
           type="button"
           onClick={() => void handleCancel()}
           disabled={!busy}
-          className="text-zinc-600 hover:text-zinc-300 disabled:text-zinc-700 disabled:cursor-not-allowed"
+          className="text-zinc-300 hover:text-zinc-100 disabled:text-zinc-500 disabled:cursor-not-allowed"
         >
           Cancel
         </button>

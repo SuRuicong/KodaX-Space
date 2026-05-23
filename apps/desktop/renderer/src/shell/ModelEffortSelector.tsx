@@ -42,7 +42,7 @@ export function ModelEffortSelector(): JSX.Element | null {
   const [busy, setBusy] = useState(false);
 
   if (!session) {
-    return <span className="text-zinc-700 font-mono">no session</span>;
+    return <span className="text-zinc-400 font-mono">no session</span>;
   }
 
   const providerInfo = providers.find((p) => p.id === session.provider);
@@ -68,12 +68,12 @@ export function ModelEffortSelector(): JSX.Element | null {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="font-mono text-[10px] text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5"
+        className="font-mono text-[10px] text-zinc-200 hover:text-zinc-100 flex items-center gap-1.5"
       >
         <span>{providerLabel}</span>
-        <span className="text-zinc-700">·</span>
+        <span className="text-zinc-500">·</span>
         <span>{effortLabel}</span>
-        <span className="text-zinc-600 ml-0.5" aria-hidden>▿</span>
+        <span className="text-zinc-400 ml-0.5" aria-hidden>▿</span>
       </button>
 
       {open && (
@@ -83,7 +83,7 @@ export function ModelEffortSelector(): JSX.Element | null {
         >
           <div className="px-3 py-1 flex justify-between text-zinc-500 text-[10px] uppercase tracking-wider">
             <span>Effort</span>
-            <span className="text-zinc-700">Ctrl+E</span>
+            <span className="text-zinc-400">Ctrl+E</span>
           </div>
           {EFFORT_ORDER.map((m) => (
             <button
@@ -98,7 +98,7 @@ export function ModelEffortSelector(): JSX.Element | null {
               {session.reasoningMode === m && <span className="ml-auto text-emerald-500" aria-hidden>✓</span>}
             </button>
           ))}
-          <div className="px-3 py-1 mt-1 border-t border-zinc-800 text-zinc-600 text-[10px]">
+          <div className="px-3 py-1 mt-1 border-t border-zinc-800 text-zinc-400 text-[10px]">
             Model picker — v0.1.x
           </div>
         </div>

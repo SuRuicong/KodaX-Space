@@ -14,7 +14,7 @@ export function ChipBar(): JSX.Element | null {
   const projectName = projectPath.split(/[\\/]/).filter(Boolean).pop() ?? projectPath;
 
   return (
-    <div className="flex items-center gap-1.5 text-[10px] text-zinc-500">
+    <div className="flex items-center gap-1.5 text-[10px] text-zinc-300">
       <Chip icon="📍" label="Local" />
       <Chip icon="📁" label={projectName} title={projectPath} />
       <Chip icon="🌿" label="main" hint="branch detection v0.1.x" />

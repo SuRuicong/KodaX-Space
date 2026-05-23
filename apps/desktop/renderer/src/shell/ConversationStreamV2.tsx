@@ -120,10 +120,10 @@ export function ConversationStreamV2(): JSX.Element {
 
   if (!currentSessionId) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-zinc-600 text-sm gap-2">
-        <span className="text-2xl" aria-hidden>✦</span>
+      <div className="flex-1 flex flex-col items-center justify-center text-zinc-300 text-sm gap-2">
+        <span className="text-2xl text-zinc-200" aria-hidden>✦</span>
         <span>What's up next?</span>
-        <span className="text-xs text-zinc-700">
+        <span className="text-xs text-zinc-400">
           Pick a session in the left sidebar, or open a folder to start.
         </span>
       </div>

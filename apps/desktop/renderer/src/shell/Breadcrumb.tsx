@@ -45,7 +45,7 @@ export function Breadcrumb(): JSX.Element {
           Open folder…
         </button>
       )}
-      <span className="text-zinc-700">/</span>
+      <span className="text-zinc-500">/</span>
       <div className="relative flex items-center min-w-0">
         <span className="px-1.5 py-0.5 truncate text-zinc-400" title={session?.sessionId}>
           {session?.title ?? (session ? 'Untitled session' : 'No session')}
@@ -55,7 +55,7 @@ export function Breadcrumb(): JSX.Element {
             <button
               type="button"
               onClick={() => setMenuOpen((v) => !v)}
-              className="px-1 py-0.5 text-zinc-600 hover:text-zinc-300 text-xs"
+              className="px-1 py-0.5 text-zinc-400 hover:text-zinc-300 text-xs"
               aria-label="Session options"
             >
               ▾

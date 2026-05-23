@@ -39,7 +39,7 @@ export function ContextWindowIndicator(): JSX.Element | null {
   const capStr = formatTokens(cap);
 
   // 颜色：< 50% 灰；50-80% 黄；>= 80% 红
-  const color = percent < 50 ? 'text-zinc-500' : percent < 80 ? 'text-amber-400' : 'text-red-400';
+  const color = percent < 50 ? 'text-zinc-300' : percent < 80 ? 'text-amber-400' : 'text-red-400';
 
   return (
     <button
@@ -52,7 +52,7 @@ export function ContextWindowIndicator(): JSX.Element | null {
         {tokenStr} / {capStr}
       </span>
       <span>({percent.toFixed(0)}%)</span>
-      <span className="text-zinc-600" aria-hidden>›</span>
+      <span className="text-zinc-400" aria-hidden>›</span>
     </button>
   );
 }

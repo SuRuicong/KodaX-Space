@@ -130,7 +130,7 @@ export function ModeSelector(): JSX.Element | null {
         title={`Mode: ${statusLabel} (Ctrl+M)`}
       >
         <span>{statusLabel}</span>
-        <span className="text-zinc-600" aria-hidden>+</span>
+        <span className="text-zinc-400" aria-hidden>+</span>
       </button>
 
       {open && (
@@ -140,7 +140,7 @@ export function ModeSelector(): JSX.Element | null {
         >
           <div className="px-3 py-1 flex justify-between text-zinc-500 text-[10px] uppercase tracking-wider">
             <span>Mode</span>
-            <span className="text-zinc-700">Ctrl+M</span>
+            <span className="text-zinc-400">Ctrl+M</span>
           </div>
           {MODE_ORDER.map((m, idx) => (
             <button
@@ -153,7 +153,7 @@ export function ModeSelector(): JSX.Element | null {
               title={MODE_DESCRIPTIONS[m]}
             >
               <span>{MODE_LABELS[m]}</span>
-              <span className="ml-auto text-zinc-600 text-[10px]">{idx + 1}</span>
+              <span className="ml-auto text-zinc-400 text-[10px]">{idx + 1}</span>
               {current === m && <span className="text-emerald-500 ml-1" aria-hidden>✓</span>}
             </button>
           ))}
@@ -174,7 +174,7 @@ export function ModeSelector(): JSX.Element | null {
                     }`}
                     title={ENGINE_DESCRIPTIONS[eng]}
                   >
-                    <span className={engine === eng ? 'text-emerald-500' : 'text-zinc-600'} aria-hidden>
+                    <span className={engine === eng ? 'text-emerald-500' : 'text-zinc-400'} aria-hidden>
                       {engine === eng ? '●' : '○'}
                     </span>
                     <span>{ENGINE_LABELS[eng]}</span>
