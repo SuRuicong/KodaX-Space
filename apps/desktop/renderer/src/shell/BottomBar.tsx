@@ -19,6 +19,7 @@ import { SlashCommandPopover, type SlashPickerItem } from './SlashCommandPopover
 import { resolveSessionCreateInputs } from './createSession.js';
 import { ActivitySpinner, useIsStreaming } from './ActivitySpinner.js';
 import { AgentModeSelector } from './AgentModeSelector.js';
+import { AmaWorkStrip } from './AmaWorkStrip.js';
 import { pushToast } from '../store/toastStore.js';
 
 /**
@@ -414,6 +415,70 @@ export function BottomBar(): JSX.Element {
       return;
     }
 
+    if (action === 'show-repointel') {
+      // events buffer 倒序找最近 8 条 repointel_trace
+      const traces: Array<{ kind: string; mode?: string; engine?: string; status?: string; latencyMs?: number; cacheHit?: boolean }> = [];
+      for (let i = events.length - 1; i >= 0 && traces.length < 8; i--) {
+        const ev = events[i];
+        if (ev.kind === 'repointel_trace') {
+          // event 字段在 ZodSchema 中是 nested 在 .event 里
+          const e = (ev as { event?: typeof traces[number] }).event;
+          if (e) traces.unshift(e);
+        }
+      }
+      if (traces.length === 0) {
+        appendUserMessage(sessionId, '[repointel] no traces yet — KodaX repo-intelligence has not emitted any events this session');
+        return;
+      }
+      const lines = [
+        `[repointel] last ${traces.length} trace(s):`,
+        ...traces.map((t, i) => {
+          const parts = [`${i + 1}. ${t.kind}`];
+          if (t.mode) parts.push(`mode=${t.mode}`);
+          if (t.engine) parts.push(`engine=${t.engine}`);
+          if (t.status) parts.push(`status=${t.status}`);
+          if (typeof t.latencyMs === 'number') parts.push(`${t.latencyMs}ms`);
+          if (t.cacheHit) parts.push('cache=hit');
+          return `  ${parts.join(' · ')}`;
+        }),
+      ];
+      appendUserMessage(sessionId, lines.join('\n'));
+      return;
+    }
+
+    if (action === 'show-memory') {
+      if (!window.kodaxSpace) {
+        appendUserMessage(sessionId, '[memory] IPC unavailable');
+        return;
+      }
+      const r = await window.kodaxSpace.invoke('session.agentsMd', { sessionId });
+      if (!r.ok) {
+        appendUserMessage(
+          sessionId,
+          `[memory] failed: ${r.error?.code ?? 'ERR_UNKNOWN'} ${r.error?.message ?? ''}`,
+        );
+        return;
+      }
+      const files = r.data.files;
+      if (files.length === 0) {
+        appendUserMessage(
+          sessionId,
+          '[memory] no AGENTS.md loaded\n  add ~/.kodax/AGENTS.md (global) or <project>/AGENTS.md (project)',
+        );
+        return;
+      }
+      const lines = [
+        `[memory] ${files.length} AGENTS.md file(s) loaded:`,
+        ...files.map((f) => {
+          const sizeKb = (f.content.length / 1024).toFixed(1);
+          return `  • [${f.scope}] ${f.path} (${sizeKb} KB)`;
+        }),
+        '  use Agents popout for full content',
+      ];
+      appendUserMessage(sessionId, lines.join('\n'));
+      return;
+    }
+
     // 未知 action — 兜底显示原 message
     appendUserMessage(sessionId, `[unknown action: ${action}]`);
   }
@@ -672,6 +737,9 @@ export function BottomBar(): JSX.Element {
     // 比"顶 border-t + 三段堆叠"更整体。
     <div className="px-3 pt-1 pb-3 flex-shrink-0 space-y-1">
       {err && <div className="text-red-400 text-[11px] font-mono px-1">{err}</div>}
+
+      {/* P5: AMA agent 形态时展示 worker / harness / 子任务计数 */}
+      <AmaWorkStrip />
 
       {/* 流式响应时显示 spinner + 实时 status / iter / tokens */}
       <ActivitySpinner />

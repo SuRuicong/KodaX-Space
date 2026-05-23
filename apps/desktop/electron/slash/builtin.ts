@@ -307,4 +307,30 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
       };
     },
   },
+
+  {
+    name: 'repointel',
+    description: 'Show recent KodaX repo-intelligence trace events',
+    source: 'builtin',
+    handler: async (ctx) => {
+      if (!kodaxHost.get(ctx.sessionId)) {
+        return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      }
+      // renderer 端 dispatchSlashAction 读 events buffer 抽 repointel_trace
+      return { ok: true, message: '__action__:show-repointel', echo: false };
+    },
+  },
+
+  {
+    name: 'memory',
+    description: 'Show loaded AGENTS.md files (global + project)',
+    source: 'builtin',
+    handler: async (ctx) => {
+      if (!kodaxHost.get(ctx.sessionId)) {
+        return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      }
+      // renderer 调 session.agentsMd 拉清单
+      return { ok: true, message: '__action__:show-memory', echo: false };
+    },
+  },
 ];
