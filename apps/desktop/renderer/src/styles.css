@@ -28,3 +28,18 @@
     -webkit-font-smoothing: antialiased;
   }
 }
+
+/* Custom titlebar 拖动 — main.ts 用 titleBarStyle: 'hidden' + titleBarOverlay 隐掉系统 chrome。
+   .app-titlebar 自身可拖窗 (-webkit-app-region: drag)；按钮/输入等需 'no-drag'。 */
+.app-titlebar {
+  -webkit-app-region: drag;
+}
+.app-titlebar button,
+.app-titlebar input,
+.app-titlebar a {
+  -webkit-app-region: no-drag;
+}
+/* macOS: traffic lights 占左上 ~78px (hiddenInset)；给 brand 让位 */
+.platform-darwin .titlebar-brand {
+  padding-left: 70px;
+}

@@ -22,7 +22,7 @@
 //   - popout 业务实现 → 留 popouts/ 子目录
 //   - Permission modal / Settings overlay → 复用旧 App 的实现挂载点
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LeftSidebar } from './LeftSidebar.js';
 import { Breadcrumb } from './Breadcrumb.js';
 import { CommandToolbar, type PopoutKind } from './CommandToolbar.js';
@@ -37,30 +37,56 @@ export type Mode = 'coder' | 'partner';
 export function Shell(): JSX.Element {
   // Mode：alpha.1 阶段只 Coder 可用，Partner 灰；ADR-004 v2 决策
   const [mode, setMode] = useState<Mode>('coder');
+
+  // 给 body 加 platform class，让 styles.css 里 .platform-darwin 的 traffic-lights
+  // 让位规则生效。navigator.userAgent 在 Electron renderer 中 reliable。
+  useEffect(() => {
+    const ua = navigator.userAgent;
+    let cls = 'platform-other';
+    if (/Mac OS X/i.test(ua)) cls = 'platform-darwin';
+    else if (/Windows/i.test(ua)) cls = 'platform-win32';
+    else if (/Linux/i.test(ua)) cls = 'platform-linux';
+    document.body.classList.add(cls);
+    return () => document.body.classList.remove(cls);
+  }, []);
   // popout：null 表示无 popout，按右上按钮切换
   const [activePopout, setActivePopout] = useState<PopoutKind | null>(null);
 
   return (
-    <div className="h-screen flex bg-zinc-950 text-zinc-100 overflow-hidden">
-      <LeftSidebar mode={mode} onModeChange={setMode} />
-
-      <div className="flex-1 flex flex-col min-w-0 relative">
-        <div className="flex items-center px-4 h-10 border-b border-zinc-900 flex-shrink-0">
-          <Breadcrumb />
-          <CommandToolbar active={activePopout} onToggle={setActivePopout} />
+    <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
+      {/* 顶部自定义 titlebar — 自身做窗口拖动 + 留出 Windows overlay 控件 (close/min/max) 空间。
+          Mac 上 traffic lights 占 ~78px (hiddenInset)；Windows 上 OS 把 close/min/max 画在右侧 ~138px (titleBarOverlay)；
+          为简化，整条 36px 高，左侧塞 app brand，右侧空出来给 OS overlay (内容 padding-right: 140px on Win)。 */}
+      <div className="app-titlebar h-9 flex items-center px-3 border-b border-zinc-900 bg-zinc-950 flex-shrink-0 select-none">
+        <div className="text-[11px] text-zinc-400 font-mono titlebar-brand">
+          <span className="text-amber-400" aria-hidden>✱</span>{' '}
+          <span>KodaX Space</span>
         </div>
-
-        <ConversationStreamV2 />
-
-        <BottomBar />
-
-        {activePopout !== null && (
-          <PopoutOverlay kind={activePopout} onClose={() => setActivePopout(null)} />
-        )}
+        <div className="flex-1" />
+        {/* Windows: titleBarOverlay 自动画 close/min/max；mac/Linux 无需 */}
       </div>
 
-      <PermissionModal />
-      <AskUserModal />
+      <div className="flex flex-1 min-h-0">
+        <LeftSidebar mode={mode} onModeChange={setMode} />
+
+        <div className="flex-1 flex flex-col min-w-0 relative">
+          <div className="flex items-center px-4 h-10 border-b border-zinc-900 flex-shrink-0">
+            <Breadcrumb />
+            <CommandToolbar active={activePopout} onToggle={setActivePopout} />
+          </div>
+
+          <ConversationStreamV2 />
+
+          <BottomBar />
+
+          {activePopout !== null && (
+            <PopoutOverlay kind={activePopout} onClose={() => setActivePopout(null)} />
+          )}
+        </div>
+
+        <PermissionModal />
+        <AskUserModal />
+      </div>
     </div>
   );
 }

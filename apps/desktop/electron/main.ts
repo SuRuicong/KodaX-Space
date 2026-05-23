@@ -5,7 +5,7 @@
 // - renderer 仅 UI，不直接 import LLM/KodaX runtime
 // - 安全基线：contextIsolation / nodeIntegration=false / sandbox / CSP
 
-import { app, BrowserWindow, shell, session } from 'electron';
+import { app, BrowserWindow, Menu, shell, session } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { registerVersionChannel } from './ipc/version.js';
@@ -94,6 +94,15 @@ function applyCsp(): void {
 }
 
 function createMainWindow(): void {
+  // 自定义 titlebar — 对齐 VSCode / Discord / Slack 现代 chrome：
+  //   - titleBarStyle: 'hidden' 把系统标题栏隐掉
+  //   - Windows: titleBarOverlay 让 OS 仍画 close/min/max 但颜色对齐 zinc-950 theme
+  //   - macOS: 'hiddenInset' 自动 (Electron 自动 fallback) 让 traffic lights 留在左上角
+  //
+  // renderer 顶部 row 用 CSS `-webkit-app-region: drag` 当拖动条；按钮 'no-drag'。
+  // Menu.setApplicationMenu(null) 在 app.whenReady 里彻底禁掉默认 File/Edit/View 菜单。
+  const isWin = process.platform === 'win32';
+  const isMac = process.platform === 'darwin';
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -102,6 +111,15 @@ function createMainWindow(): void {
     title: 'KodaX Space',
     backgroundColor: '#0b0b0c',
     show: false,
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    titleBarOverlay: isWin
+      ? {
+          color: '#0b0b0c',
+          symbolColor: '#a1a1aa',
+          height: 36,
+        }
+      : undefined,
+    autoHideMenuBar: true, // Linux: 按 Alt 也不展开 (Win 上由 titleBarStyle:hidden 已无菜单)
     webPreferences: {
       preload: PRELOAD_PATH,
       contextIsolation: true,
@@ -153,6 +171,10 @@ function createMainWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  // 彻底禁掉默认 File/Edit/View 菜单 — 与暗色主题不搭，且我们没用任何菜单项。
+  // 若日后需要 macOS 顶部全局菜单（Cmd+Q / About / Services），改为 buildFromTemplate
+  // 自定义即可；alpha.1 直接 null。
+  Menu.setApplicationMenu(null);
   applyCsp();
   // v0.1.6: 先跑 shell env hydration —— 把 user .zshrc / .bashrc 里 export 的
   // ARK_API_KEY / DEEPSEEK_API_KEY 等流进 process.env。必须早于 provider configured
