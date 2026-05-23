@@ -85,6 +85,92 @@ export function ConversationStreamV2(): JSX.Element {
   // 每个 tool_group 的展开状态；默认折叠
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  // P4a: Ctrl+F 全 transcript 搜索 — Electron 自带 find-in-page 不接 renderer 上下文，
+  // 自己实现"按消息文本子串匹配 + ring 高亮 + ↑↓ 导航"。
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentMatchIdx, setCurrentMatchIdx] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  // 全局 Ctrl+F 打开搜索框（焦点不在 input 也行——textarea 在 BottomBar，那里通过 stopPropagation 兜底）。
+  // Esc 关闭并清空 query。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F')) {
+        e.preventDefault();
+        setSearchOpen(true);
+        // focus 落到搜索框（下一帧，等 input 挂载）
+        requestAnimationFrame(() => searchInputRef.current?.focus());
+      }
+      if (e.key === 'Escape' && searchOpen) {
+        setSearchOpen(false);
+        setSearchQuery('');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [searchOpen]);
+
+  // 计算匹配的 message id 列表（按 viewMessages 顺序），用于 ring 高亮 + nav。
+  // 大小写不敏感；空 query → 空数组。
+  const matchIds = useMemo<readonly string[]>(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    const ids: string[] = [];
+    for (const m of viewMessages) {
+      let txt = '';
+      switch (m.kind) {
+        case 'user':
+          txt = m.content;
+          break;
+        case 'assistant_text':
+          txt = m.text + (m.thinking ?? '');
+          break;
+        case 'system_notice':
+          txt = m.text;
+          break;
+        case 'tool_group':
+          txt = m.tools
+            .map((t) => `${t.toolName} ${JSON.stringify(t.input ?? {})} ${t.result ?? ''}`)
+            .join(' ');
+          break;
+      }
+      if (txt.toLowerCase().includes(q)) ids.push(m.id);
+    }
+    return ids;
+  }, [searchQuery, viewMessages]);
+
+  // query 变化时重置当前位置
+  useEffect(() => {
+    setCurrentMatchIdx(0);
+  }, [searchQuery]);
+
+  // 当前匹配滚到中间
+  useEffect(() => {
+    if (matchIds.length === 0) return;
+    const id = matchIds[Math.min(currentMatchIdx, matchIds.length - 1)];
+    const el = scrollRef.current?.querySelector(`[data-msg-id="${CSS.escape(id)}"]`);
+    if (el && el instanceof HTMLElement) {
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }, [currentMatchIdx, matchIds]);
+
+  function nextMatch(): void {
+    if (matchIds.length === 0) return;
+    setCurrentMatchIdx((i) => (i + 1) % matchIds.length);
+  }
+  function prevMatch(): void {
+    if (matchIds.length === 0) return;
+    setCurrentMatchIdx((i) => (i - 1 + matchIds.length) % matchIds.length);
+  }
+  function closeSearch(): void {
+    setSearchOpen(false);
+    setSearchQuery('');
+  }
+
+  const currentMatchId = matchIds[Math.min(currentMatchIdx, matchIds.length - 1)];
+  const matchSet = useMemo(() => new Set(matchIds), [matchIds]);
+
   function handleScroll(e: React.UIEvent<HTMLDivElement>): void {
     const el = e.currentTarget;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -151,25 +237,101 @@ export function ConversationStreamV2(): JSX.Element {
           </div>
         )}
         {viewMessages.map((m) => {
+          const isMatch = matchSet.has(m.id);
+          const isCurrent = currentMatchId === m.id;
+          const ringClass = isCurrent
+            ? 'ring-2 ring-amber-500/80 rounded-md'
+            : isMatch
+            ? 'ring-1 ring-amber-500/40 rounded-md'
+            : '';
+          let inner: JSX.Element;
           switch (m.kind) {
             case 'user':
-              return <UserBubble key={m.id} content={m.content} />;
+              inner = <UserBubble content={m.content} />;
+              break;
             case 'assistant_text':
-              return <AssistantBubble key={m.id} text={m.text} thinking={m.thinking} />;
+              inner = <AssistantBubble text={m.text} thinking={m.thinking} />;
+              break;
             case 'system_notice':
-              return <SystemNotice key={m.id} {...m} />;
+              inner = <SystemNotice {...m} />;
+              break;
             case 'tool_group':
-              return (
+              inner = (
                 <ToolGroup
-                  key={m.id}
                   group={m}
                   expanded={expanded.has(m.id)}
                   onToggle={() => toggleGroup(m.id)}
                 />
               );
+              break;
           }
+          return (
+            <div key={m.id} data-msg-id={m.id} className={ringClass}>
+              {inner}
+            </div>
+          );
         })}
       </div>
+
+      {/* P4a 搜索框 — 右上角浮窗 */}
+      {searchOpen && (
+        <div className="absolute top-2 right-4 z-30 flex items-center gap-1 bg-zinc-900 border border-zinc-700 rounded shadow-xl px-2 py-1">
+          <input
+            ref={searchInputRef}
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (e.shiftKey) prevMatch();
+                else nextMatch();
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                closeSearch();
+              }
+            }}
+            placeholder="Find in transcript…"
+            className="bg-transparent text-xs outline-none w-44 text-zinc-200 placeholder:text-zinc-500"
+          />
+          <span className="text-[10px] text-zinc-400 font-mono w-12 text-right select-none">
+            {searchQuery
+              ? matchIds.length === 0
+                ? '0/0'
+                : `${currentMatchIdx + 1}/${matchIds.length}`
+              : ''}
+          </span>
+          <button
+            type="button"
+            onClick={prevMatch}
+            disabled={matchIds.length === 0}
+            className="text-zinc-400 hover:text-zinc-100 px-1 disabled:opacity-30"
+            title="Previous match (Shift+Enter)"
+            aria-label="Previous match"
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            onClick={nextMatch}
+            disabled={matchIds.length === 0}
+            className="text-zinc-400 hover:text-zinc-100 px-1 disabled:opacity-30"
+            title="Next match (Enter)"
+            aria-label="Next match"
+          >
+            ↓
+          </button>
+          <button
+            type="button"
+            onClick={closeSearch}
+            className="text-zinc-400 hover:text-zinc-100 px-1"
+            title="Close (Esc)"
+            aria-label="Close search"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {showJumpToBottom && (
         <button

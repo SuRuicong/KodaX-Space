@@ -55,6 +55,21 @@ export function Shell(): JSX.Element {
   // popout：null 表示无 popout，按右上按钮切换
   const [activePopout, setActivePopout] = useState<PopoutKind | null>(null);
 
+  // P4a: Ctrl+\ 进入/退出"专注阅读"模式 — 隐藏 Left / Right Sidebar，让主区域满宽。
+  //   - BottomBar / Breadcrumb / titlebar 保留（用户仍要发消息 + 窗口操作）
+  //   - Esc 退出（如果 Help overlay / 搜索框等都已关）
+  const [fullscreenRead, setFullscreenRead] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === '\\') {
+        e.preventDefault();
+        setFullscreenRead((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   return (
     <div className="h-screen flex flex-col bg-surface text-fg-primary overflow-hidden">
       {/* 顶部自定义 titlebar — 自身做窗口拖动 + 留出 Windows overlay 控件 (close/min/max) 空间。
@@ -69,12 +84,22 @@ export function Shell(): JSX.Element {
       </div>
 
       <div className="flex flex-1 min-h-0">
-        <LeftSidebar mode={mode} onModeChange={setMode} />
+        {!fullscreenRead && <LeftSidebar mode={mode} onModeChange={setMode} />}
 
         <div className="flex-1 flex flex-col min-w-0 relative">
           <div className="flex items-center px-4 h-10 border-b border-border-default flex-shrink-0">
             <Breadcrumb />
             <CommandToolbar active={activePopout} onToggle={setActivePopout} />
+            {fullscreenRead && (
+              <button
+                type="button"
+                onClick={() => setFullscreenRead(false)}
+                className="ml-2 text-[10px] px-2 py-0.5 rounded border border-border-default text-fg-muted hover:text-fg-primary"
+                title="Exit focus mode (Ctrl+\\)"
+              >
+                ↗ Focus
+              </button>
+            )}
           </div>
 
           <ConversationStreamV2 />
@@ -86,7 +111,7 @@ export function Shell(): JSX.Element {
           )}
         </div>
 
-        <RightSidebar />
+        {!fullscreenRead && <RightSidebar />}
 
         <PermissionModal />
         <AskUserModal />
