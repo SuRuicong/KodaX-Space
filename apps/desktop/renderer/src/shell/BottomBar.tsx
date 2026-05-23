@@ -60,6 +60,24 @@ function tokenizeArgs(rest: string): string[] {
   return result;
 }
 
+/** P4b: paste-anchor 触发阈值。低于这两个值不折叠，按浏览器默认行为粘进 textarea。*/
+const PASTE_ANCHOR_MIN_CHARS = 800;
+const PASTE_ANCHOR_MIN_LINES = 6;
+
+/**
+ * P4b: 把 textarea 文本中的 anchor 占位符还原成原文，喂给 AI。
+ * 用 split/join 做字面替换——anchor 形如 "[Pasted text #N +K lines]"，不含正则元字符
+ * 但有方括号；split('literal') 永远是字面 split 不走正则，安全。
+ */
+function expandPasteAnchors(text: string, anchors: Record<string, string>): string {
+  let result = text;
+  for (const [token, fullText] of Object.entries(anchors)) {
+    if (!result.includes(token)) continue;
+    result = result.split(token).join(fullText);
+  }
+  return result;
+}
+
 export function BottomBar(): JSX.Element {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
@@ -92,6 +110,17 @@ export function BottomBar(): JSX.Element {
   const [historyIdx, setHistoryIdx] = useState(-1);
   /** 在用户首次按 ↑ 之前，缓存 draft，回到 idx=-1 时还原。 */
   const draftRef = useRef<string>('');
+
+  /**
+   * P4b: 大段粘贴锚点。粘 > 800 字符或 > 6 行的内容会折成 "[Pasted text #N +K lines]"
+   * 占位符塞进 textarea，原文存到 anchor map 等 send 时再展开喂给 AI。让 textarea / transcript
+   * 不被一次粘贴的 800 行 log 撑爆。对齐 Claude Code TUI 的 paste-anchor 行为。
+   *
+   * map 在 send 后清空（同一 prompt 内的 anchor 不跨会话保留；用户能在 textarea 里 backspace
+   * 掉占位符 → map 里残留的 entry 不会被读到，下次 send 也会被清掉，无副作用）。
+   */
+  const [pasteAnchors, setPasteAnchors] = useState<Record<string, string>>({});
+  const pasteCounterRef = useRef(0);
 
   /**
    * Auto-grow textarea：min 2 行（rows={2} 提供基线），max 12 行后开始内滚。
@@ -463,8 +492,11 @@ export function BottomBar(): JSX.Element {
       // 用户输入即"我要开始对话"——不再强制 "Select or create a session first"
       const sid = await ensureSession();
       if (!sid) return;
+      // P4b: transcript 展示用 anchored 形式（紧凑），喂 AI 用展开后原文
       appendUserMessage(sid, trimmed);
+      const promptForAI = expandPasteAnchors(trimmed, pasteAnchors);
       setPrompt('');
+      setPasteAnchors({});
       // Auto-title：仅在 session 当前无 title 时设置，避免覆盖用户手动重命名。
       // fire-and-forget — 失败不影响 send。
       const sessNow = useAppStore.getState().sessions.find((s) => s.sessionId === sid);
@@ -476,7 +508,7 @@ export function BottomBar(): JSX.Element {
           });
         }
       }
-      // P0c: 把发送的 prompt 推进历史（appendInputHistory 内部 trim + dedup）
+      // P0c: 把发送的 prompt 推进历史（appendInputHistory 内部 trim + dedup）— 用 anchored form
       appendInputHistory(sid, trimmed);
       // P0c: 重置 history 浏览指针
       setHistoryIdx(-1);
@@ -485,7 +517,7 @@ export function BottomBar(): JSX.Element {
       setPendingSend(sid, true);
       const result = await window.kodaxSpace.invoke('session.send', {
         sessionId: sid,
-        prompt: trimmed,
+        prompt: promptForAI,
       });
       if (!result.ok) {
         setPendingSend(sid, false);
@@ -532,6 +564,39 @@ export function BottomBar(): JSX.Element {
   async function handleCancel(): Promise<void> {
     if (!currentSessionId || !window.kodaxSpace) return;
     await window.kodaxSpace.invoke('session.cancel', { sessionId: currentSessionId });
+  }
+
+  /**
+   * P4b: 拦截 paste 事件，超过阈值就插入 anchor 占位符。否则让浏览器默认行为发生。
+   */
+  function onPaste(e: React.ClipboardEvent<HTMLTextAreaElement>): void {
+    const text = e.clipboardData.getData('text/plain');
+    if (!text) return;
+    const lineCount = (text.match(/\n/g)?.length ?? 0) + 1;
+    if (text.length < PASTE_ANCHOR_MIN_CHARS && lineCount < PASTE_ANCHOR_MIN_LINES) {
+      // 小粘贴 — 走浏览器默认插入
+      return;
+    }
+    e.preventDefault();
+    pasteCounterRef.current += 1;
+    const id = pasteCounterRef.current;
+    const token = `[Pasted text #${id} +${lineCount} lines]`;
+    const ta = e.currentTarget;
+    const start = ta.selectionStart ?? prompt.length;
+    const end = ta.selectionEnd ?? start;
+    const newValue = prompt.slice(0, start) + token + prompt.slice(end);
+    setPrompt(newValue);
+    setPasteAnchors((m) => ({ ...m, [token]: text }));
+    // 光标移到 anchor 末尾，便于用户继续打字
+    requestAnimationFrame(() => {
+      const cur = textareaRef.current;
+      if (cur) {
+        const pos = start + token.length;
+        cur.selectionStart = pos;
+        cur.selectionEnd = pos;
+        cur.focus();
+      }
+    });
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
@@ -615,8 +680,22 @@ export function BottomBar(): JSX.Element {
           <textarea
             ref={textareaRef}
             value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
+            onChange={(e) => {
+              const newVal = e.target.value;
+              setPrompt(newVal);
+              // P4b: backspace 掉 anchor 占位符 / 清空 textarea → 对应原文 entry GC
+              setPasteAnchors((prev) => {
+                let dirty = false;
+                const next: Record<string, string> = {};
+                for (const [tok, val] of Object.entries(prev)) {
+                  if (newVal.includes(tok)) next[tok] = val;
+                  else dirty = true;
+                }
+                return dirty ? next : prev;
+              });
+            }}
             onKeyDown={onKeyDown}
+            onPaste={onPaste}
             disabled={busy || !currentProjectPath}
             rows={2}
             placeholder={
