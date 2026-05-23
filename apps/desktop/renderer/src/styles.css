@@ -113,3 +113,8 @@ html:not(.dark) .bg-zinc-900\/90 { background-color: rgb(244 244 245 / 0.9); }
 .platform-darwin .titlebar-brand {
   padding-left: 70px;
 }
+/* Windows: OS titleBarOverlay (close/min/max) 占右上 ~138px；给 titlebar 右侧留位，
+   否则 ThemeToggle 等右对齐控件会被压在 OS 按钮下面看不见。 */
+.platform-win32 .app-titlebar {
+  padding-right: 144px;
+}
