@@ -28,17 +28,19 @@ export interface CreateSessionInput {
   readonly pendingProviderId: string | null;
   readonly pendingReasoningMode: SessionMeta['reasoningMode'] | null;
   readonly pendingPermissionMode?: SessionMeta['permissionMode'] | null;
+  readonly pendingAgentMode?: SessionMeta['agentMode'] | null;
 }
 
 export interface CreateSessionResolved {
   readonly provider: string;
   readonly reasoningMode: SessionMeta['reasoningMode'];
   readonly permissionMode: NonNullable<SessionMeta['permissionMode']>;
+  readonly agentMode: NonNullable<SessionMeta['agentMode']>;
 }
 
 /** 仅做 provider / reasoning / permission 解析；不发 IPC。便于测试。 */
 export function resolveSessionCreateInputs(input: CreateSessionInput): CreateSessionResolved {
-  const { providers, defaultProviderId, kodaxDefaults, pendingProviderId, pendingReasoningMode, pendingPermissionMode } = input;
+  const { providers, defaultProviderId, kodaxDefaults, pendingProviderId, pendingReasoningMode, pendingPermissionMode, pendingAgentMode } = input;
 
   // 候选链：pending → Space default → KodaX default
   const candidates: readonly (string | null)[] = [
@@ -63,6 +65,8 @@ export function resolveSessionCreateInputs(input: CreateSessionInput): CreateSes
 
   const reasoningMode = pendingReasoningMode ?? kodaxDefaults?.reasoningMode ?? 'auto';
   const permissionMode = pendingPermissionMode ?? kodaxDefaults?.permissionMode ?? 'accept-edits';
+  // Default 'ama' — KodaX SDK 默认也是这个；用户主动选 SA 走 fallback 路径
+  const agentMode = pendingAgentMode ?? 'ama';
 
-  return { provider, reasoningMode, permissionMode };
+  return { provider, reasoningMode, permissionMode, agentMode };
 }

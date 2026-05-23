@@ -147,6 +147,8 @@ interface AppState {
   pendingProviderId: string | null;
   pendingReasoningMode: SessionMeta['reasoningMode'] | null;
   pendingPermissionMode: SessionMeta['permissionMode'] | null;
+  /** Pending agent mode (AMA / SA)。默认 'ama'；下次 session.create 时随入参传给 main。*/
+  pendingAgentMode: SessionMeta['agentMode'] | null;
   /** Pending model — 用户在右下角 picker 选的 model 名 (provider.models 之一)。
    *  无 session 时存这里；session 创建后通过 /model slash 命令应用到 KodaX 运行时。
    *  alpha.1 不持久化到 SessionMeta (SDK 暂无 model field)，重启丢失但当前会话内有效。*/
@@ -211,6 +213,7 @@ interface AppState {
   setPendingProviderId(id: string | null): void;
   setPendingReasoningMode(mode: SessionMeta['reasoningMode'] | null): void;
   setPendingPermissionMode(mode: SessionMeta['permissionMode'] | null): void;
+  setPendingAgentMode(mode: SessionMeta['agentMode'] | null): void;
   setPendingModel(model: string | null): void;
   /** Session UX flags — 局部状态 (alpha.1 不持久化)。toggle 形 + 合并形 set 函数。*/
   toggleSessionFlag(sessionId: string, flag: 'pinned' | 'archived' | 'unread'): void;
@@ -264,6 +267,7 @@ export const useAppStore = create<AppState>((set) => ({
   pendingProviderId: null,
   pendingReasoningMode: null,
   pendingPermissionMode: null,
+  pendingAgentMode: null,
   pendingModel: null,
   sessionFlags: {},
   recentsFilter: DEFAULT_RECENTS_FILTER,
@@ -450,6 +454,7 @@ export const useAppStore = create<AppState>((set) => ({
   setPendingProviderId: (id) => set({ pendingProviderId: id }),
   setPendingReasoningMode: (mode) => set({ pendingReasoningMode: mode }),
   setPendingPermissionMode: (mode) => set({ pendingPermissionMode: mode }),
+  setPendingAgentMode: (mode) => set({ pendingAgentMode: mode }),
   setPendingModel: (model) => set({ pendingModel: model }),
 
   setRecentsFilter: (filter) => set({ recentsFilter: filter }),

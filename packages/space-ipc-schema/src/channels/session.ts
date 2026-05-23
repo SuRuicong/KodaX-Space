@@ -45,6 +45,13 @@ export type PermissionMode = z.infer<typeof permissionModeSchema>;
 const autoModeEngineSchema = z.enum(['llm', 'rules']);
 export type AutoModeEngine = z.infer<typeof autoModeEngineSchema>;
 
+// KodaX agent 形态:
+//   - 'ama' = Adaptive Multi-Agent (KodaX 默认；scout/planner/generator/evaluator 多角色协作)
+//   - 'sa'  = Single Agent (单 agent loop，资源 / 并发受限时的 fallback)
+// SDK 默认是 'ama'；Space 显式持有该字段，让用户能在 UI 主动切换 / 降级。
+const agentModeSchema = z.enum(['ama', 'sa']);
+export type AgentMode = z.infer<typeof agentModeSchema>;
+
 // ---- Provider ID (review F008 C2-sec)
 //
 // 限制 providerId 字符集到合法形态的并集——避免任意字符串混进 ManagedSession.provider 字段
@@ -106,6 +113,11 @@ const sessionMetaSchema = z.object({
    * 双语义分歧（reviewer 反馈 MEDIUM）。
    */
   autoModeEngine: autoModeEngineSchema.default('llm'),
+  /**
+   * Agent 编排形态。默认 'ama'（多智能体协作，与 KodaX SDK 默认一致）。
+   * 'sa' 是 fallback 选择（接口并发受限、需要节省 token 时显式降级）。
+   */
+  agentMode: agentModeSchema.default('ama'),
   title: z.string().max(256).optional(),
   createdAt: z.number().int().nonnegative(),
   lastActivityAt: z.number().int().nonnegative(),
@@ -123,6 +135,8 @@ export const sessionCreateChannel = {
     permissionMode: permissionModeSchema.optional(),
     /** 仅 mode='auto' 生效。缺省 'llm'。*/
     autoModeEngine: autoModeEngineSchema.optional(),
+    /** 缺省 'ama'。SA 是接口并发受限的 fallback。*/
+    agentMode: agentModeSchema.optional(),
   }),
   output: z.object({
     sessionId: z.string().min(1),
@@ -226,6 +240,22 @@ export const sessionSetAutoModeEngineChannel = {
   input: z.object({
     sessionId: z.string().min(1),
     engine: autoModeEngineSchema,
+  }),
+  output: z.object({
+    ok: z.boolean(),
+  }),
+} as const;
+
+// ---- Invoke: session.setAgentMode ----
+//
+// 切 AMA ↔ SA。AMA = adaptive multi-agent（KodaX 默认协作模式），SA = single agent
+// （接口并发受限时降级）。切换不重启 session，下一条 prompt 应用新形态。
+export const sessionSetAgentModeChannel = {
+  name: 'session.setAgentMode',
+  direction: 'invoke',
+  input: z.object({
+    sessionId: z.string().min(1),
+    agentMode: agentModeSchema,
   }),
   output: z.object({
     ok: z.boolean(),

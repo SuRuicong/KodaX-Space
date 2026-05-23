@@ -18,6 +18,7 @@ import { AttachMenu } from './AttachMenu.js';
 import { SlashCommandPopover, type SlashPickerItem } from './SlashCommandPopover.js';
 import { resolveSessionCreateInputs } from './createSession.js';
 import { ActivitySpinner, useIsStreaming } from './ActivitySpinner.js';
+import { AgentModeSelector } from './AgentModeSelector.js';
 
 /**
  * F031 helper：按空白切 args，保留双引号包裹的整段。
@@ -65,9 +66,11 @@ export function BottomBar(): JSX.Element {
   const pendingProviderId = useAppStore((s) => s.pendingProviderId);
   const pendingReasoningMode = useAppStore((s) => s.pendingReasoningMode);
   const pendingPermissionMode = useAppStore((s) => s.pendingPermissionMode);
+  const pendingAgentMode = useAppStore((s) => s.pendingAgentMode);
   const setPendingProviderId = useAppStore((s) => s.setPendingProviderId);
   const setPendingReasoningMode = useAppStore((s) => s.setPendingReasoningMode);
   const setPendingPermissionMode = useAppStore((s) => s.setPendingPermissionMode);
+  const setPendingAgentMode = useAppStore((s) => s.setPendingAgentMode);
   const appendUserMessage = useAppStore((s) => s.appendUserMessage);
   const resetSessionMessages = useAppStore((s) => s.resetSessionMessages);
   const upsertSession = useAppStore((s) => s.upsertSession);
@@ -89,7 +92,7 @@ export function BottomBar(): JSX.Element {
       setErr('Open a folder first — Ctrl+O.');
       return null;
     }
-    const { provider, reasoningMode, permissionMode } = resolveSessionCreateInputs({
+    const { provider, reasoningMode, permissionMode, agentMode } = resolveSessionCreateInputs({
       projectRoot: currentProjectPath,
       providers,
       defaultProviderId,
@@ -97,12 +100,14 @@ export function BottomBar(): JSX.Element {
       pendingProviderId,
       pendingReasoningMode,
       pendingPermissionMode,
+      pendingAgentMode,
     });
     const result = await window.kodaxSpace.invoke('session.create', {
       projectRoot: currentProjectPath,
       provider,
       reasoningMode,
       permissionMode,
+      agentMode,
     });
     if (!result.ok) {
       setErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'create failed'}`);
@@ -115,6 +120,7 @@ export function BottomBar(): JSX.Element {
       reasoningMode,
       permissionMode,
       autoModeEngine: 'llm',
+      agentMode,
       title: undefined,
       createdAt: result.data.createdAt,
       lastActivityAt: result.data.createdAt,
@@ -125,6 +131,7 @@ export function BottomBar(): JSX.Element {
     setPendingProviderId(null);
     setPendingReasoningMode(null);
     setPendingPermissionMode(null);
+    setPendingAgentMode(null);
     // 刷新权威列表（让 LeftSidebar Recents 立即看到新条目）
     const listResult = await window.kodaxSpace.invoke('session.list', {
       projectRoot: currentProjectPath,
@@ -394,6 +401,7 @@ export function BottomBar(): JSX.Element {
           />
         </div>
         <ModeSelector />
+        <AgentModeSelector />
         <span className="ml-auto" />
         <ModelEffortSelector />
         {/* Send / Stop 圆形按钮 — Claude Code / ChatGPT 同款。streaming 时变成 Stop。*/}

@@ -62,6 +62,8 @@ export class RealKodaXSession implements ManagedSession {
   permissionMode: ManagedSession['permissionMode'];
   /** FEATURE_029：auto mode 子档；非 auto mode 时持有也无害（下次切 auto 时生效）。*/
   autoModeEngine: ManagedSession['autoModeEngine'];
+  /** AMA (默认 / 多智能体协作) vs SA (单 agent，接口并发受限时降级)。*/
+  agentMode: ManagedSession['agentMode'];
   /** SDK 0.7.42 wired: 用户 /model 设的覆盖；undefined 走 provider 默认。*/
   model?: string;
   /** SDK 0.7.42 wired: 用户 /thinking 设的开关；undefined 走 KodaX 默认。*/
@@ -85,6 +87,7 @@ export class RealKodaXSession implements ManagedSession {
     this.reasoningMode = opts.reasoningMode;
     this.permissionMode = opts.permissionMode;
     this.autoModeEngine = opts.autoModeEngine ?? 'llm';
+    this.agentMode = opts.agentMode ?? 'ama';
     this.createdAt = Date.now();
     this.lastActivityAt = this.createdAt;
     this.parentSessionId = opts.parentSessionId;
@@ -563,6 +566,8 @@ export class RealKodaXSession implements ManagedSession {
     const options: KodaXOptions = {
       provider: this.provider,
       reasoningMode: this.reasoningMode,
+      // KodaX agent 形态：AMA (默认) / SA。SDK 默认也是 ama，这里显式传以便用户切换生效。
+      agentMode: this.agentMode,
       // SDK 0.7.42 wired (P0): /model + /thinking 设置在下一 turn 生效
       ...(this.model !== undefined ? { model: this.model } : {}),
       ...(this.thinking !== undefined ? { thinking: this.thinking } : {}),

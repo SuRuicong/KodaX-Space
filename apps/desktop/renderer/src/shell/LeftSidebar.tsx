@@ -42,9 +42,11 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
   const pendingProviderId = useAppStore((s) => s.pendingProviderId);
   const pendingReasoningMode = useAppStore((s) => s.pendingReasoningMode);
   const pendingPermissionMode = useAppStore((s) => s.pendingPermissionMode);
+  const pendingAgentMode = useAppStore((s) => s.pendingAgentMode);
   const setPendingProviderId = useAppStore((s) => s.setPendingProviderId);
   const setPendingReasoningMode = useAppStore((s) => s.setPendingReasoningMode);
   const setPendingPermissionMode = useAppStore((s) => s.setPendingPermissionMode);
+  const setPendingAgentMode = useAppStore((s) => s.setPendingAgentMode);
   const [creating, setCreating] = useState(false);
   const [createErr, setCreateErr] = useState<string | null>(null);
 
@@ -72,7 +74,7 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
     setCreating(true);
     setCreateErr(null);
     try {
-      const { provider, reasoningMode, permissionMode } = resolveSessionCreateInputs({
+      const { provider, reasoningMode, permissionMode, agentMode } = resolveSessionCreateInputs({
         projectRoot: currentProjectPath,
         providers,
         defaultProviderId,
@@ -80,6 +82,7 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
         pendingProviderId,
         pendingReasoningMode,
         pendingPermissionMode,
+        pendingAgentMode,
       });
 
       const result = await bridge.invoke('session.create', {
@@ -87,6 +90,7 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
         provider,
         reasoningMode,
         permissionMode,
+        agentMode,
       });
       if (!result.ok) {
         setCreateErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'create failed'}`);
@@ -99,6 +103,7 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
         reasoningMode,
         permissionMode,
         autoModeEngine: 'llm',
+        agentMode,
         title: undefined,
         createdAt: result.data.createdAt,
         lastActivityAt: result.data.createdAt,
@@ -109,6 +114,7 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
       setPendingProviderId(null);
       setPendingReasoningMode(null);
       setPendingPermissionMode(null);
+      setPendingAgentMode(null);
       // 刷新权威列表
       const listResult = await bridge.invoke('session.list', { projectRoot: currentProjectPath });
       if (listResult.ok) useAppStore.getState().setSessions(listResult.data.sessions);

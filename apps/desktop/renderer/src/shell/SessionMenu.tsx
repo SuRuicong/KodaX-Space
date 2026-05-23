@@ -129,6 +129,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
       reasoningMode: session.reasoningMode,
       permissionMode: session.permissionMode,
       autoModeEngine: session.autoModeEngine,
+      agentMode: session.agentMode, // fork 继承 source 的形态
       title: childTitle,
       createdAt,
       lastActivityAt: createdAt,

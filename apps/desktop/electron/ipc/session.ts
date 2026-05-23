@@ -47,6 +47,7 @@ export function registerSessionChannels(): void {
       reasoningMode: input.reasoningMode,
       permissionMode: input.permissionMode,
       autoModeEngine: input.autoModeEngine,
+      agentMode: input.agentMode,
     });
     // v0.1.6 cleanup: 用 ~/.kodax/config.json 的 thinking 默认值初始化新 session。
     // 不传 schema 改动——renderer 没必要知道 thinking 默认值，main 直接 fill 即可。
@@ -134,6 +135,7 @@ export function registerSessionChannels(): void {
           reasoningMode: item.reasoningMode,
           permissionMode: item.permissionMode,
           autoModeEngine: item.autoModeEngine,
+          agentMode: item.agentMode,
           title: item.title,
           createdAt: item.createdAt,
           lastActivityAt: item.lastActivityAt,
@@ -156,6 +158,7 @@ export function registerSessionChannels(): void {
         reasoningMode: 'auto',
         permissionMode: 'accept-edits',
         autoModeEngine: 'llm',
+        agentMode: 'ama',
         title: item.title,
         createdAt: sortKey,
         lastActivityAt: sortKey,
@@ -202,6 +205,14 @@ export function registerSessionChannels(): void {
   // (用户先选 engine 再切 auto 是合法路径)，下次进入 auto 时按新 engine bootstrap guardrail。
   registerChannel('session.setAutoModeEngine', (input) => {
     const ok = kodaxHost.setAutoModeEngine(input.sessionId, input.engine);
+    return { ok };
+  });
+
+  // session.setAgentMode — 切 KodaX agent 形态 (AMA / SA)。
+  // AMA = 多 agent 协作（KodaX 默认）；SA = 单 agent 降级路径，接口并发受限时使用。
+  // 切换不重启 in-flight session，下一条 prompt 走新形态。
+  registerChannel('session.setAgentMode', (input) => {
+    const ok = kodaxHost.setAgentMode(input.sessionId, input.agentMode);
     return { ok };
   });
 

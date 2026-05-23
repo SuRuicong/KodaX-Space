@@ -77,6 +77,8 @@ export class MockKodaXSession implements ManagedSession {
   permissionMode: ManagedSession['permissionMode'];
   /** FEATURE_029: auto-mode 子档；mock 不实际跑 guardrail 但需要持有字段供 host setter。*/
   autoModeEngine: ManagedSession['autoModeEngine'];
+  /** AMA/SA — mock 不真切，但需要持有字段供 host setter。*/
+  agentMode: ManagedSession['agentMode'];
   /** v0.7.42 P0 wire：mock 不实际用 model，只持有字段供 host setter。*/
   model?: string;
   /** v0.7.42 P0 wire：mock 不实际用 thinking，只持有字段供 host setter。*/
@@ -100,6 +102,7 @@ export class MockKodaXSession implements ManagedSession {
     this.reasoningMode = opts.reasoningMode;
     this.permissionMode = opts.permissionMode;
     this.autoModeEngine = opts.autoModeEngine ?? 'llm';
+    this.agentMode = opts.agentMode ?? 'ama';
     this.createdAt = Date.now();
     this.lastActivityAt = this.createdAt;
     this.parentSessionId = opts.parentSessionId;

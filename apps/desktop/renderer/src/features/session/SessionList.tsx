@@ -101,6 +101,7 @@ export function SessionList(): JSX.Element {
         reasoningMode,
         permissionMode,
         autoModeEngine: 'llm',
+        agentMode: 'ama', // 与 sessionMetaSchema.default 一致；session.list 刷新会拿权威值
         title: undefined,
         createdAt: result.data.createdAt,
         lastActivityAt: result.data.createdAt,
