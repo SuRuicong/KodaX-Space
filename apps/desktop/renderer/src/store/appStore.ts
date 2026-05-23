@@ -118,6 +118,14 @@ interface AppState {
     >
   >;
   /**
+   * 当前无 session 时由 ModelEffortSelector 写入的"下一次新 session 用这些"。
+   * 用户点 picker 选 glm/zai-glm-coding/effort 等 → 存这里 → 下次 BottomBar 自动建 session
+   * 或 LeftSidebar 显式 + New session 时优先用这俩值。
+   * null/undefined 表示"沿用 Space defaultProviderId / kodaxDefaults"。
+   */
+  pendingProviderId: string | null;
+  pendingReasoningMode: SessionMeta['reasoningMode'] | null;
+  /**
    * F009: 最后一次被 tool_call (write/edit) 触及的相对路径——FilePanel 监听这个值切到 diff 视图。
    * 用 "可读完一次就置 null" 的单值 + clearLastDiffPath 模式，避免 useEffect 反复触发。
    */
@@ -150,6 +158,9 @@ interface AppState {
   ): void;
   /** v0.1.6 cleanup: 启动期 main 推 kodax.getDefaults 结果进来。 */
   setKodaxDefaults(defaults: KodaxUserDefaults): void;
+  /** 用户在无 session 时点 picker → 暂存到 pending；下次 session.create 优先用。*/
+  setPendingProviderId(id: string | null): void;
+  setPendingReasoningMode(mode: SessionMeta['reasoningMode'] | null): void;
   /** 切项目时清空当前 session 选择和事件 buffer（事件留主进程的；renderer 只清缓存）。*/
   resetSessionView(): void;
   /** FEATURE_031: /clear 命令清空指定 session 的事件 / 用户消息 buffer (session 本体保留)。*/
@@ -193,6 +204,8 @@ export const useAppStore = create<AppState>((set) => ({
   managedTaskStatusBySession: {},
   lastDiffPath: null,
   pendingToolPaths: {},
+  pendingProviderId: null,
+  pendingReasoningMode: null,
 
   setProjects: (projects) => set({ projects }),
   setCurrentProject: (path) => set({ currentProjectPath: path }),
@@ -369,6 +382,9 @@ export const useAppStore = create<AppState>((set) => ({
     set({ providers, defaultProviderId, keychainBackend }),
 
   setKodaxDefaults: (defaults) => set({ kodaxDefaults: defaults }),
+
+  setPendingProviderId: (id) => set({ pendingProviderId: id }),
+  setPendingReasoningMode: (mode) => set({ pendingReasoningMode: mode }),
 
   clearLastDiffPath: () => set({ lastDiffPath: null }),
 

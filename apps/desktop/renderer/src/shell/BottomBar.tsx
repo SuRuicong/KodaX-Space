@@ -8,6 +8,7 @@
 // 取代旧 EventStream 底部 InputBox 区。
 
 import { useState } from 'react';
+import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 import { ChipBar } from './ChipBar.js';
 import { ModelEffortSelector } from './ModelEffortSelector.js';
@@ -15,6 +16,7 @@ import { ModeSelector } from './ModeSelector.js';
 import { ContextWindowIndicator } from './ContextWindowIndicator.js';
 import { AttachMenu } from './AttachMenu.js';
 import { SlashCommandPopover, type SlashPickerItem } from './SlashCommandPopover.js';
+import { resolveSessionCreateInputs } from './createSession.js';
 
 /**
  * F031 helper：按空白切 args，保留双引号包裹的整段。
@@ -35,12 +37,76 @@ function tokenizeArgs(rest: string): string[] {
 
 export function BottomBar(): JSX.Element {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
+  const currentProjectPath = useAppStore((s) => s.currentProjectPath);
+  const providers = useAppStore((s) => s.providers);
+  const defaultProviderId = useAppStore((s) => s.defaultProviderId);
+  const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
+  const pendingProviderId = useAppStore((s) => s.pendingProviderId);
+  const pendingReasoningMode = useAppStore((s) => s.pendingReasoningMode);
+  const setPendingProviderId = useAppStore((s) => s.setPendingProviderId);
+  const setPendingReasoningMode = useAppStore((s) => s.setPendingReasoningMode);
   const appendUserMessage = useAppStore((s) => s.appendUserMessage);
   const resetSessionMessages = useAppStore((s) => s.resetSessionMessages);
+  const upsertSession = useAppStore((s) => s.upsertSession);
+  const setCurrentSession = useAppStore((s) => s.setCurrentSession);
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [attachOpen, setAttachOpen] = useState(false);
+
+  /**
+   * 没 session 时第一条 prompt 触发自动建 session。
+   * project 必须先打开（projectRoot 是 session.create 必填）。
+   * 返回新 sessionId 或 null（失败：err 已 setErr）。
+   */
+  async function ensureSession(): Promise<string | null> {
+    if (currentSessionId) return currentSessionId;
+    if (!window.kodaxSpace) return null;
+    if (!currentProjectPath) {
+      setErr('Open a folder first — Ctrl+O.');
+      return null;
+    }
+    const { provider, reasoningMode, permissionMode } = resolveSessionCreateInputs({
+      projectRoot: currentProjectPath,
+      providers,
+      defaultProviderId,
+      kodaxDefaults,
+      pendingProviderId,
+      pendingReasoningMode,
+    });
+    const result = await window.kodaxSpace.invoke('session.create', {
+      projectRoot: currentProjectPath,
+      provider,
+      reasoningMode,
+      permissionMode,
+    });
+    if (!result.ok) {
+      setErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'create failed'}`);
+      return null;
+    }
+    const stub: SessionMeta = {
+      sessionId: result.data.sessionId,
+      projectRoot: currentProjectPath,
+      provider,
+      reasoningMode,
+      permissionMode,
+      autoModeEngine: 'llm',
+      title: undefined,
+      createdAt: result.data.createdAt,
+      lastActivityAt: result.data.createdAt,
+    };
+    upsertSession(stub);
+    setCurrentSession(stub.sessionId);
+    // 消费 pending（既然 session 已经按 pending 建立，pending 状态使命完成）
+    setPendingProviderId(null);
+    setPendingReasoningMode(null);
+    // 刷新权威列表（让 LeftSidebar Recents 立即看到新条目）
+    const listResult = await window.kodaxSpace.invoke('session.list', {
+      projectRoot: currentProjectPath,
+    });
+    if (listResult.ok) useAppStore.getState().setSessions(listResult.data.sessions);
+    return stub.sessionId;
+  }
 
   /**
    * slash 模式：trim 后以 '/' 起头、且不含空白（仍在敲命令名）。
@@ -55,14 +121,17 @@ export function BottomBar(): JSX.Element {
    *   1) slash.exec — main 端有 builtin handler 时直接执行
    *   2) 若 main 返回 unknownCommand:true → 调 execSkill 试 skill registry
    * busy 状态在外部包裹 (execSlashOrSkill)，避免中间放掉 → 用户能并发触发新命令。
+   *
+   * 显式传 sessionId 而非读 currentSessionId 闭包——auto-create session 后
+   * setCurrentSession 在下次 render 才生效，闭包里还是 stale null。
    */
-  async function execSlashOrSkill(name: string, args: string[]): Promise<void> {
-    if (!currentSessionId || !window.kodaxSpace) return;
+  async function execSlashOrSkill(sessionId: string, name: string, args: string[]): Promise<void> {
+    if (!window.kodaxSpace) return;
     setBusy(true);
     setErr(null);
     try {
       const result = await window.kodaxSpace.invoke('slash.exec', {
-        sessionId: currentSessionId,
+        sessionId,
         name,
         args,
       });
@@ -74,16 +143,16 @@ export function BottomBar(): JSX.Element {
       // F035: slash 找不到 → 试 skill。用 unknownCommand 字段（reviewer HIGH-3：
       // 不再字符串匹配 message）。
       if (unknownCommand) {
-        await invokeSkill(name, args);
+        await invokeSkill(sessionId, name, args);
         return;
       }
       if (echo && message) {
         // F031: /help /clear 等命令把 message 当 system_notice 显示
-        appendUserMessage(currentSessionId, `/${name} ${args.join(' ')}`.trim());
+        appendUserMessage(sessionId, `/${name} ${args.join(' ')}`.trim());
       }
       if (clearStream) {
         // F031: 由 handler 显式请求清空消息流（不再 hardcode name === 'clear'）。
-        resetSessionMessages(currentSessionId);
+        resetSessionMessages(sessionId);
       }
       if (!ok && message) {
         setErr(message);
@@ -97,10 +166,10 @@ export function BottomBar(): JSX.Element {
   }
 
   /** 仅 popover 直接点中 slash 命令（已知 builtin、无 fallback 必要）时用。*/
-  async function execSlashDirect(name: string, args: string[]): Promise<void> {
+  async function execSlashDirect(sessionId: string, name: string, args: string[]): Promise<void> {
     // 这层薄壳保持与原 execSlash 相同的 busy 语义但不做 skill fallback。
     // 当前实现复用 execSlashOrSkill；future 若需要细分语义可分开。
-    await execSlashOrSkill(name, args);
+    await execSlashOrSkill(sessionId, name, args);
   }
 
   /**
@@ -112,10 +181,10 @@ export function BottomBar(): JSX.Element {
    * 避免 slash→skill fallback 时 setBusy(false)→setBusy(true) 中间窗口
    * (reviewer F035 MEDIUM-1)。
    */
-  async function invokeSkill(name: string, args: string[]): Promise<void> {
-    if (!currentSessionId || !window.kodaxSpace) return;
+  async function invokeSkill(sessionId: string, name: string, args: string[]): Promise<void> {
+    if (!window.kodaxSpace) return;
     const result = await window.kodaxSpace.invoke('skill.invoke', {
-      sessionId: currentSessionId,
+      sessionId,
       skillName: name,
       args,
     });
@@ -129,9 +198,9 @@ export function BottomBar(): JSX.Element {
       return;
     }
     // 把 "/skill args" 当一条 user message 显示
-    appendUserMessage(currentSessionId, `/${name} ${args.join(' ')}`.trim());
+    appendUserMessage(sessionId, `/${name} ${args.join(' ')}`.trim());
     const sendResult = await window.kodaxSpace.invoke('session.send', {
-      sessionId: currentSessionId,
+      sessionId,
       prompt: resolvedPrompt,
     });
     if (!sendResult.ok) {
@@ -140,30 +209,38 @@ export function BottomBar(): JSX.Element {
   }
 
   async function handleSend(): Promise<void> {
-    if (!currentSessionId || !window.kodaxSpace) return;
+    if (!window.kodaxSpace) return;
     const trimmed = prompt.trim();
     if (trimmed === '') return;
-    // F031: 以 `/` 起头视为 slash 命令；按空白切 name + args，调 slash.exec
-    // F035: 直接 type `/skill-name args` 也走 slash.exec —— 但 skill 不在 slash registry，
-    // slash.exec 返回 unknown command 后 fall through 到 skill 路径。
-    // 简化：handleSend 仍只走 slash.exec；用户从 popover 选 skill 走 onSlashPick → execSkill。
     if (trimmed.startsWith('/')) {
       const head = trimmed.slice(1);
       const spaceIdx = head.search(/\s/);
       const name = (spaceIdx === -1 ? head : head.slice(0, spaceIdx)).trim();
       const rest = spaceIdx === -1 ? '' : head.slice(spaceIdx + 1).trim();
       const args = rest === '' ? [] : tokenizeArgs(rest);
+      // Slash 命令必带 sessionId；若无 session 自动建一个再执行
+      setBusy(true);
+      let sid: string | null = null;
+      try {
+        sid = await ensureSession();
+      } finally {
+        setBusy(false);
+      }
+      if (!sid) return; // err 已 setErr
       setPrompt('');
-      await execSlashOrSkill(name, args);
+      await execSlashOrSkill(sid, name, args);
       return;
     }
     setErr(null);
     setBusy(true);
-    appendUserMessage(currentSessionId, trimmed);
-    setPrompt('');
     try {
+      // 用户输入即"我要开始对话"——不再强制 "Select or create a session first"
+      const sid = await ensureSession();
+      if (!sid) return;
+      appendUserMessage(sid, trimmed);
+      setPrompt('');
       const result = await window.kodaxSpace.invoke('session.send', {
-        sessionId: currentSessionId,
+        sessionId: sid,
         prompt: trimmed,
       });
       if (!result.ok) setErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`);
@@ -179,16 +256,25 @@ export function BottomBar(): JSX.Element {
     }
     const hint = item.kind === 'slash' ? item.meta.argsHint : item.meta.argumentHint;
     if (!hint) {
-      // 无参数 → 直接执行（已知 kind 走对应 IPC）
+      // 无参数 → 直接执行（已知 kind 走对应 IPC）。
+      // ensureSession 在无 session 时建一个；execSlashDirect/invokeSkill 自己管 busy。
       setPrompt('');
-      if (item.kind === 'slash') {
-        void execSlashDirect(item.meta.name, []);
-      } else {
-        // skill 也用 busy 包裹
-        setBusy(true);
-        setErr(null);
-        void invokeSkill(item.meta.name, []).finally(() => setBusy(false));
-      }
+      void (async () => {
+        const sid = await ensureSession();
+        if (!sid) return;
+        if (item.kind === 'slash') {
+          await execSlashDirect(sid, item.meta.name, []);
+        } else {
+          // invokeSkill 不管 busy（注释里说由 caller 包），所以这里包一次
+          setBusy(true);
+          setErr(null);
+          try {
+            await invokeSkill(sid, item.meta.name, []);
+          } finally {
+            setBusy(false);
+          }
+        }
+      })();
     } else {
       // 有参数 → 把 "/name " 放回输入框等用户继续输入。Enter 后 handleSend → execSlashOrSkill；
       // 自动按 unknownCommand 信号 fallback 到 skill.invoke，行为对用户一致。
@@ -226,12 +312,14 @@ export function BottomBar(): JSX.Element {
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={onKeyDown}
-          disabled={busy || !currentSessionId}
+          disabled={busy || !currentProjectPath}
           rows={2}
           placeholder={
-            currentSessionId
-              ? 'Describe a task or ask a question — Type / for commands'
-              : 'Select or create a session first'
+            !currentProjectPath
+              ? 'Open a folder first — Ctrl+O'
+              : currentSessionId
+                ? 'Describe a task or ask a question — Type / for commands'
+                : 'Describe a task or ask a question — session will be created on send'
           }
           className="w-full bg-transparent text-sm text-zinc-100 placeholder-zinc-400 resize-none focus:outline-none px-1 py-1 pr-44 disabled:opacity-50"
         />
@@ -250,7 +338,7 @@ export function BottomBar(): JSX.Element {
           <button
             type="button"
             onClick={() => setAttachOpen((v) => !v)}
-            disabled={!currentSessionId}
+            disabled={!currentProjectPath}
             className="w-5 h-5 rounded text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 disabled:text-zinc-500 disabled:cursor-not-allowed text-sm flex items-center justify-center"
             title="Attach / Commands"
             aria-label="Open attach menu"

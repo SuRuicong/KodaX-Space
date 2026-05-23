@@ -103,17 +103,34 @@ export async function injectAllKeysToEnv(): Promise<void> {
     delete process.env[envName];
   }
 
-  // 3) 按 account 重新注入；未知 account 显式 log（M4-sec）
+  // 3) 按 account 重新注入；未知 account 自动清掉（旧 dev key / 测试残留）
+  //    v0.1.6: 之前只 log warn 不删，导致用户启动每次报一遍"a/b/c/x skipping"。
+  //    detect 条件保守：account 不匹配任何已知 provider id (built-in catalog 稳定 +
+  //    custom_<hex> CSPRNG 永不重生) → 安全删除。
+  const orphanAccounts: string[] = [];
   for (const acct of accounts) {
     const info = resolveProviderInfo(acct);
     if (!info) {
-      console.warn(
-        `[provider] keychain has account "${acct}" but no matching built-in/custom provider — skipping inject (run cleanup?)`,
-      );
+      orphanAccounts.push(acct);
       continue;
     }
     const value = await getKey(acct);
     if (value) process.env[info.apiKeyEnv] = value;
+  }
+  if (orphanAccounts.length > 0) {
+    console.info(
+      `[provider] cleaning up ${orphanAccounts.length} orphan keychain account(s): ${orphanAccounts.join(', ')}`,
+    );
+    for (const acct of orphanAccounts) {
+      try {
+        await deleteKey(acct);
+      } catch (err) {
+        console.warn(
+          `[provider] failed to delete orphan account "${acct}":`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
   }
   // 4) 默认 provider 的 key 最后注入一次——保证共享 env 时它胜出
   if (defaultId) {

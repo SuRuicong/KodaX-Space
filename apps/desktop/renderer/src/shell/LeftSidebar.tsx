@@ -21,8 +21,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Mode } from './Shell.js';
 import { useAppStore } from '../store/appStore.js';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
-
-const MOCK_PROVIDER = 'mock';
+import { resolveSessionCreateInputs } from './createSession.js';
 
 interface LeftSidebarProps {
   mode: Mode;
@@ -38,6 +37,10 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
   const providers = useAppStore((s) => s.providers);
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
   const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
+  const pendingProviderId = useAppStore((s) => s.pendingProviderId);
+  const pendingReasoningMode = useAppStore((s) => s.pendingReasoningMode);
+  const setPendingProviderId = useAppStore((s) => s.setPendingProviderId);
+  const setPendingReasoningMode = useAppStore((s) => s.setPendingReasoningMode);
   const [creating, setCreating] = useState(false);
   const [createErr, setCreateErr] = useState<string | null>(null);
 
@@ -52,8 +55,8 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
 
   /**
    * + New session：创建新 session。
-   * Provider 优先级：Space defaultProviderId → KodaX config provider → mock（保证总能创建）。
-   * reasoning/permission 默认从 KodaX config 拿（v0.1.6 cleanup A）。
+   * Provider/effort 解析委托给 createSession helper（pending → Space default → KodaX default → ...）。
+   * 创建成功后清掉 pending（pending 概念是"无 session 时的下一次预设"，session 既成事实就消费掉）。
    */
   async function handleNewSession(): Promise<void> {
     const bridge = window.kodaxSpace;
@@ -65,21 +68,14 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
     setCreating(true);
     setCreateErr(null);
     try {
-      // 选 provider：Space default → KodaX default → 已配的 → mock
-      let provider: string = MOCK_PROVIDER;
-      const candidate = defaultProviderId ?? kodaxDefaults?.provider ?? null;
-      if (candidate) {
-        const p = providers.find((x) => x.id === candidate);
-        if (p?.configured) provider = candidate;
-      }
-      if (provider === MOCK_PROVIDER) {
-        // 找第一个已配置的非 mock provider 作为更友好的 default
-        const firstConfigured = providers.find((p) => p.configured && p.id !== MOCK_PROVIDER);
-        if (firstConfigured) provider = firstConfigured.id;
-      }
-
-      const reasoningMode = kodaxDefaults?.reasoningMode ?? 'auto';
-      const permissionMode = kodaxDefaults?.permissionMode ?? 'accept-edits';
+      const { provider, reasoningMode, permissionMode } = resolveSessionCreateInputs({
+        projectRoot: currentProjectPath,
+        providers,
+        defaultProviderId,
+        kodaxDefaults,
+        pendingProviderId,
+        pendingReasoningMode,
+      });
 
       const result = await bridge.invoke('session.create', {
         projectRoot: currentProjectPath,
@@ -104,6 +100,9 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
       };
       upsertSession(stub);
       setCurrentSession(stub.sessionId);
+      // 创建成功 → 消费掉 pending（pending 只是 "无 session 时的下一次预设"）
+      setPendingProviderId(null);
+      setPendingReasoningMode(null);
       // 刷新权威列表
       const listResult = await bridge.invoke('session.list', { projectRoot: currentProjectPath });
       if (listResult.ok) useAppStore.getState().setSessions(listResult.data.sessions);

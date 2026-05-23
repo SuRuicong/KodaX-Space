@@ -21,6 +21,7 @@ import { registerKodaxChannels } from './ipc/kodax.js';
 import { prewarmKodaxUserConfig, registerKodaxCustomProviders } from './kodax/user-config.js';
 import { probeKodaxSdk } from './kodax/kodax-sdk-probe.js';
 import { probeSkillRegistry } from './skill/registry.js';
+import { hydrateShellEnvOnce } from './kodax/shell-env-hydrate.js';
 import { registerProviderChannels, injectAllKeysToEnv } from './ipc/provider.js';
 import { registerFilesChannels } from './ipc/files.js';
 import { setRendererTarget } from './ipc/push.js';
@@ -153,6 +154,10 @@ function createMainWindow(): void {
 
 app.whenReady().then(async () => {
   applyCsp();
+  // v0.1.6: 先跑 shell env hydration —— 把 user .zshrc / .bashrc 里 export 的
+  // ARK_API_KEY / DEEPSEEK_API_KEY 等流进 process.env。必须早于 provider configured
+  // 检测 + customProviders 注册，否则那两步看不到 shell-set 的 key。
+  await hydrateShellEnvOnce();
   // KodaX SDK shape 漂移 fail-fast：若 ambient .d.ts 与运行时 SDK 不一致，
   // 启动期就 throw 比"用户发第一条 prompt 时白屏"更早被发现 (reviewer batch HIGH-2)。
   // v0.1.6：probe 改 async（dynamic import SDK subpath，避 CJS require 撞 exports）。
