@@ -349,84 +349,89 @@ export function BottomBar(): JSX.Element {
     !busy && !isStreaming && prompt.trim().length > 0 && !!currentProjectPath;
 
   return (
-    <div className="border-t border-zinc-900 px-3 py-2 flex-shrink-0 space-y-1.5">
+    // Claude Desktop 同款"贴底浮起卡片"。ActivitySpinner / err 仍在外层（瞬态指示，
+    // 不应挤压 input card 的视觉重量）。card 用 zinc-900/60 衬色 + 一圈极淡 border，
+    // 比"顶 border-t + 三段堆叠"更整体。
+    <div className="px-3 pt-1 pb-3 flex-shrink-0 space-y-1">
       {err && <div className="text-red-400 text-[11px] font-mono px-1">{err}</div>}
 
       {/* 流式响应时显示 spinner + 实时 status / iter / tokens */}
       <ActivitySpinner />
 
-      <ChipBar />
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 px-3 pt-2 pb-2 space-y-1.5 shadow-sm focus-within:border-zinc-700 transition-colors">
+        <ChipBar />
 
-      <div className="relative">
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={onKeyDown}
-          disabled={busy || !currentProjectPath}
-          rows={2}
-          placeholder={
-            !currentProjectPath
-              ? 'Open a folder first — Ctrl+O'
-              : currentSessionId
-                ? 'Describe a task or ask a question — Type / for commands'
-                : 'Describe a task or ask a question — session will be created on send'
-          }
-          className="w-full bg-transparent text-sm text-zinc-100 placeholder-zinc-400 resize-none focus:outline-none px-1 py-1 pr-44 disabled:opacity-50"
-        />
-        {/* Context window indicator 浮在输入框右下角 — Claude Desktop 截图 3 同款位置 */}
-        <div className="absolute right-1 bottom-1 pointer-events-auto">
-          <ContextWindowIndicator />
-        </div>
-        {/* F031: slash 补全 popover — prompt trim 后以 '/' 开头且未含空白时显示 */}
-        {slashMode && (
-          <SlashCommandPopover query={trimmedPrompt} onPick={onSlashPick} />
-        )}
-      </div>
-
-      <div className="flex items-center gap-2 text-[10px]">
         <div className="relative">
-          <button
-            type="button"
-            onClick={() => setAttachOpen((v) => !v)}
-            className="w-5 h-5 rounded text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 text-sm flex items-center justify-center"
-            title="Attach / Commands"
-            aria-label="Open attach menu"
-          >
-            ＋
-          </button>
-          <AttachMenu
-            open={attachOpen}
-            onClose={() => setAttachOpen(false)}
-            onInsertText={(text) => setPrompt((p) => (p ? `${p} ${text}` : text))}
+          <textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={onKeyDown}
+            disabled={busy || !currentProjectPath}
+            rows={2}
+            placeholder={
+              !currentProjectPath
+                ? 'Open a folder first — Ctrl+O'
+                : currentSessionId
+                  ? 'Describe a task or ask a question — Type / for commands'
+                  : 'Describe a task or ask a question — session will be created on send'
+            }
+            className="w-full bg-transparent text-sm text-zinc-100 placeholder-zinc-500 resize-none focus:outline-none px-0.5 py-1 pr-44 disabled:opacity-50"
           />
+          {/* Context window indicator 浮在输入框右下角 — Claude Desktop 截图 3 同款位置 */}
+          <div className="absolute right-1 bottom-1 pointer-events-auto">
+            <ContextWindowIndicator />
+          </div>
+          {/* F031: slash 补全 popover — prompt trim 后以 '/' 开头且未含空白时显示 */}
+          {slashMode && (
+            <SlashCommandPopover query={trimmedPrompt} onPick={onSlashPick} />
+          )}
         </div>
-        <ModeSelector />
-        <AgentModeSelector />
-        <span className="ml-auto" />
-        <ModelEffortSelector />
-        {/* Send / Stop 圆形按钮 — Claude Code / ChatGPT 同款。streaming 时变成 Stop。*/}
-        {isStreaming ? (
-          <button
-            type="button"
-            onClick={() => void handleCancel()}
-            className="ml-1 w-7 h-7 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center"
-            title="Stop (Esc)"
-            aria-label="Stop generation"
-          >
-            <span aria-hidden className="block w-2.5 h-2.5 bg-white rounded-[1px]" />
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => void handleSend()}
-            disabled={!canSend}
-            className="ml-1 w-7 h-7 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white flex items-center justify-center disabled:cursor-not-allowed"
-            title={canSend ? 'Send (Enter)' : 'Type a message first'}
-            aria-label="Send message"
-          >
-            <span aria-hidden className="text-sm leading-none">↑</span>
-          </button>
-        )}
+
+        <div className="flex items-center gap-2 text-[10px]">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setAttachOpen((v) => !v)}
+              className="w-5 h-5 rounded text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 text-sm flex items-center justify-center"
+              title="Attach / Commands"
+              aria-label="Open attach menu"
+            >
+              ＋
+            </button>
+            <AttachMenu
+              open={attachOpen}
+              onClose={() => setAttachOpen(false)}
+              onInsertText={(text) => setPrompt((p) => (p ? `${p} ${text}` : text))}
+            />
+          </div>
+          <ModeSelector />
+          <AgentModeSelector />
+          <span className="ml-auto" />
+          <ModelEffortSelector />
+          {/* Send / Stop 圆形按钮 — Claude Code / ChatGPT 同款。streaming 时变成 Stop。*/}
+          {isStreaming ? (
+            <button
+              type="button"
+              onClick={() => void handleCancel()}
+              className="ml-1 w-7 h-7 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center"
+              title="Stop (Esc)"
+              aria-label="Stop generation"
+            >
+              <span aria-hidden className="block w-2.5 h-2.5 bg-white rounded-[1px]" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void handleSend()}
+              disabled={!canSend}
+              className="ml-1 w-7 h-7 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white flex items-center justify-center disabled:cursor-not-allowed"
+              title={canSend ? 'Send (Enter)' : 'Type a message first'}
+              aria-label="Send message"
+            >
+              <span aria-hidden className="text-sm leading-none">↑</span>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
