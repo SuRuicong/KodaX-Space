@@ -186,6 +186,17 @@ interface AppState {
    * Renderer 永不直接读这个字段；不导出 selector。
    */
   pendingToolPaths: Readonly<Record<string, string>>;
+  /**
+   * P0: 已 invoke session.send 但还没收到第一个事件的 session 集合。spinner / Send-button
+   * 据此提前显示 "Sending…"，消除 user 按 Enter 到第一个事件到达之间几秒的"卡死感"。
+   * appendEvent 收到任意该 session 的事件时清掉；handleSend 错误路径也手动清。
+   */
+  pendingSendBySession: Readonly<Record<string, true | undefined>>;
+  /**
+   * P0: 每个 session 用户已发送的 prompt 历史。↑/↓ 在 BottomBar 翻阅。
+   * v0.1.x 不持久化（重启清空）；上限 200 条做 DoS guard。
+   */
+  inputHistoryBySession: Readonly<Record<string, readonly string[]>>;
 
   // ----- actions -----
   setProjects(projects: readonly Project[]): void;
@@ -240,6 +251,10 @@ interface AppState {
   rewindSessionBuffers(sessionId: string, rewindPastTurnIdx: number): void;
   /** F009: FilePanel 读完 lastDiffPath 后清掉，避免反复 jump。*/
   clearLastDiffPath(): void;
+  /** P0: 标记某 session 已 invoke session.send 但还没有事件回流；spinner 据此显示 "Sending…"。*/
+  setPendingSend(sessionId: string, pending: boolean): void;
+  /** P0: 推一条 prompt 进 input history（用户提交时调），上限 200 条。 */
+  appendInputHistory(sessionId: string, prompt: string): void;
 }
 
 // 单调 counter 用于生成 stable id——sessionId 内多条 user message 顺序唯一。
@@ -295,6 +310,8 @@ export const useAppStore = create<AppState>((set) => ({
   managedTaskStatusBySession: {},
   lastDiffPath: null,
   pendingToolPaths: {},
+  pendingSendBySession: {},
+  inputHistoryBySession: {},
   pendingProviderId: null,
   pendingReasoningMode: null,
   pendingPermissionMode: null,
@@ -341,6 +358,11 @@ export const useAppStore = create<AppState>((set) => ({
           [event.sessionId]: [...bucket, event],
         },
       };
+      // P0: 任一事件到达 → 该 session 不再"等待中"，spinner 改吃 event-driven 状态
+      if (state.pendingSendBySession[event.sessionId]) {
+        const { [event.sessionId]: _drop, ...restPending } = state.pendingSendBySession;
+        next.pendingSendBySession = restPending;
+      }
       // F008: 同步抽取 work_budget / harness_profile 到 derived maps
       // —— 视图不必每次 scan 整条 bucket
       if (event.kind === 'work_budget') {
@@ -490,6 +512,32 @@ export const useAppStore = create<AppState>((set) => ({
   setPendingPermissionMode: (mode) => set({ pendingPermissionMode: mode }),
   setPendingAgentMode: (mode) => set({ pendingAgentMode: mode }),
   setPendingModel: (model) => set({ pendingModel: model }),
+
+  setPendingSend: (sessionId, pending) =>
+    set((state) => {
+      if (pending) {
+        if (state.pendingSendBySession[sessionId]) return state;
+        return {
+          pendingSendBySession: { ...state.pendingSendBySession, [sessionId]: true as const },
+        };
+      }
+      if (!state.pendingSendBySession[sessionId]) return state;
+      const { [sessionId]: _drop, ...rest } = state.pendingSendBySession;
+      return { pendingSendBySession: rest };
+    }),
+
+  appendInputHistory: (sessionId, prompt) =>
+    set((state) => {
+      const trimmed = prompt.trim();
+      if (trimmed === '') return state;
+      const bucket = state.inputHistoryBySession[sessionId] ?? [];
+      // 去重：连续两次同 prompt 只留一条，跟 shell history 行为对齐
+      if (bucket.length > 0 && bucket[bucket.length - 1] === trimmed) return state;
+      const next = [...bucket, trimmed].slice(-200); // 上限 200 条
+      return {
+        inputHistoryBySession: { ...state.inputHistoryBySession, [sessionId]: next },
+      };
+    }),
 
   setRecentsFilter: (filter) => set({ recentsFilter: filter }),
   setTheme: (theme) => {

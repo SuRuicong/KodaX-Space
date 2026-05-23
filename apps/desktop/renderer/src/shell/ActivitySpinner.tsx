@@ -1,13 +1,15 @@
-// ActivitySpinner — alpha.1
+// ActivitySpinner — alpha.1 / P0 polish
 //
-// 流式响应中的活动指示器，挂在输入框上方。Claude Code 同款 Braille 帧循环（80ms / 帧）+
-// 实时状态文案（"Thinking…" / "Reading file…" / "Running bash…"）+ 当前 iter / tokens。
+// 流式响应中的活动指示器，挂在输入框上方。Braille 帧循环（80ms / 帧）+
+// 实时状态文案（"Thinking…" / "Reading file…" / "Running bash…"）+ 当前 iter / tokens +
+// 已用秒数（spinner stats tail，对齐 KodaX TUI）。
 //
-// 数据源（不引 store action，直接 selector）：
+// 数据源：
+//   - pendingSendBySession[currentSessionId] → session_start 还没到的等待期也亮 spinner
 //   - eventsBySession[currentSessionId] 末尾 lifecycle 事件 → streaming?
 //   - 末尾 tool_call/iteration_end 等 → 当前在干什么 + iter / token 数
 //
-// 不流式时 return null，所以挂在 BottomBar 里零成本。
+// 不 streaming 且不 pending 时 return null，所以挂在 BottomBar 里零成本。
 
 import { useEffect, useState } from 'react';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
@@ -22,15 +24,23 @@ interface ActivitySnapshot {
   readonly status: string;
   readonly iter?: { current: number; max: number };
   readonly tokens?: number;
+  /** session_start 的时间戳（spinner 计算 elapsed s 用）；pending 时退回 null。 */
+  readonly startedAt: number | null;
 }
 
-function snapshotFromEvents(events: readonly SessionEvent[]): ActivitySnapshot {
+function snapshotFromEvents(events: readonly SessionEvent[], pending: boolean): ActivitySnapshot {
   if (events.length === 0) {
-    return { streaming: false, status: '' };
+    // pending 但还没事件 → 显示 "Sending…" 占位，让 spinner 在 invoke 瞬间就亮
+    return pending
+      ? { streaming: true, status: 'Sending…', startedAt: Date.now() }
+      : { streaming: false, status: '', startedAt: null };
   }
 
   // 倒序扫到最近的 lifecycle 事件，确定 streaming
   let streaming = false;
+  let startedAt: number | null = null;
+  // session_start 不带时间戳；用 events 数组在 store 里追加顺序近似——精确不可用时用
+  // Date.now() 作为下限（只影响 elapsed s 显示，业务无依赖）。
   for (let i = events.length - 1; i >= 0; i--) {
     const ev = events[i];
     if (ev.kind === 'session_complete' || ev.kind === 'session_error') {
@@ -42,7 +52,15 @@ function snapshotFromEvents(events: readonly SessionEvent[]): ActivitySnapshot {
       break;
     }
   }
-  if (!streaming) return { streaming: false, status: '' };
+  if (!streaming) {
+    // session_start 没在末尾找到 → 如果还在 pending（新 send 还没回事件）也保持亮
+    if (pending) return { streaming: true, status: 'Sending…', startedAt: Date.now() };
+    return { streaming: false, status: '', startedAt: null };
+  }
+  // streaming 中：取最新 session_start 索引近似 startedAt。store 不存时间戳，
+  // 这里只做"第一次见到 session_start 时记一次"——用模块级 WeakMap 缓存（session 切换重置）。
+  // 简化：用 events.length 比较，第一次为新流时 reset
+  startedAt = resolveStartedAtMemo(events);
 
   // 从倒序的"内容"事件推断当前在干什么 + 取最新 iter / tokens
   let status = 'Thinking…';
@@ -75,7 +93,7 @@ function snapshotFromEvents(events: readonly SessionEvent[]): ActivitySnapshot {
     if (iter && status !== 'Thinking…') break; // 都抓到就提前出
   }
 
-  return { streaming: true, status, iter, tokens };
+  return { streaming: true, status, iter, tokens, startedAt };
 }
 
 function formatTokens(n: number): string {
@@ -84,26 +102,69 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
+// 每个 session 第一次进入 streaming 时记 startedAt；session_complete/error 时清。
+// 用 WeakMap key 不行（events 数组每次新引用），用 events.length=1 的"首次见到 session_start"
+// 做指纹粗略 memo 一下；不准也没关系，仅 spinner elapsed 展示用。
+const startedAtCache = new Map<number, number>(); // key: events ref-identity proxy (first ev sessionId hash?)
+function resolveStartedAtMemo(events: readonly SessionEvent[]): number {
+  // 找最近一段 streaming 的 session_start 索引；该索引同 events.length 一起作为 key
+  let lastStartIdx = -1;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const k = events[i].kind;
+    if (k === 'session_complete' || k === 'session_error') break;
+    if (k === 'session_start') {
+      lastStartIdx = i;
+      break;
+    }
+  }
+  if (lastStartIdx < 0) return Date.now();
+  // key = lastStartIdx + length 后缀简化指纹（不同 streaming run 必不同 key 段）
+  const key = lastStartIdx * 1_000_003 + events.length;
+  const cached = startedAtCache.get(key);
+  if (cached !== undefined) return cached;
+  const now = Date.now();
+  startedAtCache.set(key, now);
+  // 限制 cache 大小防内存涨
+  if (startedAtCache.size > 64) {
+    const firstKey = startedAtCache.keys().next().value;
+    if (firstKey !== undefined) startedAtCache.delete(firstKey);
+  }
+  return now;
+}
+
 export function ActivitySpinner(): JSX.Element | null {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const events = useAppStore((s) =>
     currentSessionId ? s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS : EMPTY_EVENTS,
   );
+  const pending = useAppStore((s) =>
+    currentSessionId ? Boolean(s.pendingSendBySession[currentSessionId]) : false,
+  );
 
-  const snap = snapshotFromEvents(events);
+  const snap = snapshotFromEvents(events, pending);
   const [frame, setFrame] = useState(0);
+  // elapsed 用 1s 心跳，独立于 80ms spinner 帧，避免重复 setState
+  const [, forceTick] = useState(0);
 
   useEffect(() => {
     if (!snap.streaming) return undefined;
-    const id = setInterval(() => setFrame((f) => (f + 1) % FRAMES.length), FRAME_MS);
-    return () => clearInterval(id);
+    const spinId = setInterval(() => setFrame((f) => (f + 1) % FRAMES.length), FRAME_MS);
+    const elapsedId = setInterval(() => forceTick((n) => (n + 1) % 1000), 1_000);
+    return () => {
+      clearInterval(spinId);
+      clearInterval(elapsedId);
+    };
   }, [snap.streaming]);
 
   if (!snap.streaming) return null;
 
   const iterStr = snap.iter ? `iter ${snap.iter.current}/${snap.iter.max}` : '';
   const tokenStr = snap.tokens !== undefined ? `${formatTokens(snap.tokens)} tokens` : '';
-  const tail = [iterStr, tokenStr].filter(Boolean).join(' · ');
+  // P0b: elapsed s — 对齐 KodaX TUI 的 "Ns" stats tail
+  const elapsedStr = snap.startedAt !== null
+    ? `${Math.max(0, Math.round((Date.now() - snap.startedAt) / 1000))}s`
+    : '';
+  const tail = [elapsedStr, iterStr, tokenStr].filter(Boolean).join(' · ');
 
   return (
     <div className="flex items-center gap-2 text-[11px] text-zinc-400 font-mono px-1 py-0.5">
@@ -116,11 +177,14 @@ export function ActivitySpinner(): JSX.Element | null {
   );
 }
 
-/** Hook 版给 BottomBar 的 Send/Stop 按钮用 — 只关心 streaming bool. */
+/** Hook 版给 BottomBar 的 Send/Stop 按钮用 — 只关心 streaming bool（含 pendingSend）. */
 export function useIsStreaming(): boolean {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const events = useAppStore((s) =>
     currentSessionId ? s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS : EMPTY_EVENTS,
   );
-  return snapshotFromEvents(events).streaming;
+  const pending = useAppStore((s) =>
+    currentSessionId ? Boolean(s.pendingSendBySession[currentSessionId]) : false,
+  );
+  return snapshotFromEvents(events, pending).streaming;
 }

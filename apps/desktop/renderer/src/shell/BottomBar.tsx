@@ -27,6 +27,9 @@ import { AgentModeSelector } from './AgentModeSelector.js';
  */
 const SLASH_ARGS_MAX = 20;
 
+// 稳定空引用，避免 selector 返 `?? []` literal 每渲染新引用触发 zustand re-render loop
+const EMPTY_INPUT_HISTORY: readonly string[] = [];
+
 /**
  * 从首条 user prompt 派生 session title。
  * alpha.1 用前 50 字符截断 + 去除换行；v0.1.x 可升级到调 Haiku 类小模型总结
@@ -75,11 +78,20 @@ export function BottomBar(): JSX.Element {
   const resetSessionMessages = useAppStore((s) => s.resetSessionMessages);
   const upsertSession = useAppStore((s) => s.upsertSession);
   const setCurrentSession = useAppStore((s) => s.setCurrentSession);
+  const setPendingSend = useAppStore((s) => s.setPendingSend);
+  const appendInputHistory = useAppStore((s) => s.appendInputHistory);
+  const inputHistory = useAppStore((s) =>
+    currentSessionId ? s.inputHistoryBySession[currentSessionId] ?? EMPTY_INPUT_HISTORY : EMPTY_INPUT_HISTORY,
+  );
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [attachOpen, setAttachOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  /** P0c: ↑/↓ 翻历史时的指针：-1 = 未浏览（输入框是用户当前 draft），0..n-1 = 看历史第 i 条。*/
+  const [historyIdx, setHistoryIdx] = useState(-1);
+  /** 在用户首次按 ↑ 之前，缓存 draft，回到 idx=-1 时还原。 */
+  const draftRef = useRef<string>('');
 
   /**
    * Auto-grow textarea：min 2 行（rows={2} 提供基线），max 12 行后开始内滚。
@@ -263,11 +275,14 @@ export function BottomBar(): JSX.Element {
     }
     // 把 "/skill args" 当一条 user message 显示
     appendUserMessage(sessionId, `/${name} ${args.join(' ')}`.trim());
+    // P0a: 标记 pending，让 spinner 在 IPC 期间就亮起来
+    setPendingSend(sessionId, true);
     const sendResult = await window.kodaxSpace.invoke('session.send', {
       sessionId,
       prompt: resolvedPrompt,
     });
     if (!sendResult.ok) {
+      setPendingSend(sessionId, false);
       setErr(`${sendResult.error?.code ?? 'ERR_UNKNOWN'}: ${sendResult.error?.message ?? 'unknown error'}`);
     }
   }
@@ -314,11 +329,21 @@ export function BottomBar(): JSX.Element {
           });
         }
       }
+      // P0c: 把发送的 prompt 推进历史（appendInputHistory 内部 trim + dedup）
+      appendInputHistory(sid, trimmed);
+      // P0c: 重置 history 浏览指针
+      setHistoryIdx(-1);
+      draftRef.current = '';
+      // P0a: spinner 立即亮起（在 invoke 前置位，event 到达时由 store appendEvent 清掉）
+      setPendingSend(sid, true);
       const result = await window.kodaxSpace.invoke('session.send', {
         sessionId: sid,
         prompt: trimmed,
       });
-      if (!result.ok) setErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`);
+      if (!result.ok) {
+        setPendingSend(sid, false);
+        setErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`);
+      }
     } finally {
       setBusy(false);
     }
@@ -373,6 +398,52 @@ export function BottomBar(): JSX.Element {
       }
       e.preventDefault();
       void handleSend();
+      return;
+    }
+    // P0c: ↑/↓ 历史翻阅 — 仅在光标在 textarea 第一行 (↑) 或最后行 (↓) 触发，
+    // 让多行编辑里的 ↑↓ 仍是浏览器原生光标移动。空 history 不响应。
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && inputHistory.length > 0) {
+      const ta = e.currentTarget;
+      const value = ta.value;
+      const caret = ta.selectionStart ?? 0;
+      const firstLineEnd = value.indexOf('\n');
+      const isOnFirstLine = firstLineEnd === -1 || caret <= firstLineEnd;
+      const isOnLastLine = caret >= value.lastIndexOf('\n') + 1 || value.indexOf('\n') === -1;
+
+      if (e.key === 'ArrowUp' && isOnFirstLine) {
+        // 首次按 ↑ → 保存 draft，然后取最近一条
+        if (historyIdx === -1) draftRef.current = value;
+        const nextIdx =
+          historyIdx === -1 ? inputHistory.length - 1 : Math.max(0, historyIdx - 1);
+        e.preventDefault();
+        setHistoryIdx(nextIdx);
+        setPrompt(inputHistory[nextIdx]);
+        return;
+      }
+      if (e.key === 'ArrowDown' && isOnLastLine && historyIdx !== -1) {
+        e.preventDefault();
+        if (historyIdx + 1 >= inputHistory.length) {
+          // 回到 draft
+          setHistoryIdx(-1);
+          setPrompt(draftRef.current);
+        } else {
+          const nextIdx = historyIdx + 1;
+          setHistoryIdx(nextIdx);
+          setPrompt(inputHistory[nextIdx]);
+        }
+        return;
+      }
+    }
+    // 用户开始打字 / 输入 → 取消历史浏览态（不打扰编辑）
+    if (
+      historyIdx !== -1 &&
+      e.key.length === 1 &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey
+    ) {
+      setHistoryIdx(-1);
+      // 不还原 draft——用户已经在 history 项上手动编辑了，应当 keep 当前内容
     }
   }
 
