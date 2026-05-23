@@ -127,6 +127,12 @@ export {
 export { titlebarSetOverlayChannel } from './channels/titlebar.js';
 
 export {
+  settingsGetChannel,
+  settingsSetDefaultWorkspaceChannel,
+  type SpaceSettingsT,
+} from './channels/settings.js';
+
+export {
   INVOKE_CHANNEL_NAMES,
   PUSH_CHANNEL_NAMES,
   getInvokeChannel,

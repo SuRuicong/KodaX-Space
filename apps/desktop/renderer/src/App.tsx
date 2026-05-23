@@ -76,6 +76,19 @@ export default function App(): JSX.Element {
       }
     });
 
+    // 启动期：若 currentProjectPath 仍 null，从 settings.get 拉默认 workspace 自动设上。
+    // main 端 ensureWorkspaceExists 保证 ~/kodax_workspace 已 mkdir。这样新用户首次启动
+    // 不必先点 Open folder 才能用 — 类似 Claude Code 的 "立刻可用" 体验。
+    void bridge.invoke('settings.get', {}).then(async (result) => {
+      if (!result.ok) return;
+      const { defaultWorkspace } = result.data;
+      const cur = useAppStore.getState().currentProjectPath;
+      if (cur) return; // 用户已经选了 project（recent picker 或 dialog），不覆盖
+      useAppStore.getState().setCurrentProject(defaultWorkspace);
+      // 同时加进 recent list，让侧栏 ProjectPicker 看得到
+      await bridge.invoke('project.recent.add', { path: defaultWorkspace }).catch(() => {});
+    });
+
     // 全局 session.event 订阅——所有 session 共用这个监听，store 按 sessionId 路由
     unsubsRef.current.push(
       bridge.on('session.event', (event) => {

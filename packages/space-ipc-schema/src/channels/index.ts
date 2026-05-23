@@ -67,6 +67,7 @@ import {
 } from './provider.js';
 import { filesTreeChannel, filesReadChannel, filesDiffChannel } from './files.js';
 import { titlebarSetOverlayChannel } from './titlebar.js';
+import { settingsGetChannel, settingsSetDefaultWorkspaceChannel } from './settings.js';
 
 export const invokeChannels = {
   [versionChannel.name]: versionChannel,
@@ -108,6 +109,8 @@ export const invokeChannels = {
   [filesReadChannel.name]: filesReadChannel,
   [filesDiffChannel.name]: filesDiffChannel,
   [titlebarSetOverlayChannel.name]: titlebarSetOverlayChannel,
+  [settingsGetChannel.name]: settingsGetChannel,
+  [settingsSetDefaultWorkspaceChannel.name]: settingsSetDefaultWorkspaceChannel,
 } as const;
 
 export const pushChannels = {

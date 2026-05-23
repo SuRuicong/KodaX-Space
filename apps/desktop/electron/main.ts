@@ -25,6 +25,8 @@ import { hydrateShellEnvOnce } from './kodax/shell-env-hydrate.js';
 import { registerProviderChannels, injectAllKeysToEnv } from './ipc/provider.js';
 import { registerFilesChannels } from './ipc/files.js';
 import { registerTitlebarChannels } from './ipc/titlebar.js';
+import { registerSettingsChannels } from './ipc/settings.js';
+import { settingsStore } from './settings/store.js';
 import { setRendererTarget } from './ipc/push.js';
 import { kodaxHost } from './kodax/host.js';
 import { permissionRegistry } from './permission/registry.js';
@@ -207,6 +209,10 @@ app.whenReady().then(async () => {
   registerProviderChannels();
   registerFilesChannels();
   registerTitlebarChannels();
+  registerSettingsChannels();
+  // 启动期保证默认 workspace 目录存在 (~/kodax_workspace 或用户改过的路径)。
+  // 不阻塞窗口创建——mkdir 失败 (磁盘满 / 权限) 不致命，UI 仍能用 + 用户可走 Open folder.
+  void settingsStore.ensureWorkspaceExists();
   // push 目标走 getter 间接拿当前 window——dev HMR / 用户重开窗口都能正确切换
   setRendererTarget(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null));
   // 预加载 always-allow 规则 — broker.request 走 matches() 是同步路径，必须事先 load。

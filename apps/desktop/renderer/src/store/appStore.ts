@@ -147,6 +147,10 @@ interface AppState {
   pendingProviderId: string | null;
   pendingReasoningMode: SessionMeta['reasoningMode'] | null;
   pendingPermissionMode: SessionMeta['permissionMode'] | null;
+  /** Pending model — 用户在右下角 picker 选的 model 名 (provider.models 之一)。
+   *  无 session 时存这里；session 创建后通过 /model slash 命令应用到 KodaX 运行时。
+   *  alpha.1 不持久化到 SessionMeta (SDK 暂无 model field)，重启丢失但当前会话内有效。*/
+  pendingModel: string | null;
   /**
    * Session UX flags — alpha.1 阶段不持久化（重启清空）。
    *   - pinned：sidebar Recents 顶部置顶
@@ -207,6 +211,7 @@ interface AppState {
   setPendingProviderId(id: string | null): void;
   setPendingReasoningMode(mode: SessionMeta['reasoningMode'] | null): void;
   setPendingPermissionMode(mode: SessionMeta['permissionMode'] | null): void;
+  setPendingModel(model: string | null): void;
   /** Session UX flags — 局部状态 (alpha.1 不持久化)。toggle 形 + 合并形 set 函数。*/
   toggleSessionFlag(sessionId: string, flag: 'pinned' | 'archived' | 'unread'): void;
   setRecentsFilter(filter: RecentsFilter): void;
@@ -259,6 +264,7 @@ export const useAppStore = create<AppState>((set) => ({
   pendingProviderId: null,
   pendingReasoningMode: null,
   pendingPermissionMode: null,
+  pendingModel: null,
   sessionFlags: {},
   recentsFilter: DEFAULT_RECENTS_FILTER,
   theme: (typeof window !== 'undefined' && (localStorage.getItem('kodax-space.theme') as 'dark' | 'light' | 'system' | null)) || 'dark',
@@ -444,6 +450,7 @@ export const useAppStore = create<AppState>((set) => ({
   setPendingProviderId: (id) => set({ pendingProviderId: id }),
   setPendingReasoningMode: (mode) => set({ pendingReasoningMode: mode }),
   setPendingPermissionMode: (mode) => set({ pendingPermissionMode: mode }),
+  setPendingModel: (model) => set({ pendingModel: model }),
 
   setRecentsFilter: (filter) => set({ recentsFilter: filter }),
   setTheme: (theme) => {
