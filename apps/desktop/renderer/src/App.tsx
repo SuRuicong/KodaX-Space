@@ -76,28 +76,38 @@ export default function App(): JSX.Element {
       }
     });
 
-    // 启动期：把磁盘的 recent projects 列表载入 store，让 ChipBar 📁 下拉看到上次的项目。
-    // 新 Shell 不渲染旧 ProjectPicker 组件，所以那个 mount-time project.list 路径不会跑——
-    // 必须在 App 顶层启动时显式拉一次。还原"打开过的 dir 没保留"的 bug 根因。
-    void bridge.invoke('project.list', undefined).then((result) => {
-      if (result.ok) useAppStore.getState().setProjects(result.data.projects);
-    });
-
-    // 启动期：若 currentProjectPath 仍 null，从 settings.get 拉默认 workspace 自动设上。
-    // main 端 ensureWorkspaceExists 保证 ~/kodax_workspace 已 mkdir。这样新用户首次启动
-    // 不必先点 Open folder 才能用 — 类似 Claude Code 的 "立刻可用" 体验。
-    void bridge.invoke('settings.get', {}).then(async (result) => {
-      if (!result.ok) return;
-      const { defaultWorkspace } = result.data;
-      const cur = useAppStore.getState().currentProjectPath;
-      if (cur) return; // 用户已经选了 project（recent picker 或 dialog），不覆盖
-      useAppStore.getState().setCurrentProject(defaultWorkspace);
-      // 同时加进 recent list，让侧栏 ProjectPicker 看得到
-      await bridge.invoke('project.recent.add', { path: defaultWorkspace }).catch(() => {});
-      // recent.add 后再刷一次 list — 新条目应当立即出现在 ChipBar 📁 下拉里
+    // 启动期项目恢复 — 优先级：
+    //   1. zustand store 已有 currentProjectPath（localStorage 持久化的 → store init 时就填上了）
+    //   2. project.list 里 lastUsedAt 最新的 recent project（用户上次开过的真实目录）
+    //   3. settings.defaultWorkspace 兜底（首次启动新用户）
+    //
+    // 之前直接走 defaultWorkspace，等同于"每次启动都打开默认 workspace"——用户在
+    // KodaX-Space / 别的项目里干完活退出，下次开 Space 又跳回默认目录，体验差。
+    // 现在按"最近用的"恢复，跟 VSCode / Claude Desktop / Cursor 等 IDE 一致。
+    void (async () => {
       const listR = await bridge.invoke('project.list', undefined).catch(() => null);
-      if (listR && listR.ok) useAppStore.getState().setProjects(listR.data.projects);
-    });
+      const projects = listR && listR.ok ? listR.data.projects : [];
+      useAppStore.getState().setProjects(projects);
+
+      // 已经有 currentProjectPath（localStorage 恢复 / 用户已操作）→ 不覆盖
+      if (useAppStore.getState().currentProjectPath) return;
+
+      // 优先用 recent 里 lastUsedAt 最新的
+      if (projects.length > 0) {
+        const mostRecent = projects.reduce((a, b) => (b.lastUsedAt > a.lastUsedAt ? b : a));
+        useAppStore.getState().setCurrentProject(mostRecent.path);
+        return;
+      }
+
+      // 一个 recent 都没有 → 真"首次启动"，落到 defaultWorkspace
+      const settingsR = await bridge.invoke('settings.get', {}).catch(() => null);
+      if (!settingsR || !settingsR.ok) return;
+      const { defaultWorkspace } = settingsR.data;
+      useAppStore.getState().setCurrentProject(defaultWorkspace);
+      await bridge.invoke('project.recent.add', { path: defaultWorkspace }).catch(() => {});
+      const refreshR = await bridge.invoke('project.list', undefined).catch(() => null);
+      if (refreshR && refreshR.ok) useAppStore.getState().setProjects(refreshR.data.projects);
+    })();
 
     // 全局 session.event 订阅——所有 session 共用这个监听，store 按 sessionId 路由
     unsubsRef.current.push(
