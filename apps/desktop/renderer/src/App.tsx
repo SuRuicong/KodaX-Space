@@ -29,9 +29,11 @@ import { ProviderSettings } from './features/provider/ProviderSettings.js';
 import { FilePanel } from './features/code/FilePanel.js';
 import { Shell } from './shell/Shell.js';
 
-// alpha.1: Claude Desktop 风 shell 已成为默认 UI。旧 layout 暂留 fallback (用 VITE_USE_NEW_SHELL=0 显式回退)。
+// alpha.1: Claude Desktop 风 shell 临时回滚（React error #185 无限渲染循环修复前）。
+// 用 VITE_USE_NEW_SHELL=1 强制启用新 shell（用户主动试用 debug 路径）。
+// 修复 #185 后会再次设为默认 on。
 // 注：init useEffect 在两种 shell 下都需要跑（拉 version / providers / 订阅事件流），所以保持在 App 顶层。
-const USE_NEW_SHELL = import.meta.env.VITE_USE_NEW_SHELL !== '0';
+const USE_NEW_SHELL = import.meta.env.VITE_USE_NEW_SHELL === '1';
 
 export default function App(): JSX.Element {
   const [version, setVersion] = useState<SpaceVersionOutput | null>(null);
