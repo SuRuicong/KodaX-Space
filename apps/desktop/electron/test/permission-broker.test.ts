@@ -40,10 +40,12 @@ function lastRequest(): { reqId: string; sessionId: string } {
 }
 
 test('request → resolve(allow_once) returns decision', async () => {
+  // 用中性 tool 名 — 'read' 现在被 broker 视作 READONLY_TOOLS 直接 short-circuit allow，
+  // 不会推 permission.request；要验证 ask-and-wait 流程必须用非 edit / 非 readonly 的工具名
   const pending = permissionBroker.request({
     sessionId: 's1',
     toolId: 't1',
-    toolName: 'read',
+    toolName: 'unknown_tool',
     input: { path: 'a' },
   });
   // 让 push 落到 captured
@@ -134,7 +136,7 @@ test('timeout: auto-resolves to deny + pushes permission.cancelled(timeout)', as
   const pending = permissionBroker.request({
     sessionId: 's-timeout',
     toolId: 't1',
-    toolName: 'read',
+    toolName: 'unknown_tool',
     input: { path: 'a' },
     timeoutMs: 30,
   });
@@ -155,12 +157,12 @@ test('allow_always: cached rule pre-empts second request (same pattern, no push)
   // 第一次请求 → resolve allow_always 不直接写规则；我们手工把 rule 塞进 registry
   // 模拟"上次已批准并写入 ~/.kodax/permissions.json"
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (permissionRegistry as any).cached = [{ pattern: 'read', createdAt: Date.now() }];
+  (permissionRegistry as any).cached = [{ pattern: 'unknown_tool', createdAt: Date.now() }];
 
   const pending = permissionBroker.request({
     sessionId: 's1',
     toolId: 't1',
-    toolName: 'read',
+    toolName: 'unknown_tool',
     input: { path: 'a' },
   });
   await new Promise((r) => setImmediate(r));
@@ -171,6 +173,37 @@ test('allow_always: cached rule pre-empts second request (same pattern, no push)
 
   const result = await pending;
   assert.equal(result.decision, 'allow_once');
+});
+
+// READONLY_TOOLS fast-path — accept-edits / auto 模式下 read/glob/grep 等不弹窗
+test('READONLY_TOOLS fast-path: read in accept-edits short-circuits to allow_once (no prompt)', async () => {
+  captured.length = 0;
+  const pending = permissionBroker.request({
+    sessionId: 's-readonly',
+    toolId: 't1',
+    toolName: 'read',
+    input: { path: 'README.md' },
+    mode: 'accept-edits',
+  });
+  const result = await pending;
+  assert.equal(result.decision, 'allow_once');
+  const reqs = captured.filter((c) => c.channel === 'permission.request');
+  assert.equal(reqs.length, 0, 'readonly tool must not prompt under accept-edits');
+});
+
+test('READONLY_TOOLS fast-path: grep in auto-mode short-circuits to allow_once', async () => {
+  captured.length = 0;
+  const pending = permissionBroker.request({
+    sessionId: 's-readonly-auto',
+    toolId: 't1',
+    toolName: 'grep',
+    input: { pattern: 'foo' },
+    mode: 'auto',
+  });
+  const result = await pending;
+  assert.equal(result.decision, 'allow_once');
+  const reqs = captured.filter((c) => c.channel === 'permission.request');
+  assert.equal(reqs.length, 0, 'readonly tool must not prompt under auto');
 });
 
 test('C2-sec: broker.peek returns trustedPattern from pending entry', async () => {
@@ -211,7 +244,7 @@ test('C2-sec: resolve with allow_always uses trustedPattern (renderer cannot inf
   const pending = permissionBroker.request({
     sessionId: 's1',
     toolId: 't1',
-    toolName: 'read',
+    toolName: 'custom_tool',
     input: { path: 'a' },
   });
   await new Promise((r) => setImmediate(r));
@@ -219,20 +252,20 @@ test('C2-sec: resolve with allow_always uses trustedPattern (renderer cannot inf
   permissionBroker.resolve(reqId, 'allow_always');
   const result = await pending;
   assert.equal(result.decision, 'allow_always');
-  assert.equal(result.pattern, 'read'); // 取自 broker 生成的 suggestedPattern
+  assert.equal(result.pattern, 'custom_tool'); // 取自 broker 生成的 suggestedPattern
 });
 
 test('M2-sec: cancelAll pushes permission.cancelled for each pending', async () => {
   const p1 = permissionBroker.request({
     sessionId: 's1',
     toolId: 't1',
-    toolName: 'read',
+    toolName: 'custom_tool',
     input: { path: 'a' },
   });
   const p2 = permissionBroker.request({
     sessionId: 's2',
     toolId: 't2',
-    toolName: 'read',
+    toolName: 'custom_tool',
     input: { path: 'b' },
   });
   await new Promise((r) => setImmediate(r));
@@ -253,10 +286,12 @@ test('M2-sec: cancelAll pushes permission.cancelled for each pending', async () 
 });
 
 test('H3-sec: pushed permission.request has sanitized toolName (RTL stripped)', async () => {
+  // 用非 readonly / 非 edit 的中性工具名，确保 broker 走 push 路径（READONLY_TOOLS short-circuit
+  // 不 push，会让 lastRequest() 找不到 evt）
   const pending = permissionBroker.request({
     sessionId: 's1',
     toolId: 't1',
-    toolName: '‮read', // RTL override + read
+    toolName: '‮foo_tool', // RTL override + 非内置名
     input: { path: 'normal.txt' },
   });
   await new Promise((r) => setImmediate(r));
@@ -264,7 +299,7 @@ test('H3-sec: pushed permission.request has sanitized toolName (RTL stripped)', 
   assert.ok(evt);
   const p = evt.payload as { toolCall: { toolName: string } };
   // RTL 必须被剥掉
-  assert.equal(p.toolCall.toolName, 'read');
+  assert.equal(p.toolCall.toolName, 'foo_tool');
 
   const { reqId } = lastRequest();
   permissionBroker.resolve(reqId, 'deny');
@@ -275,7 +310,7 @@ test('H3-sec: pushed input strings are sanitized', async () => {
   const pending = permissionBroker.request({
     sessionId: 's1',
     toolId: 't1',
-    toolName: 'read',
+    toolName: 'unknown_tool',
     input: { path: '‮src/main.ts', mode: 'r\x00w' },
   });
   await new Promise((r) => setImmediate(r));

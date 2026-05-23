@@ -17,6 +17,7 @@ import { ContextWindowIndicator } from './ContextWindowIndicator.js';
 import { AttachMenu } from './AttachMenu.js';
 import { SlashCommandPopover, type SlashPickerItem } from './SlashCommandPopover.js';
 import { resolveSessionCreateInputs } from './createSession.js';
+import { ActivitySpinner, useIsStreaming } from './ActivitySpinner.js';
 
 /**
  * F031 helper：按空白切 args，保留双引号包裹的整段。
@@ -336,9 +337,16 @@ export function BottomBar(): JSX.Element {
     }
   }
 
+  const isStreaming = useIsStreaming();
+  const canSend =
+    !busy && !isStreaming && prompt.trim().length > 0 && !!currentProjectPath;
+
   return (
     <div className="border-t border-zinc-900 px-3 py-2 flex-shrink-0 space-y-1.5">
       {err && <div className="text-red-400 text-[11px] font-mono px-1">{err}</div>}
+
+      {/* 流式响应时显示 spinner + 实时 status / iter / tokens */}
+      <ActivitySpinner />
 
       <ChipBar />
 
@@ -386,16 +394,31 @@ export function BottomBar(): JSX.Element {
           />
         </div>
         <ModeSelector />
-        <button
-          type="button"
-          onClick={() => void handleCancel()}
-          disabled={!busy}
-          className="text-zinc-300 hover:text-zinc-100 disabled:text-zinc-500 disabled:cursor-not-allowed"
-        >
-          Cancel
-        </button>
         <span className="ml-auto" />
         <ModelEffortSelector />
+        {/* Send / Stop 圆形按钮 — Claude Code / ChatGPT 同款。streaming 时变成 Stop。*/}
+        {isStreaming ? (
+          <button
+            type="button"
+            onClick={() => void handleCancel()}
+            className="ml-1 w-7 h-7 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center"
+            title="Stop (Esc)"
+            aria-label="Stop generation"
+          >
+            <span aria-hidden className="block w-2.5 h-2.5 bg-white rounded-[1px]" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void handleSend()}
+            disabled={!canSend}
+            className="ml-1 w-7 h-7 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white flex items-center justify-center disabled:cursor-not-allowed"
+            title={canSend ? 'Send (Enter)' : 'Type a message first'}
+            aria-label="Send message"
+          >
+            <span aria-hidden className="text-sm leading-none">↑</span>
+          </button>
+        )}
       </div>
     </div>
   );

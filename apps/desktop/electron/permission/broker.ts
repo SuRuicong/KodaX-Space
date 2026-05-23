@@ -47,6 +47,17 @@ export interface PermissionRequestInput {
 // fallback 到 accept-edits 同行为，保证 mode='auto' 至少不比 accept-edits 严。
 const EDIT_TOOLS = new Set(['edit', 'write', 'multi_edit', 'str_replace', 'insert_after_anchor']);
 
+// Readonly tools — 在 accept-edits / auto 模式下 hard-code 自动允许，**不依赖 LLM classifier**。
+// 这关闭了 auto[LLM] 模式下 classifier 网络 / 超时 / 无 model 时仍把 read 弹给用户的退化路径
+// (用户反馈：切到 auto[LLM] 还要为 read 授权)。语义上只读无副作用，安全允许。
+// 名字覆盖 KodaX 内置 read 类工具 + Claude Code 通用名 — 三方一致。
+const READONLY_TOOLS = new Set([
+  'read', 'read_file',
+  'glob', 'grep', 'ripgrep', 'search',
+  'ls', 'list_directory', 'list_files',
+  'web_fetch', 'web_search',
+]);
+
 export interface PermissionResolved {
   readonly decision: PermissionDecision;
   readonly pattern?: string;
@@ -95,7 +106,7 @@ class PermissionBroker {
     }
     if ((mode === 'accept-edits' || mode === 'auto')
         && !assessment.dangerous
-        && EDIT_TOOLS.has(req.toolName)) {
+        && (EDIT_TOOLS.has(req.toolName) || READONLY_TOOLS.has(req.toolName))) {
       return { decision: 'allow_once', risk: assessment.risk };
     }
 

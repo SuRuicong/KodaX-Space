@@ -133,7 +133,9 @@ test('tool_progress updates an existing card progress field', () => {
   }
 });
 
-test('iteration_end emits system_notice with token count', () => {
+test('iteration_end no longer pushes system_notice (data goes to BottomBar spinner/status)', () => {
+  // 用户反馈：每轮中间的 "iter N/M · X tokens" 分隔线打断阅读节奏。改为只在状态栏 +
+  // 流式 spinner 旁显示实时 iter / tokens；对话流里不再插这条 system_notice.
   const events: SessionEvent[] = [
     { kind: 'text_delta', sessionId: sid, text: 'work' },
     {
@@ -146,11 +148,11 @@ test('iteration_end emits system_notice with token count', () => {
     { kind: 'session_complete', sessionId: sid },
   ];
   const out = composeMessages({ events, userMessages: [userMsg('u1', 'q')] });
-  const iter = out.find((m) => m.kind === 'system_notice' && m.variant === 'iteration');
-  assert.ok(iter);
-  if (iter?.kind === 'system_notice') {
-    assert.equal(iter.text, 'iter 2/30 · 1500 tokens');
-  }
+  const iterNotice = out.find((m) => m.kind === 'system_notice' && m.variant === 'iteration');
+  assert.equal(iterNotice, undefined, 'iteration variant must not appear in conversation');
+  // 但 ✓ complete 仍应出现 — 那是 session-level 标志
+  const completeNotice = out.find((m) => m.kind === 'system_notice' && m.variant === 'complete');
+  assert.ok(completeNotice, 'complete notice should still be emitted');
 });
 
 test('session_error emits system_notice variant=error with the error text', () => {

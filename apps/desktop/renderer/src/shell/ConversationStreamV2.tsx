@@ -9,7 +9,7 @@
 // 一组内 N >= 1 时显示 "Ran N commands ›"（N=1 时仍折叠，统一形态）。
 // 点击聚合行展开 = 显示组里每个 tool 的细节卡。
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { useAppStore, type UserMessage } from '../store/appStore.js';
 import { composeMessages, type ConversationMessage } from '../features/session/composeMessages.js';
@@ -93,11 +93,23 @@ export function ConversationStreamV2(): JSX.Element {
     setShowJumpToBottom(!atBottom && distanceFromBottom > 100);
   }
 
-  useLayoutEffect(() => {
-    if (wasAtBottomRef.current && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [viewMessages.length]);
+  // ResizeObserver 是真正的 sticky-bottom 实现：
+  // 流式 assistant_chunk 来时 message length 不变（在同一 bubble 上累积 text），
+  // 之前用 useLayoutEffect([viewMessages.length]) 不触发滚动。改成 observe 内容容器
+  // scrollHeight 变化——每个新字符都会让 follower 自动跟到底，除非用户主动上滚。
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (wasAtBottomRef.current) {
+        el.scrollTop = el.scrollHeight;
+      }
+    });
+    // observe 直接子元素（实际承载内容的 div），它 scrollHeight 变化才触发
+    const inner = el.firstElementChild;
+    if (inner) ro.observe(inner);
+    return () => ro.disconnect();
+  }, [currentSessionId]);
 
   useEffect(() => {
     if (scrollRef.current) {

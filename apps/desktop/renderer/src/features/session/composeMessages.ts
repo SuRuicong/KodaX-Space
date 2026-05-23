@@ -181,13 +181,10 @@ function composeAssistantSegment(segment: readonly SessionEvent[], out: Conversa
         break;
       }
       case 'iteration_end': {
+        // iter/token 数据由 BottomBar 的 ActivitySpinner + ContextWindowIndicator
+        // 持续显示，对话流不再插 system_notice — 避免每轮中间出现 "iter 1/200 · 14k tokens"
+        // 分隔线打断阅读节奏（用户反馈：状态栏有就够了）。
         flushTextBubble();
-        out.push({
-          kind: 'system_notice',
-          id: `${segmentTag}_iter${noticeCounter++}`,
-          variant: 'iteration',
-          text: `iter ${evt.iter}/${evt.maxIter} · ${evt.tokenCount} tokens`,
-        });
         break;
       }
       case 'session_complete': {
