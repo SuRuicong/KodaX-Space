@@ -222,6 +222,12 @@ export function BottomBar(): JSX.Element {
         await invokeSkill(sessionId, name, args);
         return;
       }
+      // P1: __action__:* 内部 action 协议 — main 给到 renderer 时不 echo，由 renderer
+      // 自己渲染 / 执行（clipboard / 新建 session 等）。
+      if (ok && message?.startsWith('__action__:')) {
+        await dispatchSlashAction(sessionId, name, args, message.slice('__action__:'.length));
+        return;
+      }
       if (echo && message) {
         // F031: /help /clear 等命令把 message 当 system_notice 显示
         appendUserMessage(sessionId, `/${name} ${args.join(' ')}`.trim());
@@ -239,6 +245,147 @@ export function BottomBar(): JSX.Element {
     } finally {
       setBusy(false);
     }
+  }
+
+  /**
+   * P1: 处理 main 返回的 __action__:* 协议。每种 action 自己决定怎么呈现：
+   *   - new-session: 清 currentSession 让 LeftSidebar 触发 New session 行为（pending 状态保留）
+   *   - copy-last: 抓最近 text_delta sum，写 navigator.clipboard
+   *   - show-cost / show-tree / show-history: 用 appendUserMessage 把汇总插一条 system 行
+   *
+   * 不接 main 的 setter（这些 action 都是 renderer-side 数据派生）。
+   */
+  async function dispatchSlashAction(
+    sessionId: string,
+    name: string,
+    args: string[],
+    action: string,
+  ): Promise<void> {
+    // 始终先 echo 命令本身，让用户在 transcript 里看见自己输入了什么
+    appendUserMessage(sessionId, `/${name} ${args.join(' ')}`.trim());
+
+    const state = useAppStore.getState();
+    const events = state.eventsBySession[sessionId] ?? [];
+
+    if (action === 'new-session') {
+      // 把 currentSession 置 null，LeftSidebar 的 "+ New session" 用户自助点；
+      // 这里做"清空当前"动作（避免 main 也得管 session.create 的全部 deps）
+      state.setCurrentSession(null);
+      return;
+    }
+
+    if (action === 'copy-last') {
+      // 抓最近一段连续的 text_delta，拼成 last assistant message
+      let lastText = '';
+      // 倒序找到 session_complete/error 前一段或末尾的 text_delta
+      for (let i = events.length - 1; i >= 0; i--) {
+        const ev = events[i];
+        if (ev.kind === 'text_delta') lastText = (ev as { text?: string }).text + lastText;
+        else if (ev.kind === 'session_complete' || ev.kind === 'session_error') {
+          // 跳过这条 lifecycle event 继续往前收
+          continue;
+        } else if (lastText.length > 0 && (ev.kind === 'tool_result' || ev.kind === 'session_start')) {
+          break;
+        }
+      }
+      if (lastText.length === 0) {
+        appendUserMessage(sessionId, '[copy] no assistant message to copy');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(lastText);
+        appendUserMessage(sessionId, `[copy] ${lastText.length} chars copied to clipboard`);
+      } catch (err) {
+        appendUserMessage(
+          sessionId,
+          `[copy] clipboard write failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      return;
+    }
+
+    if (action === 'show-cost') {
+      // 汇总 iteration_end 里的 tokenCount 与 usage
+      let inputTokens = 0;
+      let outputTokens = 0;
+      let totalTokens = 0;
+      let lastIter = 0;
+      let maxIter = 0;
+      for (const ev of events) {
+        if (ev.kind === 'iteration_end') {
+          const e = ev as { iter?: number; maxIter?: number; tokenCount?: number; usage?: { inputTokens?: number; outputTokens?: number } };
+          if (typeof e.iter === 'number') lastIter = e.iter;
+          if (typeof e.maxIter === 'number') maxIter = e.maxIter;
+          if (typeof e.tokenCount === 'number') totalTokens = e.tokenCount;
+          if (e.usage) {
+            if (typeof e.usage.inputTokens === 'number') inputTokens = e.usage.inputTokens;
+            if (typeof e.usage.outputTokens === 'number') outputTokens = e.usage.outputTokens;
+          }
+        }
+      }
+      const lines = [
+        `[cost] session: ${sessionId.slice(0, 12)}…`,
+        `  iterations: ${lastIter}/${maxIter || '?'}`,
+        `  input tokens: ${inputTokens.toLocaleString()}`,
+        `  output tokens: ${outputTokens.toLocaleString()}`,
+        `  total: ${totalTokens.toLocaleString()}`,
+        '  (cost estimate requires per-model pricing — v0.1.7+)',
+      ];
+      appendUserMessage(sessionId, lines.join('\n'));
+      return;
+    }
+
+    if (action === 'show-tree') {
+      // 当前 session 沿 parentSessionId 上溯 + 同 parent 的所有 children 列出
+      const all = state.sessions;
+      const me = all.find((s) => s.sessionId === sessionId);
+      if (!me) {
+        appendUserMessage(sessionId, '[tree] session not in renderer list');
+        return;
+      }
+      // 走 root
+      let root = me;
+      while (root.parentSessionId) {
+        const parent = all.find((s) => s.sessionId === root.parentSessionId);
+        if (!parent) break;
+        root = parent;
+      }
+      // DFS 列出 root 及所有后代
+      const lines: string[] = [`[tree] lineage from ${root.sessionId.slice(0, 12)}…`];
+      const visit = (sid: string, depth: number): void => {
+        const sess = all.find((s) => s.sessionId === sid);
+        if (!sess) return;
+        const marker = sess.sessionId === sessionId ? '◉' : '○';
+        const indent = '  '.repeat(depth);
+        lines.push(`${indent}${marker} ${sess.title ?? sess.sessionId.slice(0, 12)}`);
+        const kids = all.filter((s) => s.parentSessionId === sid);
+        for (const k of kids) visit(k.sessionId, depth + 1);
+      };
+      visit(root.sessionId, 0);
+      appendUserMessage(sessionId, lines.join('\n'));
+      return;
+    }
+
+    if (action === 'show-history') {
+      const userMsgs = state.userMessagesBySession[sessionId] ?? [];
+      if (userMsgs.length === 0) {
+        appendUserMessage(sessionId, '[history] no user messages yet');
+        return;
+      }
+      const lines = [
+        `[history] ${userMsgs.length} user message(s):`,
+        ...userMsgs.slice(-20).map((m, i) => {
+          const idx = Math.max(0, userMsgs.length - 20) + i + 1;
+          const head = m.content.replace(/\s+/g, ' ').slice(0, 80);
+          return `  ${idx}. ${head}${m.content.length > 80 ? '…' : ''}`;
+        }),
+      ];
+      appendUserMessage(sessionId, lines.join('\n'));
+      return;
+    }
+
+    // 未知 action — 兜底显示原 message
+    appendUserMessage(sessionId, `[unknown action: ${action}]`);
   }
 
   /** 仅 popover 直接点中 slash 命令（已知 builtin、无 fallback 必要）时用。*/

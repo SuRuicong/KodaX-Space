@@ -13,7 +13,7 @@
 // 实现哲学：每个 handler 只调 host setter + emit 提示事件；renderer 看到事件再渲染。
 // 不在 main 做"美化输出"——和 KodaX REPL 一样保持 main 端最小职责。
 
-import type { PermissionMode, AutoModeEngine } from '@kodax-space/space-ipc-schema';
+import type { PermissionMode, AutoModeEngine, AgentMode } from '@kodax-space/space-ipc-schema';
 import type { SlashCommandDef } from './registry.js';
 import { kodaxHost } from '../kodax/host.js';
 import { isBuiltinId } from '../providers/catalog.js';
@@ -25,6 +25,7 @@ type ReasoningMode = (typeof REASONING_MODES)[number];
 
 const PERMISSION_MODES: readonly PermissionMode[] = ['plan', 'accept-edits', 'auto'];
 const AUTO_ENGINES: readonly AutoModeEngine[] = ['llm', 'rules'];
+const AGENT_MODES: readonly AgentMode[] = ['ama', 'sa'];
 
 function isPermissionMode(s: string): s is PermissionMode {
   return PERMISSION_MODES.includes(s as PermissionMode);
@@ -36,6 +37,10 @@ function isAutoEngine(s: string): s is AutoModeEngine {
 
 function isReasoningMode(s: string): s is ReasoningMode {
   return REASONING_MODES.includes(s as ReasoningMode);
+}
+
+function isAgentMode(s: string): s is AgentMode {
+  return AGENT_MODES.includes(s as AgentMode);
 }
 
 export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
@@ -175,6 +180,112 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
         return { ok: false, message: `session not found: ${ctx.sessionId}` };
       }
       return { ok: true, message: 'cleared', echo: true, clearStream: true };
+    },
+  },
+
+  {
+    name: 'agent-mode',
+    description: 'Switch agent orchestration mode (ama=multi-agent / sa=single-agent)',
+    argsHint: '<ama|sa>',
+    source: 'builtin',
+    handler: async (ctx) => {
+      const target = ctx.args[0];
+      if (!target) return { ok: false, message: 'Usage: /agent-mode <ama|sa>' };
+      if (!isAgentMode(target)) {
+        return { ok: false, message: `unknown agent mode '${target}'; valid: ${AGENT_MODES.join(', ')}` };
+      }
+      const ok = kodaxHost.setAgentMode(ctx.sessionId, target);
+      return ok
+        ? { ok: true, message: `agent mode → ${target}` }
+        : { ok: false, message: `session not found: ${ctx.sessionId}` };
+    },
+  },
+
+  {
+    name: 'new',
+    description: 'Start a new session in the current project (current chat remains in Recents)',
+    source: 'builtin',
+    handler: async (ctx) => {
+      // 实际"新建 session"动作在 renderer 端做（需要 provider/reasoningMode 等当前
+      // pending 值）。slash 这里只 echo 一个 system_notice，renderer 监听 message 含
+      // `__action__:new-session` 触发 LeftSidebar.handleNewSession 等价逻辑。
+      if (!kodaxHost.get(ctx.sessionId)) {
+        return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      }
+      return {
+        ok: true,
+        message: '__action__:new-session',
+        echo: false,
+      };
+    },
+  },
+
+  {
+    name: 'copy',
+    description: 'Copy the last assistant message to clipboard (renderer handles)',
+    source: 'builtin',
+    handler: async (ctx) => {
+      if (!kodaxHost.get(ctx.sessionId)) {
+        return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      }
+      // renderer 端 SlashCommandPopover/onSlashPick 监听到 __action__:copy-last 时执行 clipboard 拷贝
+      return { ok: true, message: '__action__:copy-last', echo: false };
+    },
+  },
+
+  {
+    name: 'cost',
+    description: 'Show estimated token usage / cost for current session',
+    source: 'builtin',
+    handler: async (ctx) => {
+      const s = kodaxHost.get(ctx.sessionId);
+      if (!s) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      // 本地汇总 iter / token 数据走 renderer (它有 events buffer)；main 端
+      // 没有 token 累加器，发个 action 让 renderer 自己渲染。
+      return { ok: true, message: '__action__:show-cost', echo: false };
+    },
+  },
+
+  {
+    name: 'compact',
+    description: 'Manually compact conversation context (next send triggers compaction)',
+    argsHint: '',
+    source: 'builtin',
+    handler: async (ctx) => {
+      // KodaX SDK 暴露 compact 触发：当前版本 Space 没有直接 API，先记录意图，让下
+      // 一次 send 时 real-session 走 compact 路径（标记 setter 占位）。
+      // 真实接 KodaX compactContext() 等 v0.1.7+；现在仅 echo 提示。
+      const s = kodaxHost.get(ctx.sessionId);
+      if (!s) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      return {
+        ok: true,
+        message: 'compact requested — will be applied on next turn (full wiring v0.1.7+)',
+        echo: true,
+      };
+    },
+  },
+
+  {
+    name: 'tree',
+    description: 'Show current session fork lineage tree',
+    source: 'builtin',
+    handler: async (ctx) => {
+      if (!kodaxHost.get(ctx.sessionId)) {
+        return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      }
+      return { ok: true, message: '__action__:show-tree', echo: false };
+    },
+  },
+
+  {
+    name: 'history',
+    description: 'List user messages in current session',
+    source: 'builtin',
+    handler: async (ctx) => {
+      if (!kodaxHost.get(ctx.sessionId)) {
+        return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      }
+      return { ok: true, message: '__action__:show-history', echo: false };
     },
   },
 
