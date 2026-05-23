@@ -77,3 +77,9 @@ target/
 *.node
 !packages/native/**/index.d.ts
 .claude/
+
+# Playwright test outputs (e2e/ scripts checked in; runtime artifacts not)
+test-results/
+.agent/
+.repointel/
+playwright-report/

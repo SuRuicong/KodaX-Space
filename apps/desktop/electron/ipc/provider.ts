@@ -93,17 +93,21 @@ export async function injectAllKeysToEnv(): Promise<void> {
   const accounts = await listAccounts();
   const defaultId = providerConfigStore.getDefaultProviderId();
 
-  // 1) 收集所有 Space 管理的 apiKeyEnv 名（built-in + custom），即"该被 Space 接管的 env"
-  const managedEnvs = new Set<string>();
-  for (const b of BUILTIN_PROVIDERS) managedEnvs.add(b.apiKeyEnv);
-  for (const c of providerConfigStore.listCustom()) managedEnvs.add(c.apiKeyEnv);
-
-  // 2) 清空所有 managed env——保证删 key 后旧值不残留
-  for (const envName of managedEnvs) {
+  // 1) 收集 keychain 里实际有 key 的 apiKeyEnv 名（按 account → provider info → env name）。
+  //    只清这些，留住 shell-exported 的 ZHIPU_API_KEY / DEEPSEEK_API_KEY 等 — 用户在
+  //    shell rc 里 export 的 key 是 KodaX/Claude Code 等工具的常用配置方式，删了之后
+  //    Space provider.list 会显示"未配置"，与用户预期完全不符 (regression discovered
+  //    via e2e 测试发现：zhipu-coding 在 shell 有 ZHIPU_API_KEY 但 list 显示未配置)。
+  const keychainManagedEnvs = new Set<string>();
+  for (const acct of accounts) {
+    const info = resolveProviderInfo(acct);
+    if (info) keychainManagedEnvs.add(info.apiKeyEnv);
+  }
+  for (const envName of keychainManagedEnvs) {
     delete process.env[envName];
   }
 
-  // 3) 按 account 重新注入；未知 account 自动清掉（旧 dev key / 测试残留）
+  // 2) 按 account 重新注入；未知 account 自动清掉（旧 dev key / 测试残留）
   //    v0.1.6: 之前只 log warn 不删，导致用户启动每次报一遍"a/b/c/x skipping"。
   //    detect 条件保守：account 不匹配任何已知 provider id (built-in catalog 稳定 +
   //    custom_<hex> CSPRNG 永不重生) → 安全删除。
