@@ -219,10 +219,14 @@ declare module '@kodax-ai/kodax/coding' {
     exitPlanMode?: (plan: string) => Promise<boolean | 'not-in-plan-mode'>;
   }
 
+  export type KodaXSessionScope = 'user' | 'managed-task-worker';
+
   export interface KodaXSessionOptions {
     id?: string;
     resume?: boolean;
     autoResume?: boolean;
+    /** 'user' = sidebar 主对话（默认）；'managed-task-worker' = 子 agent 内部 session（不入主列表） */
+    scope?: KodaXSessionScope;
   }
 
   export interface KodaXContextOptions {

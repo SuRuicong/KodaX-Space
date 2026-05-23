@@ -13,7 +13,11 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { z } from 'zod';
+
+const execFileAsync = promisify(execFile);
 
 const SPACE_DATA_DIR = path.join(os.homedir(), '.kodax', 'space');
 const SETTINGS_FILE = path.join(SPACE_DATA_DIR, 'settings.json');
@@ -60,6 +64,11 @@ export class SettingsStore {
   /**
    * 确保 defaultWorkspace 目录存在 — main 启动期一次，让 renderer 直接拿来用。
    * 用户改默认目录后也要再调一次以创建新目录（用户可能输了不存在的路径）。
+   *
+   * 也确保它是个 git repo —— KodaX SDK 的 FileSessionStorage 按 gitRoot 索引
+   * persistent session；workspace 不是 git repo 时 SDK 的 session 落盘 / list
+   * 路径会拿不到稳定的 gitRoot，导致重启后 session 列表显示空。git init 是 idempotent
+   * 操作，已是 git repo 时不重复初始化。Claude Code 在自家 workspace 也采用同样策略。
    */
   async ensureWorkspaceExists(): Promise<void> {
     const s = await this.load();
@@ -69,6 +78,33 @@ export class SettingsStore {
       const e = err as NodeJS.ErrnoException;
       console.warn(
         `[SettingsStore] mkdir defaultWorkspace="${s.defaultWorkspace}" failed (${e.code}): ${e.message}`,
+      );
+      return; // 没目录就别试 git init
+    }
+    await this.ensureGitRepo(s.defaultWorkspace);
+  }
+
+  /**
+   * 若目标目录还不是 git repo，跑 `git init`。已是 git repo（含 .git 目录或父级
+   * 已是 git）时静默跳过。git 命令不存在 / 调用失败也只 log warn 不抛 —— session
+   * 持久化是 nice-to-have，不该阻塞 app 启动。
+   */
+  private async ensureGitRepo(absDir: string): Promise<void> {
+    try {
+      await fs.access(path.join(absDir, '.git'));
+      return; // 已是 git repo
+    } catch {
+      /* fallthrough — 需要 init */
+    }
+    try {
+      // -q 抑制 stdout；只在 absDir 当前层级初始化（不继承父级 git）
+      await execFileAsync('git', ['init', '-q'], { cwd: absDir, timeout: 5_000 });
+      console.info(`[SettingsStore] git init at ${absDir}`);
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException;
+      console.warn(
+        `[SettingsStore] git init at "${absDir}" failed (${e.code ?? 'unknown'}): ` +
+          `${e.message}. Session persistence may be unreliable until this is a git repo.`,
       );
     }
   }

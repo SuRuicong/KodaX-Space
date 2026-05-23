@@ -102,20 +102,34 @@ async function main() {
   await win.waitForTimeout(500);
   await win.screenshot({ path: `${SHOT_DIR}/03-picker-open.png`, fullPage: false });
 
-  console.log('[e2e] picking Zhipu Coding');
-  const zhipuBtn = win.locator('button:has-text("Zhipu Coding Plan")').first();
+  // 新 2-col picker：左列点 provider → 右列出 models → 点 model 才一次性 commit
+  // provider+model。Medium effort 在底部行单独点。
+  console.log('[e2e] picking Zhipu Coding Plan provider (left col)');
+  const zhipuBtn = win.locator('div.border-r button:has-text("Zhipu Coding Plan")').first();
   const zhipuVisible = await zhipuBtn.isVisible().catch(() => false);
   if (zhipuVisible) {
     await zhipuBtn.click();
-    console.log('[e2e] ✓ picked zhipu-coding');
+    console.log('[e2e] ✓ provider previewed');
   } else {
     console.error('[e2e] Zhipu Coding Plan NOT in picker — listing visible providers:');
-    const allBtns = await win.locator('button[title]').allTextContents();
+    const allBtns = await win.locator('div.border-r button[title]').allTextContents();
     console.error(allBtns);
     throw new Error('zhipu-coding not configured (no ZHIPU_API_KEY or not in catalog?)');
   }
   await win.waitForTimeout(400);
 
+  // 点右列第一个 model → 一次性 commit provider+model
+  console.log('[e2e] picking first model from right column');
+  const firstModelBtn = win.locator('button > span.font-mono').first();
+  if (await firstModelBtn.isVisible().catch(() => false)) {
+    await firstModelBtn.click();
+    console.log('[e2e] ✓ model committed (provider+model done)');
+  }
+  await win.waitForTimeout(400);
+
+  // 重开 picker 选 Medium effort（底部行）
+  await win.keyboard.press('Control+i');
+  await win.waitForTimeout(400);
   console.log('[e2e] picking Medium effort');
   const mediumBtn = win.locator('button:has-text("Medium")').first();
   if (await mediumBtn.isVisible().catch(() => false)) {
@@ -123,8 +137,8 @@ async function main() {
   }
   await win.waitForTimeout(300);
 
-  // close picker by clicking outside
-  await win.mouse.click(100, 100);
+  // close picker
+  await win.keyboard.press('Control+i');
   await win.waitForTimeout(300);
   await win.screenshot({ path: `${SHOT_DIR}/04-provider-picked.png`, fullPage: false });
 

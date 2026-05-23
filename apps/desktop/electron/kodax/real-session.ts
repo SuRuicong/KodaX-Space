@@ -568,7 +568,10 @@ export class RealKodaXSession implements ManagedSession {
       ...(this.thinking !== undefined ? { thinking: this.thinking } : {}),
       events,
       abortSignal: signal,
-      session: { id: sid },
+      // scope: 'user' 让 SDK FileSessionStorage 把 session 当成用户对话面板的
+      // first-class session 落盘（默认可能是 'managed-task-worker'，那种不在
+      // listSessions({scope:'user'}) 的结果里 — sidebar 重启后看不到）。
+      session: { id: sid, scope: 'user' },
       context: {
         cwd: this.projectRoot,
         // gitRoot 用 projectRoot——Space 不再单独求 git root，KodaX 自己会处理边界
