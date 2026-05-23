@@ -23,9 +23,14 @@ function spawnProc(name, cmd, args, env = {}, opts = {}) {
   const baseEnv = { ...process.env };
   delete baseEnv.ELECTRON_RUN_AS_NODE;
   // 默认 'inherit' 三流共享 — vite/esbuild 不读 stdin 所以安全。
-  // Electron 在 KodaX SDK 加载后会让某些 readline / tty 子组件抓住 stdin，
-  // 直接 'inherit' 会让 user 的终端键盘"被吃" (typing 在 shell 里看不见 / 行为怪)。
-  // 解决：调用方传 stdinMode='ignore' 让 Electron 子进程拿不到 stdin。
+  //
+  // Electron child 在 Windows 上若以 stdio: 'inherit' 启动，会持有 parent stdin handle
+  // (即便没人 read)，Windows ConPTY 的 console routing 在这种情况下会变得诡异——
+  // 用户在 dev 终端打字 / Ctrl+C 行为不对。这是 Electron+Windows ConPTY 的已知
+  // quirk，与 KodaX SDK 无关 (KodaX 团队 probe 验证：import / hydrate / probe 12 步
+  // listener Δ=0 / rawMode Δ=0；hydrateProcessEnvFromShell 在 Windows 直接 return false
+  // 不 spawn；POSIX 平台 spawn 时也写死 stdio:['ignore','pipe','pipe'] 不碰 parent stdin)。
+  // Canonical fix：调用方传 stdinMode='ignore' 让 Electron child 不持有 parent stdin handle。
   const stdinMode = opts.stdinMode ?? 'inherit';
   const proc = spawn(cmd, args, {
     cwd: root,
@@ -85,7 +90,7 @@ try {
       VITE_DEV_SERVER_URL: VITE_URL,
       NODE_ENV: 'development',
     },
-    { stdinMode: 'ignore' }, // 防 KodaX SDK 内部 readline 抢 user 的 terminal 键盘输入
+    { stdinMode: 'ignore' }, // Electron+Windows ConPTY quirk — 见 spawnProc 注释
   );
 } catch (err) {
   console.error('[dev] failed:', err);
