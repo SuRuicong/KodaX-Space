@@ -27,6 +27,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "node scripts/clean.mjs",
+    "link:kodax": "node scripts/link-kodax.mjs",
+    "unlink:kodax": "node scripts/link-kodax.mjs --unlink",
     "test": "npm run test --workspaces --if-present",
     "postinstall": "electron-builder install-app-deps || true"
   },
