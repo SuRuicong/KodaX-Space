@@ -33,6 +33,8 @@ export interface SessionStoreImpl {
   readonly deleteSession: SdkSessionModule['deleteSession'];
   readonly loadSession: SdkSessionModule['loadSession'];
   readonly watchSessions: SdkSessionModule['watchSessions'];
+  /** v0.7.43: optional — mock impls can omit, default impl wires via createSessionManager. */
+  readonly createSessionManager?: SdkSessionModule['createSessionManager'];
 }
 
 // 生产路径：lazy 加载 SDK 模块。第一次某个 default 包装被调时才拉 SDK；
@@ -45,12 +47,48 @@ async function loadSdkModule(): Promise<SdkSessionModule> {
   return sdkModuleCache;
 }
 
+/**
+ * SDK 0.7.43：createSessionManager() 返回的 manager 包含 `storage` 字段
+ * (FileSessionStorage 实例)。Space 需要在 runKodaX 时把这个 storage 传给
+ * session.storage —— 否则 SDK 的 saveSessionSnapshot 静默 no-op，jsonl 不会落盘。
+ * Manager 是 singleton（共享底层 fs 写队列），整个 Space 进程共用一个。
+ */
+type SessionManager = ReturnType<SdkSessionModule['createSessionManager']>;
+let managerCache: SessionManager | null = null;
+async function getManager(): Promise<SessionManager> {
+  if (managerCache === null) {
+    const sdk = await loadSdkModule();
+    managerCache = sdk.createSessionManager();
+  }
+  return managerCache;
+}
+
+/** real-session 调这个拿 storage handle 喂给 runKodaX。SDK < 0.7.43 没 createSessionManager，会 throw — caller fallback 为 undefined。 */
+export async function getSessionStorageHandle(): Promise<unknown> {
+  try {
+    const m = await getManager();
+    // `storage` 字段在 SDK 0.7.43+ 才暴露；0.7.42 没有该属性。
+    // 这里 cast 成 unknown 后访问，让 typecheck 在两边都过；运行时安全
+    // — 0.7.42 时是 undefined，real-session 把它原样透传给 SDK 会自动 fallback。
+    return (m as unknown as { storage?: unknown }).storage;
+  } catch (err) {
+    console.warn(`[session-store] getSessionStorageHandle failed (SDK < 0.7.43?): ${err instanceof Error ? err.message : String(err)}`);
+    return undefined;
+  }
+}
+
 const DEFAULT_IMPL: SessionStoreImpl = {
   listSessions: async (opts) => (await loadSdkModule()).listSessions(opts),
   forkSession: async (id, opts) => (await loadSdkModule()).forkSession(id, opts),
   rewindSession: async (id, opts) => (await loadSdkModule()).rewindSession(id, opts),
   deleteSession: async (id) => (await loadSdkModule()).deleteSession(id),
   loadSession: async (id) => (await loadSdkModule()).loadSession(id),
+  createSessionManager: (opts?: { sessionsDir?: string }) => {
+    // 默认 impl 路径返回 lazily — 但 caller (real-session) 通过 getSessionStorageHandle()
+    // 拿 cached manager，不直接走这里。这条 entry 主要给测试 inject mock 用。
+    if (!sdkModuleCache) throw new Error('SDK not loaded yet — call loadSdkModule first');
+    return sdkModuleCache.createSessionManager(opts);
+  },
   // watchSessions 不能 async（返回 { close }），需要立即同步拿到 close handle
   watchSessions: (cb) => {
     // lazy 加载下的妥协：用 stub close handle 占位；await 完成后真 close 路由到真实 watcher

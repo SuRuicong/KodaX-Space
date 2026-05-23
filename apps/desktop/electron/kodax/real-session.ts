@@ -39,6 +39,7 @@ import type {
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { askUserBroker } from '../permission/ask-user-broker.js';
 import { bootstrapAutoMode } from './auto-mode-bootstrap.js';
+import { getSessionStorageHandle } from './session-store.js';
 import type {
   ManagedSession,
   PermissionRequestFn,
@@ -563,6 +564,11 @@ export class RealKodaXSession implements ManagedSession {
       }
     }
 
+    // SDK 0.7.43: 拿共享 FileSessionStorage handle 传给 session.storage。
+    // 没拿到 (SDK < 0.7.43 / load 失败) 也继续 — session.storage 缺失时 SDK 不写 jsonl
+    // 但不影响 LLM 流，warn 在 session-store 里已 log。
+    const sessionStorage = await getSessionStorageHandle();
+
     const options: KodaXOptions = {
       provider: this.provider,
       reasoningMode: this.reasoningMode,
@@ -574,9 +580,9 @@ export class RealKodaXSession implements ManagedSession {
       events,
       abortSignal: signal,
       // scope: 'user' 让 SDK FileSessionStorage 把 session 当成用户对话面板的
-      // first-class session 落盘（默认可能是 'managed-task-worker'，那种不在
-      // listSessions({scope:'user'}) 的结果里 — sidebar 重启后看不到）。
-      session: { id: sid, scope: 'user' },
+      // first-class session 落盘。storage 是 SDK 0.7.43 起强制要求的字段——
+      // 不传 storage 则 saveSessionSnapshot 静默 no-op，jsonl 不落盘 (用户对话历史丢失)。
+      session: { id: sid, scope: 'user', storage: sessionStorage },
       context: {
         cwd: this.projectRoot,
         // gitRoot 用 projectRoot——Space 不再单独求 git root，KodaX 自己会处理边界
