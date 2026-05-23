@@ -32,6 +32,7 @@ import { PopoutOverlay } from './popouts/PopoutOverlay.js';
 import { PermissionModal } from '../features/permission/PermissionModal.js';
 import { AskUserModal } from '../features/ask-user/AskUserModal.js';
 import { ThemeToggle } from './ThemeToggle.js';
+import { RightSidebar } from './RightSidebar.js';
 
 export type Mode = 'coder' | 'partner';
 
@@ -83,6 +84,8 @@ export function Shell(): JSX.Element {
             <PopoutOverlay kind={activePopout} onClose={() => setActivePopout(null)} />
           )}
         </div>
+
+        <RightSidebar />
 
         <PermissionModal />
         <AskUserModal />

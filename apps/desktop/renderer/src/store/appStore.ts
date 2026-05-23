@@ -176,6 +176,9 @@ interface AppState {
    */
   transcriptView: 'normal' | 'thinking' | 'verbose' | 'summary';
   transcriptFontSize: 'sm' | 'base' | 'lg';
+  /** P2: 右侧栏开/关。Cowork / Claude Desktop 风的"Progress / Working folder / Context"列。
+   *  持久化到 localStorage，让用户偏好跨重启保留。*/
+  rightSidebarOpen: boolean;
   /**
    * F009: 最后一次被 tool_call (write/edit) 触及的相对路径——FilePanel 监听这个值切到 diff 视图。
    * 用 "可读完一次就置 null" 的单值 + clearLastDiffPath 模式，避免 useEffect 反复触发。
@@ -255,6 +258,8 @@ interface AppState {
   setPendingSend(sessionId: string, pending: boolean): void;
   /** P0: 推一条 prompt 进 input history（用户提交时调），上限 200 条。 */
   appendInputHistory(sessionId: string, prompt: string): void;
+  /** P2: 切右侧栏开/关。立即写 localStorage。*/
+  setRightSidebarOpen(open: boolean): void;
 }
 
 // 单调 counter 用于生成 stable id——sessionId 内多条 user message 顺序唯一。
@@ -322,6 +327,7 @@ export const useAppStore = create<AppState>((set) => ({
   theme: (typeof window !== 'undefined' && (localStorage.getItem('kodax-space.theme') as 'dark' | 'light' | 'system' | null)) || 'dark',
   transcriptView: 'normal',
   transcriptFontSize: 'base',
+  rightSidebarOpen: lsGet('kodax-space.rightSidebarOpen') !== '0', // 默认开，"0" 表示用户主动关过
 
   setProjects: (projects) => set({ projects }),
   setCurrentProject: (path) => {
@@ -525,6 +531,11 @@ export const useAppStore = create<AppState>((set) => ({
       const { [sessionId]: _drop, ...rest } = state.pendingSendBySession;
       return { pendingSendBySession: rest };
     }),
+
+  setRightSidebarOpen: (open) => {
+    lsSet('kodax-space.rightSidebarOpen', open ? '1' : '0');
+    set({ rightSidebarOpen: open });
+  },
 
   appendInputHistory: (sessionId, prompt) =>
     set((state) => {
