@@ -31,6 +31,7 @@ import { ConversationStreamV2 } from './ConversationStreamV2.js';
 import { PopoutOverlay } from './popouts/PopoutOverlay.js';
 import { PermissionModal } from '../features/permission/PermissionModal.js';
 import { AskUserModal } from '../features/ask-user/AskUserModal.js';
+import { ThemeToggle } from './ThemeToggle.js';
 
 export type Mode = 'coder' | 'partner';
 
@@ -53,24 +54,23 @@ export function Shell(): JSX.Element {
   const [activePopout, setActivePopout] = useState<PopoutKind | null>(null);
 
   return (
-    <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
+    <div className="h-screen flex flex-col bg-surface text-fg-primary overflow-hidden">
       {/* 顶部自定义 titlebar — 自身做窗口拖动 + 留出 Windows overlay 控件 (close/min/max) 空间。
-          Mac 上 traffic lights 占 ~78px (hiddenInset)；Windows 上 OS 把 close/min/max 画在右侧 ~138px (titleBarOverlay)；
-          为简化，整条 36px 高，左侧塞 app brand，右侧空出来给 OS overlay (内容 padding-right: 140px on Win)。 */}
-      <div className="app-titlebar h-9 flex items-center px-3 border-b border-zinc-900 bg-zinc-950 flex-shrink-0 select-none">
-        <div className="text-[11px] text-zinc-400 font-mono titlebar-brand">
+          Mac 上 traffic lights 占 ~78px (hiddenInset)；Windows 上 OS 把 close/min/max 画在右侧 ~138px (titleBarOverlay)。 */}
+      <div className="app-titlebar h-9 flex items-center px-3 border-b border-border-default bg-surface flex-shrink-0 select-none">
+        <div className="text-[11px] text-fg-muted font-mono titlebar-brand">
           <span className="text-amber-400" aria-hidden>✱</span>{' '}
           <span>KodaX Space</span>
         </div>
         <div className="flex-1" />
-        {/* Windows: titleBarOverlay 自动画 close/min/max；mac/Linux 无需 */}
+        <ThemeToggle />
       </div>
 
       <div className="flex flex-1 min-h-0">
         <LeftSidebar mode={mode} onModeChange={setMode} />
 
         <div className="flex-1 flex flex-col min-w-0 relative">
-          <div className="flex items-center px-4 h-10 border-b border-zinc-900 flex-shrink-0">
+          <div className="flex items-center px-4 h-10 border-b border-border-default flex-shrink-0">
             <Breadcrumb />
             <CommandToolbar active={activePopout} onToggle={setActivePopout} />
           </div>

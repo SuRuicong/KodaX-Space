@@ -66,6 +66,7 @@ import {
   providerRemoveCustomChannel,
 } from './provider.js';
 import { filesTreeChannel, filesReadChannel, filesDiffChannel } from './files.js';
+import { titlebarSetOverlayChannel } from './titlebar.js';
 
 export const invokeChannels = {
   [versionChannel.name]: versionChannel,
@@ -106,6 +107,7 @@ export const invokeChannels = {
   [filesTreeChannel.name]: filesTreeChannel,
   [filesReadChannel.name]: filesReadChannel,
   [filesDiffChannel.name]: filesDiffChannel,
+  [titlebarSetOverlayChannel.name]: titlebarSetOverlayChannel,
 } as const;
 
 export const pushChannels = {

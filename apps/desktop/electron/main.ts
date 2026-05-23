@@ -24,6 +24,7 @@ import { probeSkillRegistry } from './skill/registry.js';
 import { hydrateShellEnvOnce } from './kodax/shell-env-hydrate.js';
 import { registerProviderChannels, injectAllKeysToEnv } from './ipc/provider.js';
 import { registerFilesChannels } from './ipc/files.js';
+import { registerTitlebarChannels } from './ipc/titlebar.js';
 import { setRendererTarget } from './ipc/push.js';
 import { kodaxHost } from './kodax/host.js';
 import { permissionRegistry } from './permission/registry.js';
@@ -205,6 +206,7 @@ app.whenReady().then(async () => {
   void prewarmKodaxUserConfig().then(() => registerKodaxCustomProviders());
   registerProviderChannels();
   registerFilesChannels();
+  registerTitlebarChannels();
   // push 目标走 getter 间接拿当前 window——dev HMR / 用户重开窗口都能正确切换
   setRendererTarget(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null));
   // 预加载 always-allow 规则 — broker.request 走 matches() 是同步路径，必须事先 load。

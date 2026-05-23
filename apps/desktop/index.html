@@ -4,6 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>KodaX Space</title>
+    <script>
+      // 提前根据 localStorage 同步加 'dark' class，避免 React 挂载前的 light flash。
+      // 默认 dark — 与 alpha.1 之前版本一致。
+      (function () {
+        try {
+          var t = localStorage.getItem('kodax-space.theme') || 'dark';
+          var effective = t;
+          if (t === 'system' && window.matchMedia) {
+            effective = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          if (effective === 'dark') document.documentElement.classList.add('dark');
+        } catch (e) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
   </head>
   <body class="bg-zinc-950 text-zinc-100">
     <div id="root"></div>

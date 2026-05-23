@@ -118,14 +118,14 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
   }
 
   return (
-    <aside className="w-60 flex flex-col border-r border-zinc-900 bg-zinc-950 flex-shrink-0">
+    <aside className="w-60 flex flex-col border-r border-border-default bg-surface flex-shrink-0">
       {/* Mode tab */}
-      <div className="p-2 flex gap-1 border-b border-zinc-900 flex-shrink-0">
+      <div className="p-2 flex gap-1 border-b border-border-default flex-shrink-0">
         <button
           type="button"
           onClick={() => onModeChange('coder')}
           className={`flex-1 text-xs py-1.5 rounded ${
-            mode === 'coder' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-100'
+            mode === 'coder' ? 'bg-surface-3 text-fg-primary' : 'text-zinc-400 hover:text-zinc-100'
           }`}
         >
           <span aria-hidden>≡</span> Coder
@@ -178,7 +178,7 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
       </div>
 
       {/* Bottom: mode/gateway label */}
-      <div className="border-t border-zinc-900 px-3 py-2 text-[10px] text-zinc-400 flex justify-between flex-shrink-0">
+      <div className="border-t border-border-default px-3 py-2 text-[10px] text-zinc-400 flex justify-between flex-shrink-0">
         <span className="truncate">KodaX Space · Gateway</span>
         <button type="button" className="text-zinc-300 hover:text-zinc-100" aria-label="Settings">⚙</button>
       </div>
@@ -336,7 +336,7 @@ function SessionRow({
         onContextMenu(e.clientX, e.clientY);
       }}
       className={`w-full text-left text-xs px-2 py-1 rounded truncate flex items-center gap-1 ${
-        isSelected ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100'
+        isSelected ? 'bg-surface-3 text-fg-primary' : 'text-fg-secondary hover:bg-hover-bg hover:text-fg-primary'
       }`}
       style={{ paddingLeft: `${0.5 + indent * 0.8}rem` }}
       title={session.title ?? session.sessionId}

@@ -155,6 +155,9 @@ interface AppState {
    * v0.1.x SDK 出持久化字段后迁移到 SessionMeta。
    */
   sessionFlags: Readonly<Record<string, { pinned?: boolean; archived?: boolean; unread?: boolean } | undefined>>;
+  /** UI 主题。dark = 当前默认；light = zinc-100 系；'system' = 跟 OS prefers-color-scheme。
+   *  持久化到 localStorage 让重启后保持。*/
+  theme: 'dark' | 'light' | 'system';
   /** Recents 列表过滤+分组+排序选项 — alpha.1 不持久化。*/
   recentsFilter: RecentsFilter;
   /**
@@ -207,6 +210,7 @@ interface AppState {
   /** Session UX flags — 局部状态 (alpha.1 不持久化)。toggle 形 + 合并形 set 函数。*/
   toggleSessionFlag(sessionId: string, flag: 'pinned' | 'archived' | 'unread'): void;
   setRecentsFilter(filter: RecentsFilter): void;
+  setTheme(theme: 'dark' | 'light' | 'system'): void;
   setTranscriptView(v: AppState['transcriptView']): void;
   setTranscriptFontSize(s: AppState['transcriptFontSize']): void;
   /** 切项目时清空当前 session 选择和事件 buffer（事件留主进程的；renderer 只清缓存）。*/
@@ -257,6 +261,7 @@ export const useAppStore = create<AppState>((set) => ({
   pendingPermissionMode: null,
   sessionFlags: {},
   recentsFilter: DEFAULT_RECENTS_FILTER,
+  theme: (typeof window !== 'undefined' && (localStorage.getItem('kodax-space.theme') as 'dark' | 'light' | 'system' | null)) || 'dark',
   transcriptView: 'normal',
   transcriptFontSize: 'base',
 
@@ -441,6 +446,12 @@ export const useAppStore = create<AppState>((set) => ({
   setPendingPermissionMode: (mode) => set({ pendingPermissionMode: mode }),
 
   setRecentsFilter: (filter) => set({ recentsFilter: filter }),
+  setTheme: (theme) => {
+    if (typeof window !== 'undefined') {
+      try { localStorage.setItem('kodax-space.theme', theme); } catch { /* SSR / private mode */ }
+    }
+    set({ theme });
+  },
   setTranscriptView: (v) => set({ transcriptView: v }),
   setTranscriptFontSize: (s) => set({ transcriptFontSize: s }),
 

@@ -124,6 +124,8 @@ export {
   type FileNodeT,
 } from './channels/files.js';
 
+export { titlebarSetOverlayChannel } from './channels/titlebar.js';
+
 export {
   INVOKE_CHANNEL_NAMES,
   PUSH_CHANNEL_NAMES,
