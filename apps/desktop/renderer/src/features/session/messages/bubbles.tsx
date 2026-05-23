@@ -16,17 +16,21 @@ const EXTREME_LINE_THRESHOLD = 200;
 const EXTREME_HEAD_LINES = 5;
 
 function isDiffLike(text: string): boolean {
-  // 启发式：unified diff 必含 "@@ " hunk 头，或 >30% 行以 +/- 起头（排除 ---/+++）
+  // 启发式：unified diff 必含 "@@ " hunk 头，或 >40% 行以 +/- 起头（排除 ---/+++ 头部
+  // 与 "- " 这种 markdown bullet / "  - " yaml 列表项 → 通常列表也是 dash-space，但
+  // 真实 diff 的 -/+ 后多直接跟代码字符，少见空格）。0.4 比 0.3 抗"shell log 列表型输出"的
+  // false-positive 更稳。
   if (text.includes('\n@@ ') || text.startsWith('@@ ')) return true;
   const lines = text.split('\n');
   if (lines.length < 4) return false;
   let diffLines = 0;
   for (const l of lines) {
-    if ((l.startsWith('+') || l.startsWith('-')) && !l.startsWith('+++') && !l.startsWith('---')) {
-      diffLines++;
-    }
+    if (l.startsWith('+++') || l.startsWith('---')) continue;
+    // "+ " / "- " 前缀通常是 markdown / shell log，不视为 diff
+    if (l.startsWith('+ ') || l.startsWith('- ')) continue;
+    if (l.startsWith('+') || l.startsWith('-')) diffLines++;
   }
-  return diffLines / lines.length > 0.3;
+  return diffLines / lines.length > 0.4;
 }
 
 interface CollapseResult {

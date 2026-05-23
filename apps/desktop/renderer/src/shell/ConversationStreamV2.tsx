@@ -92,7 +92,8 @@ export function ConversationStreamV2(): JSX.Element {
   const [currentMatchIdx, setCurrentMatchIdx] = useState(0);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
-  // 全局 Ctrl+F 打开搜索框（焦点不在 input 也行——textarea 在 BottomBar，那里通过 stopPropagation 兜底）。
+  // 全局 Ctrl+F 打开搜索框（焦点不在 input 也行）。BottomBar textarea 上 Ctrl+F
+  // 默认就 no-op（Electron BrowserWindow 没有 native find），window 层 preventDefault 即可。
   // Esc 关闭并清空 query。
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
