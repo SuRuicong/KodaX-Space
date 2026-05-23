@@ -7,6 +7,24 @@ import path from 'node:path';
 import { registerChannel } from './register.js';
 import { validateProjectRoot } from './validate.js';
 import { kodaxHost } from '../kodax/host.js';
+
+/**
+ * Windows-aware project root comparator. `path.normalize` 只统一分隔符——不折盘符
+ * 大小写、不去 trailing slash。session.list 历史 bug 根因：SDK 把 gitRoot 存为
+ * `C:/Works/...`（正斜杠），Space 内部 cwd 路径可能是 `c:\Works\...\` （小写盘符 +
+ * trailing slash），两边 normalize 完仍不等。统一处理：
+ *   1. normalize（统一分隔符 + 解析 `..`）
+ *   2. 去 trailing slash / backslash
+ *   3. Windows 下 lower-case（NTFS path 大小写不敏感）
+ */
+function canonProjectRoot(p: string): string {
+  let n = path.normalize(p);
+  // 去尾部 `\` 或 `/`，保留根 `C:\` / `/` 之类的最短形式
+  while (n.length > 3 && (n.endsWith('\\') || n.endsWith('/'))) {
+    n = n.slice(0, -1);
+  }
+  return process.platform === 'win32' ? n.toLowerCase() : n;
+}
 import { loadAgentsMd, type AgentsFile } from '../kodax/agents-md-loader.js';
 import { loadKodaxUserDefaults } from '../kodax/user-config.js';
 import { isBuiltinId } from '../providers/catalog.js';
@@ -102,20 +120,26 @@ export function registerSessionChannels(): void {
     // slash 不一致让 persisted session 静默丢失）。
     let projectFilter: string | undefined;
     if (input?.projectRoot !== undefined) {
-      projectFilter = path.normalize(validateProjectRoot(input.projectRoot));
+      projectFilter = canonProjectRoot(validateProjectRoot(input.projectRoot));
     }
     // FEATURE_038: 合并视图 — in-flight (in-memory) ∪ SDK persisted
+    // 传给 host.listMerged 的 projectRoot 是 canonical 形态（SDK listSessions 内部
+    // 自己 normalize；当前 SDK 版本 projectRoot filter 不严格——本层再过一道 canon
+    // 比较兜底）。
     const merged = await kodaxHost.listMerged({ projectRoot: projectFilter });
     // persisted session 没有 lastActivityAt——用 createdAt 占位（同一时间精度排序）
     const withTs = merged
       .filter((m) => {
         if (projectFilter === undefined) return true;
         if (m.kind === 'in-flight') {
-          return path.normalize(m.projectRoot) === projectFilter;
+          return canonProjectRoot(m.projectRoot) === projectFilter;
         }
-        // persisted 的 projectRoot 来自 SDK runtimeInfo.workspaceRoot ?? gitRoot；
-        // 缺省时 acceptable 过掉——SDK 应当在 listSessions(projectRoot) 那层已过滤
-        return m.projectRoot !== undefined && path.normalize(m.projectRoot) === projectFilter;
+        // persisted 的 projectRoot 来自 SDK runtimeInfo.workspaceRoot ?? gitRoot。
+        // 当 SDK summary 缺这俩字段（fast path / 早期版本），projectRoot=undefined——
+        // 此时无法本地 filter；保守地保留它，让用户看得到（宁可串项目，也比"以前的
+        // session 全消失"体验好）。新版 SDK slow path 一旦填满 runtimeInfo 就走精确匹配。
+        if (m.projectRoot === undefined) return true;
+        return canonProjectRoot(m.projectRoot) === projectFilter;
       })
       .map((m) => {
         if (m.kind === 'in-flight') {
