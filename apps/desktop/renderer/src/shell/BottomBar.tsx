@@ -7,7 +7,7 @@
 //
 // 取代旧 EventStream 底部 InputBox 区。
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 import { ChipBar } from './ChipBar.js';
@@ -79,6 +79,38 @@ export function BottomBar(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [attachOpen, setAttachOpen] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  /**
+   * Auto-grow textarea：min 2 行（rows={2} 提供基线），max 12 行后开始内滚。
+   * 同 Claude Desktop / ChatGPT 同款行为——粘大段 prompt 时能撑开看到全文。
+   * 缓存 maxHeight 在 useRef 里，避免每次 keystroke 都读 computed style。
+   */
+  const maxHeightRef = useRef<number | null>(null);
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    // 首次（或 line-height 变化时）算 max：12 行 * line-height
+    if (maxHeightRef.current === null) {
+      const cs = window.getComputedStyle(ta);
+      // line-height: 'normal' fallback 到 fontSize * 1.4
+      let lh = parseFloat(cs.lineHeight);
+      if (!Number.isFinite(lh)) {
+        const fs = parseFloat(cs.fontSize) || 14;
+        lh = fs * 1.4;
+      }
+      const padTop = parseFloat(cs.paddingTop) || 0;
+      const padBottom = parseFloat(cs.paddingBottom) || 0;
+      maxHeightRef.current = Math.round(lh * 12 + padTop + padBottom);
+    }
+    // 重置 → 读 scrollHeight → 取 min(scroll, max)。先 'auto' 让浏览器自然
+    // 收缩到内容尺寸，再读 scrollHeight 才是当前真实需要的高度。
+    ta.style.height = 'auto';
+    const next = Math.min(ta.scrollHeight, maxHeightRef.current);
+    ta.style.height = `${next}px`;
+    // overflow：超过 max 时露出滚动条，否则隐藏避免抖动
+    ta.style.overflowY = ta.scrollHeight > maxHeightRef.current ? 'auto' : 'hidden';
+  }, [prompt]);
 
   /**
    * 没 session 时第一条 prompt 触发自动建 session。
@@ -363,6 +395,7 @@ export function BottomBar(): JSX.Element {
 
         <div className="relative">
           <textarea
+            ref={textareaRef}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={onKeyDown}
