@@ -14,7 +14,7 @@
 //
 // 默认全 ama；用户主动选 sa 才走 fallback。
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AgentMode } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 
@@ -70,6 +70,19 @@ export function AgentModeSelector(): JSX.Element {
       setOpen(false);
     }
   }
+
+  // P3: Alt+M 在 AMA / SA 间快速切换（对齐 KodaX TUI 的 Meta+M；Win 上 Meta 没标准键所以用 Alt）
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.altKey && !e.ctrlKey && !e.shiftKey && (e.key === 'm' || e.key === 'M')) {
+        e.preventDefault();
+        void pick(current === 'ama' ? 'sa' : 'ama');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current, busy]);
 
   const labelText = session ? LABELS[current] : `${LABELS[current]} (next)`;
 

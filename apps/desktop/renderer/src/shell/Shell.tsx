@@ -33,6 +33,7 @@ import { PermissionModal } from '../features/permission/PermissionModal.js';
 import { AskUserModal } from '../features/ask-user/AskUserModal.js';
 import { ThemeToggle } from './ThemeToggle.js';
 import { RightSidebar } from './RightSidebar.js';
+import { HelpOverlayController } from './HelpOverlay.js';
 
 export type Mode = 'coder' | 'partner';
 
@@ -89,6 +90,7 @@ export function Shell(): JSX.Element {
 
         <PermissionModal />
         <AskUserModal />
+        <HelpOverlayController />
       </div>
     </div>
   );

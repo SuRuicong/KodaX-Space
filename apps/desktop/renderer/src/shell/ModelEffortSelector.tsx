@@ -150,6 +150,22 @@ export function ModelEffortSelector(): JSX.Element {
     }
   }
 
+  // P3: Ctrl+T 循环 reasoning depth — 对齐 KodaX TUI。off→quick→balanced→auto→deep→off。
+  // 不与 Ctrl+Shift+T (theme) 冲突 (shift 不同)。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.ctrlKey && !e.shiftKey && (e.key === 't' || e.key === 'T')) {
+        e.preventDefault();
+        const idx = EFFORT_ORDER.indexOf(activeEffort);
+        const next = EFFORT_ORDER[(idx + 1) % EFFORT_ORDER.length];
+        void pickEffort(next);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeEffort, session, busy]);
+
   // Button label: "<provider> · <model> · <effort>"
   const providerLabel = activeProvider?.displayName ?? activeProviderId ?? 'pick provider';
   const baseLabel = `${providerLabel} · ${activeModel} · ${EFFORT_LABEL[activeEffort]}`;

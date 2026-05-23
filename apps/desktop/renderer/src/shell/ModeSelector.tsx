@@ -56,13 +56,27 @@ export function ModeSelector(): JSX.Element {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // 有 session 走 session.permissionMode；无 session 走 pendingPermissionMode；fallback 'accept-edits'
+  const current: PermissionMode =
+    session?.permissionMode ?? pendingPermissionMode ?? 'accept-edits';
+  const engine: AutoModeEngine = session?.autoModeEngine ?? 'llm';
+
   // Ctrl+M 切换打开；数字键 1/2/3 切 mode；L/R 切 engine（auto 时）
+  // Shift+Tab 循环 mode（对齐 KodaX TUI）。
   // 不再 gate 在 session 上——无 session 时也能 toggle pending mode
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.ctrlKey && (e.key === 'm' || e.key === 'M')) {
         e.preventDefault();
         setOpen((v) => !v);
+        return;
+      }
+      // P3: Shift+Tab 在任意位置循环 permission mode（含 input 框 — 用户切完继续打字）
+      if (e.shiftKey && e.key === 'Tab') {
+        e.preventDefault();
+        const idx = MODE_ORDER.indexOf(current);
+        const next = MODE_ORDER[(idx + 1) % MODE_ORDER.length];
+        void setMode(next);
         return;
       }
       if (open && !e.ctrlKey && !e.altKey && !e.shiftKey) {
@@ -76,12 +90,7 @@ export function ModeSelector(): JSX.Element {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, open]);
-
-  // 有 session 走 session.permissionMode；无 session 走 pendingPermissionMode；fallback 'accept-edits'
-  const current: PermissionMode =
-    session?.permissionMode ?? pendingPermissionMode ?? 'accept-edits';
-  const engine: AutoModeEngine = session?.autoModeEngine ?? 'llm';
+  }, [session, open, current]);
 
   async function setMode(mode: PermissionMode): Promise<void> {
     if (busy || mode === current) return;
