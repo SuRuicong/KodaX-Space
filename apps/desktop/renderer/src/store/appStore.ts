@@ -245,11 +245,43 @@ interface AppState {
 // 单调 counter 用于生成 stable id——sessionId 内多条 user message 顺序唯一。
 let userMessageCounter = 0;
 
+/**
+ * 持久化 currentProjectPath / currentSessionId 到 localStorage —— Vite HMR full reload
+ * 或 Electron renderer 重载时，避免 zustand store 重置为 null 让 App.tsx 启动 effect
+ * 误把 currentProjectPath 重置回 defaultWorkspace。
+ *
+ * 只保留这两个字段：
+ *   - currentProjectPath：null → App.tsx 会重置到 defaultWorkspace；有值则跳过
+ *   - currentSessionId：null → ConversationStream 显示 WelcomeDashboard；有值能继续上次对话
+ *
+ * 其他字段（sessions、events、buffers）不持久化——main 端是权威，刷新后通过 session.list 重拉。
+ */
+const LS_KEY_PROJECT = 'kodax-space.currentProjectPath';
+const LS_KEY_SESSION = 'kodax-space.currentSessionId';
+
+function lsGet(key: string): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function lsSet(key: string, value: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (value === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, value);
+  } catch {
+    // localStorage 不可用（隐私模式 / 配额满）—— 静默；store 仍能跑，只是不持久化
+  }
+}
+
 export const useAppStore = create<AppState>((set) => ({
   projects: [],
-  currentProjectPath: null,
+  currentProjectPath: lsGet(LS_KEY_PROJECT),
   sessions: [],
-  currentSessionId: null,
+  currentSessionId: lsGet(LS_KEY_SESSION),
   eventsBySession: {},
   userMessagesBySession: {},
   permissionQueue: [],
@@ -276,9 +308,15 @@ export const useAppStore = create<AppState>((set) => ({
   transcriptFontSize: 'base',
 
   setProjects: (projects) => set({ projects }),
-  setCurrentProject: (path) => set({ currentProjectPath: path }),
+  setCurrentProject: (path) => {
+    lsSet(LS_KEY_PROJECT, path);
+    set({ currentProjectPath: path });
+  },
   setSessions: (sessions) => set({ sessions }),
-  setCurrentSession: (sessionId) => set({ currentSessionId: sessionId }),
+  setCurrentSession: (sessionId) => {
+    lsSet(LS_KEY_SESSION, sessionId);
+    set({ currentSessionId: sessionId });
+  },
 
   appendUserMessage: (sessionId, content) =>
     set((state) => {
@@ -406,6 +444,8 @@ export const useAppStore = create<AppState>((set) => ({
       const { [sessionId]: _prof, ...restProfiles } = state.harnessProfileBySession;
       const { [sessionId]: _todo, ...restTodos } = state.todoListBySession;
       const { [sessionId]: _mts, ...restMts } = state.managedTaskStatusBySession;
+      // 删的恰好是 current → 把持久化的 currentSessionId 也清掉，否则下次刷新还指着 stale id
+      if (state.currentSessionId === sessionId) lsSet(LS_KEY_SESSION, null);
       return {
         sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
         eventsBySession: restEvents,

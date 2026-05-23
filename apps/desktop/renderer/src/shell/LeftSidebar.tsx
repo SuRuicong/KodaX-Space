@@ -206,6 +206,20 @@ interface SessionTreeProps {
   readonly onSelect: (sessionId: string) => void;
 }
 
+/**
+ * Renderer 侧 path 比较器 —— main IPC handler 的 canonProjectRoot 的 browser 等价物。
+ * 用于 sessions.filter(projectScope='current')：避免 SDK 持久化的 `C:/Works/...`
+ * 跟 store 里 `C:\Works\...\` 因大小写 / 分隔符 / trailing slash 而 raw `!==` 误丢。
+ */
+const IS_WIN = typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent);
+function canonProjectRootBrowser(p: string): string {
+  // 统一分隔符到 OS native：Windows 全转 backslash，POSIX 全转 forward
+  let n = IS_WIN ? p.replace(/\//g, '\\') : p.replace(/\\/g, '/');
+  // 去末尾分隔符
+  while (n.length > 3 && (n.endsWith('\\') || n.endsWith('/'))) n = n.slice(0, -1);
+  return IS_WIN ? n.toLowerCase() : n;
+}
+
 function SessionTree({ sessions, currentSessionId, onSelect }: SessionTreeProps): JSX.Element {
   const sessionFlags = useAppStore((s) => s.sessionFlags);
   const filter = useAppStore((s) => s.recentsFilter);
@@ -219,11 +233,12 @@ function SessionTree({ sessions, currentSessionId, onSelect }: SessionTreeProps)
       filter.lastActivity === '7d' ? now - 7 * 24 * 3600 * 1000 :
       filter.lastActivity === '30d' ? now - 30 * 24 * 3600 * 1000 :
       0;
+    const curCanon = currentProjectPath ? canonProjectRootBrowser(currentProjectPath) : null;
     return sessions.filter((s) => {
       const f = sessionFlags[s.sessionId];
       if (filter.status === 'active' && f?.archived) return false;
       if (filter.status === 'archived' && !f?.archived) return false;
-      if (filter.projectScope === 'current' && currentProjectPath && s.projectRoot !== currentProjectPath) return false;
+      if (filter.projectScope === 'current' && curCanon && canonProjectRootBrowser(s.projectRoot) !== curCanon) return false;
       if (cutoff > 0 && s.lastActivityAt < cutoff) return false;
       return true;
     });
