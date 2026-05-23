@@ -34,6 +34,8 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
   const forkSessionBuffers = useAppStore((s) => s.forkSessionBuffers);
   const rewindSessionBuffers = useAppStore((s) => s.rewindSessionBuffers);
   const userMessages = useAppStore((s) => s.userMessagesBySession[sessionId] ?? EMPTY_USER_MESSAGES);
+  const sessionFlags = useAppStore((s) => s.sessionFlags[sessionId]);
+  const toggleFlag = useAppStore((s) => s.toggleSessionFlag);
   const session = sessions.find((x) => x.sessionId === sessionId);
 
   const [renaming, setRenaming] = useState(false);
@@ -48,9 +50,9 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
         d: () => void doDelete(),
         f: () => void doFork(),
         w: () => void doRewind(),
-        p: () => alert('Pin — coming v0.1.x'),
-        u: () => alert('Mark as unread — coming v0.1.x'),
-        a: () => alert('Archive — coming v0.1.x'),
+        p: () => { toggleFlag(sessionId, 'pinned'); onClose(); },
+        u: () => { toggleFlag(sessionId, 'unread'); onClose(); },
+        a: () => { toggleFlag(sessionId, 'archived'); onClose(); },
         escape: () => onClose(),
       };
       const fn = map[key];
@@ -229,8 +231,18 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
       onMouseLeave={onClose}
     >
       <MenuRow icon="↗" label="Open in" shortcut="" disabled hint="External app — v0.1.x" />
-      <MenuRow icon="📌" label="Pin" shortcut="P" disabled hint="v0.1.x" />
-      <MenuRow icon="●" label="Mark as unread" shortcut="U" disabled hint="v0.1.x" />
+      <MenuRow
+        icon={sessionFlags?.pinned ? '📌✓' : '📌'}
+        label={sessionFlags?.pinned ? 'Unpin' : 'Pin'}
+        shortcut="P"
+        onClick={() => { toggleFlag(sessionId, 'pinned'); onClose(); }}
+      />
+      <MenuRow
+        icon={sessionFlags?.unread ? '●✓' : '●'}
+        label={sessionFlags?.unread ? 'Mark as read' : 'Mark as unread'}
+        shortcut="U"
+        onClick={() => { toggleFlag(sessionId, 'unread'); onClose(); }}
+      />
       <MenuRow icon="✎" label="Rename" shortcut="R" onClick={() => setRenaming(true)} />
       <MenuRow icon="⑂" label="Fork" shortcut="F" onClick={() => void doFork()} />
       <MenuRow
@@ -242,7 +254,12 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
         hint={userMessages.length === 0 ? 'No turns yet' : undefined}
       />
       <MenuRow icon="📂" label="Move to group" shortcut="" disabled hint="v0.1.x" />
-      <MenuRow icon="📦" label="Archive" shortcut="A" disabled hint="v0.1.x" />
+      <MenuRow
+        icon={sessionFlags?.archived ? '📦✓' : '📦'}
+        label={sessionFlags?.archived ? 'Unarchive' : 'Archive'}
+        shortcut="A"
+        onClick={() => { toggleFlag(sessionId, 'archived'); onClose(); }}
+      />
       <div className="border-t border-zinc-800 my-1" />
       <MenuRow icon="🗑" label="Delete" shortcut="D" onClick={() => void doDelete()} danger />
     </div>

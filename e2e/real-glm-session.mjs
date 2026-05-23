@@ -208,18 +208,135 @@ async function main() {
   await win.locator('button[aria-label="Open attach menu"]').click();
   await win.waitForTimeout(400);
   await win.screenshot({ path: `${SHOT_DIR}/09-attach-with-project.png`, fullPage: false });
+  await win.keyboard.press('Escape');
+  await win.waitForTimeout(300);
 
-  await win.waitForTimeout(800);
-  await win.screenshot({ path: `${SHOT_DIR}/10-final.png`, fullPage: false });
+  // ===== 扩展验证：auto-title / Mode / Transcript view / Activity / Context window =====
+  const results = {};
 
-  console.log('\n[e2e] === DONE ===');
-  console.log('[e2e] response gotten:', gotResponse);
-  console.log('[e2e] screenshots in:', SHOT_DIR);
-  console.log('[e2e] console errors (' + consoleErrors.length + '):');
-  for (const e of consoleErrors) console.log('  -', e);
+  // 7) auto-title — sidebar 当前 session 标题应是 "你好"（首条 user msg slice）
+  console.log('[e2e] checking auto-title');
+  await win.waitForTimeout(1500); // 等 setTitle round-trip
+  const sidebarHasNihao = await win.locator('aside button:has-text("你好")').count() > 0;
+  // breadcrumb 顶部 (KodaX-Space / 你好) 也应改
+  const breadcrumbText = await win.locator('header, .border-b').first().textContent().catch(() => '');
+  results.autoTitle = sidebarHasNihao;
+  console.log(`[e2e] auto-title — sidebar has '你好': ${sidebarHasNihao} · breadcrumb: ${breadcrumbText.slice(0, 80)}`);
+  await win.screenshot({ path: `${SHOT_DIR}/11-auto-title.png`, fullPage: false });
+
+  // 8) Mode picker — 点 mode chip 弹 popup, 切到 Plan, 再切回 Accept edits
+  console.log('[e2e] testing Mode picker');
+  const modeChip = win.locator('button[title*="Mode:"]').first();
+  if (await modeChip.isVisible().catch(() => false)) {
+    await modeChip.click();
+    await win.waitForTimeout(400);
+    await win.screenshot({ path: `${SHOT_DIR}/12-mode-popup.png`, fullPage: false });
+    const planBtn = win.locator('button:has-text("Plan")').first();
+    if (await planBtn.isVisible().catch(() => false)) {
+      await planBtn.click();
+      await win.waitForTimeout(400);
+      const newLabel = await modeChip.textContent();
+      results.modeSwitch = (newLabel ?? '').toLowerCase().includes('plan');
+      console.log(`[e2e] mode after click Plan: ${newLabel}`);
+    }
+    // 切回 Accept edits
+    await modeChip.click();
+    await win.waitForTimeout(300);
+    const acceptBtn = win.locator('button:has-text("Accept edits")').first();
+    if (await acceptBtn.isVisible().catch(() => false)) {
+      await acceptBtn.click();
+      await win.waitForTimeout(300);
+    }
+  } else {
+    console.warn('[e2e] mode chip not found');
+  }
+  await win.screenshot({ path: `${SHOT_DIR}/13-mode-restored.png`, fullPage: false });
+
+  // 9) Transcript view popup — 点 ▤ 按钮
+  console.log('[e2e] testing Transcript view');
+  const transBtn = win.locator('button[aria-label="Transcript view"]').first();
+  await transBtn.click();
+  await win.waitForTimeout(400);
+  await win.screenshot({ path: `${SHOT_DIR}/14-transcript-popup.png`, fullPage: false });
+  results.transcriptOpen = await win.locator('text=Transcript view').isVisible().catch(() => false);
+  // 切 font size
+  const fontLgBtn = win.locator('button[title*="Large"]').first();
+  if (await fontLgBtn.isVisible().catch(() => false)) {
+    await fontLgBtn.click();
+    await win.waitForTimeout(300);
+    console.log('[e2e] font size switched to Large');
+  }
+  await win.keyboard.press('Escape');
+  await win.waitForTimeout(300);
+
+  // 10) Activity dropdown — 点 ▥ 按钮
+  console.log('[e2e] testing Activity dropdown');
+  const actBtn = win.locator('button[aria-label="Activity views"]').first();
+  await actBtn.click();
+  await win.waitForTimeout(400);
+  await win.screenshot({ path: `${SHOT_DIR}/15-activity-dropdown.png`, fullPage: false });
+  results.activityItems = await win.locator('text=/Preview|Diff|Terminal|Tasks|Plan|Agents|MCP/').count();
+  console.log(`[e2e] activity dropdown items: ${results.activityItems}`);
+  await win.keyboard.press('Escape');
+  await win.waitForTimeout(300);
+
+  // 11) Context window popup — 点底部右下文字
+  console.log('[e2e] testing Context window popup');
+  const ctxBtn = win.locator('button:has-text("Context window")').first();
+  if (await ctxBtn.isVisible().catch(() => false)) {
+    await ctxBtn.click();
+    await win.waitForTimeout(400);
+    await win.screenshot({ path: `${SHOT_DIR}/16-context-popup.png`, fullPage: false });
+    results.contextExpanded = await win.locator('text=/% used/').isVisible().catch(() => false);
+    console.log(`[e2e] context window expanded: ${results.contextExpanded}`);
+    await win.keyboard.press('Escape');
+  }
+
+  // 12) Recents 过滤按钮
+  console.log('[e2e] testing Recents filter');
+  const recentsFilterBtn = win.locator('button[aria-label="Filter recents"]').first();
+  if (await recentsFilterBtn.isVisible().catch(() => false)) {
+    await recentsFilterBtn.click();
+    await win.waitForTimeout(400);
+    await win.screenshot({ path: `${SHOT_DIR}/17-recents-filter.png`, fullPage: false });
+    results.recentsFilter = await win.locator('text=Status').isVisible().catch(() => false);
+    console.log(`[e2e] recents filter open: ${results.recentsFilter}`);
+    await win.keyboard.press('Escape');
+  }
+
+  // 13) Pin session via context menu — 验证 sidebar 出现 pinned indicator
+  console.log('[e2e] pin session via context menu');
+  const row = win.locator('aside button:has(span:text-is("你好")), aside button:has(span:text-is("Untitled session"))').first();
+  if (await row.isVisible().catch(() => false)) {
+    await row.click({ button: 'right' });
+    await win.waitForTimeout(400);
+    await win.locator('[role="menu"] >> text=Pin').click({ timeout: 3000 }).catch(() => {});
+    await win.waitForTimeout(500);
+    // 重新右键看看菜单文字是否变 "Unpin"（注意 SessionContextMenu 不会反转 label，
+    // 但 Sidebar SessionRow 会出现 📌 emoji；先 screenshot）
+    await win.screenshot({ path: `${SHOT_DIR}/18-after-pin.png`, fullPage: false });
+    results.pinIndicator = await win.locator('aside [title="Pinned"]').count() > 0;
+    console.log(`[e2e] pin indicator visible: ${results.pinIndicator}`);
+  }
+
+  await win.waitForTimeout(500);
+  await win.screenshot({ path: `${SHOT_DIR}/19-final.png`, fullPage: false });
+
+  console.log('\n[e2e] === RESULTS ===');
+  console.log('  response gotten     :', gotResponse);
+  console.log('  auto-title          :', results.autoTitle);
+  console.log('  mode switch         :', results.modeSwitch);
+  console.log('  transcript open     :', results.transcriptOpen);
+  console.log('  activity items count:', results.activityItems);
+  console.log('  context expanded    :', results.contextExpanded);
+  console.log('  recents filter open :', results.recentsFilter);
+  console.log('  pin indicator       :', results.pinIndicator);
+  console.log('  console errors      :', consoleErrors.length);
+  for (const e of consoleErrors) console.log('    -', e);
 
   await app.close();
-  process.exit(gotResponse ? 0 : 1);
+  const allPass = gotResponse && results.autoTitle && results.modeSwitch && results.transcriptOpen && results.activityItems >= 7 && results.contextExpanded && results.recentsFilter && results.pinIndicator;
+  process.exit(allPass ? 0 : 1);
 }
 
 main().catch((err) => {

@@ -24,6 +24,26 @@ import { resolveSessionCreateInputs } from './createSession.js';
  * 避免恶意粘贴在 renderer 端就预分配巨大数组。
  */
 const SLASH_ARGS_MAX = 20;
+
+/**
+ * 从首条 user prompt 派生 session title。
+ * alpha.1 用前 50 字符截断 + 去除换行；v0.1.x 可升级到调 Haiku 类小模型总结
+ * (对照 c:\Works\claudecode\src\utils\sessionTitle.ts 的 generateSessionTitle)。
+ *
+ * 不处理 slash 命令开头 — `/help` `/clear` 这类不该被当 session topic。
+ */
+const TITLE_MAX_CHARS = 50;
+function deriveTitle(prompt: string): string | null {
+  const trimmed = prompt.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('/')) return null;
+  // 取前 N 字符，单行
+  const oneLine = trimmed.replace(/\s+/g, ' ');
+  const sliced = oneLine.length > TITLE_MAX_CHARS
+    ? oneLine.slice(0, TITLE_MAX_CHARS).trimEnd() + '…'
+    : oneLine;
+  return sliced;
+}
 function tokenizeArgs(rest: string): string[] {
   const result: string[] = [];
   const re = /"([^"]*)"|(\S+)/g;
@@ -243,6 +263,17 @@ export function BottomBar(): JSX.Element {
       if (!sid) return;
       appendUserMessage(sid, trimmed);
       setPrompt('');
+      // Auto-title：仅在 session 当前无 title 时设置，避免覆盖用户手动重命名。
+      // fire-and-forget — 失败不影响 send。
+      const sessNow = useAppStore.getState().sessions.find((s) => s.sessionId === sid);
+      if (sessNow && !sessNow.title) {
+        const title = deriveTitle(trimmed);
+        if (title) {
+          void window.kodaxSpace.invoke('session.setTitle', { sessionId: sid, title }).then((r) => {
+            if (r.ok) upsertSession({ ...sessNow, title });
+          });
+        }
+      }
       const result = await window.kodaxSpace.invoke('session.send', {
         sessionId: sid,
         prompt: trimmed,
