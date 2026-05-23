@@ -87,9 +87,19 @@ export function registerSessionChannels(): void {
 
   // session.send
   registerChannel('session.send', async (input) => {
-    const session = kodaxHost.get(input.sessionId);
+    let session = kodaxHost.get(input.sessionId);
     if (!session) {
-      throw new Error(`session not found: ${input.sessionId}`);
+      // Lazy resume：sessionId 不在 in-flight，但磁盘上可能 persisted —— 重启 Space
+      // 后从 Recents 点击的 session 走这条路。tryResume 内部走 createSession 接管
+      // 原 sessionId，SDK 按 id 自动 resume lineage。
+      const resumed = await kodaxHost.tryResume(input.sessionId);
+      if (!resumed) {
+        throw new Error(`session not found: ${input.sessionId}`);
+      }
+      session = kodaxHost.get(input.sessionId);
+      if (!session) {
+        throw new Error(`session resume failed: ${input.sessionId}`);
+      }
     }
     // 第一次 send 时自动给 session 起个临时标题（基于 prompt 头部）。
     // ensureTitle 已经在 host 里做"title === undefined 才填"的判断，重复调用安全。

@@ -17,14 +17,19 @@ const VITE_URL = 'http://127.0.0.1:5173';
 const procs = [];
 let shuttingDown = false;
 
-function spawnProc(name, cmd, args, env = {}) {
+function spawnProc(name, cmd, args, env = {}, opts = {}) {
   // ELECTRON_RUN_AS_NODE=1 在外层 shell 出现时，electron 入口会退化成 Node 脚本，
   // require('electron') 仅返回二进制路径，window 永远不弹。强制在子进程剥掉。
   const baseEnv = { ...process.env };
   delete baseEnv.ELECTRON_RUN_AS_NODE;
+  // 默认 'inherit' 三流共享 — vite/esbuild 不读 stdin 所以安全。
+  // Electron 在 KodaX SDK 加载后会让某些 readline / tty 子组件抓住 stdin，
+  // 直接 'inherit' 会让 user 的终端键盘"被吃" (typing 在 shell 里看不见 / 行为怪)。
+  // 解决：调用方传 stdinMode='ignore' 让 Electron 子进程拿不到 stdin。
+  const stdinMode = opts.stdinMode ?? 'inherit';
   const proc = spawn(cmd, args, {
     cwd: root,
-    stdio: 'inherit',
+    stdio: [stdinMode, 'inherit', 'inherit'],
     shell: process.platform === 'win32',
     env: { ...baseEnv, ...env },
   });
@@ -72,10 +77,16 @@ try {
   });
   console.log('[dev] both ready, launching electron');
 
-  spawnProc('electron', 'npx', ['electron', 'dist-electron'], {
-    VITE_DEV_SERVER_URL: VITE_URL,
-    NODE_ENV: 'development',
-  });
+  spawnProc(
+    'electron',
+    'npx',
+    ['electron', 'dist-electron'],
+    {
+      VITE_DEV_SERVER_URL: VITE_URL,
+      NODE_ENV: 'development',
+    },
+    { stdinMode: 'ignore' }, // 防 KodaX SDK 内部 readline 抢 user 的 terminal 键盘输入
+  );
 } catch (err) {
   console.error('[dev] failed:', err);
   shutdown(1);
