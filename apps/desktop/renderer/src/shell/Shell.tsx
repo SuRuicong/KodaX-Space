@@ -34,6 +34,7 @@ import { AskUserModal } from '../features/ask-user/AskUserModal.js';
 import { ThemeToggle } from './ThemeToggle.js';
 import { RightSidebar } from './RightSidebar.js';
 import { HelpOverlayController } from './HelpOverlay.js';
+import { ToastContainer } from './ToastContainer.js';
 
 export type Mode = 'coder' | 'partner';
 
@@ -117,6 +118,7 @@ export function Shell(): JSX.Element {
         <AskUserModal />
         <HelpOverlayController />
       </div>
+      <ToastContainer />
     </div>
   );
 }

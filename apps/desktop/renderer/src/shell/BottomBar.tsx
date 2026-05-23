@@ -19,6 +19,7 @@ import { SlashCommandPopover, type SlashPickerItem } from './SlashCommandPopover
 import { resolveSessionCreateInputs } from './createSession.js';
 import { ActivitySpinner, useIsStreaming } from './ActivitySpinner.js';
 import { AgentModeSelector } from './AgentModeSelector.js';
+import { pushToast } from '../store/toastStore.js';
 
 /**
  * F031 helper：按空白切 args，保留双引号包裹的整段。
@@ -318,16 +319,16 @@ export function BottomBar(): JSX.Element {
         }
       }
       if (lastText.length === 0) {
-        appendUserMessage(sessionId, '[copy] no assistant message to copy');
+        pushToast('No assistant message to copy', 'warning');
         return;
       }
       try {
         await navigator.clipboard.writeText(lastText);
-        appendUserMessage(sessionId, `[copy] ${lastText.length} chars copied to clipboard`);
+        pushToast(`Copied ${lastText.length} chars to clipboard`, 'success');
       } catch (err) {
-        appendUserMessage(
-          sessionId,
-          `[copy] clipboard write failed: ${err instanceof Error ? err.message : String(err)}`,
+        pushToast(
+          `Clipboard write failed: ${err instanceof Error ? err.message : String(err)}`,
+          'error',
         );
       }
       return;
@@ -563,7 +564,9 @@ export function BottomBar(): JSX.Element {
 
   async function handleCancel(): Promise<void> {
     if (!currentSessionId || !window.kodaxSpace) return;
-    await window.kodaxSpace.invoke('session.cancel', { sessionId: currentSessionId });
+    const r = await window.kodaxSpace.invoke('session.cancel', { sessionId: currentSessionId });
+    if (r.ok) pushToast('Stop signal sent', 'info', 2000);
+    else pushToast(r.error?.message ?? 'Cancel failed', 'error');
   }
 
   /**
