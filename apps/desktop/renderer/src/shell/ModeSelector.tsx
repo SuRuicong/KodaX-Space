@@ -45,18 +45,20 @@ const ENGINE_DESCRIPTIONS: Record<AutoModeEngine, string> = {
   rules: '走 ~/.kodax/auto-rules.jsonc + 内置 signals',
 };
 
-export function ModeSelector(): JSX.Element | null {
+export function ModeSelector(): JSX.Element {
   const sessions = useAppStore((s) => s.sessions);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const upsertSession = useAppStore((s) => s.upsertSession);
+  const pendingPermissionMode = useAppStore((s) => s.pendingPermissionMode);
+  const setPendingPermissionMode = useAppStore((s) => s.setPendingPermissionMode);
   const session = sessions.find((x) => x.sessionId === currentSessionId);
 
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Ctrl+M 切换打开；数字键 1/2/3 切 mode；L/R 切 engine（auto 时）
+  // 不再 gate 在 session 上——无 session 时也能 toggle pending mode
   useEffect(() => {
-    if (!session) return;
     const onKey = (e: KeyboardEvent): void => {
       if (e.ctrlKey && (e.key === 'm' || e.key === 'M')) {
         e.preventDefault();
@@ -76,25 +78,29 @@ export function ModeSelector(): JSX.Element | null {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, open]);
 
-  if (!session) return null;
-  const current = session.permissionMode ?? 'accept-edits';
-  const engine: AutoModeEngine = session.autoModeEngine ?? 'llm';
+  // 有 session 走 session.permissionMode；无 session 走 pendingPermissionMode；fallback 'accept-edits'
+  const current: PermissionMode =
+    session?.permissionMode ?? pendingPermissionMode ?? 'accept-edits';
+  const engine: AutoModeEngine = session?.autoModeEngine ?? 'llm';
 
   async function setMode(mode: PermissionMode): Promise<void> {
-    if (!window.kodaxSpace || busy || !session || mode === current) return;
+    if (busy || mode === current) return;
     setBusy(true);
-    // 乐观更新：先把 store 中 session.permissionMode 改了，让 engine 子菜单立即渲染，
-    // 防止用户点 'Auto' → IPC round-trip 期间鼠标轻微移动触发 onMouseLeave 关闭 popover。
-    // 失败时回滚（罕见——main host 永远 return ok:true for 合法 enum）
-    upsertSession({ ...session, permissionMode: mode });
     if (mode !== 'auto') setOpen(false);
     try {
-      const r = await window.kodaxSpace.invoke('session.setPermissionMode', {
-        sessionId: session.sessionId,
-        mode,
-      });
-      if (!r.ok) {
-        upsertSession({ ...session, permissionMode: current });
+      if (session && window.kodaxSpace) {
+        // 乐观更新：先把 store 中 session.permissionMode 改了
+        upsertSession({ ...session, permissionMode: mode });
+        const r = await window.kodaxSpace.invoke('session.setPermissionMode', {
+          sessionId: session.sessionId,
+          mode,
+        });
+        if (!r.ok) {
+          upsertSession({ ...session, permissionMode: current });
+        }
+      } else {
+        // 无 session → pending；下次 session.create 由 main 端读 pendingPermissionMode (caller chain)
+        setPendingPermissionMode(mode);
       }
     } finally {
       setBusy(false);
@@ -117,9 +123,10 @@ export function ModeSelector(): JSX.Element | null {
     }
   }
 
-  const statusLabel = current === 'auto'
+  const baseLabel = current === 'auto'
     ? `Auto · ${ENGINE_LABELS[engine]}`
     : MODE_LABELS[current];
+  const statusLabel = session ? baseLabel : `${baseLabel} (next)`;
 
   return (
     <div className="relative">
@@ -135,12 +142,16 @@ export function ModeSelector(): JSX.Element | null {
 
       {open && (
         <div
-          className="absolute left-0 bottom-full mb-1 w-60 bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 text-xs z-50"
+          className="absolute left-0 bottom-full mb-1 w-64 bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 text-xs z-50"
           onMouseLeave={() => setOpen(false)}
         >
-          <div className="px-3 py-1 flex justify-between text-zinc-500 text-[10px] uppercase tracking-wider">
+          <div className="px-3 py-1 flex justify-between items-center text-zinc-500 text-[10px] uppercase tracking-wider">
             <span>Mode</span>
-            <span className="text-zinc-400">Ctrl+M</span>
+            <span className="font-mono text-zinc-400 flex items-center gap-1">
+              <kbd className="px-1 border border-zinc-700 rounded">⇧</kbd>
+              <kbd className="px-1 border border-zinc-700 rounded">Ctrl</kbd>
+              <kbd className="px-1 border border-zinc-700 rounded">M</kbd>
+            </span>
           </div>
           {MODE_ORDER.map((m, idx) => (
             <button
@@ -148,41 +159,42 @@ export function ModeSelector(): JSX.Element | null {
               type="button"
               onClick={() => void setMode(m)}
               className={`w-full text-left px-3 py-1 hover:bg-zinc-800 flex items-center gap-2 ${
-                current === m ? 'text-zinc-100' : 'text-zinc-400'
+                current === m ? 'text-zinc-100' : 'text-zinc-300'
               }`}
               title={MODE_DESCRIPTIONS[m]}
             >
-              <span>{MODE_LABELS[m]}</span>
-              <span className="ml-auto text-zinc-400 text-[10px]">{idx + 1}</span>
-              {current === m && <span className="text-emerald-500 ml-1" aria-hidden>✓</span>}
+              <span className="flex-1">{MODE_LABELS[m]}</span>
+              {current === m && <span className="text-emerald-500" aria-hidden>✓</span>}
+              <span className="text-zinc-500 text-[10px] font-mono w-3 text-right">{idx + 1}</span>
             </button>
           ))}
 
           {current === 'auto' && (
-            <>
-              <div className="border-t border-zinc-800 mt-1 pt-1">
-                <div className="px-3 py-1 text-zinc-500 text-[10px] uppercase tracking-wider">
-                  Auto engine
-                </div>
-                {(['llm', 'rules'] as const).map((eng) => (
-                  <button
-                    key={eng}
-                    type="button"
-                    onClick={() => void setEngine(eng)}
-                    className={`w-full text-left px-3 py-1 hover:bg-zinc-800 flex items-center gap-2 ${
-                      engine === eng ? 'text-zinc-100' : 'text-zinc-400'
-                    }`}
-                    title={ENGINE_DESCRIPTIONS[eng]}
-                  >
-                    <span className={engine === eng ? 'text-emerald-500' : 'text-zinc-400'} aria-hidden>
-                      {engine === eng ? '●' : '○'}
-                    </span>
-                    <span>{ENGINE_LABELS[eng]}</span>
-                  </button>
-                ))}
+            <div className="border-t border-zinc-800 mt-1 pt-1">
+              <div className="px-3 py-1 text-zinc-500 text-[10px] uppercase tracking-wider">
+                Auto engine
               </div>
-            </>
+              {(['llm', 'rules'] as const).map((eng) => (
+                <button
+                  key={eng}
+                  type="button"
+                  onClick={() => void setEngine(eng)}
+                  className={`w-full text-left px-3 py-1 hover:bg-zinc-800 flex items-center gap-2 ${
+                    engine === eng ? 'text-zinc-100' : 'text-zinc-300'
+                  }`}
+                  title={ENGINE_DESCRIPTIONS[eng]}
+                >
+                  <span className="flex-1">{ENGINE_LABELS[eng]}</span>
+                  {engine === eng && <span className="text-emerald-500" aria-hidden>✓</span>}
+                </button>
+              ))}
+            </div>
           )}
+
+          {/* 底部说明：Space Auto = KodaX guardrail；Claude Desktop "Bypass" 没有 1:1 对应 */}
+          <div className="border-t border-zinc-800 mt-1 pt-1 px-3 py-1 text-[10px] text-zinc-500 leading-tight">
+            Auto 由 KodaX guardrail 接管 — 比 Claude Desktop 的 Bypass 更安全
+          </div>
         </div>
       )}
     </div>

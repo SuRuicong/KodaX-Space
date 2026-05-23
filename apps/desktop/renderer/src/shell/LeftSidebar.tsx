@@ -17,11 +17,13 @@
 //
 // ADR-004 v2 决策：M0 就显示 Coder/Partner tab；Partner 灰 + "Coming"。
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Mode } from './Shell.js';
 import { useAppStore } from '../store/appStore.js';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 import { resolveSessionCreateInputs } from './createSession.js';
+import { SessionContextMenu } from './SessionContextMenu.js';
+import { RecentsFilterMenu } from './RecentsFilterMenu.js';
 
 interface LeftSidebarProps {
   mode: Mode;
@@ -39,8 +41,10 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
   const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
   const pendingProviderId = useAppStore((s) => s.pendingProviderId);
   const pendingReasoningMode = useAppStore((s) => s.pendingReasoningMode);
+  const pendingPermissionMode = useAppStore((s) => s.pendingPermissionMode);
   const setPendingProviderId = useAppStore((s) => s.setPendingProviderId);
   const setPendingReasoningMode = useAppStore((s) => s.setPendingReasoningMode);
+  const setPendingPermissionMode = useAppStore((s) => s.setPendingPermissionMode);
   const [creating, setCreating] = useState(false);
   const [createErr, setCreateErr] = useState<string | null>(null);
 
@@ -75,6 +79,7 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
         kodaxDefaults,
         pendingProviderId,
         pendingReasoningMode,
+        pendingPermissionMode,
       });
 
       const result = await bridge.invoke('session.create', {
@@ -103,6 +108,7 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
       // 创建成功 → 消费掉 pending（pending 只是 "无 session 时的下一次预设"）
       setPendingProviderId(null);
       setPendingReasoningMode(null);
+      setPendingPermissionMode(null);
       // 刷新权威列表
       const listResult = await bridge.invoke('session.list', { projectRoot: currentProjectPath });
       if (listResult.ok) useAppStore.getState().setSessions(listResult.data.sessions);
@@ -155,10 +161,8 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
         <DisabledMenuItem icon="▾" label="More" hint="" />
       </div>
 
-      {/* Recents */}
-      <div className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-wider text-zinc-400 flex justify-between flex-shrink-0">
-        <span>Recents</span>
-      </div>
+      {/* Recents 标题 + 过滤按钮 (对齐 Claude Desktop 截图 3 的 ⚙) */}
+      <RecentsHeader />
 
       <div className="flex-1 overflow-y-auto px-1.5 pb-2">
         {sessions.length === 0 && (
@@ -197,7 +201,45 @@ interface SessionTreeProps {
 }
 
 function SessionTree({ sessions, currentSessionId, onSelect }: SessionTreeProps): JSX.Element {
-  const rendered = useMemo(() => buildSessionTreeOrder(sessions), [sessions]);
+  const sessionFlags = useAppStore((s) => s.sessionFlags);
+  const filter = useAppStore((s) => s.recentsFilter);
+  const currentProjectPath = useAppStore((s) => s.currentProjectPath);
+
+  // 应用 filter：status / lastActivity / projectScope
+  const visible = useMemo(() => {
+    const now = Date.now();
+    const cutoff =
+      filter.lastActivity === 'today' ? now - 24 * 3600 * 1000 :
+      filter.lastActivity === '7d' ? now - 7 * 24 * 3600 * 1000 :
+      filter.lastActivity === '30d' ? now - 30 * 24 * 3600 * 1000 :
+      0;
+    return sessions.filter((s) => {
+      const f = sessionFlags[s.sessionId];
+      if (filter.status === 'active' && f?.archived) return false;
+      if (filter.status === 'archived' && !f?.archived) return false;
+      if (filter.projectScope === 'current' && currentProjectPath && s.projectRoot !== currentProjectPath) return false;
+      if (cutoff > 0 && s.lastActivityAt < cutoff) return false;
+      return true;
+    });
+  }, [sessions, sessionFlags, filter, currentProjectPath]);
+
+  // 排序：pinned 顶部 + sortBy 选项决定二级排序
+  const rendered = useMemo(() => {
+    const tree = buildSessionTreeOrder(visible, (id) => Boolean(sessionFlags[id]?.pinned));
+    if (filter.sortBy === 'recency') return tree;
+    // 对 flat tree 二次排序（树形结构下 alphabetical/created 仅排 root；children 保 DFS 序）
+    return tree.slice().sort((a, b) => {
+      if (a.depth !== b.depth) return a.depth - b.depth;
+      if (filter.sortBy === 'alphabetical') {
+        return (a.session.title ?? '').localeCompare(b.session.title ?? '');
+      }
+      // created
+      return b.session.createdAt - a.session.createdAt;
+    });
+  }, [visible, sessionFlags, filter.sortBy]);
+  // 右键菜单状态：哪个 session + 屏幕坐标
+  const [ctxMenu, setCtxMenu] = useState<{ session: SessionMeta; x: number; y: number } | null>(null);
+
   return (
     <>
       {rendered.map(({ session, depth }) => (
@@ -206,9 +248,19 @@ function SessionTree({ sessions, currentSessionId, onSelect }: SessionTreeProps)
           session={session}
           depth={depth}
           isSelected={session.sessionId === currentSessionId}
+          flags={sessionFlags[session.sessionId]}
           onSelect={onSelect}
+          onContextMenu={(x, y) => setCtxMenu({ session, x, y })}
         />
       ))}
+      {ctxMenu && (
+        <SessionContextMenu
+          session={ctxMenu.session}
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          onClose={() => setCtxMenu(null)}
+        />
+      )}
     </>
   );
 }
@@ -218,8 +270,11 @@ interface SessionTreeNode {
   readonly depth: number;
 }
 
-/** DFS pre-order，root 按 lastActivityAt 倒序；children 同样倒序。 */
-export function buildSessionTreeOrder(sessions: readonly SessionMeta[]): readonly SessionTreeNode[] {
+/** DFS pre-order，root 按 (pinned 优先) → lastActivityAt 倒序；children 同样倒序。 */
+export function buildSessionTreeOrder(
+  sessions: readonly SessionMeta[],
+  isPinned: (sessionId: string) => boolean = () => false,
+): readonly SessionTreeNode[] {
   const byId = new Map<string, SessionMeta>(sessions.map((s) => [s.sessionId, s]));
   const childrenByParent = new Map<string, SessionMeta[]>();
   const roots: SessionMeta[] = [];
@@ -232,10 +287,15 @@ export function buildSessionTreeOrder(sessions: readonly SessionMeta[]): readonl
       roots.push(s);
     }
   }
-  // 按 lastActivityAt 倒序
-  const byActivityDesc = (a: SessionMeta, b: SessionMeta): number => b.lastActivityAt - a.lastActivityAt;
-  roots.sort(byActivityDesc);
-  for (const list of childrenByParent.values()) list.sort(byActivityDesc);
+  // pinned 在前，其后按 lastActivityAt 倒序
+  const orderFn = (a: SessionMeta, b: SessionMeta): number => {
+    const pa = isPinned(a.sessionId) ? 1 : 0;
+    const pb = isPinned(b.sessionId) ? 1 : 0;
+    if (pa !== pb) return pb - pa;
+    return b.lastActivityAt - a.lastActivityAt;
+  };
+  roots.sort(orderFn);
+  for (const list of childrenByParent.values()) list.sort(orderFn);
 
   const out: SessionTreeNode[] = [];
   const visited = new Set<string>();
@@ -254,12 +314,16 @@ function SessionRow({
   session,
   depth,
   isSelected,
+  flags,
   onSelect,
+  onContextMenu,
 }: {
   session: SessionMeta;
   depth: number;
   isSelected: boolean;
+  flags: { pinned?: boolean; archived?: boolean; unread?: boolean } | undefined;
   onSelect: (id: string) => void;
+  onContextMenu: (x: number, y: number) => void;
 }): JSX.Element {
   const indent = Math.min(depth, 4); // 不无限缩进；4 层就够
   const isFork = depth > 0 || session.parentSessionId !== undefined;
@@ -267,15 +331,51 @@ function SessionRow({
     <button
       type="button"
       onClick={() => onSelect(session.sessionId)}
-      className={`w-full text-left text-xs px-2 py-1 rounded truncate ${
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu(e.clientX, e.clientY);
+      }}
+      className={`w-full text-left text-xs px-2 py-1 rounded truncate flex items-center gap-1 ${
         isSelected ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100'
       }`}
       style={{ paddingLeft: `${0.5 + indent * 0.8}rem` }}
       title={session.title ?? session.sessionId}
     >
-      <span className="text-zinc-500 mr-1" aria-hidden>{isFork ? '⑂' : '·'}</span>
-      {session.title ?? 'Untitled session'}
+      <span className="text-zinc-500" aria-hidden>{isFork ? '⑂' : '·'}</span>
+      {flags?.pinned && <span className="text-amber-400 text-[10px]" aria-hidden title="Pinned">📌</span>}
+      <span className="truncate flex-1">{session.title ?? 'Untitled session'}</span>
+      {flags?.unread && <span className="text-emerald-400 text-[10px]" aria-hidden title="Unread">●</span>}
     </button>
+  );
+}
+
+function RecentsHeader(): JSX.Element {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const filter = useAppStore((s) => s.recentsFilter);
+  // 显示当前过滤 summary，给用户暗示"我现在看的是哪部分"
+  const summary =
+    filter.status !== 'active' || filter.lastActivity !== 'all' || filter.sortBy !== 'recency' || filter.groupBy !== 'none'
+      ? `${filter.status === 'active' ? '' : filter.status + ' · '}${filter.sortBy}`
+      : null;
+  return (
+    <div className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-wider text-zinc-400 flex justify-between items-center flex-shrink-0 relative">
+      <span>Recents</span>
+      <div className="flex items-center gap-2">
+        {summary && <span className="normal-case text-zinc-500 text-[9px]">{summary}</span>}
+        <button
+          ref={buttonRef}
+          type="button"
+          onClick={() => setMenuOpen((v) => !v)}
+          className="text-zinc-400 hover:text-zinc-200 normal-case"
+          aria-label="Filter recents"
+          title="Filter, group, sort"
+        >
+          ⇅
+        </button>
+      </div>
+      <RecentsFilterMenu open={menuOpen} onClose={() => setMenuOpen(false)} anchorEl={buttonRef.current} />
+    </div>
   );
 }
 

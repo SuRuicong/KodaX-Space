@@ -43,8 +43,10 @@ export function BottomBar(): JSX.Element {
   const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
   const pendingProviderId = useAppStore((s) => s.pendingProviderId);
   const pendingReasoningMode = useAppStore((s) => s.pendingReasoningMode);
+  const pendingPermissionMode = useAppStore((s) => s.pendingPermissionMode);
   const setPendingProviderId = useAppStore((s) => s.setPendingProviderId);
   const setPendingReasoningMode = useAppStore((s) => s.setPendingReasoningMode);
+  const setPendingPermissionMode = useAppStore((s) => s.setPendingPermissionMode);
   const appendUserMessage = useAppStore((s) => s.appendUserMessage);
   const resetSessionMessages = useAppStore((s) => s.resetSessionMessages);
   const upsertSession = useAppStore((s) => s.upsertSession);
@@ -73,6 +75,7 @@ export function BottomBar(): JSX.Element {
       kodaxDefaults,
       pendingProviderId,
       pendingReasoningMode,
+      pendingPermissionMode,
     });
     const result = await window.kodaxSpace.invoke('session.create', {
       projectRoot: currentProjectPath,
@@ -100,6 +103,7 @@ export function BottomBar(): JSX.Element {
     // 消费 pending（既然 session 已经按 pending 建立，pending 状态使命完成）
     setPendingProviderId(null);
     setPendingReasoningMode(null);
+    setPendingPermissionMode(null);
     // 刷新权威列表（让 LeftSidebar Recents 立即看到新条目）
     const listResult = await window.kodaxSpace.invoke('session.list', {
       projectRoot: currentProjectPath,
@@ -338,8 +342,7 @@ export function BottomBar(): JSX.Element {
           <button
             type="button"
             onClick={() => setAttachOpen((v) => !v)}
-            disabled={!currentProjectPath}
-            className="w-5 h-5 rounded text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 disabled:text-zinc-500 disabled:cursor-not-allowed text-sm flex items-center justify-center"
+            className="w-5 h-5 rounded text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 text-sm flex items-center justify-center"
             title="Attach / Commands"
             aria-label="Open attach menu"
           >

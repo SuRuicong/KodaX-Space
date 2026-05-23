@@ -1,29 +1,28 @@
 // ContextWindowIndicator — alpha.1
 //
-// Claude Desktop 截图 3：底部输入框右侧 `Context window  96.1k / 1.0M (10%) ›`
+// Claude Desktop 截图 9：底部输入框右侧 `Context window  96.1k / 1.0M (10%) ›`，
+// 点击 › 展开 breakdown 弹窗，含进度条 + 分项 token 占用。
 //
-// 数据来源：session.event 里的 iteration_end.tokenCount + iteration_end.usage（如有）。
-// alpha.1 阶段没接到真实 LLM tokens——Mock adapter emit iteration_end 时带 tokenCount，
-// 这里取最新值作为"已用 token"。cap 默认 1M（Opus 4.7 1M 等长上下文 model；其他 model
-// 不同 cap 可后续从 provider catalog 取）。
+// 数据来源：iteration_end 事件的 tokenCount（最近一条）。
+// alpha.1 不分类 (system / context / messages / tools)，只显示总量；
+// 后续接 KodaX SDK usage breakdown 后再分。
 
+import { useState } from 'react';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 
-// 默认 cap：1M tokens（Opus 4.7 1M / Sonnet 1M / Gemini 1M 等长 context 模型）。
-// 后续从 provider catalog 的 model spec 拿真实 cap。
 const DEFAULT_CONTEXT_CAP = 1_000_000;
-
-// 稳定空数组，防 selector `?? []` literal 每次新引用触发 zustand re-render loop (React #185)。
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 
 export function ContextWindowIndicator(): JSX.Element | null {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
-  const events = useAppStore((s) => (currentSessionId ? s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS : EMPTY_EVENTS));
+  const events = useAppStore((s) =>
+    currentSessionId ? s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS : EMPTY_EVENTS,
+  );
+  const [open, setOpen] = useState(false);
 
   if (!currentSessionId) return null;
 
-  // 找最近一条 iteration_end 拿 tokenCount。alpha.1 阶段够用——后续可累加 usage
   let tokenCount = 0;
   for (let i = events.length - 1; i >= 0; i--) {
     const ev = events[i];
@@ -38,22 +37,61 @@ export function ContextWindowIndicator(): JSX.Element | null {
   const tokenStr = formatTokens(tokenCount);
   const capStr = formatTokens(cap);
 
-  // 颜色：< 50% 灰；50-80% 黄；>= 80% 红
   const color = percent < 50 ? 'text-zinc-300' : percent < 80 ? 'text-amber-400' : 'text-red-400';
+  const barColor =
+    percent < 50 ? 'bg-zinc-400' : percent < 80 ? 'bg-amber-500' : 'bg-red-500';
 
   return (
-    <button
-      type="button"
-      className={`text-[10px] font-mono flex items-center gap-1.5 ${color} hover:text-zinc-200`}
-      title="Context window — click for breakdown (v0.1.x)"
-    >
-      <span>Context window</span>
-      <span>
-        {tokenStr} / {capStr}
-      </span>
-      <span>({percent.toFixed(0)}%)</span>
-      <span className="text-zinc-400" aria-hidden>›</span>
-    </button>
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`text-[10px] font-mono flex items-center gap-1.5 ${color} hover:text-zinc-200`}
+        title="Click for breakdown"
+      >
+        <span>Context window</span>
+        <span>
+          {tokenStr} / {capStr}
+        </span>
+        <span>({percent.toFixed(0)}%)</span>
+        <span className="text-zinc-400" aria-hidden>›</span>
+      </button>
+
+      {open && (
+        <div
+          className="absolute right-0 bottom-full mb-2 w-72 bg-zinc-900 border border-zinc-800 rounded shadow-xl p-3 text-xs z-50"
+          onMouseLeave={() => setOpen(false)}
+        >
+          <div className="text-zinc-500 text-[10px] uppercase tracking-wider mb-2">
+            Context window
+          </div>
+          {/* 顶部数字 */}
+          <div className="flex justify-between text-zinc-200 font-mono mb-1.5">
+            <span>{tokenStr}</span>
+            <span className="text-zinc-500">/ {capStr}</span>
+          </div>
+          {/* 进度条 */}
+          <div className="h-1.5 bg-zinc-800 rounded overflow-hidden">
+            <div
+              className={`h-full ${barColor} transition-all`}
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+          {/* 百分比 + 注释 */}
+          <div className="mt-2 text-[10px] text-zinc-400 flex justify-between">
+            <span>{percent.toFixed(1)}% used</span>
+            <span>{formatTokens(cap - tokenCount)} left</span>
+          </div>
+
+          {/* alpha.1 breakdown 占位：等 KodaX SDK usage 出 segment 数据再分项 */}
+          <div className="mt-3 border-t border-zinc-800 pt-2 text-[10px] text-zinc-500 leading-relaxed">
+            Token breakdown by category — coming in v0.1.x
+            <br />
+            Cap default 1M; switches per-model when SDK reports.
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

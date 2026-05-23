@@ -22,7 +22,7 @@
 // 即用户可以"先选 model，再开打字 → session 用所选 model 建立"。
 // 这是修复"我没建 session 就不让我选 provider/model" 的关键。
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ProviderInfo, SessionMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 
@@ -52,6 +52,20 @@ export function ModelEffortSelector(): JSX.Element {
   const session = sessions.find((x) => x.sessionId === currentSessionId);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // Ctrl+I 切换打开/关闭（Claude Desktop "Models  ⇧Ctrl I" 同款）。
+  // Ctrl+E 用来切 effort——直接切到下一档（不必打开 popup）；按住 Shift 反向。
+  // 数字键 1-9 当 popup 打开时直接选 provider；上 effort/下 provider 都用数字（提供清晰对应）。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.ctrlKey && (e.key === 'i' || e.key === 'I')) {
+        e.preventDefault();
+        setOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // 当前显示的 provider/effort：有 session 走 session 字段；无 session 走 pending/fallback
   const activeProviderId =
@@ -130,20 +144,25 @@ export function ModelEffortSelector(): JSX.Element {
 
       {open && (
         <div
-          className="absolute right-0 bottom-full mb-2 w-56 bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 text-xs z-50"
+          className="absolute right-0 bottom-full mb-2 w-60 bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 text-xs z-50"
           onMouseLeave={() => setOpen(false)}
         >
-          {/* Provider 列表 */}
-          <div className="px-3 py-1 flex justify-between text-zinc-500 text-[10px] uppercase tracking-wider">
-            <span>Provider</span>
-            {!session && <span className="text-amber-500 normal-case">for next session</span>}
+          {/* Models 区——对齐 Claude Desktop "Models  ⇧Ctrl I" */}
+          <div className="px-3 py-1 flex justify-between items-center text-zinc-500 text-[10px] uppercase tracking-wider">
+            <span>Models</span>
+            <span className="font-mono text-zinc-400 normal-case flex items-center gap-1">
+              {!session && <span className="text-amber-500 mr-1">for next session</span>}
+              <kbd className="px-1 border border-zinc-700 rounded">⇧</kbd>
+              <kbd className="px-1 border border-zinc-700 rounded">Ctrl</kbd>
+              <kbd className="px-1 border border-zinc-700 rounded">I</kbd>
+            </span>
           </div>
           {configuredProviders.length === 0 ? (
             <div className="px-3 py-1 text-zinc-400 text-[10px]">
               No configured providers — open Settings to add key
             </div>
           ) : (
-            configuredProviders.map((p) => {
+            configuredProviders.map((p, idx) => {
               const selected = p.id === activeProviderId;
               return (
                 <button
@@ -155,20 +174,25 @@ export function ModelEffortSelector(): JSX.Element {
                   }`}
                   title={p.displayName}
                 >
-                  <span className={selected ? 'text-emerald-500' : 'text-zinc-500'} aria-hidden>
-                    {selected ? '●' : '○'}
-                  </span>
-                  <span className="truncate">{p.displayName}</span>
+                  <span className="truncate flex-1">{p.displayName}</span>
+                  {selected && <span className="text-emerald-500" aria-hidden>✓</span>}
+                  {idx < 9 && (
+                    <span className="text-zinc-500 text-[10px] font-mono w-3 text-right">{idx + 1}</span>
+                  )}
                 </button>
               );
             })
           )}
 
-          {/* Effort 列表 */}
+          {/* Effort 区——对齐 Claude Desktop "Effort  ⇧Ctrl E" */}
           <div className="border-t border-zinc-800 mt-1 pt-1">
-            <div className="px-3 py-1 flex justify-between text-zinc-500 text-[10px] uppercase tracking-wider">
+            <div className="px-3 py-1 flex justify-between items-center text-zinc-500 text-[10px] uppercase tracking-wider">
               <span>Effort</span>
-              <span className="text-zinc-400">Ctrl+E</span>
+              <span className="font-mono text-zinc-400 flex items-center gap-1">
+                <kbd className="px-1 border border-zinc-700 rounded">⇧</kbd>
+                <kbd className="px-1 border border-zinc-700 rounded">Ctrl</kbd>
+                <kbd className="px-1 border border-zinc-700 rounded">E</kbd>
+              </span>
             </div>
             {EFFORT_ORDER.map((m) => {
               const selected = activeEffort === m;
@@ -181,8 +205,8 @@ export function ModelEffortSelector(): JSX.Element {
                     selected ? 'text-zinc-100' : 'text-zinc-300'
                   }`}
                 >
-                  <span>{EFFORT_LABEL[m]}</span>
-                  {selected && <span className="ml-auto text-emerald-500" aria-hidden>✓</span>}
+                  <span className="flex-1">{EFFORT_LABEL[m]}</span>
+                  {selected && <span className="text-emerald-500" aria-hidden>✓</span>}
                 </button>
               );
             })}

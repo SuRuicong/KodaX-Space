@@ -22,6 +22,27 @@ import type {
 } from '@kodax-space/space-ipc-schema';
 
 /**
+ * Recents 列表过滤 / 分组 / 排序 状态 — 对齐 Claude Desktop 截图 3。
+ * alpha.1 阶段全部存 renderer 本地（不持久化重启清空）；后续需要的话再持久化到 main。
+ */
+export interface RecentsFilter {
+  status: 'active' | 'archived' | 'all';
+  /** 'current' 只显示 currentProjectPath 的；'all' 跨项目（v0.1.x main 端要按 project 拆开发） */
+  projectScope: 'current' | 'all';
+  lastActivity: 'today' | '7d' | '30d' | 'all';
+  groupBy: 'none' | 'project' | 'status';
+  sortBy: 'recency' | 'alphabetical' | 'created';
+}
+
+const DEFAULT_RECENTS_FILTER: RecentsFilter = {
+  status: 'active',
+  projectScope: 'current',
+  lastActivity: 'all',
+  groupBy: 'none',
+  sortBy: 'recency',
+};
+
+/**
  * 用户在 renderer 端发出的 prompt 记录。
  * Main 端不会把用户 prompt 通过 push channel 回放——它是 invoke 的入参，单向。
  * Renderer 自己保留一份，与 session.event push 流共同构成完整对话。
@@ -125,6 +146,27 @@ interface AppState {
    */
   pendingProviderId: string | null;
   pendingReasoningMode: SessionMeta['reasoningMode'] | null;
+  pendingPermissionMode: SessionMeta['permissionMode'] | null;
+  /**
+   * Session UX flags — alpha.1 阶段不持久化（重启清空）。
+   *   - pinned：sidebar Recents 顶部置顶
+   *   - archived：sidebar 默认隐藏（用 sort/filter 弹窗 → Archived 才显示）
+   *   - unread：sidebar 标题旁加 ● 圆点（用户标记，非自动）
+   * v0.1.x SDK 出持久化字段后迁移到 SessionMeta。
+   */
+  sessionFlags: Readonly<Record<string, { pinned?: boolean; archived?: boolean; unread?: boolean } | undefined>>;
+  /** Recents 列表过滤+分组+排序选项 — alpha.1 不持久化。*/
+  recentsFilter: RecentsFilter;
+  /**
+   * Transcript view — Claude Desktop 截图 7 同款。
+   *   - normal: 默认 (assistant 消息 + tool calls)
+   *   - thinking: 展开 thinking_chunk blocks
+   *   - verbose: 显示所有事件 (含 system_notice / iteration_*）
+   *   - summary: 每 turn 折叠成单行 (高密度浏览)
+   * fontSize: 'sm' | 'base' | 'lg' — 对应 Aa Aa Aa 三档
+   */
+  transcriptView: 'normal' | 'thinking' | 'verbose' | 'summary';
+  transcriptFontSize: 'sm' | 'base' | 'lg';
   /**
    * F009: 最后一次被 tool_call (write/edit) 触及的相对路径——FilePanel 监听这个值切到 diff 视图。
    * 用 "可读完一次就置 null" 的单值 + clearLastDiffPath 模式，避免 useEffect 反复触发。
@@ -161,6 +203,12 @@ interface AppState {
   /** 用户在无 session 时点 picker → 暂存到 pending；下次 session.create 优先用。*/
   setPendingProviderId(id: string | null): void;
   setPendingReasoningMode(mode: SessionMeta['reasoningMode'] | null): void;
+  setPendingPermissionMode(mode: SessionMeta['permissionMode'] | null): void;
+  /** Session UX flags — 局部状态 (alpha.1 不持久化)。toggle 形 + 合并形 set 函数。*/
+  toggleSessionFlag(sessionId: string, flag: 'pinned' | 'archived' | 'unread'): void;
+  setRecentsFilter(filter: RecentsFilter): void;
+  setTranscriptView(v: AppState['transcriptView']): void;
+  setTranscriptFontSize(s: AppState['transcriptFontSize']): void;
   /** 切项目时清空当前 session 选择和事件 buffer（事件留主进程的；renderer 只清缓存）。*/
   resetSessionView(): void;
   /** FEATURE_031: /clear 命令清空指定 session 的事件 / 用户消息 buffer (session 本体保留)。*/
@@ -206,6 +254,11 @@ export const useAppStore = create<AppState>((set) => ({
   pendingToolPaths: {},
   pendingProviderId: null,
   pendingReasoningMode: null,
+  pendingPermissionMode: null,
+  sessionFlags: {},
+  recentsFilter: DEFAULT_RECENTS_FILTER,
+  transcriptView: 'normal',
+  transcriptFontSize: 'base',
 
   setProjects: (projects) => set({ projects }),
   setCurrentProject: (path) => set({ currentProjectPath: path }),
@@ -385,6 +438,23 @@ export const useAppStore = create<AppState>((set) => ({
 
   setPendingProviderId: (id) => set({ pendingProviderId: id }),
   setPendingReasoningMode: (mode) => set({ pendingReasoningMode: mode }),
+  setPendingPermissionMode: (mode) => set({ pendingPermissionMode: mode }),
+
+  setRecentsFilter: (filter) => set({ recentsFilter: filter }),
+  setTranscriptView: (v) => set({ transcriptView: v }),
+  setTranscriptFontSize: (s) => set({ transcriptFontSize: s }),
+
+  toggleSessionFlag: (sessionId, flag) =>
+    set((state) => {
+      const cur = state.sessionFlags[sessionId] ?? {};
+      const next = { ...cur, [flag]: !cur[flag] };
+      // 全 false 时彻底删 entry，防 sessionFlags 表无限增长 (旧 sessionId 残留)
+      if (!next.pinned && !next.archived && !next.unread) {
+        const { [sessionId]: _drop, ...rest } = state.sessionFlags;
+        return { sessionFlags: rest };
+      }
+      return { sessionFlags: { ...state.sessionFlags, [sessionId]: next } };
+    }),
 
   clearLastDiffPath: () => set({ lastDiffPath: null }),
 

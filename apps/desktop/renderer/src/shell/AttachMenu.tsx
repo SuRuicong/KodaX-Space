@@ -10,11 +10,17 @@
 //
 // alpha.1 范围：
 //   - Add files：native picker 选文件 → 把 path 注入到 prompt 末尾作为 inline 引用
-//     （后续接 KodaX attachments API 时改为正式 attachment slot）
-//   - Slash commands：弹个简单的 list（"/help"、"/clear"、"/mode" 等），点击插入到 prompt
-//   - Add folder / Connectors / Plugins：占位 + "Coming"
+//   - Add folder：project.openDialog → 切到所选目录（开新 project）
+//   - Slash commands：弹个简单的 list，点击插入到 prompt
+//   - Connectors：拉 mcp.discover 显示当前 session 的 MCP servers（只读）
+//   - Plugins：拉 skill.discover 显示已注册 skills（点击插入 /<name> 到 prompt）
+//
+// Connectors / Plugins 需要 session 才能 discover（IPC 要 sessionId）。
+// 无 session 时这俩 item 仍可点 — 提示用户先开 session。
 
 import { useEffect, useState } from 'react';
+import type { McpServerMeta, SkillMeta } from '@kodax-space/space-ipc-schema';
+import { useAppStore } from '../store/appStore.js';
 
 interface AttachMenuProps {
   open: boolean;
@@ -29,27 +35,38 @@ const SLASH_COMMANDS = [
   { cmd: '/model', desc: 'Switch model' },
 ];
 
+type SubMenu = 'root' | 'slash' | 'connectors' | 'plugins';
+
 export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JSX.Element | null {
-  const [showSlash, setShowSlash] = useState(false);
+  const currentSessionId = useAppStore((s) => s.currentSessionId);
+  const setCurrentProject = useAppStore((s) => s.setCurrentProject);
+  const [sub, setSub] = useState<SubMenu>('root');
+  const [mcpServers, setMcpServers] = useState<readonly McpServerMeta[] | null>(null);
+  const [skills, setSkills] = useState<readonly SkillMeta[] | null>(null);
+  const [discoverErr, setDiscoverErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
-      setShowSlash(false);
+      setSub('root');
+      setMcpServers(null);
+      setSkills(null);
+      setDiscoverErr(null);
       return;
     }
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (sub === 'root') onClose();
+        else setSub('root');
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, onClose, sub]);
 
   if (!open) return null;
 
   async function addFiles(): Promise<void> {
     if (!window.kodaxSpace) return;
-    // alpha.1 借用 project.openDialog 来选目录——没有专门的文件 picker IPC。
-    // 后续加 files.openDialog channel 支持多选。
     const r = await window.kodaxSpace.invoke('project.openDialog', undefined);
     if (r.ok && r.data.path !== null) {
       onInsertText(`@${r.data.path}`);
@@ -57,16 +74,58 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
     onClose();
   }
 
-  if (showSlash) {
+  async function addFolder(): Promise<void> {
+    if (!window.kodaxSpace) return;
+    const r = await window.kodaxSpace.invoke('project.openDialog', undefined);
+    if (r.ok && r.data.path !== null) {
+      // 切到所选目录作为当前 project — project.list 会刷新
+      setCurrentProject(r.data.path);
+      const listR = await window.kodaxSpace.invoke('project.list', undefined);
+      if (listR.ok) useAppStore.getState().setProjects(listR.data.projects);
+    }
+    onClose();
+  }
+
+  async function loadConnectors(): Promise<void> {
+    if (!window.kodaxSpace) return;
+    if (!currentSessionId) {
+      setDiscoverErr('Open a session first to see this project\'s MCP servers.');
+      setSub('connectors');
+      return;
+    }
+    setSub('connectors');
+    setDiscoverErr(null);
+    const r = await window.kodaxSpace.invoke('mcp.discover', { sessionId: currentSessionId });
+    if (r.ok) {
+      setMcpServers(r.data.servers);
+      if (r.data.errors.length > 0) {
+        setDiscoverErr(`${r.data.errors.length} config errors — check console`);
+      }
+    } else {
+      setDiscoverErr(r.error?.message ?? 'failed to load MCP servers');
+    }
+  }
+
+  async function loadPlugins(): Promise<void> {
+    if (!window.kodaxSpace) return;
+    if (!currentSessionId) {
+      setDiscoverErr('Open a session first to see this project\'s skills.');
+      setSub('plugins');
+      return;
+    }
+    setSub('plugins');
+    setDiscoverErr(null);
+    const r = await window.kodaxSpace.invoke('skill.discover', { sessionId: currentSessionId });
+    if (r.ok) {
+      setSkills(r.data.skills);
+    } else {
+      setDiscoverErr(r.error?.message ?? 'failed to load skills');
+    }
+  }
+
+  if (sub === 'slash') {
     return (
-      <div
-        className="absolute left-0 bottom-full mb-1 w-72 bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 z-50"
-        onMouseLeave={onClose}
-      >
-        <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-zinc-500 flex items-center gap-2">
-          <button type="button" onClick={() => setShowSlash(false)} className="hover:text-zinc-300">←</button>
-          <span>Slash commands</span>
-        </div>
+      <SubMenuFrame title="Slash commands" onBack={() => setSub('root')}>
         {SLASH_COMMANDS.map((s) => (
           <button
             key={s.cmd}
@@ -81,23 +140,100 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
             <span className="text-zinc-500 truncate">{s.desc}</span>
           </button>
         ))}
-        <div className="border-t border-zinc-800 mt-1 pt-1 px-3 py-1 text-[10px] text-zinc-600">
-          User-defined slash commands — v0.1.x
+        <div className="border-t border-zinc-800 mt-1 pt-1 px-3 py-1 text-[10px] text-zinc-500">
+          Use `/` in textarea for full skill + command picker
         </div>
-      </div>
+      </SubMenuFrame>
+    );
+  }
+
+  if (sub === 'connectors') {
+    return (
+      <SubMenuFrame title="Connectors (MCP)" onBack={() => setSub('root')}>
+        {discoverErr && <div className="px-3 py-1 text-[10px] text-amber-400">{discoverErr}</div>}
+        {mcpServers === null && !discoverErr && (
+          <div className="px-3 py-1 text-[10px] text-zinc-400">Loading…</div>
+        )}
+        {mcpServers !== null && mcpServers.length === 0 && (
+          <div className="px-3 py-1 text-[10px] text-zinc-400">
+            No MCP servers configured. Edit ~/.kodax/config.json to add.
+          </div>
+        )}
+        {mcpServers?.map((s) => (
+          <div
+            key={`${s.source}:${s.name}`}
+            className="px-3 py-1.5 hover:bg-zinc-800/40 text-xs flex items-center gap-2"
+          >
+            <span className="text-emerald-400" aria-hidden>●</span>
+            <span className="flex-1 truncate">{s.name}</span>
+            <span className="text-[10px] text-zinc-500 font-mono">{s.transport}</span>
+            <span className="text-[10px] text-zinc-600">{s.source}</span>
+          </div>
+        ))}
+      </SubMenuFrame>
+    );
+  }
+
+  if (sub === 'plugins') {
+    return (
+      <SubMenuFrame title="Plugins (Skills)" onBack={() => setSub('root')}>
+        {discoverErr && <div className="px-3 py-1 text-[10px] text-amber-400">{discoverErr}</div>}
+        {skills === null && !discoverErr && (
+          <div className="px-3 py-1 text-[10px] text-zinc-400">Loading…</div>
+        )}
+        {skills !== null && skills.length === 0 && (
+          <div className="px-3 py-1 text-[10px] text-zinc-400">No skills registered yet.</div>
+        )}
+        {skills?.map((sk) => (
+          <button
+            key={`${sk.source}:${sk.name}`}
+            type="button"
+            onClick={() => {
+              onInsertText(`/${sk.name}${sk.argumentHint ? ' ' : ''}`);
+              onClose();
+            }}
+            className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 flex items-center gap-2 text-xs"
+            title={`${sk.path} (${sk.source})`}
+          >
+            <code className="text-emerald-400 font-mono">/{sk.name}</code>
+            <span className="text-zinc-500 truncate flex-1">{sk.description}</span>
+            <span className="text-[10px] text-zinc-600">{sk.source}</span>
+          </button>
+        ))}
+      </SubMenuFrame>
     );
   }
 
   return (
     <div
-      className="absolute left-0 bottom-full mb-1 w-56 bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 text-xs z-50"
+      className="absolute left-0 bottom-full mb-1 w-60 bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 text-xs z-50"
       onMouseLeave={onClose}
     >
       <AttachRow icon="📎" label="Add files or photos" onClick={() => void addFiles()} />
-      <AttachRow icon="📁" label="Add folder" disabled hint="v0.1.x" />
-      <AttachRow icon="⌗" label="Slash commands" onClick={() => setShowSlash(true)} chevron />
-      <AttachRow icon="⚙" label="Connectors" disabled chevron hint="MCP servers — v0.1.1 F013" />
-      <AttachRow icon="🧩" label="Plugins" disabled chevron hint="KodaX skills — v0.1.x" />
+      <AttachRow icon="📁" label="Add folder" onClick={() => void addFolder()} />
+      <AttachRow icon="⌗" label="Slash commands" onClick={() => setSub('slash')} chevron />
+      <AttachRow icon="⚙" label="Connectors" onClick={() => void loadConnectors()} chevron />
+      <AttachRow icon="🧩" label="Plugins" onClick={() => void loadPlugins()} chevron />
+    </div>
+  );
+}
+
+function SubMenuFrame({
+  title,
+  onBack,
+  children,
+}: {
+  title: string;
+  onBack: () => void;
+  children: React.ReactNode;
+}): JSX.Element {
+  return (
+    <div className="absolute left-0 bottom-full mb-1 w-72 bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 z-50 max-h-80 overflow-y-auto">
+      <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-zinc-500 flex items-center gap-2 sticky top-0 bg-zinc-900">
+        <button type="button" onClick={onBack} className="hover:text-zinc-300" aria-label="Back">←</button>
+        <span>{title}</span>
+      </div>
+      {children}
     </div>
   );
 }

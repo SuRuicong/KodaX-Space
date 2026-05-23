@@ -25,6 +25,7 @@ import {
   ToolCallCard,
   UserBubble,
 } from '../features/session/messages/bubbles.js';
+import { WelcomeDashboard } from './WelcomeDashboard.js';
 
 // 聚合后的 view-only message kind
 type ToolGroupMessage = {
@@ -71,6 +72,9 @@ export function ConversationStreamV2(): JSX.Element {
   const userMessages = useAppStore((s) =>
     currentSessionId ? s.userMessagesBySession[currentSessionId] ?? EMPTY_USER_MESSAGES : EMPTY_USER_MESSAGES,
   );
+  const transcriptFontSize = useAppStore((s) => s.transcriptFontSize);
+  // 字号映射 — TranscriptViewMenu 的 sm / base / lg → Tailwind class
+  const fontClass = transcriptFontSize === 'sm' ? 'text-xs' : transcriptFontSize === 'lg' ? 'text-base' : 'text-sm';
 
   const messages = useMemo(() => composeMessages({ events, userMessages }), [events, userMessages]);
   const viewMessages = useMemo(() => groupTools(messages), [messages]);
@@ -119,15 +123,7 @@ export function ConversationStreamV2(): JSX.Element {
   }
 
   if (!currentSessionId) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center text-zinc-300 text-sm gap-2">
-        <span className="text-2xl text-zinc-200" aria-hidden>✦</span>
-        <span>What's up next?</span>
-        <span className="text-xs text-zinc-400">
-          Pick a session in the left sidebar, or open a folder to start.
-        </span>
-      </div>
-    );
+    return <WelcomeDashboard />;
   }
 
   return (
@@ -135,7 +131,7 @@ export function ConversationStreamV2(): JSX.Element {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="h-full overflow-auto px-4 py-3 space-y-3"
+        className={`h-full overflow-auto px-4 py-3 space-y-3 ${fontClass}`}
       >
         {viewMessages.length === 0 && (
           <div className="text-zinc-600 italic text-sm">

@@ -27,6 +27,7 @@ export interface CreateSessionInput {
   readonly kodaxDefaults: KodaxUserDefaults | null;
   readonly pendingProviderId: string | null;
   readonly pendingReasoningMode: SessionMeta['reasoningMode'] | null;
+  readonly pendingPermissionMode?: SessionMeta['permissionMode'] | null;
 }
 
 export interface CreateSessionResolved {
@@ -37,7 +38,7 @@ export interface CreateSessionResolved {
 
 /** 仅做 provider / reasoning / permission 解析；不发 IPC。便于测试。 */
 export function resolveSessionCreateInputs(input: CreateSessionInput): CreateSessionResolved {
-  const { providers, defaultProviderId, kodaxDefaults, pendingProviderId, pendingReasoningMode } = input;
+  const { providers, defaultProviderId, kodaxDefaults, pendingProviderId, pendingReasoningMode, pendingPermissionMode } = input;
 
   // 候选链：pending → Space default → KodaX default
   const candidates: readonly (string | null)[] = [
@@ -61,7 +62,7 @@ export function resolveSessionCreateInputs(input: CreateSessionInput): CreateSes
   }
 
   const reasoningMode = pendingReasoningMode ?? kodaxDefaults?.reasoningMode ?? 'auto';
-  const permissionMode = kodaxDefaults?.permissionMode ?? 'accept-edits';
+  const permissionMode = pendingPermissionMode ?? kodaxDefaults?.permissionMode ?? 'accept-edits';
 
   return { provider, reasoningMode, permissionMode };
 }
