@@ -1,9 +1,72 @@
 // Bubble + ToolCallCard + SystemNotice 组件集合。
 // 单文件聚合：每个组件 < 80 行，共享 ConversationMessage 类型，拆分反而提高复杂度。
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { ConversationMessage } from '../composeMessages.js';
 import { Markdown } from './Markdown.js';
+
+// ---- P4c: tool result 收窄渲染 ----
+
+const DIFF_MIDDLE_COLLAPSE_LINES = 16;
+const DIFF_HEAD_TAIL_LINES = 8;
+const NORMAL_MIDDLE_COLLAPSE_LINES = 32;
+const NORMAL_HEAD_TAIL_LINES = 5;
+/** 超过此行数：极端守门 — 只显示头 5 行 + N 行折叠，不做对称的尾巴避免拉爆视窗。*/
+const EXTREME_LINE_THRESHOLD = 200;
+const EXTREME_HEAD_LINES = 5;
+
+function isDiffLike(text: string): boolean {
+  // 启发式：unified diff 必含 "@@ " hunk 头，或 >30% 行以 +/- 起头（排除 ---/+++）
+  if (text.includes('\n@@ ') || text.startsWith('@@ ')) return true;
+  const lines = text.split('\n');
+  if (lines.length < 4) return false;
+  let diffLines = 0;
+  for (const l of lines) {
+    if ((l.startsWith('+') || l.startsWith('-')) && !l.startsWith('+++') && !l.startsWith('---')) {
+      diffLines++;
+    }
+  }
+  return diffLines / lines.length > 0.3;
+}
+
+interface CollapseResult {
+  body: string;
+  collapsed: boolean;
+  /** 极端守门触发；renderer 可考虑禁用 "show full" 钮 */
+  extreme: boolean;
+  totalLines: number;
+}
+
+function collapseLargeText(text: string): CollapseResult {
+  const lines = text.split('\n');
+  const total = lines.length;
+  const isDiff = isDiffLike(text);
+  const threshold = isDiff ? DIFF_MIDDLE_COLLAPSE_LINES : NORMAL_MIDDLE_COLLAPSE_LINES;
+  if (total <= threshold) {
+    return { body: text, collapsed: false, extreme: false, totalLines: total };
+  }
+  if (total > EXTREME_LINE_THRESHOLD) {
+    const head = lines.slice(0, EXTREME_HEAD_LINES).join('\n');
+    const omitted = total - EXTREME_HEAD_LINES;
+    return {
+      body: `${head}\n…(${omitted} more lines — extremely large, click "Show full" to see)`,
+      collapsed: true,
+      extreme: true,
+      totalLines: total,
+    };
+  }
+  const headN = isDiff ? DIFF_HEAD_TAIL_LINES : NORMAL_HEAD_TAIL_LINES;
+  const tailN = headN;
+  const head = lines.slice(0, headN).join('\n');
+  const tail = lines.slice(-tailN).join('\n');
+  const omitted = total - headN - tailN;
+  return {
+    body: `${head}\n…(${omitted} lines collapsed)…\n${tail}`,
+    collapsed: true,
+    extreme: false,
+    totalLines: total,
+  };
+}
 
 // ---- User Bubble ----
 
@@ -71,8 +134,26 @@ export function ToolCallCard({
   status,
 }: Extract<ConversationMessage, { kind: 'tool_call' }>): JSX.Element {
   const [expanded, setExpanded] = useState(false);
+  const [showFullResult, setShowFullResult] = useState(false);
+  const [showFullInput, setShowFullInput] = useState(false);
   const colorClass = TOOL_KIND_COLOR[toolName] ?? 'border-zinc-700 bg-zinc-900/50';
   const argSummary = summarizeInput(input);
+
+  // P4c: result 走行级折叠（diff middle-collapse / 极端守门）
+  const resultCollapse = useMemo<CollapseResult | null>(() => {
+    if (result === undefined) return null;
+    return collapseLargeText(result);
+  }, [result]);
+
+  // P4c: input JSON.stringify 也可能巨长（如 write tool 的 content 字段）— 同样做行折叠
+  const inputPretty = useMemo<string | null>(() => {
+    if (!input || Object.keys(input).length === 0) return null;
+    return JSON.stringify(input, null, 2);
+  }, [input]);
+  const inputCollapse = useMemo<CollapseResult | null>(() => {
+    if (inputPretty === null) return null;
+    return collapseLargeText(inputPretty);
+  }, [inputPretty]);
 
   return (
     <div className={`rounded border ${colorClass} text-xs font-mono`}>
@@ -89,11 +170,22 @@ export function ToolCallCard({
 
       {expanded && (
         <div className="border-t border-zinc-800 px-3 py-2 space-y-2">
-          {input && Object.keys(input).length > 0 && (
+          {inputCollapse && inputPretty !== null && (
             <section>
-              <div className="text-[10px] text-zinc-500 uppercase mb-0.5">input</div>
-              <pre className="text-[11px] text-zinc-300 whitespace-pre-wrap break-all">
-                {JSON.stringify(input, null, 2)}
+              <div className="text-[10px] text-zinc-500 uppercase mb-0.5 flex justify-between items-center">
+                <span>input</span>
+                {inputCollapse.collapsed && (
+                  <button
+                    type="button"
+                    onClick={() => setShowFullInput((v) => !v)}
+                    className="text-[10px] text-blue-400 hover:text-blue-300 normal-case"
+                  >
+                    {showFullInput ? 'Collapse' : `Show full (${inputCollapse.totalLines} lines)`}
+                  </button>
+                )}
+              </div>
+              <pre className="text-[11px] text-zinc-300 whitespace-pre-wrap break-all max-h-96 overflow-auto">
+                {showFullInput ? inputPretty : inputCollapse.body}
               </pre>
             </section>
           )}
@@ -103,11 +195,22 @@ export function ToolCallCard({
               <div className="text-[11px] text-blue-300">{progress}</div>
             </section>
           )}
-          {result !== undefined && (
+          {resultCollapse && result !== undefined && (
             <section>
-              <div className="text-[10px] text-zinc-500 uppercase mb-0.5">result</div>
+              <div className="text-[10px] text-zinc-500 uppercase mb-0.5 flex justify-between items-center">
+                <span>result</span>
+                {resultCollapse.collapsed && (
+                  <button
+                    type="button"
+                    onClick={() => setShowFullResult((v) => !v)}
+                    className="text-[10px] text-blue-400 hover:text-blue-300 normal-case"
+                  >
+                    {showFullResult ? 'Collapse' : `Show full (${resultCollapse.totalLines} lines)`}
+                  </button>
+                )}
+              </div>
               <pre className="text-[11px] text-emerald-300 whitespace-pre-wrap break-all max-h-64 overflow-auto">
-                {result.length > 4096 ? `${result.slice(0, 4096)}\n…(truncated, ${result.length - 4096} more chars)` : result}
+                {showFullResult ? result : resultCollapse.body}
               </pre>
             </section>
           )}
