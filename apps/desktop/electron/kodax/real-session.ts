@@ -564,9 +564,9 @@ export class RealKodaXSession implements ManagedSession {
       }
     }
 
-    // SDK 0.7.43: 拿共享 FileSessionStorage handle 传给 session.storage。
-    // 没拿到 (SDK < 0.7.43 / load 失败) 也继续 — session.storage 缺失时 SDK 不写 jsonl
-    // 但不影响 LLM 流，warn 在 session-store 里已 log。
+    // 拿共享 FileSessionStorage handle 传给 session.storage（让 SDK 真把 jsonl 落盘）。
+    // SDK 没暴露 createSessionManager / storage 时返回 undefined — session.storage 缺失
+    // 走 SDK 的 no-storage 路径，不影响 LLM 流，warn 在 session-store 里已 log。
     const sessionStorage = await getSessionStorageHandle();
 
     const options: KodaXOptions = {
@@ -580,8 +580,8 @@ export class RealKodaXSession implements ManagedSession {
       events,
       abortSignal: signal,
       // scope: 'user' 让 SDK FileSessionStorage 把 session 当成用户对话面板的
-      // first-class session 落盘。storage 是 SDK 0.7.43 起强制要求的字段——
-      // 不传 storage 则 saveSessionSnapshot 静默 no-op，jsonl 不落盘 (用户对话历史丢失)。
+      // first-class session 落盘。storage 是 SDK 当前要求的字段——不传则
+      // saveSessionSnapshot 静默 no-op，jsonl 不落盘 (用户对话历史丢失)。
       session: { id: sid, scope: 'user', storage: sessionStorage },
       context: {
         cwd: this.projectRoot,

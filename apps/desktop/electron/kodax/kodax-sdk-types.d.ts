@@ -222,7 +222,7 @@ declare module '@kodax-ai/kodax/coding' {
   export type KodaXSessionScope = 'user' | 'managed-task-worker';
 
   /**
-   * SDK 0.7.43 起暴露的 storage handle（FileSessionStorage 实例）。Space 通过
+   * SDK 暴露的 storage handle（FileSessionStorage 实例）。Space 通过
    * createSessionManager().storage 拿到，传入 KodaXOptions.session.storage 让 SDK
    * 真正落盘 — 不传则 saveSessionSnapshot 静默 no-op，jsonl 不写。
    *
@@ -236,7 +236,7 @@ declare module '@kodax-ai/kodax/coding' {
     autoResume?: boolean;
     /** 'user' = sidebar 主对话（默认）；'managed-task-worker' = 子 agent 内部 session（不入主列表） */
     scope?: KodaXSessionScope;
-    /** SDK 0.7.43+：FileSessionStorage 实例。caller 用 createSessionManager().storage 拿。*/
+    /** FileSessionStorage 实例。caller 用 createSessionManager().storage 拿。 */
     storage?: KodaXSessionStorageHandle;
   }
 

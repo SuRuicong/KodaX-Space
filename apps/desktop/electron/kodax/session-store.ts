@@ -1,6 +1,6 @@
 // Session store — FEATURE_038 (v0.1.6).
 //
-// 包装 KodaX SDK 0.7.42 的 @kodax-ai/kodax/session subpath，把 Space 的 main 端
+// 包装 KodaX SDK 的 @kodax-ai/kodax/session subpath，把 Space 的 main 端
 // fork/rewind/list 接到磁盘持久化。F033 in-memory 实现保留为 in-flight session 的
 // runtime layer——这层只管已写盘的 historical sessions + 改盘操作。
 //
@@ -17,7 +17,7 @@
 // FEATURE_038 测试 DI：
 //
 // SDK session 函数是模块级单例（FileSessionStorage 读 KODAX_SESSIONS_DIR 模块加载
-// 时定型，v0.7.42 不能运行时改）——单元测试既不能注入自定义 sessionsDir，又不该
+// 时定型，旧版 SDK 不能运行时改）——单元测试既不能注入自定义 sessionsDir，又不该
 // 真去写 ~/.kodax/sessions/。所以本模块暴露一个可替换的 impl 引用：
 //   - 生产代码不调 setSessionStoreImpl → 走真 SDK（首次调用时 dynamic import 拉起）
 //   - 测试 beforeEach 调 setSessionStoreImpl(mock) → 注入 in-memory mock
@@ -33,7 +33,7 @@ export interface SessionStoreImpl {
   readonly deleteSession: SdkSessionModule['deleteSession'];
   readonly loadSession: SdkSessionModule['loadSession'];
   readonly watchSessions: SdkSessionModule['watchSessions'];
-  /** v0.7.43: optional — mock impls can omit, default impl wires via createSessionManager. */
+  /** optional — mock impls can omit; default impl wires via createSessionManager when present. */
   readonly createSessionManager?: SdkSessionModule['createSessionManager'];
 }
 
@@ -48,10 +48,14 @@ async function loadSdkModule(): Promise<SdkSessionModule> {
 }
 
 /**
- * SDK 0.7.43：createSessionManager() 返回的 manager 包含 `storage` 字段
- * (FileSessionStorage 实例)。Space 需要在 runKodaX 时把这个 storage 传给
- * session.storage —— 否则 SDK 的 saveSessionSnapshot 静默 no-op，jsonl 不会落盘。
- * Manager 是 singleton（共享底层 fs 写队列），整个 Space 进程共用一个。
+ * SDK createSessionManager() 返回的 manager 含 `storage` 字段 (FileSessionStorage 实例)。
+ * Space 在 runKodaX 时把这个 storage 传给 session.storage —— 否则 SDK 的
+ * saveSessionSnapshot 静默 no-op，jsonl 不会落盘。Manager 是 singleton（共享底层 fs
+ * 写队列），整个 Space 进程共用一个。
+ *
+ * 如果当前安装的 SDK 还没暴露 createSessionManager / storage handle（旧版），
+ * getSessionStorageHandle() 返回 undefined，real-session 透传给 SDK 仍安全（行为
+ * 退回为"不落盘"）。新版 SDK 一就位自动生效。
  */
 type SessionManager = ReturnType<SdkSessionModule['createSessionManager']>;
 let managerCache: SessionManager | null = null;
@@ -63,16 +67,19 @@ async function getManager(): Promise<SessionManager> {
   return managerCache;
 }
 
-/** real-session 调这个拿 storage handle 喂给 runKodaX。SDK < 0.7.43 没 createSessionManager，会 throw — caller fallback 为 undefined。 */
+/**
+ * real-session 调这个拿 storage handle 喂给 runKodaX。SDK 未暴露 createSessionManager
+ * 时（旧版本）throw —— caller fallback 为 undefined，行为退回"不落盘"。
+ */
 export async function getSessionStorageHandle(): Promise<unknown> {
   try {
     const m = await getManager();
-    // `storage` 字段在 SDK 0.7.43+ 才暴露；0.7.42 没有该属性。
-    // 这里 cast 成 unknown 后访问，让 typecheck 在两边都过；运行时安全
-    // — 0.7.42 时是 undefined，real-session 把它原样透传给 SDK 会自动 fallback。
+    // `storage` 字段在新版 SDK 才暴露；旧版没有该属性，cast 成 unknown 后访问让
+    // typecheck 在两边都过。运行时安全——没有 storage 时返回 undefined，
+    // real-session 透传给 SDK 走 no-storage 路径。
     return (m as unknown as { storage?: unknown }).storage;
   } catch (err) {
-    console.warn(`[session-store] getSessionStorageHandle failed (SDK < 0.7.43?): ${err instanceof Error ? err.message : String(err)}`);
+    console.warn(`[session-store] getSessionStorageHandle failed (SDK lacks createSessionManager?): ${err instanceof Error ? err.message : String(err)}`);
     return undefined;
   }
 }
