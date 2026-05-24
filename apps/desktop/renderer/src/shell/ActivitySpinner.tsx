@@ -26,6 +26,8 @@ interface ActivitySnapshot {
   readonly tokens?: number;
   /** session_start 的时间戳（spinner 计算 elapsed s 用）；pending 时退回 null。 */
   readonly startedAt: number | null;
+  /** 当前 tool 正在操作的 path（write/edit/read 等 toolInput 含 path/file_path）— 渲染时显示 basename。*/
+  readonly toolPath?: string;
 }
 
 function snapshotFromEvents(events: readonly SessionEvent[], pending: boolean): ActivitySnapshot {
@@ -66,6 +68,7 @@ function snapshotFromEvents(events: readonly SessionEvent[], pending: boolean): 
   let status = 'Thinking…';
   let iter: { current: number; max: number } | undefined;
   let tokens: number | undefined;
+  let activeToolId: string | undefined;
 
   for (let i = events.length - 1; i >= 0; i--) {
     const ev = events[i];
@@ -74,6 +77,7 @@ function snapshotFromEvents(events: readonly SessionEvent[], pending: boolean): 
       if (ev.kind === 'tool_start' || ev.kind === 'tool_input_delta' || ev.kind === 'tool_progress') {
         const name = (ev as { toolName?: string }).toolName ?? 'tool';
         status = `Running ${name}…`;
+        activeToolId = (ev as { toolId?: string }).toolId;
       } else if (ev.kind === 'tool_result') {
         status = 'Processing result…';
       } else if (ev.kind === 'thinking_delta' || ev.kind === 'thinking_end') {
@@ -93,7 +97,22 @@ function snapshotFromEvents(events: readonly SessionEvent[], pending: boolean): 
     if (iter && status !== 'Thinking…') break; // 都抓到就提前出
   }
 
-  return { streaming: true, status, iter, tokens, startedAt };
+  // 找当前 activeTool 的 path：tool_input_delta 是 partial JSON，没法可靠抽 path；
+  // 倒扫匹配 toolId 的 tool_start (input 已包含 path/file_path)。
+  let toolPath: string | undefined;
+  if (activeToolId) {
+    for (let i = events.length - 1; i >= 0; i--) {
+      const ev = events[i];
+      if (ev.kind === 'tool_start' && (ev as { toolId?: string }).toolId === activeToolId) {
+        const input = (ev as { input?: Record<string, unknown> }).input;
+        const raw = input?.path ?? input?.file_path;
+        if (typeof raw === 'string' && raw.length > 0 && raw.length < 256) toolPath = raw;
+        break;
+      }
+    }
+  }
+
+  return { streaming: true, status, iter, tokens, startedAt, toolPath };
 }
 
 function formatTokens(n: number): string {
@@ -158,12 +177,30 @@ export function ActivitySpinner(): JSX.Element | null {
 
   if (!snap.streaming) return null;
 
+  const elapsedSec = snap.startedAt !== null
+    ? Math.max(0, Math.round((Date.now() - snap.startedAt) / 1000))
+    : 0;
+  const elapsedStr = elapsedSec > 0 ? `${elapsedSec}s` : '';
+
   const iterStr = snap.iter ? `iter ${snap.iter.current}/${snap.iter.max}` : '';
-  const tokenStr = snap.tokens !== undefined ? `${formatTokens(snap.tokens)} tokens` : '';
-  // P0b: elapsed s — 对齐 KodaX TUI 的 "Ns" stats tail
-  const elapsedStr = snap.startedAt !== null
-    ? `${Math.max(0, Math.round((Date.now() - snap.startedAt) / 1000))}s`
-    : '';
+
+  // tokens 后跟 tok/s rate — 用 cumulative tokens / elapsed sec 作平均速率（足以反映进度感）
+  let tokenStr = '';
+  if (snap.tokens !== undefined) {
+    tokenStr = `${formatTokens(snap.tokens)} tokens`;
+    if (elapsedSec >= 2) {
+      const rate = Math.round(snap.tokens / elapsedSec);
+      if (rate > 0) tokenStr += ` (${formatTokens(rate)}/s)`;
+    }
+  }
+
+  // Sending 阶段 > 2s 时补 "waiting for LLM"，让长 TTFB 不像卡死
+  const sendingTooLong = snap.status === 'Sending…' && elapsedSec >= 2;
+  const statusBase = sendingTooLong ? 'Sending… · waiting for LLM' : snap.status;
+
+  // tool path 显示 basename — 全路径太长，basename + dim 灰显
+  const toolBase = snap.toolPath ? snap.toolPath.split(/[\\/]/).filter(Boolean).pop() : null;
+
   const tail = [elapsedStr, iterStr, tokenStr].filter(Boolean).join(' · ');
 
   return (
@@ -171,7 +208,12 @@ export function ActivitySpinner(): JSX.Element | null {
       <span className="text-amber-400 inline-block w-3 text-center" aria-hidden>
         {FRAMES[frame]}
       </span>
-      <span className="text-zinc-300">{snap.status}</span>
+      <span className="text-zinc-300">{statusBase}</span>
+      {toolBase && (
+        <span className="text-zinc-500 truncate max-w-[280px]" title={snap.toolPath ?? undefined}>
+          {toolBase}
+        </span>
+      )}
       {tail && <span className="text-zinc-500">· {tail}</span>}
     </div>
   );
