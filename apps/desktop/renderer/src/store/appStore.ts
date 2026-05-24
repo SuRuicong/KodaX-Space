@@ -179,6 +179,8 @@ interface AppState {
   /** P2: 右侧栏开/关。Cowork / Claude Desktop 风的"Progress / Working folder / Context"列。
    *  持久化到 localStorage，让用户偏好跨重启保留。*/
   rightSidebarOpen: boolean;
+  /** 左侧栏开/关。与 rightSidebarOpen 对称，独立持久化 — 用户可单独收起任一侧。*/
+  leftSidebarOpen: boolean;
   /**
    * F009: 最后一次被 tool_call (write/edit) 触及的相对路径——FilePanel 监听这个值切到 diff 视图。
    * 用 "可读完一次就置 null" 的单值 + clearLastDiffPath 模式，避免 useEffect 反复触发。
@@ -260,6 +262,8 @@ interface AppState {
   appendInputHistory(sessionId: string, prompt: string): void;
   /** P2: 切右侧栏开/关。立即写 localStorage。*/
   setRightSidebarOpen(open: boolean): void;
+  /** 切左侧栏开/关。立即写 localStorage。*/
+  setLeftSidebarOpen(open: boolean): void;
 }
 
 // 单调 counter 用于生成 stable id——sessionId 内多条 user message 顺序唯一。
@@ -328,6 +332,7 @@ export const useAppStore = create<AppState>((set) => ({
   transcriptView: 'normal',
   transcriptFontSize: 'base',
   rightSidebarOpen: lsGet('kodax-space.rightSidebarOpen') !== '0', // 默认开，"0" 表示用户主动关过
+  leftSidebarOpen: lsGet('kodax-space.leftSidebarOpen') !== '0', // 默认开，"0" 表示用户主动关过
 
   setProjects: (projects) => set({ projects }),
   setCurrentProject: (path) => {
@@ -535,6 +540,11 @@ export const useAppStore = create<AppState>((set) => ({
   setRightSidebarOpen: (open) => {
     lsSet('kodax-space.rightSidebarOpen', open ? '1' : '0');
     set({ rightSidebarOpen: open });
+  },
+
+  setLeftSidebarOpen: (open) => {
+    lsSet('kodax-space.leftSidebarOpen', open ? '1' : '0');
+    set({ leftSidebarOpen: open });
   },
 
   appendInputHistory: (sessionId, prompt) =>
