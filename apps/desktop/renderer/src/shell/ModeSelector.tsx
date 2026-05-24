@@ -96,6 +96,8 @@ export function ModeSelector(): JSX.Element {
     if (busy || mode === current) return;
     setBusy(true);
     if (mode !== 'auto') setOpen(false);
+    // 不论有没有 session，都更新 pending 当作"用户首选"持久化 — 下次新 session 自动继承
+    setPendingPermissionMode(mode);
     try {
       if (session && window.kodaxSpace) {
         // 乐观更新：先把 store 中 session.permissionMode 改了
@@ -107,9 +109,6 @@ export function ModeSelector(): JSX.Element {
         if (!r.ok) {
           upsertSession({ ...session, permissionMode: current });
         }
-      } else {
-        // 无 session → pending；下次 session.create 由 main 端读 pendingPermissionMode (caller chain)
-        setPendingPermissionMode(mode);
       }
     } finally {
       setBusy(false);

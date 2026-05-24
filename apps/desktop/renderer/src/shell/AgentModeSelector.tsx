@@ -52,6 +52,8 @@ export function AgentModeSelector(): JSX.Element {
       return;
     }
     setBusy(true);
+    // 不论有没有 session，都更新 pending — 持久化作下次默认
+    setPendingAgentMode(mode);
     try {
       if (session && window.kodaxSpace) {
         upsertSession({ ...session, agentMode: mode }); // 乐观更新
@@ -62,8 +64,6 @@ export function AgentModeSelector(): JSX.Element {
         if (!r.ok) {
           upsertSession({ ...session, agentMode: current }); // 回滚
         }
-      } else {
-        setPendingAgentMode(mode);
       }
     } finally {
       setBusy(false);

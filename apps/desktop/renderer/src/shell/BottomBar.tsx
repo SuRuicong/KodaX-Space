@@ -91,9 +91,6 @@ export function BottomBar(): JSX.Element {
   const pendingPermissionMode = useAppStore((s) => s.pendingPermissionMode);
   const pendingAgentMode = useAppStore((s) => s.pendingAgentMode);
   const setPendingProviderId = useAppStore((s) => s.setPendingProviderId);
-  const setPendingReasoningMode = useAppStore((s) => s.setPendingReasoningMode);
-  const setPendingPermissionMode = useAppStore((s) => s.setPendingPermissionMode);
-  const setPendingAgentMode = useAppStore((s) => s.setPendingAgentMode);
   const appendUserMessage = useAppStore((s) => s.appendUserMessage);
   const resetSessionMessages = useAppStore((s) => s.resetSessionMessages);
   const upsertSession = useAppStore((s) => s.upsertSession);
@@ -202,11 +199,9 @@ export function BottomBar(): JSX.Element {
     };
     upsertSession(stub);
     setCurrentSession(stub.sessionId);
-    // 消费 pending（既然 session 已经按 pending 建立，pending 状态使命完成）
+    // 仅消费 provider 的 pending（provider 有独立 defaultProviderId 兜底）；mode 类
+    // pending（permission / reasoning / agent）现在等同"用户首选"，持久化在 LS 留下次默认
     setPendingProviderId(null);
-    setPendingReasoningMode(null);
-    setPendingPermissionMode(null);
-    setPendingAgentMode(null);
     // 刷新权威列表（让 LeftSidebar Recents 立即看到新条目）
     const listResult = await window.kodaxSpace.invoke('session.list', {
       projectRoot: currentProjectPath,

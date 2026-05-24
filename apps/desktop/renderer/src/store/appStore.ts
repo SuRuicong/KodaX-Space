@@ -281,6 +281,33 @@ let userMessageCounter = 0;
  * 这里 keep simple：只保 projectPath，sessionId 重启清掉，user 走 Recents 重新点。
  */
 const LS_KEY_PROJECT = 'kodax-space.currentProjectPath';
+const LS_KEY_PENDING_PERMISSION = 'kodax-space.pendingPermissionMode';
+const LS_KEY_PENDING_REASONING = 'kodax-space.pendingReasoningMode';
+const LS_KEY_PENDING_AGENT = 'kodax-space.pendingAgentMode';
+
+// 持久化 pending* 模式时校验合法 enum 值，避免 LS 被改成非法值后崩 (typescript 编译期没法知道)
+const PERMISSION_MODE_VALUES = ['plan', 'accept-edits', 'auto'] as const;
+const REASONING_MODE_VALUES = ['off', 'auto', 'quick', 'balanced', 'deep'] as const;
+const AGENT_MODE_VALUES = ['ama', 'sa'] as const;
+
+function readPersistedPermissionMode(): SessionMeta['permissionMode'] | null {
+  const v = lsGet(LS_KEY_PENDING_PERMISSION);
+  return v !== null && (PERMISSION_MODE_VALUES as readonly string[]).includes(v)
+    ? (v as SessionMeta['permissionMode'])
+    : null;
+}
+function readPersistedReasoningMode(): SessionMeta['reasoningMode'] | null {
+  const v = lsGet(LS_KEY_PENDING_REASONING);
+  return v !== null && (REASONING_MODE_VALUES as readonly string[]).includes(v)
+    ? (v as SessionMeta['reasoningMode'])
+    : null;
+}
+function readPersistedAgentMode(): SessionMeta['agentMode'] | null {
+  const v = lsGet(LS_KEY_PENDING_AGENT);
+  return v !== null && (AGENT_MODE_VALUES as readonly string[]).includes(v)
+    ? (v as SessionMeta['agentMode'])
+    : null;
+}
 
 function lsGet(key: string): string | null {
   if (typeof window === 'undefined') return null;
@@ -322,9 +349,11 @@ export const useAppStore = create<AppState>((set) => ({
   pendingSendBySession: {},
   inputHistoryBySession: {},
   pendingProviderId: null,
-  pendingReasoningMode: null,
-  pendingPermissionMode: null,
-  pendingAgentMode: null,
+  // 持久化用户上次手动选择的 mode — 不再"用一次就消费"，而是变成"下次开 session 的默认偏好"。
+  // 用户在 Settings / picker 切的值落 localStorage；新 session 创建时如不显式给值就用这个。
+  pendingReasoningMode: readPersistedReasoningMode(),
+  pendingPermissionMode: readPersistedPermissionMode(),
+  pendingAgentMode: readPersistedAgentMode(),
   pendingModel: null,
   sessionFlags: {},
   recentsFilter: DEFAULT_RECENTS_FILTER,
@@ -521,9 +550,18 @@ export const useAppStore = create<AppState>((set) => ({
   setKodaxDefaults: (defaults) => set({ kodaxDefaults: defaults }),
 
   setPendingProviderId: (id) => set({ pendingProviderId: id }),
-  setPendingReasoningMode: (mode) => set({ pendingReasoningMode: mode }),
-  setPendingPermissionMode: (mode) => set({ pendingPermissionMode: mode }),
-  setPendingAgentMode: (mode) => set({ pendingAgentMode: mode }),
+  setPendingReasoningMode: (mode) => {
+    lsSet(LS_KEY_PENDING_REASONING, mode);
+    set({ pendingReasoningMode: mode });
+  },
+  setPendingPermissionMode: (mode) => {
+    lsSet(LS_KEY_PENDING_PERMISSION, mode);
+    set({ pendingPermissionMode: mode });
+  },
+  setPendingAgentMode: (mode) => {
+    lsSet(LS_KEY_PENDING_AGENT, mode);
+    set({ pendingAgentMode: mode });
+  },
   setPendingModel: (model) => set({ pendingModel: model }),
 
   setPendingSend: (sessionId, pending) =>

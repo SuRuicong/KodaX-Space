@@ -135,6 +135,8 @@ export function ModelEffortSelector(): JSX.Element {
   async function pickEffort(mode: ReasoningMode): Promise<void> {
     if (busy) return;
     setBusy(true);
+    // 不论有没有 session，都更新 pending — 持久化作下次默认
+    setPendingReasoningMode(mode);
     try {
       if (session && window.kodaxSpace) {
         const r = await window.kodaxSpace.invoke('session.setReasoningMode', {
@@ -142,8 +144,6 @@ export function ModelEffortSelector(): JSX.Element {
           mode,
         });
         if (r.ok) upsertSession({ ...session, reasoningMode: mode });
-      } else {
-        setPendingReasoningMode(mode);
       }
     } finally {
       setBusy(false);

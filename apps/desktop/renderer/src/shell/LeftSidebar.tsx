@@ -44,9 +44,6 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
   const pendingPermissionMode = useAppStore((s) => s.pendingPermissionMode);
   const pendingAgentMode = useAppStore((s) => s.pendingAgentMode);
   const setPendingProviderId = useAppStore((s) => s.setPendingProviderId);
-  const setPendingReasoningMode = useAppStore((s) => s.setPendingReasoningMode);
-  const setPendingPermissionMode = useAppStore((s) => s.setPendingPermissionMode);
-  const setPendingAgentMode = useAppStore((s) => s.setPendingAgentMode);
   const [creating, setCreating] = useState(false);
   const [createErr, setCreateErr] = useState<string | null>(null);
 
@@ -110,11 +107,9 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
       };
       upsertSession(stub);
       setCurrentSession(stub.sessionId);
-      // 创建成功 → 消费掉 pending（pending 只是 "无 session 时的下一次预设"）
+      // 创建成功 → 仅消费 provider 的 pending（provider 有独立 defaultProviderId 兜底）
+      // mode 类 pending（permission / reasoning / agent）现在等同"用户首选"，持久化到 LS 留作下次默认
       setPendingProviderId(null);
-      setPendingReasoningMode(null);
-      setPendingPermissionMode(null);
-      setPendingAgentMode(null);
       // 刷新权威列表
       const listResult = await bridge.invoke('session.list', { projectRoot: currentProjectPath });
       if (listResult.ok) useAppStore.getState().setSessions(listResult.data.sessions);
@@ -263,6 +258,8 @@ function SessionTree({ sessions, currentSessionId, onSelect }: SessionTreeProps)
   }, [visible, sessionFlags, filter.sortBy]);
   // 右键菜单状态：哪个 session + 屏幕坐标
   const [ctxMenu, setCtxMenu] = useState<{ session: SessionMeta; x: number; y: number } | null>(null);
+  // 内联 rename：哪个 session 正在编辑（点 Rename / 双击触发）
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
 
   return (
     <>
@@ -273,8 +270,11 @@ function SessionTree({ sessions, currentSessionId, onSelect }: SessionTreeProps)
           depth={depth}
           isSelected={session.sessionId === currentSessionId}
           flags={sessionFlags[session.sessionId]}
+          isRenaming={renamingSessionId === session.sessionId}
           onSelect={onSelect}
           onContextMenu={(x, y) => setCtxMenu({ session, x, y })}
+          onStartRename={() => setRenamingSessionId(session.sessionId)}
+          onCancelRename={() => setRenamingSessionId(null)}
         />
       ))}
       {ctxMenu && (
@@ -283,6 +283,10 @@ function SessionTree({ sessions, currentSessionId, onSelect }: SessionTreeProps)
           x={ctxMenu.x}
           y={ctxMenu.y}
           onClose={() => setCtxMenu(null)}
+          onStartRename={() => {
+            setRenamingSessionId(ctxMenu.session.sessionId);
+            setCtxMenu(null);
+          }}
         />
       )}
     </>
@@ -339,22 +343,60 @@ function SessionRow({
   depth,
   isSelected,
   flags,
+  isRenaming,
   onSelect,
   onContextMenu,
+  onStartRename,
+  onCancelRename,
 }: {
   session: SessionMeta;
   depth: number;
   isSelected: boolean;
   flags: { pinned?: boolean; archived?: boolean; unread?: boolean } | undefined;
+  isRenaming: boolean;
   onSelect: (id: string) => void;
   onContextMenu: (x: number, y: number) => void;
+  onStartRename: () => void;
+  onCancelRename: () => void;
 }): JSX.Element {
+  const upsertSession = useAppStore((s) => s.upsertSession);
   const indent = Math.min(depth, 4); // 不无限缩进；4 层就够
   const isFork = depth > 0 || session.parentSessionId !== undefined;
+  const padLeft = `${0.5 + indent * 0.8}rem`;
+
+  async function commitRename(value: string): Promise<void> {
+    const trimmed = value.trim().slice(0, 256);
+    onCancelRename();
+    if (trimmed === '' || trimmed === (session.title ?? '')) return;
+    if (!window.kodaxSpace) return;
+    const r = await window.kodaxSpace.invoke('session.setTitle', {
+      sessionId: session.sessionId,
+      title: trimmed,
+    });
+    if (r.ok) upsertSession({ ...session, title: trimmed });
+  }
+
+  if (isRenaming) {
+    return (
+      <div
+        className={`flex items-center gap-1 text-xs px-2 py-1 rounded bg-surface-3 text-fg-primary`}
+        style={{ paddingLeft: padLeft }}
+      >
+        <span className="text-zinc-500" aria-hidden>{isFork ? '⑂' : '·'}</span>
+        <RenameInput
+          initial={session.title ?? ''}
+          onCommit={(v) => void commitRename(v)}
+          onCancel={onCancelRename}
+        />
+      </div>
+    );
+  }
+
   return (
     <button
       type="button"
       onClick={() => onSelect(session.sessionId)}
+      onDoubleClick={onStartRename}
       onContextMenu={(e) => {
         e.preventDefault();
         onContextMenu(e.clientX, e.clientY);
@@ -362,14 +404,50 @@ function SessionRow({
       className={`w-full text-left text-xs px-2 py-1 rounded truncate flex items-center gap-1 ${
         isSelected ? 'bg-surface-3 text-fg-primary' : 'text-fg-secondary hover:bg-hover-bg hover:text-fg-primary'
       }`}
-      style={{ paddingLeft: `${0.5 + indent * 0.8}rem` }}
-      title={session.title ?? session.sessionId}
+      style={{ paddingLeft: padLeft }}
+      title={`${session.title ?? session.sessionId} (double-click to rename)`}
     >
       <span className="text-zinc-500" aria-hidden>{isFork ? '⑂' : '·'}</span>
       {flags?.pinned && <span className="text-amber-400 text-[10px]" aria-hidden title="Pinned">📌</span>}
       <span className="truncate flex-1">{session.title ?? 'Untitled session'}</span>
       {flags?.unread && <span className="text-emerald-400 text-[10px]" aria-hidden title="Unread">●</span>}
     </button>
+  );
+}
+
+/** Inline rename input — Enter 提交、Esc / blur 取消（避免静默改名误操作） */
+function RenameInput({
+  initial,
+  onCommit,
+  onCancel,
+}: {
+  initial: string;
+  onCommit: (value: string) => void;
+  onCancel: () => void;
+}): JSX.Element {
+  const [value, setValue] = useState(initial);
+  return (
+    <input
+      type="text"
+      value={value}
+      autoFocus
+      onChange={(e) => setValue(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          onCommit(value);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          onCancel();
+        }
+      }}
+      onBlur={onCancel}
+      onFocus={(e) => e.currentTarget.select()}
+      className="flex-1 bg-transparent text-fg-primary text-xs outline-none border-b border-border-strong focus:border-amber-500 px-0.5 -mx-0.5"
+      placeholder="Session title"
+      maxLength={256}
+      aria-label="Rename session"
+    />
   );
 }
 
