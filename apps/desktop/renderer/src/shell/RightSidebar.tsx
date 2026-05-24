@@ -57,24 +57,15 @@ function Section({ title, defaultOpen = true, children }: SectionProps): JSX.Ele
 
 // ---- Progress（todo list 可视化） ----
 
-function ProgressSection(): JSX.Element {
+function ProgressSection(): JSX.Element | null {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const todos = useAppStore((s) =>
     currentSessionId ? s.todoListBySession[currentSessionId] : undefined,
   );
 
-  if (!todos || todos.length === 0) {
-    return (
-      <Section title="Progress">
-        <div className="text-[11px] text-fg-muted leading-relaxed">
-          <div className="flex items-center gap-1 mb-2" aria-hidden>
-            <CircleEmpty /> <Connector /> <CircleEmpty /> <Connector /> <CircleEmpty />
-          </div>
-          <div>See task progress for longer tasks.</div>
-        </div>
-      </Section>
-    );
-  }
+  // KodaX 没派计划列表时不渲染本节 — 配合 Shell.useAutoToggleRightSidebar 让整列收起，
+  // 避免一直显示"See task progress for longer tasks"的空 placeholder 占空间。
+  if (!todos || todos.length === 0) return null;
 
   const done = todos.filter((t) => t.status === 'completed').length;
   const total = todos.length;

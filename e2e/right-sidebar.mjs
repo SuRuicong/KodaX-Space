@@ -40,15 +40,17 @@ async function main() {
     await win.reload();
     await win.waitForLoadState('domcontentloaded');
 
-    // 等 Progress section 标题出现（默认开）
-    await win.locator('text=Progress').first().waitFor({ timeout: 10_000 });
-    console.log('[e2e] ✓ Progress section visible');
-
-    await win.locator('text=Working folder').first().waitFor({ timeout: 5_000 });
+    // Working folder + Context 总是可见（不依赖 KodaX 计划列表）
+    await win.locator('text=Working folder').first().waitFor({ timeout: 10_000 });
     console.log('[e2e] ✓ Working folder section visible');
 
     await win.locator('text=Context').first().waitFor({ timeout: 5_000 });
     console.log('[e2e] ✓ Context section visible');
+
+    // Progress 段在没 KodaX 计划列表时不渲染（auto-toggle 设计）；本测试不预置 plan
+    // 所以不验 Progress —— 见 e2e/right-sidebar-auto-toggle.mjs 验证 plan 自动联动。
+    const progressVisible = await win.locator('text=Progress').first().isVisible().catch(() => false);
+    console.log(`[e2e] Progress section visible (no plan expected): ${progressVisible}`);
 
     // 验证 Working folder 显示项目名（应当从 lastUsedAt 恢复 KodaX-Space）
     const projName = await win.evaluate(() => {
@@ -73,9 +75,9 @@ async function main() {
     // 点击 breadcrumb 行的 toggle (aria-label="Hide right sidebar")
     const toggleBtn = win.locator('button[aria-label="Hide right sidebar"]');
     await toggleBtn.click();
-    // 收起后 Progress text 不应再可见
-    await win.locator('text=Progress').first().waitFor({ state: 'hidden', timeout: 5_000 });
-    console.log('[e2e] ✓ collapsed (Progress hidden)');
+    // 收起后 Working folder text 不应再可见
+    await win.locator('text=Working folder').first().waitFor({ state: 'hidden', timeout: 5_000 });
+    console.log('[e2e] ✓ collapsed (Working folder hidden)');
 
     // 同一按钮变为 "Show right sidebar"
     const showBtn = win.locator('button[aria-label="Show right sidebar"]');
@@ -93,9 +95,9 @@ async function main() {
 
     await win.screenshot({ path: path.join(SHOT_DIR, 'collapsed.png'), fullPage: true });
 
-    // 展开 → Progress 回来
+    // 展开 → Working folder 回来
     await showBtn.click();
-    await win.locator('text=Progress').first().waitFor({ timeout: 5_000 });
+    await win.locator('text=Working folder').first().waitFor({ timeout: 5_000 });
     console.log('[e2e] ✓ re-opened');
   } catch (err) {
     console.error('[e2e] error:', err);

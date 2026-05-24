@@ -22,7 +22,7 @@
 //   - popout 业务实现 → 留 popouts/ 子目录
 //   - Permission modal / Settings overlay → 复用旧 App 的实现挂载点
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { LeftSidebar } from './LeftSidebar.js';
 import { Breadcrumb } from './Breadcrumb.js';
 import { CommandToolbar, type PopoutKind } from './CommandToolbar.js';
@@ -48,6 +48,27 @@ export function Shell(): JSX.Element {
   const rightSidebarOpen = useAppStore((s) => s.rightSidebarOpen);
   const setLeftSidebarOpen = useAppStore((s) => s.setLeftSidebarOpen);
   const setRightSidebarOpen = useAppStore((s) => s.setRightSidebarOpen);
+
+  // 右侧栏跟 KodaX 计划列表（todoListBySession）联动：plan 出现 → 自动展开；
+  // plan 清空 → 自动折叠。只在 hasPlan 状态切换的瞬间动一次，中间段用户的手动 toggle 不会被打扰。
+  // 首次挂载只记录状态、不覆盖 localStorage 持久化值——避免用户上次手动设置被开屏一瞬间冲掉。
+  const currentSessionIdForPlan = useAppStore((s) => s.currentSessionId);
+  const planLength = useAppStore((s) => {
+    const sid = s.currentSessionId;
+    return sid ? (s.todoListBySession[sid]?.length ?? 0) : 0;
+  });
+  const lastAutoHadPlanRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    const hasPlan = planLength > 0;
+    if (lastAutoHadPlanRef.current === null) {
+      // 初次：记录但不触发 — 尊重 localStorage 已持久的偏好
+      lastAutoHadPlanRef.current = hasPlan;
+      return;
+    }
+    if (lastAutoHadPlanRef.current === hasPlan) return; // 没切换
+    setRightSidebarOpen(hasPlan);
+    lastAutoHadPlanRef.current = hasPlan;
+  }, [planLength, currentSessionIdForPlan, setRightSidebarOpen]);
 
   // 给 body 加 platform class，让 styles.css 里 .platform-darwin 的 traffic-lights
   // 让位规则生效。navigator.userAgent 在 Electron renderer 中 reliable。
