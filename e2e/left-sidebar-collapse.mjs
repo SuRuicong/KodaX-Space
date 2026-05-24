@@ -2,9 +2,9 @@
 //
 // 验证：
 //   1. 默认开 → Mode tab (Coder/Partner) + New session 都能找到
-//   2. 点 collapse 按钮 → 变 28px 细条 + open button 还在
+//   2. 点 breadcrumb 行 toggle → 整列 0 占位（不再保留 strip）
 //   3. localStorage 持久化为 0
-//   4. 点 open button → 恢复，Coder tab 再次可见
+//   4. 同一 toggle 再点 → 恢复，Coder tab 再次可见
 //   5. localStorage 持久化为 1
 
 import { _electron as electron } from 'playwright';
@@ -44,17 +44,17 @@ async function main() {
   if (!coderVisible) throw new Error('Coder tab not visible by default');
   await win.screenshot({ path: `${SHOT_DIR}/01-default-open.png` });
 
-  // 2) 点 collapse
-  await win.locator('button[aria-label="Close left sidebar"]').first().click();
+  // 2) 点 breadcrumb 行 toggle (Hide left sidebar)
+  await win.locator('button[aria-label="Hide left sidebar"]').first().click();
   await win.waitForTimeout(400);
   const coderHidden = await win.locator('button:has-text("Coder")').first().isVisible().catch(() => false);
   console.log(`[e2e] after collapse — Coder hidden: ${!coderHidden}`);
   if (coderHidden) throw new Error('Coder tab still visible after collapse');
 
-  // open button strip 仍可见
-  const openBtnVisible = await win.locator('button[aria-label="Open left sidebar"]').first().isVisible().catch(() => false);
-  console.log(`[e2e] after collapse — open button visible: ${openBtnVisible}`);
-  if (!openBtnVisible) throw new Error('Open button not visible after collapse');
+  // 同一按钮变为 "Show left sidebar"
+  const showBtnVisible = await win.locator('button[aria-label="Show left sidebar"]').first().isVisible().catch(() => false);
+  console.log(`[e2e] after collapse — topbar toggle now "Show": ${showBtnVisible}`);
+  if (!showBtnVisible) throw new Error('Show toggle not visible after collapse');
   await win.screenshot({ path: `${SHOT_DIR}/02-collapsed.png` });
 
   // 3) localStorage 持久化为 0
@@ -62,8 +62,8 @@ async function main() {
   console.log(`[e2e] localStorage after collapse: ${lsAfterCollapse}`);
   if (lsAfterCollapse !== '0') throw new Error(`expected leftSidebarOpen=0, got ${lsAfterCollapse}`);
 
-  // 4) 点 open
-  await win.locator('button[aria-label="Open left sidebar"]').first().click();
+  // 4) 同一 toggle 再点 → 展开
+  await win.locator('button[aria-label="Show left sidebar"]').first().click();
   await win.waitForTimeout(400);
   const coderBack = await win.locator('button:has-text("Coder")').first().isVisible().catch(() => false);
   console.log(`[e2e] after expand — Coder back: ${coderBack}`);

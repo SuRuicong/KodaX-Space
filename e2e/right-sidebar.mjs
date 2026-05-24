@@ -3,8 +3,8 @@
 // 验证：
 //   1. 默认开 → 三块 section 标题都能找到
 //   2. Working folder 显示当前 project basename
-//   3. 点击 collapse → 变细条 strip + open button 还在
-//   4. 点 open button → 恢复
+//   3. 点 breadcrumb 行 toggle → 整列 0 占位（不再保留 strip）
+//   4. 再点同一 toggle → 恢复
 //   5. localStorage 持久化偏好
 
 import { _electron as electron } from 'playwright';
@@ -70,17 +70,17 @@ async function main() {
 
     await win.screenshot({ path: path.join(SHOT_DIR, 'open.png'), fullPage: true });
 
-    // 点击 collapse button (title="Collapse right sidebar")
-    const collapseBtn = win.locator('button[title="Collapse right sidebar"]');
-    await collapseBtn.click();
-    // 收起后 Progress text 不应再可见（hidden / removed）
+    // 点击 breadcrumb 行的 toggle (aria-label="Hide right sidebar")
+    const toggleBtn = win.locator('button[aria-label="Hide right sidebar"]');
+    await toggleBtn.click();
+    // 收起后 Progress text 不应再可见
     await win.locator('text=Progress').first().waitFor({ state: 'hidden', timeout: 5_000 });
     console.log('[e2e] ✓ collapsed (Progress hidden)');
 
-    // open button 应出现
-    const openBtn = win.locator('button[title="Open task progress panel"]');
-    await openBtn.waitFor({ timeout: 5_000 });
-    console.log('[e2e] ✓ open button visible after collapse');
+    // 同一按钮变为 "Show right sidebar"
+    const showBtn = win.locator('button[aria-label="Show right sidebar"]');
+    await showBtn.waitFor({ timeout: 5_000 });
+    console.log('[e2e] ✓ topbar toggle now shows "Show right sidebar"');
 
     // 检验 localStorage 写入
     const lsValue = await win.evaluate(() => window.localStorage.getItem('kodax-space.rightSidebarOpen'));
@@ -94,7 +94,7 @@ async function main() {
     await win.screenshot({ path: path.join(SHOT_DIR, 'collapsed.png'), fullPage: true });
 
     // 展开 → Progress 回来
-    await openBtn.click();
+    await showBtn.click();
     await win.locator('text=Progress').first().waitFor({ timeout: 5_000 });
     console.log('[e2e] ✓ re-opened');
   } catch (err) {

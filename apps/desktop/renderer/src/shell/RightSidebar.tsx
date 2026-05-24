@@ -18,40 +18,11 @@ import { useAppStore } from '../store/appStore.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 
-export function RightSidebar(): JSX.Element | null {
-  const open = useAppStore((s) => s.rightSidebarOpen);
-  const setOpen = useAppStore((s) => s.setRightSidebarOpen);
-
-  if (!open) {
-    // 收起时只渲染一个细 strip + 展开按钮，让用户看得到入口
-    return (
-      <div className="w-7 border-l border-border-default bg-surface flex flex-col items-center pt-2 flex-shrink-0">
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="w-6 h-6 rounded text-fg-muted hover:bg-hover-bg hover:text-fg-primary flex items-center justify-center text-[10px]"
-          title="Open task progress panel"
-          aria-label="Open right sidebar"
-        >
-          ◧
-        </button>
-      </div>
-    );
-  }
-
+export function RightSidebar(): JSX.Element {
+  // open/setOpen 由 Shell 顶层 breadcrumb 行的 SidebarToggleButton 直接管理；
+  // open=false 时 Shell 不会渲染本组件（不再保留竖条占位 — 避免无信息密度的 dead zone）
   return (
     <aside className="w-72 border-l border-border-default bg-surface flex flex-col flex-shrink-0 overflow-y-auto">
-      <header className="flex items-center justify-end px-2 py-1 flex-shrink-0">
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          className="w-6 h-6 rounded text-fg-muted hover:bg-hover-bg hover:text-fg-primary flex items-center justify-center text-[10px]"
-          title="Collapse right sidebar"
-          aria-label="Close right sidebar"
-        >
-          ◨
-        </button>
-      </header>
       <ProgressSection />
       <WorkingFolderSection />
       <ContextSection />

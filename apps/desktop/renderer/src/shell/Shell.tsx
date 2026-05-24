@@ -35,12 +35,19 @@ import { ThemeToggle } from './ThemeToggle.js';
 import { RightSidebar } from './RightSidebar.js';
 import { HelpOverlayController } from './HelpOverlay.js';
 import { ToastContainer } from './ToastContainer.js';
+import { useAppStore } from '../store/appStore.js';
 
 export type Mode = 'coder' | 'partner';
 
 export function Shell(): JSX.Element {
   // Mode：alpha.1 阶段只 Coder 可用，Partner 灰；ADR-004 v2 决策
   const [mode, setMode] = useState<Mode>('coder');
+
+  // 侧栏开/关：button 放在 breadcrumb 行最左 / 最右；侧栏关掉时 0 占位（不再 28px 竖条）
+  const leftSidebarOpen = useAppStore((s) => s.leftSidebarOpen);
+  const rightSidebarOpen = useAppStore((s) => s.rightSidebarOpen);
+  const setLeftSidebarOpen = useAppStore((s) => s.setLeftSidebarOpen);
+  const setRightSidebarOpen = useAppStore((s) => s.setRightSidebarOpen);
 
   // 给 body 加 platform class，让 styles.css 里 .platform-darwin 的 traffic-lights
   // 让位规则生效。navigator.userAgent 在 Electron renderer 中 reliable。
@@ -85,22 +92,48 @@ export function Shell(): JSX.Element {
       </div>
 
       <div className="flex flex-1 min-h-0">
-        {!fullscreenRead && <LeftSidebar mode={mode} onModeChange={setMode} />}
+        {!fullscreenRead && leftSidebarOpen && <LeftSidebar mode={mode} onModeChange={setMode} />}
 
         <div className="flex-1 flex flex-col min-w-0 relative">
-          <div className="flex items-center px-4 h-10 border-b border-border-default flex-shrink-0">
+          <div className="flex items-center px-3 h-10 border-b border-border-default flex-shrink-0 gap-1">
+            {/* 左侧栏切换按钮 — 始终常驻，让收起后仍能一键展开 */}
+            <SidebarToggleButton
+              side="left"
+              open={leftSidebarOpen && !fullscreenRead}
+              onClick={() => {
+                if (fullscreenRead) {
+                  setFullscreenRead(false);
+                  setLeftSidebarOpen(true);
+                } else {
+                  setLeftSidebarOpen(!leftSidebarOpen);
+                }
+              }}
+            />
             <Breadcrumb />
             <CommandToolbar active={activePopout} onToggle={setActivePopout} />
             {fullscreenRead && (
               <button
                 type="button"
                 onClick={() => setFullscreenRead(false)}
-                className="ml-2 text-[10px] px-2 py-0.5 rounded border border-border-default text-fg-muted hover:text-fg-primary"
+                className="ml-1 text-[10px] px-2 py-0.5 rounded border border-border-default text-fg-muted hover:text-fg-primary"
                 title="Exit focus mode (Ctrl+\\)"
               >
                 ↗ Focus
               </button>
             )}
+            {/* 右侧栏切换按钮 */}
+            <SidebarToggleButton
+              side="right"
+              open={rightSidebarOpen && !fullscreenRead}
+              onClick={() => {
+                if (fullscreenRead) {
+                  setFullscreenRead(false);
+                  setRightSidebarOpen(true);
+                } else {
+                  setRightSidebarOpen(!rightSidebarOpen);
+                }
+              }}
+            />
           </div>
 
           <ConversationStreamV2 />
@@ -112,7 +145,7 @@ export function Shell(): JSX.Element {
           )}
         </div>
 
-        {!fullscreenRead && <RightSidebar />}
+        {!fullscreenRead && rightSidebarOpen && <RightSidebar />}
 
         <PermissionModal />
         <AskUserModal />
@@ -120,5 +153,35 @@ export function Shell(): JSX.Element {
       </div>
       <ToastContainer />
     </div>
+  );
+}
+
+interface SidebarToggleButtonProps {
+  side: 'left' | 'right';
+  open: boolean;
+  onClick: () => void;
+}
+
+/**
+ * 侧栏切换按钮 — 放在 breadcrumb 行的两端，常驻显示。
+ * - icon: ◧ (left) / ◨ (right)，对应侧的紧凑指示
+ * - open 时图标 text-fg-primary；close 时 text-fg-muted（让用户一眼看出当前状态）
+ */
+function SidebarToggleButton({ side, open, onClick }: SidebarToggleButtonProps): JSX.Element {
+  const icon = side === 'left' ? '◧' : '◨';
+  const label = `${open ? 'Hide' : 'Show'} ${side} sidebar`;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-6 h-6 rounded text-[12px] flex items-center justify-center flex-shrink-0 hover:bg-hover-bg ${
+        open ? 'text-fg-primary' : 'text-fg-muted hover:text-fg-primary'
+      }`}
+      title={label}
+      aria-label={label}
+      aria-pressed={open}
+    >
+      {icon}
+    </button>
   );
 }

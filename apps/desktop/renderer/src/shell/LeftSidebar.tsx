@@ -47,8 +47,6 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
   const setPendingReasoningMode = useAppStore((s) => s.setPendingReasoningMode);
   const setPendingPermissionMode = useAppStore((s) => s.setPendingPermissionMode);
   const setPendingAgentMode = useAppStore((s) => s.setPendingAgentMode);
-  const open = useAppStore((s) => s.leftSidebarOpen);
-  const setOpen = useAppStore((s) => s.setLeftSidebarOpen);
   const [creating, setCreating] = useState(false);
   const [createErr, setCreateErr] = useState<string | null>(null);
 
@@ -125,37 +123,11 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
     }
   }
 
-  if (!open) {
-    // 收起态：28px 细条 + 展开按钮（对称 RightSidebar 的折叠形态）
-    return (
-      <div className="w-7 border-r border-border-default bg-surface flex flex-col items-center pt-2 flex-shrink-0">
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="w-6 h-6 rounded text-fg-muted hover:bg-hover-bg hover:text-fg-primary flex items-center justify-center text-[10px]"
-          title="Open left sidebar"
-          aria-label="Open left sidebar"
-        >
-          ◨
-        </button>
-      </div>
-    );
-  }
+  // open/setOpen 由 Shell 顶层 breadcrumb 行的 SidebarToggleButton 直接管理；
+  // open=false 时 Shell 不会渲染本组件（不再保留竖条占位 — 避免无信息密度的 dead zone）
 
   return (
     <aside className="w-60 flex flex-col border-r border-border-default bg-surface flex-shrink-0">
-      {/* 顶部 collapse 行 — 对称 RightSidebar；按钮放外侧 (左) 边缘 */}
-      <div className="flex items-center px-2 py-1 flex-shrink-0">
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          className="w-6 h-6 rounded text-fg-muted hover:bg-hover-bg hover:text-fg-primary flex items-center justify-center text-[10px]"
-          title="Collapse left sidebar"
-          aria-label="Close left sidebar"
-        >
-          ◧
-        </button>
-      </div>
       {/* Mode tab */}
       <div className="p-2 flex gap-1 border-b border-border-default flex-shrink-0">
         <button
