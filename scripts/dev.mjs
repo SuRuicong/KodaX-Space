@@ -3,9 +3,11 @@
 //   2) esbuild watch main + preload
 //   3) 等 Vite 就绪后 spawn electron 指向 dev server URL
 //
-// Ctrl+C 退出时清理子进程。
+// Ctrl+C 退出时清理子进程树（Windows 必须 taskkill /t — 否则 cmd.exe wrapper 被杀掉但
+// 真正的 vite / esbuild node 子进程作为孤儿继续运行，持有终端 stdin 让 PowerShell 退回
+// raw mode，backspace 显示成 ^H、Ctrl+C 显示成 ^C）。
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import waitOn from 'wait-on';
@@ -22,16 +24,14 @@ function spawnProc(name, cmd, args, env = {}, opts = {}) {
   // require('electron') 仅返回二进制路径，window 永远不弹。强制在子进程剥掉。
   const baseEnv = { ...process.env };
   delete baseEnv.ELECTRON_RUN_AS_NODE;
-  // 默认 'inherit' 三流共享 — vite/esbuild 不读 stdin 所以安全。
-  //
-  // Electron child 在 Windows 上若以 stdio: 'inherit' 启动，会持有 parent stdin handle
-  // (即便没人 read)，Windows ConPTY 的 console routing 在这种情况下会变得诡异——
-  // 用户在 dev 终端打字 / Ctrl+C 行为不对。这是 Electron+Windows ConPTY 的已知
-  // quirk，与 KodaX SDK 无关 (KodaX 团队 probe 验证：import / hydrate / probe 12 步
-  // listener Δ=0 / rawMode Δ=0；hydrateProcessEnvFromShell 在 Windows 直接 return false
-  // 不 spawn；POSIX 平台 spawn 时也写死 stdio:['ignore','pipe','pipe'] 不碰 parent stdin)。
-  // Canonical fix：调用方传 stdinMode='ignore' 让 Electron child 不持有 parent stdin handle。
-  const stdinMode = opts.stdinMode ?? 'inherit';
+  // **stdin 一律 'ignore'**（之前默认 'inherit' 是地雷）：
+  //   - Electron child Windows ConPTY：'inherit' 会让 child 持有 parent stdin handle，
+  //     console routing 诡异；KodaX 团队 probe 12 步验证与 SDK 无关，是 Electron+ConPTY quirk。
+  //   - Vite / esbuild：'inherit' 让它们读 parent stdin → Vite 启用 readline raw-mode
+  //     ("press h + enter" 交互)，dev.mjs 退出时若没 tree-kill，孤儿 vite 仍持 stdin，
+  //     PowerShell 看到的就是 raw mode（backspace=^H、Ctrl+C=^C）。
+  // 调用方仍可 opts.stdinMode='inherit' 显式覆盖（目前没人用到）。
+  const stdinMode = opts.stdinMode ?? 'ignore';
   const proc = spawn(cmd, args, {
     cwd: root,
     stdio: [stdinMode, 'inherit', 'inherit'],
@@ -48,15 +48,33 @@ function spawnProc(name, cmd, args, env = {}, opts = {}) {
   return proc;
 }
 
+/**
+ * Windows tree-kill via taskkill /t /f。
+ * proc.kill() 只 SIGTERM cmd.exe wrapper，真正的 node/vite 子进程作为孤儿继续运行 →
+ * 持有终端 stdin → PowerShell 退回 raw mode。taskkill /t 递归杀整棵进程树。
+ */
+function killTree(pid) {
+  if (!pid) return;
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', String(pid), '/t', '/f'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+  } else {
+    try {
+      process.kill(-pid, 'SIGTERM'); // POSIX: kill 进程组
+    } catch {
+      // 没分组就单杀
+      try { process.kill(pid, 'SIGTERM'); } catch { /* gone already */ }
+    }
+  }
+}
+
 function shutdown(code = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
   for (const { proc } of procs) {
-    try {
-      proc.kill();
-    } catch {
-      // ignore
-    }
+    killTree(proc.pid);
   }
   process.exit(code);
 }
@@ -90,7 +108,8 @@ try {
       VITE_DEV_SERVER_URL: VITE_URL,
       NODE_ENV: 'development',
     },
-    { stdinMode: 'ignore' }, // Electron+Windows ConPTY quirk — 见 spawnProc 注释
+    // stdinMode 默认就是 'ignore'，留参数显式可读
+    { stdinMode: 'ignore' },
   );
 } catch (err) {
   console.error('[dev] failed:', err);
