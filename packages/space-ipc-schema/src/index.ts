@@ -38,6 +38,8 @@ export {
   sessionRewindChannel,
   sessionAgentsMdChannel,
   type AgentsFileMeta,
+  sessionHistoryChannel,
+  type SessionHistoryItem,
   sessionEventChannel,
   type PermissionMode,
   type AutoModeEngine,

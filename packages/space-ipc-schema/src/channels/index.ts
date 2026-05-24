@@ -27,6 +27,7 @@ import {
   sessionForkChannel,
   sessionRewindChannel,
   sessionAgentsMdChannel,
+  sessionHistoryChannel,
   sessionEventChannel,
 } from './session.js';
 import {
@@ -86,6 +87,7 @@ export const invokeChannels = {
   [sessionForkChannel.name]: sessionForkChannel,
   [sessionRewindChannel.name]: sessionRewindChannel,
   [sessionAgentsMdChannel.name]: sessionAgentsMdChannel,
+  [sessionHistoryChannel.name]: sessionHistoryChannel,
   [projectListChannel.name]: projectListChannel,
   [projectOpenDialogChannel.name]: projectOpenDialogChannel,
   [projectRecentAddChannel.name]: projectRecentAddChannel,

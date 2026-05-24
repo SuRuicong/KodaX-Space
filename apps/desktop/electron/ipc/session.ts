@@ -29,7 +29,8 @@ import { loadAgentsMd, type AgentsFile } from '../kodax/agents-md-loader.js';
 import { loadKodaxUserDefaults } from '../kodax/user-config.js';
 import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
-import type { AgentsFileMeta, SessionMeta } from '@kodax-space/space-ipc-schema';
+import { loadPersistedSession } from '../kodax/session-store.js';
+import type { AgentsFileMeta, SessionHistoryItem, SessionMeta } from '@kodax-space/space-ipc-schema';
 
 // FEATURE_034 reviewer MEDIUM-2: 编译期保证 loader 的 AgentsFile 与 schema 的 AgentsFileMeta
 // 结构一致——加字段、改 scope enum 等都会立即编译报错，不让 schema/loader 漂移。
@@ -284,4 +285,64 @@ export function registerSessionChannels(): void {
     const files = await loadAgentsMd({ projectRoot: session.projectRoot });
     return { files };
   });
+
+  // session.history — 历史 session 切换时恢复对话内容（events / userMessages buffer in-memory，
+  // 重启后空；renderer 调本 channel 拉 KodaX SDK 持久化的 messages 数组，flatten 成 user/
+  // assistant text 一对一对，回填 store）。session in-flight 还没 loadPersistedSession 也 OK —
+  // KodaX SDK 直接读磁盘文件。tool_use / tool_result block 跳过（v1 简化），文本上下文保留。
+  registerChannel('session.history', async (input) => {
+    const data = await loadPersistedSession(input.sessionId);
+    if (!data || !Array.isArray(data.messages)) {
+      return { items: [] };
+    }
+    const items: SessionHistoryItem[] = [];
+    for (const msg of data.messages) {
+      // SDK 标记的合成消息（auto-continue / retry）不显示给用户 — KodaX REPL 也隐藏它们
+      if ((msg as { _synthetic?: boolean })._synthetic) continue;
+      if (msg.role === 'system') continue; // system prompts 内部，不展示
+
+      const { text, thinking } = flattenContentBlocks(msg.content);
+
+      if (msg.role === 'user') {
+        if (text.length > 0) items.push({ kind: 'user', content: text });
+      } else if (msg.role === 'assistant') {
+        if (text.length > 0 || thinking.length > 0) {
+          const item: SessionHistoryItem =
+            thinking.length > 0
+              ? { kind: 'assistant', text, thinking }
+              : { kind: 'assistant', text };
+          items.push(item);
+        }
+      }
+      // schema z.array(...).max(2000) DoS 守护 — 超出截断不抛
+      if (items.length >= 2000) break;
+    }
+    return { items };
+  });
+}
+
+/** 把 KodaX content blocks 拍平成纯 text + 纯 thinking 两路；tool_use/tool_result 等丢弃。
+ *  string 形式直接当 text。max-length 守护在 zod 出口（>256KB 报错前 truncate）。*/
+function flattenContentBlocks(content: unknown): { text: string; thinking: string } {
+  if (typeof content === 'string') return { text: content, thinking: '' };
+  if (!Array.isArray(content)) return { text: '', thinking: '' };
+  let text = '';
+  let thinking = '';
+  for (const block of content) {
+    if (!block || typeof block !== 'object') continue;
+    const t = (block as { type?: unknown }).type;
+    if (t === 'text') {
+      const s = (block as { text?: unknown }).text;
+      if (typeof s === 'string') text += s;
+    } else if (t === 'thinking') {
+      const s = (block as { thinking?: unknown }).thinking;
+      if (typeof s === 'string') thinking += s;
+    }
+    // tool_use / tool_result / image / cache-boundary / redacted_thinking — 跳过
+  }
+  // 256KB 截断兜底（避免越过 schema 上限抛错）
+  const MAX = 256 * 1024;
+  if (text.length > MAX) text = text.slice(0, MAX) + '\n…(truncated)';
+  if (thinking.length > MAX) thinking = thinking.slice(0, MAX) + '\n…(truncated)';
+  return { text, thinking };
 }

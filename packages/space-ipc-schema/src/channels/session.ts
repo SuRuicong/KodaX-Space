@@ -331,6 +331,42 @@ export const sessionAgentsMdChannel = {
 
 export type AgentsFileMeta = z.infer<typeof agentsFileSchema>;
 
+// ---- Invoke: session.history ---- (FEATURE_039 / 历史恢复)
+//
+// 用户点 Recents 里历史 session 时拉过去对话内容。Renderer 的 events / userMessages
+// buffer 是 in-memory，重启后空；session 元数据由 KodaX SDK 持久化但 messages 不进
+// 我们的 push channel。这里读 KodaX 的 loadSession(sid) → flatten content blocks →
+// 喂给 renderer 用 user/assistant text 一对一对的简化形式。
+//
+// 简化策略（v1）：只回 text + thinking；中间的 tool_use / tool_result block 跳过（用户看
+// 不到工具调用细节但能看到上下文文本）。后续需要时升级到 full event replay。
+//
+// 上限：items 最多 2000 — 长会话也罕见超过这个；每条 user/assistant 含 content 文本上限同 text_delta。
+const sessionHistoryItemSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('user'),
+    content: z.string().max(MAX_TEXT_CHUNK),
+  }),
+  z.object({
+    kind: z.literal('assistant'),
+    text: z.string().max(MAX_TEXT_CHUNK),
+    thinking: z.string().max(MAX_TEXT_CHUNK).optional(),
+  }),
+]);
+
+export const sessionHistoryChannel = {
+  name: 'session.history',
+  direction: 'invoke',
+  input: z.object({
+    sessionId: z.string().min(1),
+  }),
+  output: z.object({
+    items: z.array(sessionHistoryItemSchema).max(2000),
+  }),
+} as const;
+
+export type SessionHistoryItem = z.infer<typeof sessionHistoryItemSchema>;
+
 // ---- Invoke: session.fork ---- (FEATURE_033 in-memory)
 //
 // 从 sourceSessionId 在 forkPointTurnIdx 处 fork：

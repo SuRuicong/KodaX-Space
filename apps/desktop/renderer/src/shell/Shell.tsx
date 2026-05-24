@@ -70,6 +70,55 @@ export function Shell(): JSX.Element {
     lastAutoHadPlanRef.current = hasPlan;
   }, [planLength, currentSessionIdForPlan, setRightSidebarOpen]);
 
+  // 历史 session 切换时按需从 KodaX SDK 拉持久化对话内容回填 store。
+  // events / userMessages buffer 是 in-memory；重启 / 切到 new session 后空 → 调
+  // session.history → 拍平 messages 喂回 store，让 ConversationStreamV2 能渲染。
+  // 仅当 buffer 真的为空时拉，避免覆盖 in-flight 会话已有 events（reviewer 边界）。
+  const restoredSessionsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const sid = currentSessionIdForPlan;
+    if (!sid || !window.kodaxSpace) return;
+    if (restoredSessionsRef.current.has(sid)) return; // 已拉过本会话生命周期
+    const state = useAppStore.getState();
+    const events = state.eventsBySession[sid] ?? [];
+    const userMsgs = state.userMessagesBySession[sid] ?? [];
+    if (events.length > 0 || userMsgs.length > 0) {
+      restoredSessionsRef.current.add(sid);
+      return; // in-flight / 已有数据 → 不打扰
+    }
+    let cancelled = false;
+    void window.kodaxSpace
+      .invoke('session.history', { sessionId: sid })
+      .then((r) => {
+        if (cancelled || !r.ok) return;
+        const items = r.data.items;
+        if (items.length === 0) {
+          restoredSessionsRef.current.add(sid);
+          return;
+        }
+        const store = useAppStore.getState();
+        for (const item of items) {
+          if (item.kind === 'user') {
+            store.appendUserMessage(sid, item.content);
+          } else {
+            // assistant：合成 text_delta + 可选 thinking_delta + session_complete，
+            // 让 composeMessages 的 segment 划分能正确拼出"user 消息 + assistant 回复"对
+            if (item.thinking !== undefined && item.thinking.length > 0) {
+              store.appendEvent({ kind: 'thinking_delta', sessionId: sid, text: item.thinking });
+            }
+            if (item.text.length > 0) {
+              store.appendEvent({ kind: 'text_delta', sessionId: sid, text: item.text });
+            }
+            store.appendEvent({ kind: 'session_complete', sessionId: sid });
+          }
+        }
+        restoredSessionsRef.current.add(sid);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSessionIdForPlan]);
+
   // 给 body 加 platform class，让 styles.css 里 .platform-darwin 的 traffic-lights
   // 让位规则生效。navigator.userAgent 在 Electron renderer 中 reliable。
   useEffect(() => {
