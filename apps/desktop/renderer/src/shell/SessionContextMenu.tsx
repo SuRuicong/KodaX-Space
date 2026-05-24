@@ -31,9 +31,12 @@ interface SessionContextMenuProps {
   readonly x: number;
   readonly y: number;
   readonly onClose: () => void;
+  /** 点 Rename / 按 R → 通知父层让 SessionRow 进入 inline edit 模式
+   *  （window.prompt 在 Electron 上不稳定，统一改成 inline edit）*/
+  readonly onStartRename: () => void;
 }
 
-export function SessionContextMenu({ session, x, y, onClose }: SessionContextMenuProps): JSX.Element {
+export function SessionContextMenu({ session, x, y, onClose, onStartRename }: SessionContextMenuProps): JSX.Element {
   const ref = useRef<HTMLDivElement | null>(null);
   const toggleFlag = useAppStore((s) => s.toggleSessionFlag);
   const upsertSession = useAppStore((s) => s.upsertSession);
@@ -60,7 +63,7 @@ export function SessionContextMenu({ session, x, y, onClose }: SessionContextMen
         onClose();
       } else if (e.key === 'r' || e.key === 'R') {
         e.preventDefault();
-        void onRename();
+        onStartRename();
       } else if (e.key === 'f' || e.key === 'F') {
         e.preventDefault();
         void onFork();
@@ -81,20 +84,6 @@ export function SessionContextMenu({ session, x, y, onClose }: SessionContextMen
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.sessionId]);
-
-  async function onRename(): Promise<void> {
-    onClose();
-    if (!window.kodaxSpace) return;
-    const next = window.prompt('New session title:', session.title ?? '');
-    if (next === null) return;
-    const trimmed = next.trim().slice(0, 256);
-    if (trimmed === '') return;
-    const r = await window.kodaxSpace.invoke('session.setTitle', {
-      sessionId: session.sessionId,
-      title: trimmed,
-    });
-    if (r.ok) upsertSession({ ...session, title: trimmed });
-  }
 
   async function onFork(): Promise<void> {
     onClose();
@@ -156,7 +145,7 @@ export function SessionContextMenu({ session, x, y, onClose }: SessionContextMen
       <Divider />
       <MenuRow label="Pin" hint="P" onClick={() => { toggleFlag(session.sessionId, 'pinned'); onClose(); }} />
       <MenuRow label="Mark as unread" hint="U" onClick={() => { toggleFlag(session.sessionId, 'unread'); onClose(); }} />
-      <MenuRow label="Rename" hint="R" onClick={() => void onRename()} />
+      <MenuRow label="Rename" hint="R" onClick={onStartRename} />
       <MenuRow label="Fork" hint="F" onClick={() => void onFork()} />
       <MenuRow label="Move to group" hint="" disabled chevron tip="v0.1.x" />
       <MenuRow label="Archive" hint="A" onClick={() => { toggleFlag(session.sessionId, 'archived'); onClose(); }} />
