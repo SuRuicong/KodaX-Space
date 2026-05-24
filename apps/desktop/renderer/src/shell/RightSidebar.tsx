@@ -71,32 +71,30 @@ function ProgressSection(): JSX.Element | null {
   const total = todos.length;
   const running = todos.find((t) => t.status === 'in_progress');
 
+  // 用数字序列代替之前的"横向圆点链"。圆点保留为单条目的状态指示（小尺寸），
+  // 行首数字让列表更接近 "task list" 阅读节奏。
   return (
     <Section title="Progress">
-      {/* 顶部圆点链 — 视觉对齐 Cowork 截图。最多渲染 8 个圆点防溢出 */}
-      <div className="flex items-center gap-1 mb-2 flex-wrap">
-        {todos.slice(0, 8).map((t, idx) => (
-          <span key={t.id} className="flex items-center gap-1">
-            {t.status === 'completed' ? <CircleDone /> : t.status === 'in_progress' ? <CircleActive /> : <CircleEmpty />}
-            {idx < Math.min(todos.length, 8) - 1 && <Connector />}
-          </span>
-        ))}
-        {todos.length > 8 && (
-          <span className="text-[10px] text-fg-muted ml-1">+{todos.length - 8}</span>
-        )}
-      </div>
       <div className="text-[11px] text-fg-secondary mb-2">
         {done}/{total} done
         {running?.activeForm && (
           <span className="text-fg-muted"> · {running.activeForm}</span>
         )}
       </div>
-      {/* 完整 todo 列表 */}
-      <ul className="space-y-1 text-[11px]">
-        {todos.map((t) => (
+      <ol className="space-y-1 text-[11px]">
+        {todos.map((t, idx) => (
           <li key={t.id} className="flex items-start gap-2">
-            <span className="flex-shrink-0 mt-0.5">
-              {t.status === 'completed' ? <CircleDone tiny /> : t.status === 'in_progress' ? <CircleActive tiny /> : <CircleEmpty tiny />}
+            <span className="flex-shrink-0 text-fg-muted font-mono text-[10px] w-5 text-right mt-0.5 tabular-nums">
+              {idx + 1}.
+            </span>
+            <span className="flex-shrink-0 mt-0.5" aria-hidden>
+              {t.status === 'completed' ? (
+                <CircleDone tiny />
+              ) : t.status === 'in_progress' ? (
+                <CircleActive tiny />
+              ) : (
+                <CircleEmpty tiny />
+              )}
             </span>
             <span
               className={
@@ -111,7 +109,7 @@ function ProgressSection(): JSX.Element | null {
             </span>
           </li>
         ))}
-      </ul>
+      </ol>
     </Section>
   );
 }
@@ -239,10 +237,8 @@ function collectContextRefs(events: readonly SessionEvent[]): ContextRefs {
 
 // ---- 圆点 + 连接线 svg-free 实现 ----
 
-interface DotProps {
-  tiny?: boolean;
-}
-function CircleDone({ tiny }: DotProps = {}): JSX.Element {
+// 三种状态圆点：完成 / 进行中 / 未开始。仅 tiny 尺寸 — 不再用大圆点，所以参数可选化。
+function CircleDone({ tiny = true }: { tiny?: boolean } = {}): JSX.Element {
   const size = tiny ? 'w-3 h-3 text-[8px]' : 'w-4 h-4 text-[10px]';
   return (
     <span
@@ -253,7 +249,7 @@ function CircleDone({ tiny }: DotProps = {}): JSX.Element {
     </span>
   );
 }
-function CircleActive({ tiny }: DotProps = {}): JSX.Element {
+function CircleActive({ tiny = true }: { tiny?: boolean } = {}): JSX.Element {
   const size = tiny ? 'w-3 h-3' : 'w-4 h-4';
   return (
     <span
@@ -262,10 +258,7 @@ function CircleActive({ tiny }: DotProps = {}): JSX.Element {
     />
   );
 }
-function CircleEmpty({ tiny }: DotProps = {}): JSX.Element {
+function CircleEmpty({ tiny = true }: { tiny?: boolean } = {}): JSX.Element {
   const size = tiny ? 'w-3 h-3' : 'w-4 h-4';
   return <span className={`${size} rounded-full border border-border-default`} aria-hidden />;
-}
-function Connector(): JSX.Element {
-  return <span className="w-2 h-px bg-border-default" aria-hidden />;
 }

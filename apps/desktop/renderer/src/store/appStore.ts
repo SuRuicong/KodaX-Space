@@ -331,7 +331,9 @@ export const useAppStore = create<AppState>((set) => ({
   theme: (typeof window !== 'undefined' && (localStorage.getItem('kodax-space.theme') as 'dark' | 'light' | 'system' | null)) || 'dark',
   transcriptView: 'normal',
   transcriptFontSize: 'base',
-  rightSidebarOpen: lsGet('kodax-space.rightSidebarOpen') !== '0', // 默认开，"0" 表示用户主动关过
+  // 默认关：右侧栏存在意义=KodaX 计划列表，没 plan 时空着没价值；plan 来时由 Shell
+  // 的 useEffect (planLength transition) 自动开。'1' 才视作"用户主动开过"。
+  rightSidebarOpen: lsGet('kodax-space.rightSidebarOpen') === '1',
   leftSidebarOpen: lsGet('kodax-space.leftSidebarOpen') !== '0', // 默认开，"0" 表示用户主动关过
 
   setProjects: (projects) => set({ projects }),

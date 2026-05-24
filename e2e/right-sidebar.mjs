@@ -33,10 +33,8 @@ async function main() {
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
-    // 把 LS rightSidebarOpen 重置（清除上次测试残留），然后 reload
-    await win.evaluate(() => {
-      window.localStorage.removeItem('kodax-space.rightSidebarOpen');
-    });
+    // 默认改成"关"以后，测试要先 force-open 才能验内部 section。
+    await win.evaluate(() => window.localStorage.setItem('kodax-space.rightSidebarOpen', '1'));
     await win.reload();
     await win.waitForLoadState('domcontentloaded');
 
@@ -47,8 +45,7 @@ async function main() {
     await win.locator('text=Context').first().waitFor({ timeout: 5_000 });
     console.log('[e2e] ✓ Context section visible');
 
-    // Progress 段在没 KodaX 计划列表时不渲染（auto-toggle 设计）；本测试不预置 plan
-    // 所以不验 Progress —— 见 e2e/right-sidebar-auto-toggle.mjs 验证 plan 自动联动。
+    // Progress 段在没 KodaX 计划列表时不渲染（plan-gated 设计）
     const progressVisible = await win.locator('text=Progress').first().isVisible().catch(() => false);
     console.log(`[e2e] Progress section visible (no plan expected): ${progressVisible}`);
 
