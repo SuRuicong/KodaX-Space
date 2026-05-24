@@ -96,8 +96,54 @@ html:not(.dark) .hover\:text-zinc-300:hover { color: rgb(63 63 70); }
 html:not(.dark) .placeholder-zinc-400::placeholder { color: rgb(113 113 122); }
 /* opaque overlays (modal backdrop) */
 html:not(.dark) .bg-zinc-800\/40 { background-color: rgb(228 228 231 / 0.4); }
+html:not(.dark) .bg-zinc-800\/90 { background-color: rgb(228 228 231 / 0.95); }
 html:not(.dark) .bg-zinc-900\/60 { background-color: rgb(244 244 245 / 0.6); }
 html:not(.dark) .bg-zinc-900\/90 { background-color: rgb(244 244 245 / 0.9); }
+/* inline code 用的 amber-300 在浅色背景上几乎不可读 — 用 amber-700 */
+html:not(.dark) .text-amber-300 { color: rgb(180 83 9); }
+
+/* highlight.js 浅色 token 覆盖 — atom-one-dark.css 通过 @import 加载，
+   规则字面是 .hljs / .hljs-keyword 等不带 dark 限定，在 light 模式仍生效。
+   下面这一组用 atom-one-light 调色板 (https://highlightjs.org) 在 light 模式覆盖。 */
+html:not(.dark) .hljs {
+  color: #383a42;
+  background: rgb(244 244 245); /* zinc-100 */
+}
+html:not(.dark) .hljs-comment,
+html:not(.dark) .hljs-quote { color: #a0a1a7; font-style: italic; }
+html:not(.dark) .hljs-doctag,
+html:not(.dark) .hljs-keyword,
+html:not(.dark) .hljs-formula { color: #a626a4; }
+html:not(.dark) .hljs-section,
+html:not(.dark) .hljs-name,
+html:not(.dark) .hljs-selector-tag,
+html:not(.dark) .hljs-deletion,
+html:not(.dark) .hljs-subst { color: #e45649; }
+html:not(.dark) .hljs-literal { color: #0184bb; }
+html:not(.dark) .hljs-string,
+html:not(.dark) .hljs-regexp,
+html:not(.dark) .hljs-addition,
+html:not(.dark) .hljs-attribute,
+html:not(.dark) .hljs-meta .hljs-string { color: #50a14f; }
+html:not(.dark) .hljs-built_in,
+html:not(.dark) .hljs-class .hljs-title { color: #c18401; }
+html:not(.dark) .hljs-attr,
+html:not(.dark) .hljs-variable,
+html:not(.dark) .hljs-template-variable,
+html:not(.dark) .hljs-type,
+html:not(.dark) .hljs-selector-class,
+html:not(.dark) .hljs-selector-attr,
+html:not(.dark) .hljs-selector-pseudo,
+html:not(.dark) .hljs-number { color: #986801; }
+html:not(.dark) .hljs-symbol,
+html:not(.dark) .hljs-bullet,
+html:not(.dark) .hljs-link,
+html:not(.dark) .hljs-meta,
+html:not(.dark) .hljs-selector-id,
+html:not(.dark) .hljs-title { color: #4078f2; }
+html:not(.dark) .hljs-emphasis { font-style: italic; }
+html:not(.dark) .hljs-strong { font-weight: bold; }
+html:not(.dark) .hljs-link { text-decoration: underline; }
 
 /* Custom titlebar 拖动 — main.ts 用 titleBarStyle: 'hidden' + titleBarOverlay 隐掉系统 chrome。
    .app-titlebar 自身可拖窗 (-webkit-app-region: drag)；按钮/输入等需 'no-drag'。 */
