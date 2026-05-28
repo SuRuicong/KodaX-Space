@@ -2,9 +2,10 @@
 # 签名与 notarize 留 FEATURE_027 (v0.1.5)
 #
 # 产物（F010）：
-#   - Windows:  out/KodaX-Space-Setup-${version}.exe  (NSIS, x64)
-#   - macOS:    out/KodaX-Space-${version}-universal.dmg (DMG, x64+arm64)
-#   - Linux:    暂不出（v0.1.4+ 再开 AppImage/deb）
+#   - Windows:  out/KodaX-Space-Setup-${version}.exe       (NSIS, x64)
+#   - macOS:    out/KodaX-Space-${version}-${arch}.dmg     (DMG, x64 + arm64)
+#   - Linux:    out/KodaX-Space-${version}.AppImage        (AppImage, x64)
+#               out/KodaX-Space_${version}_amd64.deb       (deb, x64)
 #
 # 体积目标：< 200 MB（asar 压缩 + 排除 test/cache/source map）
 
@@ -70,8 +71,20 @@ nsis:
   shortcutName: KodaX Space
 
 linux:
-  # M3 启用
-  target: []
+  category: Development
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  icon: resources/icon.png
+  artifactName: '${productName}-${version}-${arch}.${ext}'
+  synopsis: Provider-neutral, local-first AI agent desktop client
+  description: KodaX Space — desktop client for the KodaX ecosystem (Coder + Partner dual-panel).
+  maintainer: icetomoyo <icetomoyo@gmail.com>
+  vendor: icetomoyo
 
 extraMetadata:
   main: dist-electron/main.js

@@ -65,3 +65,43 @@ export const projectRecentRemoveChannel = {
     removed: z.boolean(),
   }),
 } as const;
+
+// ---- project.gitStats ----
+//
+// 读 `git log` + `git shortlog` 聚合一段时间内的 commit / churn / 每日活跃度。
+// main 端用 child_process 跑 git binary——不引入 simple-git 依赖（avoid +30MB deps）。
+// 超时 5s，非 git repo / 不可执行直接返回 ok:true + 全 0（让 dashboard 平和 fallback）。
+const dailyCommitSchema = z.object({
+  date: z.string().min(10).max(10), // YYYY-MM-DD
+  count: z.number().int().nonnegative(),
+});
+
+export const projectGitStatsChannel = {
+  name: 'project.gitStats',
+  direction: 'invoke',
+  input: z.object({
+    projectRoot: z.string().min(1).max(4096),
+    /** 时间范围（天）。null = all-time。 */
+    sinceDays: z.number().int().positive().max(3650).nullable(),
+  }),
+  output: z.object({
+    /** 是否真的是 git repo（false 时其它字段为 0）。 */
+    isGitRepo: z.boolean(),
+    /** 范围内 commit 数。*/
+    commits: z.number().int().nonnegative(),
+    /** 范围内不重复改动文件数（git log --name-only 去重）。*/
+    filesChanged: z.number().int().nonnegative(),
+    /** 范围内累计新增行数。 */
+    linesAdded: z.number().int().nonnegative(),
+    /** 范围内累计删除行数。 */
+    linesDeleted: z.number().int().nonnegative(),
+    /** 范围内活跃 author 数 (按 email 去重)。 */
+    contributors: z.number().int().nonnegative(),
+    /** 每日 commit 直方图（YYYY-MM-DD → count）。给 dashboard 热力图叠加用，最多 365 条。*/
+    dailyCommits: z.array(dailyCommitSchema).max(365),
+    /** 当前 HEAD 分支名（detached 时返回 'HEAD'）。 */
+    currentBranch: z.string().max(256).nullable(),
+  }),
+} as const;
+
+export type ProjectGitStatsDaily = z.infer<typeof dailyCommitSchema>;

@@ -315,4 +315,56 @@ export function registerProviderChannels(): void {
     }
     return { ok: removed };
   });
+
+  // provider.modelContextWindow — SDK-driven 上下文窗口查询
+  //
+  // 替代之前 renderer 端 modelContextCaps.ts 的硬编码表。SDK runtime 用 resolveContextWindow
+  // 决定真正的 compaction 触发窗口；UI 用同一函数 = single source of truth.
+  //
+  // Custom provider (`custom_*` id) 不进 SDK resolveProvider — 走 catalog hardcoded fallback
+  // 或者 200k 默认（SDK 的 hard fallback 也是 200k）。
+  //
+  // Lazy SDK import — main bundle 是 CJS，SDK 是 ESM-only subpath；必须 `await import`
+  // 否则撞 ERR_PACKAGE_PATH_NOT_EXPORTED（同 sdk-providers.ts 的处理）。
+  registerChannel('provider.modelContextWindow', async (input) => {
+    try {
+      const [{ resolveProvider }, { resolveContextWindow }] = await Promise.all([
+        import('@kodax-ai/kodax/coding'),
+        import('@kodax-ai/kodax/agent'),
+      ]);
+      const provider = resolveProvider(input.providerId);
+      // SDK 内部级联：CompactionConfig.contextWindow → provider.getEffectiveContextWindow(model)
+      //   → provider.getContextWindow() → 200_000 hard fallback
+      // 我们传 enabled:false 因为不需要 compaction 配置——只是用 resolver 拿数字
+      const cw = resolveContextWindow(
+        { enabled: false, triggerPercent: 80 },
+        provider,
+        input.model,
+      );
+      // 是 provider-advertised 还是 SDK fallback (200k)？没法直接区分；按值判断：
+      //   - 命中 200_000 且 provider 没有 getEffectiveContextWindow/getContextWindow → fallback
+      //   - 其他情况一律 provider
+      // 简化：只要 != 200_000 就 'provider'；== 200_000 时再判 capability function 存在与否
+      let source: 'provider' | 'fallback' = 'provider';
+      if (cw === 200_000) {
+        const p = provider as {
+          getEffectiveContextWindow?: unknown;
+          getContextWindow?: unknown;
+        };
+        if (typeof p.getEffectiveContextWindow !== 'function' && typeof p.getContextWindow !== 'function') {
+          source = 'fallback';
+        }
+      }
+      return { contextWindow: cw, source };
+    } catch (err) {
+      // resolveProvider 不识别 custom_* id 时会 throw — 报 fallback 200k 让 UI 渲染
+      // 而不是阻断。renderer 自己的 modelContextCaps.ts 还能作为二级 fallback (从 SDK 升上
+      // 来期间).
+      console.warn(
+        `[provider.modelContextWindow] SDK resolve failed for ${input.providerId}/${input.model}:`,
+        err instanceof Error ? err.message : err,
+      );
+      return { contextWindow: 200_000, source: 'fallback' };
+    }
+  });
 }

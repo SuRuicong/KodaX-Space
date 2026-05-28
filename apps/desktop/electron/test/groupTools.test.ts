@@ -101,7 +101,7 @@ test('groupTools: user + tools + system_notice pattern (typical Claude Code flow
     tool('t1', 'read'),
     tool('t2', 'edit'),
     asst('a2', 'done'),
-    { kind: 'system_notice', id: 'n1', variant: 'complete', text: '✓' },
+    { kind: 'system_notice', id: 'n1', variant: 'iteration', text: 'iter 1/30' },
   ]);
   assert.equal(out.length, 5);
   assert.equal(out[0].kind, 'user');

@@ -80,6 +80,7 @@ export function ConversationStreamV2(): JSX.Element {
   const viewMessages = useMemo(() => groupTools(messages), [messages]);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const wasAtBottomRef = useRef<boolean>(true);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   // 每个 tool_group 的展开状态；默认折叠
@@ -182,19 +183,22 @@ export function ConversationStreamV2(): JSX.Element {
 
   // ResizeObserver 是真正的 sticky-bottom 实现：
   // 流式 assistant_chunk 来时 message length 不变（在同一 bubble 上累积 text），
-  // 之前用 useLayoutEffect([viewMessages.length]) 不触发滚动。改成 observe 内容容器
-  // scrollHeight 变化——每个新字符都会让 follower 自动跟到底，除非用户主动上滚。
+  // 之前用 useLayoutEffect([viewMessages.length]) 不触发滚动。
+  //
+  // 必须 observe 一个**包裹所有内容的 inner wrapper**——之前 observe firstElementChild
+  // (= 第一条 message) 在新消息追加时其高度根本不变 → observer 不触发 → spinner 看着
+  // 像没追底。contentRef 指向 wrapper，它的高度=所有消息累加，无论是 list 长度变化还是
+  // 单 bubble 文字累积都会触发。
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
+    const scroller = scrollRef.current;
+    const content = contentRef.current;
+    if (!scroller || !content) return;
     const ro = new ResizeObserver(() => {
       if (wasAtBottomRef.current) {
-        el.scrollTop = el.scrollHeight;
+        scroller.scrollTop = scroller.scrollHeight;
       }
     });
-    // observe 直接子元素（实际承载内容的 div），它 scrollHeight 变化才触发
-    const inner = el.firstElementChild;
-    if (inner) ro.observe(inner);
+    ro.observe(content);
     return () => ro.disconnect();
   }, [currentSessionId]);
 
@@ -230,8 +234,9 @@ export function ConversationStreamV2(): JSX.Element {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className={`h-full overflow-auto px-4 py-3 space-y-3 ${fontClass}`}
+        className={`h-full overflow-auto px-4 py-3 ${fontClass}`}
       >
+        <div ref={contentRef} className="space-y-3">
         {viewMessages.length === 0 && (
           <div className="text-zinc-600 italic text-sm">
             Send a prompt below to start.
@@ -248,10 +253,10 @@ export function ConversationStreamV2(): JSX.Element {
           let inner: JSX.Element;
           switch (m.kind) {
             case 'user':
-              inner = <UserBubble content={m.content} />;
+              inner = <UserBubble content={m.content} sentAt={m.sentAt} />;
               break;
             case 'assistant_text':
-              inner = <AssistantBubble text={m.text} thinking={m.thinking} />;
+              inner = <AssistantBubble text={m.text} thinking={m.thinking} sentAt={m.sentAt} />;
               break;
             case 'system_notice':
               inner = <SystemNotice {...m} />;
@@ -272,6 +277,7 @@ export function ConversationStreamV2(): JSX.Element {
             </div>
           );
         })}
+        </div>
       </div>
 
       {/* P4a 搜索框 — 右上角浮窗 */}

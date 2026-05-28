@@ -138,6 +138,31 @@ export function registerSessionChannels(): void {
     // 自己 normalize；当前 SDK 版本 projectRoot filter 不严格——本层再过一道 canon
     // 比较兜底）。
     const merged = await kodaxHost.listMerged({ projectRoot: projectFilter });
+
+    // Persisted session 没有真运行时设置——磁盘上只 SDK lineage + gitRoot。先准备一份
+    // user-defaults 兜底，给 sidebar UI 占位用（避免显示 "mock" 让用户以为整个 SDK 是 mock）。
+    // loadKodaxUserDefaults 模块级缓存命中后零成本; providerConfigStore.load 自己缓存。
+    // 并行 await 两个 promise——它们彼此无依赖，并行版省一个 turn 调度 ms。
+    // tryResume 路径走相同 resolution，两边对齐，避免 UI 一闪即变。
+    let persistedProviderFallback = 'mock';
+    let persistedReasoningFallback: SessionMeta['reasoningMode'] = 'auto';
+    let persistedPermissionFallback: NonNullable<SessionMeta['permissionMode']> = 'accept-edits';
+    const [udResult, providerLoadResult] = await Promise.allSettled([
+      loadKodaxUserDefaults(),
+      providerConfigStore.load(),
+    ]);
+    if (udResult.status === 'fulfilled') {
+      const ud = udResult.value;
+      if (ud.provider) persistedProviderFallback = ud.provider;
+      if (ud.reasoningMode) persistedReasoningFallback = ud.reasoningMode;
+      if (ud.permissionMode) persistedPermissionFallback = ud.permissionMode;
+    }
+    // Space defaultProviderId 优先级高于 KodaX user defaults——用户在 Space 设过默认 provider
+    // 应该胜出；providerConfigStore.load 失败时保留 user-defaults / 'mock'。
+    if (providerLoadResult.status === 'fulfilled') {
+      const defaultId = providerConfigStore.getDefaultProviderId();
+      if (defaultId) persistedProviderFallback = defaultId;
+    }
     // persisted session 没有 lastActivityAt——用 createdAt 占位（同一时间精度排序）
     const withTs = merged
       .filter((m) => {
@@ -163,6 +188,10 @@ export function registerSessionChannels(): void {
       .sort((a, b) => b.sortKey - a.sortKey);
     const sessions: SessionMeta[] = withTs.map(({ item, sortKey }) => {
       if (item.kind === 'in-flight') {
+        // in-flight 没有 msgCount 字段（ManagedSession 不跟用户消息计数），dashboard
+        // 用 sessions[].msgCount ?? userMessagesBuffer.length 双源 fallback。
+        // model 是用户 /model 设的值（undefined = provider 默认），透出去让 dashboard
+        // 能按真 model 维度做 Favorite model 统计。
         return {
           sessionId: item.sessionId,
           projectRoot: item.projectRoot,
@@ -176,27 +205,29 @@ export function registerSessionChannels(): void {
           lastActivityAt: item.lastActivityAt,
           parentSessionId: item.parentSessionId,
           forkPointTurnIdx: item.forkPointTurnIdx,
+          model: item.model,
         };
       }
-      // persisted: 运行时设置用 schema default 占位（permissionMode/autoModeEngine 走 .default()）；
-      // provider/reasoningMode 没 default——schema 要求 → 给 'mock' 与 'auto' 占位。
+      // persisted: 运行时设置用 user-default 占位（Space defaultProviderId →
+      // ~/.kodax/config.json → 'mock' 兜底）。tryResume 用同样链路 resolve，
+      // 保证 sidebar 显示和真激活后的运行时设置一致——不会出现"点开 historical
+      // session 看着是 mock，点了发消息后 BottomBar 突然跳到 deepseek-v4-pro"
+      // 的视觉跳变。
       //
-      // TODO(F039 / v0.1.7) reviewer MEDIUM-1: 用户在 sidebar 点 historical session
-      // 触发"加载到内存"流程时会替换为真实运行时设置；在那之前 'mock' provider 占位
-      // 是 latent footgun（renderer 若直接拿来 setProvider 之类操作可能误路由）。
-      // 选项：换成 '__unloaded__' 之类 sentinel 让 schema 拒绝、强制 renderer 走
-      // activate flow 才能用这条 session。
+      // msgCount 直接透传 SDK summary 给的值——这是 dashboard 重启后 Messages 数
+      // 正确的关键（无需扫 jsonl 内容，SDK 已经 fast-path 缓存了 summary）。
       return {
         sessionId: item.sessionId,
         projectRoot: item.projectRoot ?? '/',
-        provider: 'mock',
-        reasoningMode: 'auto',
-        permissionMode: 'accept-edits',
+        provider: persistedProviderFallback,
+        reasoningMode: persistedReasoningFallback,
+        permissionMode: persistedPermissionFallback,
         autoModeEngine: 'llm',
         agentMode: 'ama',
         title: item.title,
         createdAt: sortKey,
         lastActivityAt: sortKey,
+        msgCount: item.msgCount,
       };
     });
     return { sessions };

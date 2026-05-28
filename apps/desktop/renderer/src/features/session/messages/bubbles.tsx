@@ -15,6 +15,22 @@ const NORMAL_HEAD_TAIL_LINES = 5;
 const EXTREME_LINE_THRESHOLD = 200;
 const EXTREME_HEAD_LINES = 5;
 
+/**
+ * 粗略估算 token 数——renderer 拿不到真 tokenizer，给个跟人类直觉对得上的近似：
+ *   - ASCII (英文 / 数字 / 标点)：每 4 chars ≈ 1 token（GPT/Claude BPE 经验值）
+ *   - 其他 (中文/日文/韩文/emoji 等)：每字符 ≈ 1 token（CJK 字符通常单独成 token）
+ * 误差通常在 ±20%，对 Thinking 段长度感知足够。
+ */
+function approxTokens(text: string): number {
+  let ascii = 0;
+  let nonAscii = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) < 128) ascii++;
+    else nonAscii++;
+  }
+  return Math.max(1, Math.round(ascii / 4 + nonAscii));
+}
+
 function isDiffLike(text: string): boolean {
   // 启发式：unified diff 必含 "@@ " hunk 头，或 >40% 行以 +/- 起头（排除 ---/+++ 头部
   // 与 "- " 这种 markdown bullet / "  - " yaml 列表项 → 通常列表也是 dash-space，但
@@ -72,14 +88,97 @@ function collapseLargeText(text: string): CollapseResult {
   };
 }
 
+// ---- Message footer (copy + relative time) ----
+//
+// 替代之前的 "✓ complete" 横条——视觉更轻，对每个 user/assistant message 都挂一个
+// 尾巴：[复制 icon] + "Xd ago"。hover bubble 时显示，非 hover 时 dim 或隐藏避免视觉
+// 噪音。Claude Desktop 同款风格。
+function MessageFooter({ text, sentAt }: { text: string; sentAt?: number }): JSX.Element {
+  const [copied, setCopied] = useState(false);
+
+  async function copyToClipboard(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // 极少数情况 clipboard API 不可用——静默失败，不打扰用户
+    }
+  }
+
+  const timeStr = sentAt !== undefined ? formatRelativeTime(sentAt) : null;
+
+  // 时间默认常驻显示（dim），copy 按钮 hover 时才浮出——这样用户不 hover 也能看到
+  // "X ago"，与 Claude Desktop 行为一致。
+  return (
+    <div className="mt-1 flex items-center gap-2 text-[10px]">
+      <button
+        type="button"
+        onClick={() => void copyToClipboard()}
+        className="flex items-center gap-1 text-zinc-600 hover:text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity"
+        title="Copy message"
+        aria-label="Copy message"
+      >
+        {copied ? (
+          <span className="text-emerald-400">✓ copied</span>
+        ) : (
+          <>
+            <span aria-hidden>⎘</span>
+            <span>copy</span>
+          </>
+        )}
+      </button>
+      {timeStr && (
+        <span
+          className="text-zinc-500"
+          title={new Date(sentAt!).toLocaleString()}
+        >
+          {timeStr}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 相对时间格式：~now / 5m ago / 2h ago / 3d ago / 2w ago / 4mo ago / 1y ago
+ * 跟 Claude Desktop 同款"短英文"风格，避免本地化里中英混杂。
+ */
+function formatRelativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  if (diff < 0) return 'just now';
+  const s = Math.floor(diff / 1000);
+  if (s < 30) return 'just now';
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  const w = Math.floor(d / 7);
+  if (w < 5) return `${w}w ago`;
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return `${mo}mo ago`;
+  const y = Math.floor(d / 365);
+  return `${y}y ago`;
+}
+
 // ---- User Bubble ----
 
-export function UserBubble({ content }: { content: string }): JSX.Element {
+export function UserBubble({
+  content,
+  sentAt,
+}: {
+  content: string;
+  sentAt?: number;
+}): JSX.Element {
   return (
-    <div className="flex justify-end">
+    <div className="group flex flex-col items-end">
       <div className="max-w-[80%] rounded-lg bg-blue-900/40 border border-blue-800/40 px-3 py-2 text-sm whitespace-pre-wrap">
         {content}
       </div>
+      <MessageFooter text={content} sentAt={sentAt} />
     </div>
   );
 }
@@ -89,13 +188,15 @@ export function UserBubble({ content }: { content: string }): JSX.Element {
 export function AssistantBubble({
   text,
   thinking,
+  sentAt,
 }: {
   text: string;
   thinking?: string;
+  sentAt?: number;
 }): JSX.Element {
   const [showThinking, setShowThinking] = useState(false);
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="group flex flex-col gap-1.5">
       {thinking !== undefined && (
         <div>
           <button
@@ -103,7 +204,7 @@ export function AssistantBubble({
             onClick={() => setShowThinking((v) => !v)}
             className="text-[11px] text-purple-400 hover:text-purple-300 font-mono"
           >
-            {showThinking ? '▼' : '▶'} thinking ({thinking.length} chars)
+            {showThinking ? '▼' : '▶'} Thinking (~{approxTokens(thinking)} tokens)
           </button>
           {showThinking && (
             <div className="mt-1 ml-3 pl-2 border-l-2 border-purple-900/60 text-purple-300/80 text-xs whitespace-pre-wrap">
@@ -115,6 +216,7 @@ export function AssistantBubble({
       <div className="text-sm text-zinc-100">
         {text.length > 0 ? <Markdown content={text} /> : <span className="text-zinc-600 italic">…</span>}
       </div>
+      {text.length > 0 && <MessageFooter text={text} sentAt={sentAt} />}
     </div>
   );
 }
@@ -254,7 +356,7 @@ function summarizeInput(input?: Record<string, unknown>): string {
   return `${k}: ${String(v).slice(0, 60)}`;
 }
 
-// ---- System Notice (iteration_end / complete / error) ----
+// ---- System Notice (iteration_end / error) ----
 
 export function SystemNotice({
   variant,
@@ -263,9 +365,7 @@ export function SystemNotice({
   const color =
     variant === 'iteration'
       ? 'text-amber-400 border-amber-900/40'
-      : variant === 'complete'
-        ? 'text-emerald-400 border-emerald-900/40'
-        : 'text-red-400 border-red-900/40';
+      : 'text-red-400 border-red-900/40';
   return (
     <div className={`text-[10px] font-mono text-center py-1 border-y ${color}`}>{text}</div>
   );

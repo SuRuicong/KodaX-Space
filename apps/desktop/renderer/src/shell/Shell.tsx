@@ -39,6 +39,12 @@ import { useAppStore } from '../store/appStore.js';
 
 export type Mode = 'coder' | 'partner';
 
+// 模块级 set：哪些 session 已从 SDK 拉过 history 回填 store。
+// 之前用 useRef 在 Shell component 里——HMR 重挂 / Shell 卸载重挂都会丢，导致 fork/rewind
+// 后 component 重新 mount 时又跑一次 session.history IPC（缓存现在帮忙省 jsonl 读，但
+// store 复写 events 是真实成本）。挪到 module 级 process 级共享，跨 HMR 仍保留。
+const restoredSessionIds = new Set<string>();
+
 export function Shell(): JSX.Element {
   // Mode：alpha.1 阶段只 Coder 可用，Partner 灰；ADR-004 v2 决策
   const [mode, setMode] = useState<Mode>('coder');
@@ -73,19 +79,18 @@ export function Shell(): JSX.Element {
   // 历史 session 切换时按需从 KodaX SDK 拉持久化对话内容回填 store。
   // events / userMessages buffer 是 in-memory；重启 / 切到 new session 后空 → 调
   // session.history → 拍平 messages 喂回 store，让 ConversationStreamV2 能渲染。
-  // 仅当 buffer 真的为空时拉，避免覆盖 in-flight 会话已有 events（reviewer 边界）。
-  const restoredSessionsRef = useRef<Set<string>>(new Set());
+  // 模块级 restoredSessionIds 跨 HMR / Shell remount 保留——见文件顶部。
+  //
+  // **race condition 修复 (2026-05)**：用 prependSessionHistory 原子前置 historical，
+  // 避免 IPC 等待期用户已经发了新消息时旧逻辑(逐条 appendUserMessage)把 user array
+  // 顺序打乱(新消息 Q3 跑到 historical U1/U2 前面 → composeMessages 按 index 配对全错位)。
+  // 现在哪怕 race 发生,前置后变 [hist..., new]; 顺序与 composeMessages 一致。
   useEffect(() => {
     const sid = currentSessionIdForPlan;
     if (!sid || !window.kodaxSpace) return;
-    if (restoredSessionsRef.current.has(sid)) return; // 已拉过本会话生命周期
-    const state = useAppStore.getState();
-    const events = state.eventsBySession[sid] ?? [];
-    const userMsgs = state.userMessagesBySession[sid] ?? [];
-    if (events.length > 0 || userMsgs.length > 0) {
-      restoredSessionsRef.current.add(sid);
-      return; // in-flight / 已有数据 → 不打扰
-    }
+    if (restoredSessionIds.has(sid)) return; // 已拉过
+    // 注意:不再在 IPC 调用前 short-circuit "buffer 非空"——那是旧版兜底,现在 prepend
+    // 是原子的,即使 buffer 已经有 in-flight 会话也能正确插入历史在前面。
     let cancelled = false;
     void window.kodaxSpace
       .invoke('session.history', { sessionId: sid })
@@ -93,26 +98,17 @@ export function Shell(): JSX.Element {
         if (cancelled || !r.ok) return;
         const items = r.data.items;
         if (items.length === 0) {
-          restoredSessionsRef.current.add(sid);
+          restoredSessionIds.add(sid);
           return;
         }
         const store = useAppStore.getState();
-        for (const item of items) {
-          if (item.kind === 'user') {
-            store.appendUserMessage(sid, item.content);
-          } else {
-            // assistant：合成 text_delta + 可选 thinking_delta + session_complete，
-            // 让 composeMessages 的 segment 划分能正确拼出"user 消息 + assistant 回复"对
-            if (item.thinking !== undefined && item.thinking.length > 0) {
-              store.appendEvent({ kind: 'thinking_delta', sessionId: sid, text: item.thinking });
-            }
-            if (item.text.length > 0) {
-              store.appendEvent({ kind: 'text_delta', sessionId: sid, text: item.text });
-            }
-            store.appendEvent({ kind: 'session_complete', sessionId: sid });
-          }
-        }
-        restoredSessionsRef.current.add(sid);
+        // history fallback timestamp：用 session.createdAt（SDK 落盘时刻），让 footer
+        // 显示 "Xd ago" 反映 session 创建时间而不是"恢复瞬间 just now"。SDK 未来给
+        // per-message timestamp 时再走 item.sentAt。
+        const sess = store.sessions.find((s) => s.sessionId === sid);
+        const fallbackTs = sess?.createdAt ?? Date.now();
+        store.prependSessionHistory(sid, items, fallbackTs);
+        restoredSessionIds.add(sid);
       });
     return () => {
       cancelled = true;

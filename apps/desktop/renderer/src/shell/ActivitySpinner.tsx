@@ -30,7 +30,11 @@ interface ActivitySnapshot {
   readonly toolPath?: string;
 }
 
-function snapshotFromEvents(events: readonly SessionEvent[], pending: boolean): ActivitySnapshot {
+function snapshotFromEvents(
+  events: readonly SessionEvent[],
+  pending: boolean,
+  managedPhase: string | undefined,
+): ActivitySnapshot {
   if (events.length === 0) {
     // pending 但还没事件 → 显示 "Sending…" 占位，让 spinner 在 invoke 瞬间就亮
     return pending
@@ -112,6 +116,14 @@ function snapshotFromEvents(events: readonly SessionEvent[], pending: boolean): 
     }
   }
 
+  // FEATURE_184/F193 — Sidecar Verifier 在 Worker 文字结束后再跑一次 LLM 评判
+  // (~3-10s 尾延迟)。SDK 通过 onManagedTaskStatus 发 phase='verifying'，验证结束
+  // 后转回 phase='worker'。覆盖 status，避免 spinner 卡在 "Writing…" 看着像没反应。
+  if (managedPhase === 'verifying') {
+    status = 'Verifying…';
+    toolPath = undefined;
+  }
+
   return { streaming: true, status, iter, tokens, startedAt, toolPath };
 }
 
@@ -159,8 +171,11 @@ export function ActivitySpinner(): JSX.Element | null {
   const pending = useAppStore((s) =>
     currentSessionId ? Boolean(s.pendingSendBySession[currentSessionId]) : false,
   );
+  const managedPhase = useAppStore((s) =>
+    currentSessionId ? s.managedTaskStatusBySession[currentSessionId]?.phase : undefined,
+  );
 
-  const snap = snapshotFromEvents(events, pending);
+  const snap = snapshotFromEvents(events, pending, managedPhase);
   const [frame, setFrame] = useState(0);
   // elapsed 用 1s 心跳，独立于 80ms spinner 帧，避免重复 setState
   const [, forceTick] = useState(0);
@@ -228,5 +243,8 @@ export function useIsStreaming(): boolean {
   const pending = useAppStore((s) =>
     currentSessionId ? Boolean(s.pendingSendBySession[currentSessionId]) : false,
   );
-  return snapshotFromEvents(events, pending).streaming;
+  const managedPhase = useAppStore((s) =>
+    currentSessionId ? s.managedTaskStatusBySession[currentSessionId]?.phase : undefined,
+  );
+  return snapshotFromEvents(events, pending, managedPhase).streaming;
 }

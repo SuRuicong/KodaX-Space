@@ -1,88 +1,174 @@
-// WelcomeDashboard — alpha.1
+// WelcomeDashboard — alpha.1 → v0.1.x
 //
-// Claude Desktop 截图 6 同款"无 session"首屏：
+// 无 session 首屏的"KodaX-Space 使用统计" dashboard，对标 Claude Desktop 的 "What's up
+// next" 卡片但数据全本地 — sessions / events / userMessages 累计统计 + 7×N 活动热力图。
 //
-//   ✱ What's up next, <user>?
+// 数据来源：renderer 本地 store（不增 IPC）
+//   - Sessions count       = filtered sessions.length
+//   - Messages             = Σ userMessagesBySession[sid].length
+//   - Tokens               = 每个 session 最后一次 iteration_end.tokenCount 累加（无则用近似）
+//   - Active days          = sessions[].lastActivityAt 截天去重数
+//   - Current streak       = 从今天倒数连续 active day
+//   - Longest streak       = 历史最长连续 active day 段
+//   - Peak hour            = lastActivityAt 小时众数
+//   - Favorite model       = sessions[].model 众数（无 model 退回 provider）
+//   - Heatmap              = 过去 91 天按日 message count 4 档热度（GitHub 风格 7×13 网格）
 //
-//   ┌────────────────────────────────────────────────┐
-//   │ Overview  Models                  All 30d 7d   │
-//   │ ──────────────────────────────────────────     │
-//   │  Sessions     Messages    Tokens     Active    │
-//   │  267           301k        213M       56d      │
-//   │  Streak        Longest     Peak       Fav      │
-//   │  10d           25d         9 AM       Opus 4.7 │
-//   │                                                │
-//   │  ▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢▢       │  ← heatmap
-//   │  ...                                           │
-//   │  You've used ~3449× more tokens than ...       │
-//   └────────────────────────────────────────────────┘
-//
-// 数据来源：renderer 本地 (sessions + 当前 currentProjectPath 下 lastActivityAt + events)
-//   - Sessions count = sessions.length
-//   - Messages = Σ userMessagesBySession 长度 (用户已发条数)
-//   - Tokens = 取每个 session 最后一次 iteration_end 的 tokenCount 累加 (近似)
-//   - Active days = 把 sessions[].lastActivityAt 按日截断后去重数
-//   - Streak = 从今天往回数连续有 active day 的天数
-//   - Peak hour = 最常出现 lastActivityAt 的小时
-//   - Favorite model = sessions[].provider 众数
-//   - Heatmap = 按日 (今天 - 35 天) 截断后计数 → 4 档颜色
-//
-// 所有派生量都是 useMemo cached；alpha.1 不去 main 端取，避免 IPC。
-// 数据少时（< 10 sessions）也照常显示，0 sessions 时显示 placeholder。
+// Time range tab（All / 30d / 7d）按 lastActivityAt 截断 sessions。
+// Models tab 列各 model 的对话占比。
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { ProjectGitStatsDaily } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
+
+type Range = 'all' | '30d' | '7d';
+type View = 'overview' | 'models' | 'project';
+
+interface GitStats {
+  isGitRepo: boolean;
+  commits: number;
+  filesChanged: number;
+  linesAdded: number;
+  linesDeleted: number;
+  contributors: number;
+  dailyCommits: readonly ProjectGitStatsDaily[];
+  currentBranch: string | null;
+}
+
+const RANGE_DAYS: Record<Range, number | null> = {
+  all: null,
+  '30d': 30,
+  '7d': 7,
+};
+
+function dayKey(d: Date): string {
+  // YYYY-MM-DD (local time，跟用户实际感知一致，不用 UTC 切错日期)
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 export function WelcomeDashboard(): JSX.Element {
   const sessions = useAppStore((s) => s.sessions);
   const userMessagesBySession = useAppStore((s) => s.userMessagesBySession);
-  const eventsBySession = useAppStore((s) => s.eventsBySession);
+  // tokensBySession 是派生稳定表 (只在 iteration_end / session_complete 时变)，避免订阅
+  // raw eventsBySession 让 dashboard 每个 text_delta 都重算 stats。
+  const tokensBySession = useAppStore((s) => s.tokensBySession);
   const providers = useAppStore((s) => s.providers);
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
 
+  const [range, setRange] = useState<Range>('all');
+  const [view, setView] = useState<View>('overview');
+
+  // Git stats — 切 project 或 range 都重拉；main 端有 5s mtime cache 抗连点。
+  const [gitStats, setGitStats] = useState<GitStats | null>(null);
+  const [gitLoading, setGitLoading] = useState(false);
+  useEffect(() => {
+    if (!currentProjectPath || !window.kodaxSpace) {
+      setGitStats(null);
+      return;
+    }
+    let cancelled = false;
+    setGitLoading(true);
+    const sinceDays = range === 'all' ? null : range === '30d' ? 30 : 7;
+    void window.kodaxSpace
+      .invoke('project.gitStats', { projectRoot: currentProjectPath, sinceDays })
+      .then((r) => {
+        if (cancelled) return;
+        if (r.ok) setGitStats(r.data);
+        else setGitStats(null);
+      })
+      .finally(() => {
+        if (!cancelled) setGitLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentProjectPath, range]);
+
+  // 时间范围过滤
+  const filteredSessions = useMemo(() => {
+    const days = RANGE_DAYS[range];
+    if (days === null) return sessions;
+    const cutoff = Date.now() - days * 24 * 3600 * 1000;
+    return sessions.filter((s) => s.lastActivityAt >= cutoff);
+  }, [sessions, range]);
+
   const stats = useMemo(() => {
-    // 聚合
     let messages = 0;
     let tokens = 0;
     const activeDays = new Set<string>();
     const hourCount = new Map<number, number>();
-    const providerCount = new Map<string, number>();
+    const modelCount = new Map<string, number>();
+    const messagesPerDay = new Map<string, number>();
+    const modelTokens = new Map<string, number>();
+    const modelMessages = new Map<string, number>();
+    const modelToProvider = new Map<string, string>();
 
-    for (const s of sessions) {
-      messages += userMessagesBySession[s.sessionId]?.length ?? 0;
-      const evs = eventsBySession[s.sessionId] ?? [];
-      // 最后一次 iteration_end 的 tokenCount
-      for (let i = evs.length - 1; i >= 0; i--) {
-        const ev = evs[i];
-        if (ev.kind === 'iteration_end') {
-          tokens += ev.tokenCount;
-          break;
-        }
+    for (const s of filteredSessions) {
+      const userMsgs = userMessagesBySession[s.sessionId] ?? [];
+      // 优先用 SDK summary 透出的 msgCount（重启后仍准确）；in-flight session 没有
+      // msgCount 字段 → 退回 in-memory buffer 长度。两路在 session 切到 lazy-restore
+      // 那一瞬间会有 1 帧差异，对统计无感。
+      const sessionMessages = s.msgCount ?? userMsgs.length;
+      messages += sessionMessages;
+
+      // tokens 三级 fallback：
+      //   1. tokensBySession (派生稳定表): iteration_end 或 session_complete 时已经计算好
+      //   2. msgCount × 1500：从未打开过的 session, SDK summary 给的 msgCount 估算
+      //   3. 0：连 msgCount 都没有 (in-flight session 第一条 prompt 之前)
+      // **不再扫 raw events buffer**——之前订阅 eventsBySession 让 dashboard 在每个
+      // text_delta 时全量重算 stats (O(sessions × events))，背景流式时 30+ rerenders/sec.
+      // 现在订阅 tokensBySession 后只在 turn 结束时更新，几乎不抖动。
+      const sessionTokenInfo = tokensBySession[s.sessionId];
+      let sessionTokens = sessionTokenInfo?.tokens ?? 0;
+      if (sessionTokens === 0 && (s.msgCount ?? 0) > 0) {
+        sessionTokens = (s.msgCount ?? 0) * 1500;
       }
+      tokens += sessionTokens;
+
       const d = new Date(s.lastActivityAt);
-      activeDays.add(d.toISOString().slice(0, 10));
+      const k = dayKey(d);
+      activeDays.add(k);
       hourCount.set(d.getHours(), (hourCount.get(d.getHours()) ?? 0) + 1);
-      providerCount.set(s.provider, (providerCount.get(s.provider) ?? 0) + 1);
+      // 用 sessionMessages 让 heatmap 在 dashboard 启动后立即准确（不依赖 buffer
+      // restore）。近似：一个 session 的全部消息算到 lastActivityAt 当天——跨天对话
+      // 会被分到尾天，但对总热度感知够用。
+      messagesPerDay.set(k, (messagesPerDay.get(k) ?? 0) + sessionMessages);
+
+      // 模型偏好：三级 fallback——
+      //   1. s.model：用户 /model 设过；in-flight session 透出来的（最准确）
+      //   2. provider.defaultModel：persisted session 没存 model，但每个 provider 都
+      //      有 default model alias（"ark-coding" 默认 "deepseek-v4-pro"）作合理猜测
+      //   3. s.provider：连 provider 表都没找到时，退回 provider id 字符串
+      const providerInfo = providers.find((p) => p.id === s.provider);
+      const modelKey = s.model ?? providerInfo?.defaultModel ?? s.provider;
+      modelCount.set(modelKey, (modelCount.get(modelKey) ?? 0) + 1);
+      modelTokens.set(modelKey, (modelTokens.get(modelKey) ?? 0) + sessionTokens);
+      modelMessages.set(modelKey, (modelMessages.get(modelKey) ?? 0) + sessionMessages);
+      // 反查表：modelKey → 它的 provider（让 favorite 显示能找到 provider displayName）
+      modelToProvider.set(modelKey, s.provider);
     }
 
-    // Streak：从今天往回数有 active 的连续天数
+    // Streak（基于当前 range 内的 activeDays）
     const today = new Date();
     let streak = 0;
     for (let i = 0; i < 365; i++) {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
-      if (activeDays.has(key)) streak++;
+      if (activeDays.has(dayKey(d))) streak++;
       else break;
     }
-    // Longest streak：扫历史 active day set 找最长连续
+    // Longest streak
     const sortedDays = Array.from(activeDays).sort();
     let longest = 0;
     let run = 0;
     let prev: string | null = null;
     for (const day of sortedDays) {
-      if (prev === null) { run = 1; }
-      else {
+      if (prev === null) {
+        run = 1;
+      } else {
         const prevDate = new Date(prev);
         const curDate = new Date(day);
         const diff = Math.round((curDate.getTime() - prevDate.getTime()) / (24 * 3600 * 1000));
@@ -96,129 +182,568 @@ export function WelcomeDashboard(): JSX.Element {
     let peakHour = 0;
     let peakCount = 0;
     for (const [h, c] of hourCount) {
-      if (c > peakCount) { peakHour = h; peakCount = c; }
+      if (c > peakCount) {
+        peakHour = h;
+        peakCount = c;
+      }
     }
-    const peakHourStr = peakCount === 0 ? '—' : peakHour === 0 ? '12 AM' : peakHour < 12 ? `${peakHour} AM` : peakHour === 12 ? '12 PM' : `${peakHour - 12} PM`;
+    const peakHourStr =
+      peakCount === 0
+        ? '—'
+        : peakHour === 0
+          ? '12 AM'
+          : peakHour < 12
+            ? `${peakHour} AM`
+            : peakHour === 12
+              ? '12 PM'
+              : `${peakHour - 12} PM`;
 
-    // Favorite provider
-    let favProvider = '—';
+    // Favorite model
+    let favModel = '—';
     let favCount = 0;
-    for (const [id, c] of providerCount) {
-      if (c > favCount) { favProvider = id; favCount = c; }
+    for (const [id, c] of modelCount) {
+      if (c > favCount) {
+        favModel = id;
+        favCount = c;
+      }
     }
-    const favProviderLabel = providers.find((p) => p.id === favProvider)?.displayName ?? favProvider;
+    // favModel 可能是 model alias 或 provider id（取决于 SessionMeta.model 字段是否有值）
+    const favProviderId = modelToProvider.get(favModel);
+    // 真有 model 字段时 favModel !== favProviderId（前者类似 'deepseek-v4-pro'，后者 'ark-coding'）
+    const favIsRealModel = favProviderId !== undefined && favModel !== favProviderId;
+
+    // Models breakdown
+    const modelBreakdown = Array.from(modelCount.keys())
+      .map((id) => ({
+        id,
+        providerId: modelToProvider.get(id) ?? id,
+        sessions: modelCount.get(id) ?? 0,
+        messages: modelMessages.get(id) ?? 0,
+        tokens: modelTokens.get(id) ?? 0,
+      }))
+      .sort((a, b) => b.tokens - a.tokens || b.sessions - a.sessions);
 
     return {
-      sessions: sessions.length,
+      sessions: filteredSessions.length,
       messages,
       tokens,
       activeDays: activeDays.size,
       streak,
       longest,
       peakHourStr,
-      favProviderLabel,
+      favModel,
+      favProviderId,
+      favIsRealModel,
       activeDaysSet: activeDays,
+      messagesPerDay,
+      modelBreakdown,
     };
-  }, [sessions, userMessagesBySession, eventsBySession, providers]);
+  }, [filteredSessions, userMessagesBySession, tokensBySession, providers]);
 
-  // 用户名：尝试从 currentProjectPath 末尾抓最后一段；fallback "there"
+  // 用户名：从项目路径末尾 segment 抓
   const userName = useMemo(() => {
     if (!currentProjectPath) return 'there';
     const segs = currentProjectPath.split(/[\\/]/).filter(Boolean);
     return segs[segs.length - 1] ?? 'there';
   }, [currentProjectPath]);
 
-  // Heatmap：过去 35 天 × 1 行（简化），每天显示一个格子
+  // Heatmap：固定 7×26 网格（~6 个月），行=weekday (周日→周六)，列=周
+  // 计算：每格按"距今天 N 天"反向定位；今天放在最右列对应 weekday 行；今天之后的
+  // weekday（同列下方位置）填 null 作 trailing pad——保证严格 26 列，不再因 leading-pad
+  // 让总长度对 7 取余溢出到第 27 列。
   const heatmap = useMemo(() => {
-    const out: { date: string; count: number }[] = [];
     const today = new Date();
-    for (let i = 34; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
-      // 用 active 与否当 count（细化可在 sessions 里累加）
-      out.push({ date: key, count: stats.activeDaysSet.has(key) ? 1 : 0 });
+    const todayWeekday = today.getDay(); // 0 = Sunday
+    const TOTAL_WEEKS = 26;
+    const cols: (HeatmapCell | null)[][] = [];
+    for (let ci = 0; ci < TOTAL_WEEKS; ci++) {
+      const col: (HeatmapCell | null)[] = [];
+      const weeksFromLast = TOTAL_WEEKS - 1 - ci;
+      for (let r = 0; r < 7; r++) {
+        // r=0 是 Sunday；今天在最右列 row=todayWeekday 的位置
+        const daysFromToday = weeksFromLast * 7 + (todayWeekday - r);
+        if (daysFromToday < 0) {
+          // "今天之后"的 weekday — trailing pad
+          col.push(null);
+        } else {
+          const d = new Date(today);
+          d.setDate(today.getDate() - daysFromToday);
+          const key = dayKey(d);
+          const count = stats.messagesPerDay.get(key) ?? 0;
+          const level: 0 | 1 | 2 | 3 | 4 =
+            count === 0 ? 0 : count <= 2 ? 1 : count <= 5 ? 2 : count <= 10 ? 3 : 4;
+          col.push({ date: key, count, level });
+        }
+      }
+      cols.push(col);
     }
-    return out;
-  }, [stats.activeDaysSet]);
+    return cols;
+  }, [stats.messagesPerDay]);
 
-  // 一句话比喻：tokens / gatsby 词数 (~50k tokens)
-  const gatsbyMul = stats.tokens > 0 ? Math.round(stats.tokens / 50_000) : 0;
+  // tokens 比喻：Dune 全本 ~200k tokens
+  const duneMul = stats.tokens > 0 ? Math.max(1, Math.round(stats.tokens / 200_000)) : 0;
+
+  // Favorite model 渲染信息：provider displayName + 可选 model alias 分两行显示
+  const favoriteRender = useMemo(() => {
+    if (stats.favModel === '—') return { providerLabel: '—', modelLabel: null as string | null };
+    const providerId = stats.favProviderId ?? stats.favModel;
+    const p = providers.find((px) => px.id === providerId);
+    const providerLabel = p?.displayName ?? providerId;
+    const modelLabel = stats.favIsRealModel ? stats.favModel : null;
+    return { providerLabel, modelLabel };
+  }, [stats.favModel, stats.favProviderId, stats.favIsRealModel, providers]);
 
   return (
     <div className="flex-1 overflow-auto px-6 py-10 flex flex-col items-center">
       {/* 大标题 */}
       <h1 className="text-2xl text-zinc-100 mb-8 flex items-center gap-2">
         <span className="text-amber-400" aria-hidden>✱</span>
-        What's up next, <span className="font-semibold">{userName}</span>?
+        What&apos;s up next, <span className="font-semibold">{userName}</span>?
       </h1>
 
       {/* Overview 卡 */}
       <div className="w-full max-w-3xl bg-zinc-900/60 border border-zinc-800 rounded-lg p-5">
-        {/* Tab + 时间范围 */}
+        {/* View tab + 时间范围 */}
         <div className="flex justify-between items-center mb-4 text-xs">
-          <div className="flex gap-3">
-            <span className="text-zinc-100 border-b border-zinc-100 pb-0.5">Overview</span>
-            <span className="text-zinc-500">Models</span>
+          <div className="flex gap-1">
+            <TabButton active={view === 'overview'} onClick={() => setView('overview')} label="Overview" />
+            <TabButton active={view === 'models'} onClick={() => setView('models')} label="Models" />
+            <TabButton active={view === 'project'} onClick={() => setView('project')} label="Project" />
           </div>
-          <div className="flex gap-2 text-zinc-500">
-            <span className="text-zinc-100">All</span>
-            <span>30d</span>
-            <span>7d</span>
+          <div className="flex gap-1">
+            <RangeButton active={range === 'all'} onClick={() => setRange('all')} label="All" />
+            <RangeButton active={range === '30d'} onClick={() => setRange('30d')} label="30d" />
+            <RangeButton active={range === '7d'} onClick={() => setRange('7d')} label="7d" />
           </div>
         </div>
 
-        {/* 8 stats */}
-        <div className="grid grid-cols-4 gap-x-6 gap-y-4 mb-6">
-          <StatCell label="Sessions" value={formatNum(stats.sessions)} />
-          <StatCell label="Messages" value={formatNum(stats.messages)} />
-          <StatCell label="Total tokens" value={formatTokensBig(stats.tokens)} />
-          <StatCell label="Active days" value={String(stats.activeDays)} />
-          <StatCell label="Current streak" value={`${stats.streak}d`} />
-          <StatCell label="Longest streak" value={`${stats.longest}d`} />
-          <StatCell label="Peak hour" value={stats.peakHourStr} />
-          <StatCell label="Favorite model" value={stats.favProviderLabel} truncate />
-        </div>
-
-        {/* Heatmap（35 天单行） */}
-        <div className="mb-3">
-          <div className="flex gap-0.5 flex-wrap">
-            {heatmap.map((d) => (
-              <div
-                key={d.date}
-                className={`w-3.5 h-3.5 rounded-sm ${
-                  d.count === 0 ? 'bg-zinc-800/50' : 'bg-blue-500'
-                }`}
-                title={`${d.date} · ${d.count > 0 ? 'active' : 'no activity'}`}
+        {view === 'overview' ? (
+          <>
+            {/* Stats — 4 列 × 2 行布局；cells 等宽撑满父容器，与 heatmap 父宽对齐
+                Favorite model 占第 8 cell（col-span-1）但允许内容 wrap 2-3 行。 */}
+            <div className="grid grid-cols-4 gap-x-4 gap-y-4 mb-6">
+              <StatCell label="Sessions" value={formatNum(stats.sessions)} />
+              <StatCell label="Messages" value={formatNum(stats.messages)} />
+              <StatCell label="Total tokens" value={formatTokensBig(stats.tokens)} />
+              <StatCell label="Active days" value={String(stats.activeDays)} />
+              <StatCell label="Current streak" value={`${stats.streak}d`} />
+              <StatCell label="Longest streak" value={`${stats.longest}d`} />
+              <StatCell label="Peak hour" value={stats.peakHourStr} />
+              <FavoriteModelCell
+                providerLabel={favoriteRender.providerLabel}
+                modelLabel={favoriteRender.modelLabel}
+                sessions={stats.modelBreakdown[0]?.sessions ?? 0}
               />
-            ))}
-          </div>
-        </div>
+            </div>
 
-        {/* 一句话 */}
-        {gatsbyMul > 0 && (
-          <div className="text-xs text-zinc-500">
-            You've used ~{gatsbyMul}× more tokens than The Great Gatsby.
-          </div>
-        )}
-        {stats.sessions === 0 && (
-          <div className="text-xs text-zinc-500 italic">
-            No sessions yet — type below to start one.
-          </div>
+            {/* Heatmap：7×13 网格 + weekday + 月份标签 + hover + 图例 */}
+            <Heatmap cols={heatmap} />
+
+            {/* 一句话 */}
+            {duneMul > 0 ? (
+              <div className="text-xs text-zinc-500">
+                You&apos;ve used ~{duneMul}× more tokens than Dune (full novel).
+              </div>
+            ) : stats.sessions === 0 ? (
+              <div className="text-xs text-zinc-500 italic">
+                No sessions yet — type below to start one.
+              </div>
+            ) : (
+              <div className="text-xs text-zinc-500 italic">
+                Send a few messages to see token comparisons.
+              </div>
+            )}
+          </>
+        ) : view === 'models' ? (
+          <ModelsView breakdown={stats.modelBreakdown} providers={providers} />
+        ) : (
+          <ProjectView
+            gitStats={gitStats}
+            loading={gitLoading}
+            projectRoot={currentProjectPath}
+          />
         )}
       </div>
 
-      {/* 像素狗 (alpha.1 简版 — 用 emoji 代替) */}
+      {/* 像素狗占位 */}
       <div className="mt-8 text-2xl select-none" aria-hidden>🐕</div>
     </div>
   );
 }
 
-function StatCell({ label, value, truncate }: { label: string; value: string; truncate?: boolean }): JSX.Element {
+// 5 档梯度——更明显的台阶差，让稀疏数据也能看出"活跃 vs 极度活跃"层次。
+// 0 用极淡 fill（不是全暗），让网格本身可读；1→4 蓝色从深到浅渐变
+const LEVEL_BG: Record<0 | 1 | 2 | 3 | 4, string> = {
+  0: 'bg-zinc-800/40',
+  1: 'bg-blue-900',
+  2: 'bg-blue-700',
+  3: 'bg-blue-500',
+  4: 'bg-blue-300',
+};
+
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+
+interface HeatmapCell {
+  readonly date: string;
+  readonly count: number;
+  readonly level: 0 | 1 | 2 | 3 | 4;
+}
+
+/**
+ * 7×N 网格热力图：
+ *   - CSS grid `repeat(N, 1fr)` + `aspect-square`，cells 自适应撑满父容器宽度
+ *   - 顶部月份标签（看到 month 分界）
+ *   - 每格 hover 显示 tooltip + ring 高亮
+ *   - 右下 "Less ▢▢▢▢▢ More" 色阶图例
+ *
+ * 不带左侧 weekday 标签——为了让 heatmap 主体跟上面 stats grid 父容器左缘精确对齐
+ * （避免 weekday label 占额外 ~28px 把 heatmap 主体推到右侧造成上下错位）。
+ * GitHub-style 网格用户通常熟悉"行=weekday 周日→周六、列=week"，无标签也可读。
+ */
+function Heatmap({ cols }: { cols: ReadonlyArray<ReadonlyArray<HeatmapCell | null>> }): JSX.Element {
+  // 每列对应的月份：取列中第一个非空 cell 的月份；用于决定哪些列显示月标签
+  const monthLabels: ({ month: string; key: number } | null)[] = cols.map((col, ci) => {
+    const firstCell = col.find((c): c is HeatmapCell => c !== null);
+    if (!firstCell) return null;
+    const d = new Date(firstCell.date);
+    const monthIdx = d.getMonth();
+    if (ci === 0) return { month: MONTH_SHORT[monthIdx], key: monthIdx };
+    const prevCol = cols[ci - 1];
+    const prevFirst = prevCol.find((c): c is HeatmapCell => c !== null);
+    if (!prevFirst) return { month: MONTH_SHORT[monthIdx], key: monthIdx };
+    const prevMonth = new Date(prevFirst.date).getMonth();
+    return prevMonth !== monthIdx ? { month: MONTH_SHORT[monthIdx], key: monthIdx } : null;
+  });
+
+  const gridCols = cols.length;
+  const gridStyle = {
+    gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
+  } as const;
+
+  return (
+    <div className="mb-3 flex flex-col gap-1">
+      {/* 顶部月份标签：跟网格用同样 grid template 让 label 对齐到对应列 */}
+      <div className="grid gap-1 h-[14px]" style={gridStyle}>
+        {monthLabels.map((m, ci) => (
+          <div
+            key={ci}
+            className="text-[10px] text-zinc-500 font-mono leading-none whitespace-nowrap overflow-visible"
+          >
+            {m?.month ?? ''}
+          </div>
+        ))}
+      </div>
+
+      {/* 网格本体 — grid 列等宽自适应；每格 aspect-square 保持正方形 */}
+      <div className="grid gap-1" style={gridStyle}>
+        {cols.map((col, ci) => (
+          <div key={ci} className="flex flex-col gap-1">
+            {col.map((cell, ri) =>
+              cell === null ? (
+                <div key={ri} className="aspect-square" aria-hidden />
+              ) : (
+                <div
+                  key={cell.date}
+                  className={`aspect-square rounded-sm transition-all hover:ring-1 hover:ring-zinc-400 hover:scale-110 cursor-default ${LEVEL_BG[cell.level]}`}
+                  title={`${cell.date} · ${cell.count} message${cell.count === 1 ? '' : 's'}`}
+                />
+              ),
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* 图例 — 靠右贴 heatmap 右缘 */}
+      <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-zinc-500 font-mono justify-end">
+        <span>Less</span>
+        <div className={`w-3 h-3 rounded-sm ${LEVEL_BG[0]}`} aria-hidden />
+        <div className={`w-3 h-3 rounded-sm ${LEVEL_BG[1]}`} aria-hidden />
+        <div className={`w-3 h-3 rounded-sm ${LEVEL_BG[2]}`} aria-hidden />
+        <div className={`w-3 h-3 rounded-sm ${LEVEL_BG[3]}`} aria-hidden />
+        <div className={`w-3 h-3 rounded-sm ${LEVEL_BG[4]}`} aria-hidden />
+        <span>More</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Favorite model 专用 cell — col-span-2 给它 2 倍宽度，长 displayName "Volcengine
+ * Ark Coding" 在 base 字号下能完整显示一行。下方第二行用 dim 小字显示 "N sessions"
+ * 让 cell 信息更密、视觉更平衡（其它 cell 都是单数字，这格是"+ 类别 + 量"两层信息）。
+ *
+ * `col-span-2` + `min-w-0` 是组合关键：让 grid cell 实际占 2 倍空间且允许内部 truncate。
+ */
+function FavoriteModelCell({
+  providerLabel,
+  modelLabel,
+  sessions,
+}: {
+  providerLabel: string;
+  modelLabel: string | null;
+  sessions: number;
+}): JSX.Element {
+  // 单 grid cell（col-span-1 = 父宽 1/4 ≈ 160px）;
+  // 主名用 text-sm 字号 + break-words 允许多行 wrap，不再 truncate 切名字；
+  // 副名 dim 一档 + 多行（provider · sessions 计数）。
+  return (
+    <div className="min-w-0">
+      <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-0.5">
+        Favorite model
+      </div>
+      <div className="flex items-start gap-1.5 min-w-0">
+        <span
+          className="w-1.5 h-1.5 rounded-full bg-purple-400 flex-shrink-0 mt-1.5"
+          aria-hidden
+        />
+        <div className="min-w-0 flex-1">
+          {/* 主名：有 model 时优先显示 model alias（更精确）；允许 break-words 多行 wrap */}
+          <div
+            className="text-sm text-zinc-100 leading-tight break-words"
+            title={modelLabel ?? providerLabel}
+          >
+            {modelLabel ?? providerLabel}
+          </div>
+          {/* 副名：当有 model 时，下一行显示 provider；否则显示 sessions 数 */}
+          {modelLabel ? (
+            <>
+              <div className="text-[10px] text-zinc-400 mt-0.5 break-words leading-tight">
+                {providerLabel}
+              </div>
+              {sessions > 0 && (
+                <div className="text-[10px] text-zinc-500 mt-0.5">
+                  {sessions} session{sessions === 1 ? '' : 's'}
+                </div>
+              )}
+            </>
+          ) : (
+            sessions > 0 && (
+              <div className="text-[10px] text-zinc-500 mt-0.5">
+                {sessions} session{sessions === 1 ? '' : 's'}
+              </div>
+            )
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface ModelsBreakdownItem {
+  id: string;
+  providerId: string;
+  sessions: number;
+  messages: number;
+  tokens: number;
+}
+
+function ModelsView({
+  breakdown,
+  providers,
+}: {
+  breakdown: readonly ModelsBreakdownItem[];
+  providers: ReadonlyArray<{ id: string; displayName: string }>;
+}): JSX.Element {
+  if (breakdown.length === 0) {
+    return (
+      <div className="text-xs text-zinc-500 italic py-8 text-center">
+        No model usage yet — start a session to see your model breakdown.
+      </div>
+    );
+  }
+  const maxTokens = Math.max(...breakdown.map((b) => b.tokens), 1);
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 text-[10px] text-zinc-500 uppercase tracking-wider pb-1 border-b border-zinc-800">
+        <span>Model</span>
+        <span className="text-right">Sessions</span>
+        <span className="text-right">Messages</span>
+        <span className="text-right">Tokens</span>
+      </div>
+      {breakdown.map((b) => {
+        // 真 model alias 时显示 "model · provider"；只有 provider id 时退回 displayName
+        const providerName = providers.find((p) => p.id === b.providerId)?.displayName ?? b.providerId;
+        const isRealModel = b.id !== b.providerId;
+        const displayName = isRealModel ? `${b.id} · ${providerName}` : providerName;
+        const pct = (b.tokens / maxTokens) * 100;
+        return (
+          <div key={b.id} className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 items-center text-xs py-1">
+            <div className="min-w-0">
+              <div className="text-zinc-200 truncate font-medium" title={displayName}>
+                {displayName}
+              </div>
+              <div className="h-1 bg-zinc-800 rounded overflow-hidden mt-1">
+                <div className="h-full bg-blue-500" style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+            <span className="text-zinc-300 text-right font-mono">{formatNum(b.sessions)}</span>
+            <span className="text-zinc-300 text-right font-mono">{formatNum(b.messages)}</span>
+            <span className="text-zinc-300 text-right font-mono">{formatTokensBig(b.tokens)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ProjectView({
+  gitStats,
+  loading,
+  projectRoot,
+}: {
+  gitStats: GitStats | null;
+  loading: boolean;
+  projectRoot: string | null;
+}): JSX.Element {
+  if (!projectRoot) {
+    return (
+      <div className="text-xs text-zinc-500 italic py-8 text-center">
+        Open a project to see git activity.
+      </div>
+    );
+  }
+  if (loading && gitStats === null) {
+    return (
+      <div className="text-xs text-zinc-500 italic py-8 text-center">
+        Reading git history…
+      </div>
+    );
+  }
+  if (!gitStats || !gitStats.isGitRepo) {
+    return (
+      <div className="text-xs text-zinc-500 italic py-8 text-center">
+        Not a git repository — open a project that has <code className="text-zinc-400 bg-zinc-900 px-1 rounded">.git/</code>.
+      </div>
+    );
+  }
+
+  // 每日 commits 柱状图（最近 30 天对齐）
+  const today = new Date();
+  const bars: { date: string; count: number }[] = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const key = `${y}-${m}-${day}`;
+    const found = gitStats.dailyCommits.find((x) => x.date === key);
+    bars.push({ date: key, count: found?.count ?? 0 });
+  }
+  const maxCount = Math.max(...bars.map((b) => b.count), 1);
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Branch + key stats */}
+      <div className="grid grid-cols-3 gap-x-6 gap-y-4">
+        <StatCell label="Branch" value={gitStats.currentBranch ?? '—'} truncate />
+        <StatCell label="Commits" value={formatNum(gitStats.commits)} />
+        <StatCell label="Contributors" value={String(gitStats.contributors)} />
+        <StatCell label="Files changed" value={formatNum(gitStats.filesChanged)} />
+        <StatCell
+          label="Lines added"
+          value={`+${formatNum(gitStats.linesAdded)}`}
+        />
+        <StatCell
+          label="Lines deleted"
+          value={`−${formatNum(gitStats.linesDeleted)}`}
+        />
+      </div>
+
+      {/* 每日 commits 柱状图 (最近 30 天) */}
+      {gitStats.commits > 0 && (
+        <div>
+          <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">
+            Commits per day · last 30 days
+          </div>
+          <div className="flex items-end gap-0.5 h-16">
+            {bars.map((b) => {
+              const heightPct = (b.count / maxCount) * 100;
+              return (
+                <div
+                  key={b.date}
+                  className="flex-1 bg-zinc-800/60 rounded-sm relative overflow-hidden"
+                  title={`${b.date} · ${b.count} commit${b.count === 1 ? '' : 's'}`}
+                >
+                  <div
+                    className="absolute bottom-0 left-0 right-0 bg-emerald-500"
+                    style={{ height: `${heightPct}%` }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {gitStats.commits === 0 && (
+        <div className="text-xs text-zinc-500 italic py-4 text-center">
+          No commits in this time range.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-2.5 py-1 rounded text-xs font-medium ${
+        active ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function RangeButton({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-2 py-1 rounded text-[10px] font-mono ${
+        active ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function StatCell({
+  label,
+  value,
+  truncate,
+}: {
+  label: string;
+  value: string;
+  truncate?: boolean;
+}): JSX.Element {
   return (
     <div className="min-w-0">
       <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-0.5">{label}</div>
-      <div className={`text-lg text-zinc-100 ${truncate ? 'truncate' : ''}`} title={value}>{value}</div>
+      <div className={`text-lg text-zinc-100 ${truncate ? 'truncate' : ''}`} title={value}>
+        {value}
+      </div>
     </div>
   );
 }

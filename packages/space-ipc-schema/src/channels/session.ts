@@ -121,6 +121,22 @@ const sessionMetaSchema = z.object({
   title: z.string().max(256).optional(),
   createdAt: z.number().int().nonnegative(),
   lastActivityAt: z.number().int().nonnegative(),
+  /**
+   * 用户消息条数。来源：
+   *   - persisted session: SDK listSessions summary 的 msgCount（落盘权威值）
+   *   - in-flight session: in-memory userMessages buffer 长度
+   * 可选（向后兼容旧 IPC client）；缺省时 dashboard 退回 in-memory 累加。
+   *
+   * 让 WelcomeDashboard 重启 Space 后也能显示真实历史 Messages 数，无需逐一打开
+   * 每个 session 触发 history restore。零额外 I/O：SDK 已经 fast-path 缓存 summary。
+   */
+  msgCount: z.number().int().nonnegative().optional(),
+  /**
+   * Model alias（如 'deepseek-v4-pro'）。可选——in-flight session 用户 /model 设过才有；
+   * 没设时 fallback 到 provider.defaultModel；persisted session 当前 SDK summary 不暴露
+   * 此字段，留空让 dashboard fallback 到 provider 维度统计。
+   */
+  model: z.string().max(128).optional(),
 });
 
 
@@ -346,11 +362,15 @@ const sessionHistoryItemSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('user'),
     content: z.string().max(MAX_TEXT_CHUNK),
+    /** SDK 持久化的消息时间戳 (epoch ms)；缺失时 renderer fallback 到 sessionMeta.createdAt。
+     *  让历史恢复的消息 footer "Xd ago" 显示真实时间而不是恢复瞬间 "just now"。 */
+    sentAt: z.number().int().nonnegative().optional(),
   }),
   z.object({
     kind: z.literal('assistant'),
     text: z.string().max(MAX_TEXT_CHUNK),
     thinking: z.string().max(MAX_TEXT_CHUNK).optional(),
+    sentAt: z.number().int().nonnegative().optional(),
   }),
 ]);
 

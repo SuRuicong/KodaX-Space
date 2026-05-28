@@ -15,6 +15,7 @@ import { registerPermissionChannels } from './ipc/permission.js';
 import { registerAskUserChannels } from './ipc/ask-user.js';
 import { registerSlashChannels, registerBuiltinSlashCommands } from './ipc/slash.js';
 import { registerSkillChannels } from './ipc/skill.js';
+import { registerAgentChannels } from './ipc/agent.js';
 import { registerMcpChannels } from './ipc/mcp.js';
 import { prewarmSdkMcpStore } from './mcp/config-reader.js';
 import { registerKodaxChannels } from './ipc/kodax.js';
@@ -167,27 +168,60 @@ function createMainWindow(): void {
 
   if (isDev && VITE_DEV_SERVER_URL) {
     void mainWindow.loadURL(VITE_DEV_SERVER_URL);
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
+    // dev mode 也不再自动开 DevTools——用户用 View → Toggle Developer Tools 菜单或
+    // Ctrl+Shift+I 快捷键按需打开。默认开会让首次启动多个浮窗显得突兀。
+    // 若开发期想要自动打开，设环境变量 SPACE_AUTO_DEVTOOLS=1。
+    if (process.env.SPACE_AUTO_DEVTOOLS === '1') {
+      mainWindow.webContents.openDevTools({ mode: 'detach' });
+    }
   } else {
     void mainWindow.loadFile(path.join(RENDERER_DIST, 'index.html'));
   }
 }
 
 app.whenReady().then(async () => {
-  // 彻底禁掉默认 File/Edit/View 菜单 — 与暗色主题不搭，且我们没用任何菜单项。
-  // 若日后需要 macOS 顶部全局菜单（Cmd+Q / About / Services），改为 buildFromTemplate
-  // 自定义即可；alpha.1 直接 null。
-  Menu.setApplicationMenu(null);
+  // Minimal application menu — 仅 View / Window，保留 DevTools / Reload / Zoom /
+  // Fullscreen 等开发与可访问性入口。其它（File / Edit / Help 等）我们没有真实操作可放，
+  // 不构造菜单避免视觉噪音。
+  //
+  // Mac 上 macOS 强制顶部 menubar；Windows / Linux 上呈现为窗口顶部菜单条。
+  const menu = Menu.buildFromTemplate([
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'close' },
+      ],
+    },
+  ]);
+  Menu.setApplicationMenu(menu);
   applyCsp();
-  // v0.1.6: 先跑 shell env hydration —— 把 user .zshrc / .bashrc 里 export 的
-  // ARK_API_KEY / DEEPSEEK_API_KEY 等流进 process.env。必须早于 provider configured
-  // 检测 + customProviders 注册，否则那两步看不到 shell-set 的 key。
-  await hydrateShellEnvOnce();
-  // KodaX SDK shape 漂移 fail-fast：若 ambient .d.ts 与运行时 SDK 不一致，
-  // 启动期就 throw 比"用户发第一条 prompt 时白屏"更早被发现 (reviewer batch HIGH-2)。
-  // v0.1.6：probe 改 async（dynamic import SDK subpath，避 CJS require 撞 exports）。
-  await probeKodaxSdk();
-  await probeSkillRegistry();
+  // 启动期 3 个 async 任务无强依赖关系，并行跑省 300-800ms 才到窗口创建：
+  //   - hydrateShellEnvOnce: 读 user shell rc 把 export 的 API key 流进 process.env
+  //   - probeKodaxSdk: SDK shape 漂移 fail-fast (FEATURE shipper guard)
+  //   - probeSkillRegistry: SkillRegistry subpath fail-fast
+  // 三个都是 fail-fast 类，只决定"是否致命错误终止启动"，没有 ordering 依赖。
+  // shell env hydration 与 keychain key 注入的 ordering 还是保留——后者跟在
+  // providerConfigStore.load 后面，本块完成时一定还没跑到，env 已经填好可读。
+  await Promise.all([
+    hydrateShellEnvOnce(),
+    probeKodaxSdk(),
+    probeSkillRegistry(),
+  ]);
   // IPC handlers 必须在窗口创建前注册——否则 renderer 启动后立刻调 invoke 会撞上 "No handler registered"
   registerVersionChannel();
   registerSessionChannels();
@@ -197,6 +231,7 @@ app.whenReady().then(async () => {
   registerBuiltinSlashCommands();
   registerSlashChannels();
   registerSkillChannels();
+  registerAgentChannels();
   registerMcpChannels();
   registerKodaxChannels();
   // v0.1.6 cleanup: 预热 SDK MCP module 让首次 mcp.discover 不命中空 fallback

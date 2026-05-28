@@ -35,6 +35,7 @@ import {
   projectOpenDialogChannel,
   projectRecentAddChannel,
   projectRecentRemoveChannel,
+  projectGitStatsChannel,
 } from './project.js';
 import {
   permissionRequestChannel,
@@ -56,6 +57,7 @@ import {
   skillDiscoverChannel,
   skillInvokeChannel,
 } from './skill.js';
+import { agentDiscoverChannel } from './agent.js';
 import { mcpDiscoverChannel } from './mcp.js';
 import { kodaxGetDefaultsChannel } from './kodax.js';
 import {
@@ -66,6 +68,7 @@ import {
   providerSetDefaultChannel,
   providerAddCustomChannel,
   providerRemoveCustomChannel,
+  providerModelContextWindowChannel,
 } from './provider.js';
 import { filesTreeChannel, filesReadChannel, filesDiffChannel } from './files.js';
 import { titlebarSetOverlayChannel } from './titlebar.js';
@@ -92,6 +95,7 @@ export const invokeChannels = {
   [projectOpenDialogChannel.name]: projectOpenDialogChannel,
   [projectRecentAddChannel.name]: projectRecentAddChannel,
   [projectRecentRemoveChannel.name]: projectRecentRemoveChannel,
+  [projectGitStatsChannel.name]: projectGitStatsChannel,
   [permissionAnswerChannel.name]: permissionAnswerChannel,
   [permissionListChannel.name]: permissionListChannel,
   [permissionRevokeChannel.name]: permissionRevokeChannel,
@@ -100,6 +104,7 @@ export const invokeChannels = {
   [slashExecChannel.name]: slashExecChannel,
   [skillDiscoverChannel.name]: skillDiscoverChannel,
   [skillInvokeChannel.name]: skillInvokeChannel,
+  [agentDiscoverChannel.name]: agentDiscoverChannel,
   [mcpDiscoverChannel.name]: mcpDiscoverChannel,
   [kodaxGetDefaultsChannel.name]: kodaxGetDefaultsChannel,
   [providerListChannel.name]: providerListChannel,
@@ -109,6 +114,7 @@ export const invokeChannels = {
   [providerSetDefaultChannel.name]: providerSetDefaultChannel,
   [providerAddCustomChannel.name]: providerAddCustomChannel,
   [providerRemoveCustomChannel.name]: providerRemoveCustomChannel,
+  [providerModelContextWindowChannel.name]: providerModelContextWindowChannel,
   [filesTreeChannel.name]: filesTreeChannel,
   [filesReadChannel.name]: filesReadChannel,
   [filesDiffChannel.name]: filesDiffChannel,

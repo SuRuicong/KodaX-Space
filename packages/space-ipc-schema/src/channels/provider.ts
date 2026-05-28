@@ -161,5 +161,35 @@ export const providerRemoveCustomChannel = {
   }),
 } as const;
 
+// --- Invoke: provider.modelContextWindow ---
+//
+// SDK-driven 上下文窗口查询。替代 renderer 端 modelContextCaps.ts 的硬编码表。
+// 主流程：
+//   1. renderer ContextWindowIndicator 拿到 activeProviderId + activeModel
+//   2. invoke('provider.modelContextWindow', { providerId, model })
+//   3. main 调 `resolveProvider(providerId)` 拿 KodaXBaseProvider 实例
+//   4. main 调 `resolveContextWindow({ enabled: false, triggerPercent: 80 }, provider, model)`
+//      → SDK 内部四步级联：CompactionConfig.contextWindow → provider.getEffectiveContextWindow(model)
+//        → provider.getContextWindow() → 200_000 hard fallback
+//   5. renderer cache 在 Map<`${providerId}|${model}`, number> 里，model 切换时再查
+//
+// 为什么不一次性 `provider.list` 返回所有 model 的 contextWindow：
+//   - resolveProvider 在每个 provider 实例上有 side-effect（注册到 runtime）
+//   - per-model 查询响应 50ms 以内（micro-task），cache 后零成本
+//   - "active model" 是稀疏访问，懒加载更合适
+export const providerModelContextWindowChannel = {
+  name: 'provider.modelContextWindow',
+  direction: 'invoke',
+  input: z.object({
+    providerId: z.string().min(1).max(64),
+    model: z.string().min(1).max(128),
+  }),
+  output: z.object({
+    contextWindow: z.number().int().positive(),
+    /** SDK fallback (200k) vs provider-advertised 区分；UI 显示用 "≈" 提示。*/
+    source: z.enum(['provider', 'fallback']),
+  }),
+} as const;
+
 export type ProviderInfo = z.infer<typeof providerInfoSchema>;
 export type ProviderProtocol = ProviderInfo['protocol'];

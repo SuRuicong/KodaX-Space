@@ -134,7 +134,10 @@ export function ModeSelector(): JSX.Element {
   const baseLabel = current === 'auto'
     ? `Auto · ${ENGINE_LABELS[engine]}`
     : MODE_LABELS[current];
-  const statusLabel = session ? baseLabel : `${baseLabel} (next)`;
+  // (next) 仅在真没 active session（welcome screen）时显示——之前判 `!session` 会撞
+  // session.list 替换 sessions[] 把 in-flight stub 短暂 stomp 掉的 race，让对话中也
+  // 误显示 (next)。currentSessionId 是 true source of truth。
+  const statusLabel = currentSessionId ? baseLabel : `${baseLabel} (next)`;
 
   return (
     <div className="relative">

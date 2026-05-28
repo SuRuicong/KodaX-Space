@@ -84,7 +84,8 @@ export function AgentModeSelector(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current, busy]);
 
-  const labelText = session ? LABELS[current] : `${LABELS[current]} (next)`;
+  // 同 ModeSelector：用 currentSessionId 判定，避免 sessions[] race 误显示 (next)
+  const labelText = currentSessionId ? LABELS[current] : `${LABELS[current]} (next)`;
 
   return (
     <div className="relative">

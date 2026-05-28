@@ -71,6 +71,7 @@ let activeImpl: KodaxUserConfigImpl = DEFAULT_IMPL;
 /** 测试用：注入 mock。 */
 export function setUserConfigImpl(impl: KodaxUserConfigImpl | null): void {
   activeImpl = impl ?? DEFAULT_IMPL;
+  invalidateUserDefaultsCache(); // 切 impl 必清缓存，否则 mock 之后还读到生产值
 }
 
 /**
@@ -89,13 +90,41 @@ export async function prewarmKodaxUserConfig(): Promise<void> {
   }
 }
 
+// 模块级缓存——KodaX config.json 不由 Space 进程写，所以"首次读 → 缓存"在
+// Space 生命周期内安全（用户在 KodaX CLI 端改 config 必须 restart Space 才生效，
+// 这与 KodaX CLI 自身行为一致：CLI 启动时 snapshot config，不监听 fs.watch）。
+// 之前 session.list 每次都 await activeImpl.loadConfig() —— 命中 SDK 内部 fast
+// path cache 后仍有 ~10-30ms 开销，再加 zod/normalize 计算几次/秒下来累 100ms+。
+let userDefaultsCache: KodaxUserDefaults | null = null;
+let userDefaultsPromise: Promise<KodaxUserDefaults> | null = null;
+
+/** 测试钩子：mock setUserConfigImpl 后清缓存让下一次重读。 */
+export function invalidateUserDefaultsCache(): void {
+  userDefaultsCache = null;
+  userDefaultsPromise = null;
+}
+
 /**
  * 读 ~/.kodax/config.json 投影成 Space 的默认值子集。
  *
  * **冷启动同步化**：与 mcp/config-reader 同 — mock (test) short-circuit；生产首次调用
  * 必要时 await SDK chunk load，防 prewarm 还没完就被 IPC 命中。
+ *
+ * **缓存**：首次调用结果在 module 级缓存命中后续所有调用。并发首调走同一 Promise
+ * (避免 5 个 session.list 同时打过来发起 5 次 SDK loadConfig)。
  */
 export async function loadKodaxUserDefaults(): Promise<KodaxUserDefaults> {
+  if (userDefaultsCache !== null) return userDefaultsCache;
+  if (userDefaultsPromise !== null) return userDefaultsPromise;
+  userDefaultsPromise = computeUserDefaults().then((value) => {
+    userDefaultsCache = value;
+    userDefaultsPromise = null;
+    return value;
+  });
+  return userDefaultsPromise;
+}
+
+async function computeUserDefaults(): Promise<KodaxUserDefaults> {
   // mock 注入 → 直接走；生产首调 await chunk
   if (activeImpl === DEFAULT_IMPL && sdkModuleCache === null) {
     try {

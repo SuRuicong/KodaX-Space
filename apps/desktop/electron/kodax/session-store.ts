@@ -120,6 +120,7 @@ let activeImpl: SessionStoreImpl = DEFAULT_IMPL;
 /** 测试用：注入 mock SDK 实现。生产代码不调。 */
 export function setSessionStoreImpl(impl: SessionStoreImpl | null): void {
   activeImpl = impl ?? DEFAULT_IMPL;
+  clearPersistedSessionCache(); // 切 impl 必清缓存，避免 test 之间读到生产值
 }
 
 export interface PersistedSessionMeta {
@@ -178,6 +179,9 @@ export async function forkPersistedSession(opts: {
     title: opts.title,
   });
   if (!result) return null;
+  // Fork 把 source session 的尾部消息可能复制走/留下；缓存里的 source data 可能过期。
+  // 清掉 source 的缓存，下次 session.history 重读。
+  invalidatePersistedSessionCache(opts.sourceSessionId);
   return {
     newSessionId: result.sessionId,
     title: result.data.title,
@@ -196,6 +200,9 @@ export async function rewindPersistedSession(opts: {
   readonly sessionId: string;
 }): Promise<boolean> {
   const data = await activeImpl.rewindSession(opts.sessionId);
+  if (data !== null) {
+    invalidatePersistedSessionCache(opts.sessionId); // 截断后旧 data 过期
+  }
   return data !== null;
 }
 
@@ -209,20 +216,60 @@ export async function deletePersistedSession(opts: {
   readonly sessionId: string;
 }): Promise<'ok' | 'busy'> {
   const result = await activeImpl.deleteSession(opts.sessionId);
-  if ('ok' in result) return 'ok';
+  if ('ok' in result) {
+    invalidatePersistedSessionCache(opts.sessionId);
+    return 'ok';
+  }
   return 'busy';
 }
 
 /**
- * 读单 session 完整数据（messages + title + lineage 等）。v0.1.6 暂不用；预留给
- * v0.1.7+ "fork child 重启后从盘 reload 重放成 events" 的优化路径。
+ * 读单 session 完整数据（messages + title + lineage 等）。
+ *
+ * **LRU 缓存** (alpha.2)：session.history IPC 在用户点回旧 session 时调，无缓存时每次
+ * 重读完整 jsonl (几 MB)。LRU 5 个 session 上限——刚好覆盖"最近用过的几个 session 切来
+ * 切去"场景。缓存条目在 deletePersistedSession / fork / rewind 时清掉，避免读到过期数据。
+ *
+ * 失效语义：进程内只看自身 mutation；其他进程 (KodaX CLI) 改写同一 session 后 Space 进程
+ * 不知道——这是已有的约束 (Space 不监听 jsonl 文件变化)，缓存不放大此问题。
  *
  * 返回 null 当 sessionId 不存在。
  */
+type LoadedSessionData = Awaited<ReturnType<SessionStoreImpl['loadSession']>>;
+
+const LOAD_CACHE_MAX = 5;
+const loadCache = new Map<string, LoadedSessionData>();
+
 export async function loadPersistedSession(
   sessionId: string,
-): Promise<Awaited<ReturnType<SessionStoreImpl['loadSession']>> | null> {
-  return activeImpl.loadSession(sessionId);
+): Promise<LoadedSessionData | null> {
+  const cached = loadCache.get(sessionId);
+  if (cached !== undefined) {
+    // LRU recency bump: 删后重 set 让 Map iteration 顺序刷新（Map insertion order = 最近使用）
+    loadCache.delete(sessionId);
+    loadCache.set(sessionId, cached);
+    return cached;
+  }
+  const data = await activeImpl.loadSession(sessionId);
+  if (data === null) return null;
+  loadCache.set(sessionId, data);
+  // Evict oldest 一直保持 <= MAX
+  while (loadCache.size > LOAD_CACHE_MAX) {
+    const oldestKey = loadCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    loadCache.delete(oldestKey);
+  }
+  return data;
+}
+
+/** Mutator 调用——deletePersistedSession / fork / rewind 后清对应缓存项。*/
+export function invalidatePersistedSessionCache(sessionId: string): void {
+  loadCache.delete(sessionId);
+}
+
+/** 测试 / setStorageImpl 注入 mock 后清整张缓存。*/
+export function clearPersistedSessionCache(): void {
+  loadCache.clear();
 }
 
 /**

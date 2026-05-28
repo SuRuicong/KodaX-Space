@@ -99,6 +99,18 @@ interface AppState {
    * alpha.1：也从 managed_task_status.globalWorkBudget/budgetUsage 派生。
    */
   workBudgetBySession: Readonly<Record<string, { used: number; cap: number } | undefined>>;
+  /**
+   * Derived: 每个 session 的"权威"token 计数。只在 terminal event 时更新：
+   *   - iteration_end → tokens = ev.tokenCount, source = 'iteration_end'
+   *   - session_complete (history restore terminal) → 从 buffer 估算累计 tokens, source = 'estimate'
+   *
+   * WelcomeDashboard 订阅这张表而不是 raw eventsBySession——后者每个 text_delta 都
+   * 改 reference 触发 dashboard 全量 re-render；前者只在 turn 结束时变 (~1/min)，几乎
+   * 不触发 dashboard 重计算。
+   *
+   * 未出现在表里的 session：从未点开 (eventsBuffer 空) → 走 dashboard 那边 msgCount × 1500 估算路径。
+   */
+  tokensBySession: Readonly<Record<string, { tokens: number; source: 'iteration_end' | 'estimate' } | undefined>>;
   /** F008: 每个 session 的当前 harness profile（H0/H1/H2）+ round。
    *  alpha.1：也从 managed_task_status.harnessProfile/currentRound 派生（profile 名映射）。
    */
@@ -209,7 +221,25 @@ interface AppState {
   setSessions(sessions: readonly SessionMeta[]): void;
   setCurrentSession(sessionId: string | null): void;
   appendEvent(event: SessionEvent): void;
-  appendUserMessage(sessionId: string, content: string): void;
+  /**
+   * History 恢复专用：把一段历史会话**原子前置**到 userMessages + events buckets 前面。
+   *
+   * 解决 race condition：session.history IPC 是异步的 (~50-200ms 读 jsonl)；如果用户在
+   * await 期间就开始新对话 (appendUserMessage / appendEvent 已写入)，原本的逐条 append
+   * 会把"历史用户消息"追加到"新消息"后面，导致 composeMessages 按 index 配对时全错位。
+   *
+   * 这里在 set(state => ...) 内部 prepend——任何并发的 appendEvent/appendUserMessage 都
+   * 串行在 zustand 写锁后，前置插入与后续 append 不会撕裂（单 set 调用 atomic）。
+   *
+   * items 形态同 session.history IPC 出参；fallbackSentAt 给没有 sentAt 的历史 item 用。
+   */
+  prependSessionHistory(
+    sessionId: string,
+    items: readonly import('@kodax-space/space-ipc-schema').SessionHistoryItem[],
+    fallbackSentAt: number,
+  ): void;
+  /** sentAt 可选——缺省 Date.now()；history restore 时传 session.createdAt 让旧消息显示真实时间。 */
+  appendUserMessage(sessionId: string, content: string, sentAt?: number): void;
   upsertSession(meta: SessionMeta): void;
   removeSession(sessionId: string): void;
   enqueuePermission(req: PermissionRequestPayload): void;
@@ -309,6 +339,18 @@ function readPersistedAgentMode(): SessionMeta['agentMode'] | null {
     : null;
 }
 
+// 粗略 token 估算 — 同 bubbles.tsx / ContextWindowIndicator 公式（ASCII/4 + non-ASCII × 1）。
+// 用于 session_complete 时一次性给 tokensBySession 填 estimate，让 Dashboard 不必扫 buffer。
+function approxTokensForStats(text: string): number {
+  let ascii = 0;
+  let nonAscii = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) < 128) ascii++;
+    else nonAscii++;
+  }
+  return Math.max(0, Math.round(ascii / 4 + nonAscii));
+}
+
 function lsGet(key: string): string | null {
   if (typeof window === 'undefined') return null;
   try {
@@ -342,6 +384,7 @@ export const useAppStore = create<AppState>((set) => ({
   kodaxDefaults: null,
   workBudgetBySession: {},
   harnessProfileBySession: {},
+  tokensBySession: {},
   todoListBySession: {},
   managedTaskStatusBySession: {},
   lastDiffPath: null,
@@ -373,16 +416,54 @@ export const useAppStore = create<AppState>((set) => ({
   setSessions: (sessions) => set({ sessions }),
   setCurrentSession: (sessionId) => set({ currentSessionId: sessionId }),
 
-  appendUserMessage: (sessionId, content) =>
+  appendUserMessage: (sessionId, content, sentAt) =>
     set((state) => {
       if (!state.sessions.some((s) => s.sessionId === sessionId)) return state;
       const bucket = state.userMessagesBySession[sessionId] ?? [];
       const id = `u_${sessionId}_${++userMessageCounter}`;
-      const msg: UserMessage = { id, content, sentAt: Date.now() };
+      const msg: UserMessage = { id, content, sentAt: sentAt ?? Date.now() };
       return {
         userMessagesBySession: {
           ...state.userMessagesBySession,
           [sessionId]: [...bucket, msg],
+        },
+      };
+    }),
+
+  prependSessionHistory: (sessionId, items, fallbackSentAt) =>
+    set((state) => {
+      if (!state.sessions.some((s) => s.sessionId === sessionId)) return state;
+      // 在 set callback 内构造 historical buckets,确保读到最新 currentBucket,避免 await 期
+      // user 已经 append 了新消息后被覆盖。
+      const histMsgs: UserMessage[] = [];
+      const histEvents: SessionEvent[] = [];
+      for (const item of items) {
+        if (item.kind === 'user') {
+          const id = `u_${sessionId}_${++userMessageCounter}`;
+          histMsgs.push({ id, content: item.content, sentAt: item.sentAt ?? fallbackSentAt });
+        } else {
+          // assistant: thinking_delta? + text_delta? + session_complete 序列,跟之前
+          // Shell.tsx 内联逻辑等价,确保 composeMessages 按 session_complete 切段成立
+          if (item.thinking !== undefined && item.thinking.length > 0) {
+            histEvents.push({ kind: 'thinking_delta', sessionId, text: item.thinking });
+          }
+          if (item.text.length > 0) {
+            histEvents.push({ kind: 'text_delta', sessionId, text: item.text });
+          }
+          histEvents.push({ kind: 'session_complete', sessionId });
+        }
+      }
+      const currentMsgs = state.userMessagesBySession[sessionId] ?? [];
+      const currentEvents = state.eventsBySession[sessionId] ?? [];
+      return {
+        userMessagesBySession: {
+          ...state.userMessagesBySession,
+          // 历史前置——若 race 期 user 已 append 了 Q3,结果是 [hist..., Q3]
+          [sessionId]: [...histMsgs, ...currentMsgs],
+        },
+        eventsBySession: {
+          ...state.eventsBySession,
+          [sessionId]: [...histEvents, ...currentEvents],
         },
       };
     }),
@@ -407,7 +488,37 @@ export const useAppStore = create<AppState>((set) => ({
       }
       // F008: 同步抽取 work_budget / harness_profile 到 derived maps
       // —— 视图不必每次 scan 整条 bucket
-      if (event.kind === 'work_budget') {
+      if (event.kind === 'iteration_end') {
+        // 权威 token 计数派生表 — Dashboard 订阅这里，避免每个 text_delta 都触发 dashboard 重算
+        next.tokensBySession = {
+          ...state.tokensBySession,
+          [event.sessionId]: { tokens: event.tokenCount, source: 'iteration_end' },
+        };
+      } else if (event.kind === 'session_complete') {
+        // History restore 的 terminal — 若到此还没有 iteration_end 写入 tokensBySession，
+        // 从已有 buffer 累加一次给 dashboard 用。只算一次（已有真实 tokens 时不覆盖）。
+        const existing = state.tokensBySession[event.sessionId];
+        if (existing === undefined) {
+          // 这里 bucket 是"新事件还没并入"的旧 events——补加 ev 本身 = session_complete，
+          // text 类已经在前序 text_delta 时累计在 bucket 里。把累计扫一遍。
+          let total = 0;
+          const userMsgs = state.userMessagesBySession[event.sessionId] ?? [];
+          for (const um of userMsgs) total += approxTokensForStats(um.content);
+          for (const ev of bucket) {
+            if (ev.kind === 'text_delta' || ev.kind === 'thinking_delta') {
+              total += approxTokensForStats(ev.text);
+            } else if (ev.kind === 'tool_result') {
+              total += approxTokensForStats(ev.content);
+            }
+          }
+          if (total > 0) {
+            next.tokensBySession = {
+              ...state.tokensBySession,
+              [event.sessionId]: { tokens: total, source: 'estimate' },
+            };
+          }
+        }
+      } else if (event.kind === 'work_budget') {
         next.workBudgetBySession = {
           ...state.workBudgetBySession,
           [event.sessionId]: { used: event.used, cap: event.cap },
@@ -504,6 +615,7 @@ export const useAppStore = create<AppState>((set) => ({
       const { [sessionId]: _prof, ...restProfiles } = state.harnessProfileBySession;
       const { [sessionId]: _todo, ...restTodos } = state.todoListBySession;
       const { [sessionId]: _mts, ...restMts } = state.managedTaskStatusBySession;
+      const { [sessionId]: _tok, ...restTokens } = state.tokensBySession;
       return {
         sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
         eventsBySession: restEvents,
@@ -512,6 +624,7 @@ export const useAppStore = create<AppState>((set) => ({
         harnessProfileBySession: restProfiles,
         todoListBySession: restTodos,
         managedTaskStatusBySession: restMts,
+        tokensBySession: restTokens,
         permissionQueue: state.permissionQueue.filter((p) => p.sessionId !== sessionId),
         askUserQueue: state.askUserQueue.filter((p) => p.sessionId !== sessionId),
         currentSessionId: state.currentSessionId === sessionId ? null : state.currentSessionId,
@@ -633,6 +746,7 @@ export const useAppStore = create<AppState>((set) => ({
       askUserQueue: [],
       workBudgetBySession: {},
       harnessProfileBySession: {},
+      tokensBySession: {},
       todoListBySession: {},
       managedTaskStatusBySession: {},
       sessions: [],
@@ -723,6 +837,7 @@ export const useAppStore = create<AppState>((set) => ({
       const { [sessionId]: _bud, ...restBudgets } = state.workBudgetBySession;
       const { [sessionId]: _mts, ...restMts } = state.managedTaskStatusBySession;
       const { [sessionId]: _prof, ...restProfiles } = state.harnessProfileBySession;
+      const { [sessionId]: _tok, ...restTokens } = state.tokensBySession;
       return {
         userMessagesBySession: { ...state.userMessagesBySession, [sessionId]: newMsgs },
         eventsBySession: { ...state.eventsBySession, [sessionId]: events.slice(0, sliceEnd) },
@@ -730,6 +845,7 @@ export const useAppStore = create<AppState>((set) => ({
         workBudgetBySession: restBudgets,
         managedTaskStatusBySession: restMts,
         harnessProfileBySession: restProfiles,
+        tokensBySession: restTokens,
       };
     }),
 }));

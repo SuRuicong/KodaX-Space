@@ -44,7 +44,8 @@ test('user + consecutive text_deltas → user bubble + single merged assistant b
     { kind: 'session_complete', sessionId: sid },
   ];
   const out = composeMessages({ events, userMessages: [userMsg('u1', 'hi')] });
-  assert.deepEqual(kindsOf(out), ['user', 'assistant_text', 'system_notice']);
+  // v0.1.x: 'complete' system_notice 退役，bubble footer 取代"✓ complete"标记
+  assert.deepEqual(kindsOf(out), ['user', 'assistant_text']);
   const text = out[1];
   if (text.kind === 'assistant_text') assert.equal(text.text, 'Hello world!');
 });
@@ -85,8 +86,8 @@ test('tool_start opens a card; tool_result fills it with status done', () => {
     { kind: 'session_complete', sessionId: sid },
   ];
   const out = composeMessages({ events, userMessages: [userMsg('u1', 'what')] });
-  // 期望：user → assistant("Let me check") → tool_call(read, done) → assistant("It says x.") → system_notice(complete)
-  assert.deepEqual(kindsOf(out), ['user', 'assistant_text', 'tool_call', 'assistant_text', 'system_notice']);
+  // v0.1.x: 'complete' system_notice 退役；期望 user → assistant → tool_call(done) → assistant
+  assert.deepEqual(kindsOf(out), ['user', 'assistant_text', 'tool_call', 'assistant_text']);
   const tool = out[2];
   if (tool.kind === 'tool_call') {
     assert.equal(tool.toolName, 'read');
@@ -150,9 +151,9 @@ test('iteration_end no longer pushes system_notice (data goes to BottomBar spinn
   const out = composeMessages({ events, userMessages: [userMsg('u1', 'q')] });
   const iterNotice = out.find((m) => m.kind === 'system_notice' && m.variant === 'iteration');
   assert.equal(iterNotice, undefined, 'iteration variant must not appear in conversation');
-  // 但 ✓ complete 仍应出现 — 那是 session-level 标志
-  const completeNotice = out.find((m) => m.kind === 'system_notice' && m.variant === 'complete');
-  assert.ok(completeNotice, 'complete notice should still be emitted');
+  // v0.1.x: 'complete' variant 退役（assistant bubble footer 显示 "Xd ago" 替代）
+  const anySystemNotice = out.find((m) => m.kind === 'system_notice');
+  assert.equal(anySystemNotice, undefined, 'no system_notice should be emitted on session_complete');
 });
 
 test('session_error emits system_notice variant=error with the error text', () => {
@@ -183,17 +184,16 @@ test('two user messages with separate event segments: events route to correct us
     events,
     userMessages: [userMsg('u1', 'q1', 1000), userMsg('u2', 'q2', 2000)],
   });
+  // v0.1.x: 'complete' system_notice 退役
   assert.deepEqual(kindsOf(out), [
     'user',
     'assistant_text',
-    'system_notice',
     'user',
     'assistant_text',
-    'system_notice',
   ]);
   // 内容对位
   if (out[1].kind === 'assistant_text') assert.equal(out[1].text, 'reply1');
-  if (out[4].kind === 'assistant_text') assert.equal(out[4].text, 'reply2');
+  if (out[3].kind === 'assistant_text') assert.equal(out[3].text, 'reply2');
 });
 
 test('text_delta after tool_result starts a NEW assistant bubble (flushed by tool_start)', () => {
@@ -228,14 +228,14 @@ test('text_delta after tool_result starts a NEW assistant bubble (flushed by too
 
 test('events arrived before any user message are still grouped at end', () => {
   // 启动期收到的事件（理论上不会，但兜底处理）
+  // v0.1.x: 'complete' system_notice 退役
   const events: SessionEvent[] = [
     { kind: 'text_delta', sessionId: sid, text: 'orphan' },
     { kind: 'session_complete', sessionId: sid },
   ];
   const out = composeMessages({ events, userMessages: [] });
-  assert.equal(out.length, 2);
+  assert.equal(out.length, 1);
   assert.equal(out[0].kind, 'assistant_text');
-  assert.equal(out[1].kind, 'system_notice');
 });
 
 test('all messages have unique ids (no React key collisions)', () => {

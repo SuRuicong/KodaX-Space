@@ -5,7 +5,7 @@
 #   2. push tag v* (e.g. v0.1.0-alpha.0)：自动 build + 创建 GitHub Release，
 #      artifact 上传到 Release（不签名，所以 prerelease=true）
 #
-# 矩阵：windows-latest + macos-latest 各跑一次
+# 矩阵：windows-latest + macos-latest + ubuntu-latest 各跑一次
 # 跑时长预期：每个 OS ~10-15 分钟（含 npm install + electron-builder + asar）
 
 name: release
@@ -40,6 +40,9 @@ jobs:
           - os: macos-latest
             artifact_glob: 'out/*.dmg'
             build_script: build:mac
+          - os: ubuntu-latest
+            artifact_glob: 'out/*.AppImage out/*.deb'
+            build_script: build:linux
     steps:
       - uses: actions/checkout@v4
 
@@ -83,6 +86,8 @@ jobs:
           path: |
             out/*.exe
             out/*.dmg
+            out/*.AppImage
+            out/*.deb
             out/*.blockmap
             out/latest*.yml
           retention-days: 30
@@ -105,7 +110,7 @@ jobs:
       - name: Stage release files
         run: |
           mkdir -p release
-          find artifacts -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.blockmap' -o -name 'latest*.yml' \) -exec mv {} release/ \;
+          find artifacts -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.blockmap' -o -name 'latest*.yml' \) -exec mv {} release/ \;
           ls -la release/
 
       - name: Create Release
@@ -121,6 +126,7 @@ jobs:
             ⚠️ **Unsigned installers** — first launch will trigger:
             - Windows: SmartScreen → click "More info" → "Run anyway"
             - macOS: Gatekeeper → right-click → Open → confirm
+            - Linux: `chmod +x *.AppImage` then run; or `sudo dpkg -i *.deb`
 
             Code signing + notarization land in v0.1.5 (FEATURE_027).
 

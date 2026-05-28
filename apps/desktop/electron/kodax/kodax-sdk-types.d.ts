@@ -425,6 +425,96 @@ declare module '@kodax-ai/kodax/coding' {
    * 替换之前 Space 端 hardcoded `Set<string>` blocklist——新增 'mutates-fs' tool 自动流过。
    */
   export function isToolPlanModeAllowed(name: string): boolean;
+
+  // ============= FEATURE_197 (v0.7.43) markdown agent discovery =============
+  //
+  // 只读 / 零 admission / 零 registry mutation 的 markdown agent metadata 列表。
+  // Space 端用它给 UI 做 agent picker——loadAgentsFromMarkdown 仍然在 KodaX session
+  // 启动期自动跑一遍（admission + registration），discoverMarkdownAgents 只用于
+  // "在 picker 里告诉用户哪些 agent 文件存在 / 哪些坏掉了"。
+
+  export interface LoadAgentsFromMarkdownOptions {
+    /** 项目根。项目 agents 在 `${cwd}/.kodax/agents/*.md`。缺省 = 当前工作目录。*/
+    readonly cwd?: string;
+    /** 用户配置目录。用户 agents 在 `${configHome}/agents/*.md`。缺省 = `~/.kodax`。*/
+    readonly configHome?: string;
+  }
+
+  export interface MarkdownLoadFailure {
+    readonly path: string;
+    readonly reason: string;
+  }
+
+  export interface DiscoveredMarkdownAgent {
+    readonly name: string;
+    readonly description: string;
+    /** Provenance: 'markdown:user' = ~/.kodax/agents；'markdown:project' = <cwd>/.kodax/agents. */
+    readonly source: 'markdown:user' | 'markdown:project';
+    /** 源文件绝对路径——给 UI 做 "open file in OS" affordance 用。*/
+    readonly path: string;
+    /** frontmatter `tools` 字段；SDK 在内部 admission 时给 ToolRef 加 `builtin:` 前缀，
+     *  这里返回的是用户写的原始名字（不带前缀）。 */
+    readonly tools?: readonly string[];
+    /** frontmatter `model` 字段，可选 alias。 */
+    readonly model?: string;
+  }
+
+  export interface DiscoverMarkdownAgentsResult {
+    /** 通过 frontmatter 校验的 agent metadata。Last-write-wins：项目同名 shadow 用户。*/
+    readonly agents: readonly DiscoveredMarkdownAgent[];
+    /** frontmatter 存在但校验失败的文件（坏 yaml / 空 description / 空 body / I/O 错）。*/
+    readonly failed: readonly MarkdownLoadFailure[];
+  }
+
+  /**
+   * v0.7.43 FEATURE_197 — 纯只读 markdown agent 发现。不调 Runner.admit、不写 registry。
+   * Space 端 UI picker 调用它列可用 agent；KodaX session 启动期会另外跑一次
+   * loadAgentsFromMarkdown 真正激活——validation 语义两边对齐。
+   */
+  export function discoverMarkdownAgents(
+    opts?: LoadAgentsFromMarkdownOptions,
+  ): Promise<DiscoverMarkdownAgentsResult>;
+}
+
+// ============= @kodax-ai/kodax/agent — context window resolver =============
+//
+// Space main 端用 resolveContextWindow 替代硬编码 modelContextCaps.ts。SDK 已经在
+// runtime 用同样的级联（compactionConfig.contextWindow → provider.getEffectiveContextWindow
+// → provider.getContextWindow → 200_000）决定真正的 compaction trigger；UI 显示用同一
+// 算法是 single source of truth 的硬性要求 — 否则用户看到的窗口和 SDK 实际触发 compaction
+// 的窗口会错位。
+//
+// 这里只暴露 Space 用到的 surface（resolveContextWindow + 必需 type 别名）。完整 sdk-agent
+// 表面非常大，等 SDK fix 主 .d.ts 后整体删掉本地 ambient。
+declare module '@kodax-ai/kodax/agent' {
+  import type { KodaXBaseProvider } from '@kodax-ai/kodax/coding';
+
+  /** Minimum subset of CompactionConfig that resolveContextWindow reads.
+   *  完整 shape 见 SDK types-chunks/types.d-CKJtjo-6.d.ts:1049. */
+  export interface CompactionConfig {
+    enabled: boolean;
+    triggerPercent: number;
+    /** 用户 override；resolveContextWindow 级联第一步。*/
+    contextWindow?: number;
+    /** 其余字段（keepRecentPercent / protectionPercent / ...）resolveContextWindow 不用到，省略。*/
+    [key: string]: unknown;
+  }
+
+  /** Hard fallback 值 — SDK 也 export 这个常量。*/
+  export const DEFAULT_CONTEXT_WINDOW: 200000;
+
+  /**
+   * 四步级联 resolve effective context window：
+   *   1. compactionConfig.contextWindow (user override) →
+   *   2. provider.getEffectiveContextWindow?.(modelOverride) →
+   *   3. provider.getContextWindow?.() →
+   *   4. DEFAULT_CONTEXT_WINDOW (200_000)
+   */
+  export function resolveContextWindow(
+    compactionConfig: CompactionConfig,
+    provider: KodaXBaseProvider,
+    modelOverride: string | undefined,
+  ): number;
 }
 
 // ============= FEATURE_035 @kodax-ai/kodax/skills =============

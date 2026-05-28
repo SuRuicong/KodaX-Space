@@ -31,9 +31,9 @@ type ReasoningMode = SessionMeta['reasoningMode'];
 
 const EFFORT_LABEL: Record<ReasoningMode, string> = {
   off: 'Low',
-  quick: 'Medium',
+  quick: 'Med',
   balanced: 'High',
-  auto: 'Extra high',
+  auto: 'Higher',
   deep: 'Max',
 };
 const EFFORT_ORDER: readonly ReasoningMode[] = ['off', 'quick', 'balanced', 'auto', 'deep'];
@@ -166,10 +166,15 @@ export function ModelEffortSelector(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeEffort, session, busy]);
 
-  // Button label: "<provider> · <model> · <effort>"
+  // Button label 拆两行：long provider name 不再挤掉 model/effort
+  // Top: provider displayName
+  // Bottom: model · effort + (next) 后缀
   const providerLabel = activeProvider?.displayName ?? activeProviderId ?? 'pick provider';
-  const baseLabel = `${providerLabel} · ${activeModel} · ${EFFORT_LABEL[activeEffort]}`;
-  const buttonLabel = session ? baseLabel : `${baseLabel} (next)`;
+  // 同 ModeSelector：用 currentSessionId 判定，避免 sessions[] race 误显示 (next)
+  const effortLabel = EFFORT_LABEL[activeEffort];
+  const modelEffortLine = currentSessionId
+    ? `${activeModel} · ${effortLabel}`
+    : `${activeModel} · ${effortLabel} (next)`;
 
   // 打开时把 preview 重置到 active provider
   function openPicker(): void {
@@ -184,11 +189,15 @@ export function ModelEffortSelector(): JSX.Element {
       <button
         type="button"
         onClick={openPicker}
-        className="font-mono text-[10px] text-zinc-200 hover:text-zinc-100 flex items-center gap-1.5"
+        className="font-mono text-[10px] hover:text-zinc-100 flex items-center gap-1.5"
         title={session ? 'Change provider/model/effort' : 'Pick provider/model/effort for next session'}
       >
-        <span className="truncate max-w-[280px]">{buttonLabel}</span>
-        <span className="text-zinc-400 ml-0.5" aria-hidden>▿</span>
+        {/* 两行：上行 provider displayName（强调），下行 model · effort（次要） */}
+        <span className="flex flex-col items-end leading-tight text-right">
+          <span className="text-zinc-200 truncate max-w-[260px]">{providerLabel}</span>
+          <span className="text-zinc-400 truncate max-w-[260px]">{modelEffortLine}</span>
+        </span>
+        <span className="text-zinc-500" aria-hidden>▿</span>
       </button>
 
       {open && (

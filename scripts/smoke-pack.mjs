@@ -56,14 +56,16 @@ async function checkSize(installerPath) {
 
 async function checkAsarContents() {
   // electron-builder 把 app.asar 放在不同位置：
-  //   Win unpacked: out/win-unpacked/resources/app.asar
-  //   mac unpacked: out/mac/KodaX Space.app/Contents/Resources/app.asar
-  //   universal: out/mac-universal/KodaX Space.app/Contents/Resources/app.asar
+  //   Win unpacked:   out/win-unpacked/resources/app.asar
+  //   mac unpacked:   out/mac/KodaX Space.app/Contents/Resources/app.asar
+  //   universal:      out/mac-universal/KodaX Space.app/Contents/Resources/app.asar
+  //   Linux unpacked: out/linux-unpacked/resources/app.asar
   const candidates = [
     path.join(outDir, 'win-unpacked', 'resources', 'app.asar'),
     path.join(outDir, 'mac', 'KodaX Space.app', 'Contents', 'Resources', 'app.asar'),
     path.join(outDir, 'mac-arm64', 'KodaX Space.app', 'Contents', 'Resources', 'app.asar'),
     path.join(outDir, 'mac-universal', 'KodaX Space.app', 'Contents', 'Resources', 'app.asar'),
+    path.join(outDir, 'linux-unpacked', 'resources', 'app.asar'),
   ];
   let asarPath = null;
   for (const candidate of candidates) {

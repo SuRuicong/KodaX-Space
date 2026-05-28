@@ -1,11 +1,14 @@
-// Per-model context window caps — alpha.1
+// Per-model context window caps — fallback only (alpha.2)
 //
-// SDK 0.7.42 暂未在 KODAX_PROVIDER_SNAPSHOTS 暴露 contextWindow 字段，本表是
-// renderer 端的 patch 层，按 model 名前缀匹配。等 SDK 出 contextWindow 后这里改成
-// 直接从 ProviderInfo / snapshot 读，删掉硬编码表。
+// 主入口已切到 SDK driven 的 IPC `provider.modelContextWindow`（走 resolveContextWindow 的
+// 四步级联），与 SDK runtime 决定 compaction 触发的算法完全同源。本表只在以下情况兜底：
+//   - 初次 mount IPC 未返回前（UI 同步首帧避免空窗）
+//   - 渲染进程拿不到 window.kodaxSpace（preload 异常）
+//   - IPC 失败 / SDK 不识别 provider id（custom_*）
 //
 // 数据来源：各 provider 官方文档（截至 2026-05），保守取主流值。**未列出的 model 不假装
 // 1M**——之前硬编码 1M cap 给用户错误的"还有大把空间"信号；保守 fallback 改 200k。
+// 长期目标：等 SDK 全 provider 都接好 getEffectiveContextWindow 后整张表可删。
 
 type CapRule = { match: RegExp; cap: number };
 
@@ -16,12 +19,13 @@ const RULES: readonly CapRule[] = [
   { match: /^gpt-5/, cap: 1_000_000 },
   // OpenAI GPT-4 系列 — 128k
   { match: /^gpt-4/, cap: 128_000 },
-  // DeepSeek v3 / v4 系列 — 128k
-  { match: /^deepseek-v[34]/, cap: 128_000 },
+  // DeepSeek V3 / V4 — 1M（DeepSeek API 当前所有 model 统一 1M context window，
+  // 经 resolveContextWindow 验证 deepseek-v3.2 / v4-pro 都返回 1M）
+  { match: /^deepseek-/, cap: 1_000_000 },
   // Kimi K2 系列 — 200k
   { match: /^kimi-k2/, cap: 200_000 },
-  // Kimi for Coding — 200k (沿用 K2 默认窗口)
-  { match: /^kimi-for-coding/, cap: 200_000 },
+  // Kimi for Coding — 256k（SDK 实际值；之前硬编码 200k 偏低）
+  { match: /^kimi-for-coding/, cap: 256_000 },
   // Qwen 3.5 — 1M
   { match: /^qwen3\.5/, cap: 1_000_000 },
   // GLM-5 系列 — 200k (BigModel / Zhipu Coding Plan 同款上下文)

@@ -28,6 +28,12 @@ export type ConversationMessage =
       text: string;
       /** 累积的 thinking_delta 拼接（如果有）。*/
       thinking?: string;
+      /**
+       * 该轮对话的近似时间戳——继承自触发本轮的 user message sentAt。
+       * 用于 message footer 显示 "6d ago" 之类相对时间。assistant 实际完成时间没存
+       * （events 没时间戳），用 user 时间近似在 dashboard 视角无感差异。
+       */
+      sentAt?: number;
     }
   | {
       kind: 'tool_call';
@@ -42,8 +48,10 @@ export type ConversationMessage =
   | {
       kind: 'system_notice';
       id: string;
-      variant: 'iteration' | 'complete' | 'error';
-      /** iteration: "iter 1/30 · 1280 tokens"; complete: "✓ complete"; error: 错误文本 */
+      variant: 'iteration' | 'error';
+      /** iteration: "iter 1/30 · 1280 tokens"; error: 错误文本。
+       *  v0.1.x: 'complete' variant 已废弃——assistant bubble footer 自带 "Xd ago"，
+       *  原来的横条 "✓ complete" 视觉太重、对每轮都打断阅读节奏。 */
       text: string;
     };
 
@@ -88,7 +96,7 @@ export function composeMessages({ events, userMessages }: ComposeInput): Convers
     const segmentEnd = findSegmentEnd(events, cursor);
     const segment = events.slice(cursor, segmentEnd);
     cursor = segmentEnd;
-    composeAssistantSegment(segment, result);
+    composeAssistantSegment(segment, result, userMsg.sentAt);
   }
 
   // 如果还有 events 没消化（比如用户还没发任何 prompt，但收到了启动期的事件——
@@ -112,8 +120,14 @@ function findSegmentEnd(events: readonly SessionEvent[], cursor: number): number
 }
 
 /** 把一段 events 编织成 assistant 气泡 + tool cards + system notice 序列 */
-function composeAssistantSegment(segment: readonly SessionEvent[], out: ConversationMessage[]): void {
-  let currentText: { kind: 'assistant_text'; id: string; text: string; thinking?: string } | null = null;
+function composeAssistantSegment(
+  segment: readonly SessionEvent[],
+  out: ConversationMessage[],
+  parentSentAt?: number,
+): void {
+  let currentText:
+    | { kind: 'assistant_text'; id: string; text: string; thinking?: string; sentAt?: number }
+    | null = null;
   // tool_call 卡片按 toolId 查找——同一个 toolId 的 start/progress/result 合并到一张卡
   const toolCardsByToolId = new Map<string, Extract<ConversationMessage, { kind: 'tool_call' }>>();
 
@@ -137,6 +151,7 @@ function composeAssistantSegment(segment: readonly SessionEvent[], out: Conversa
             kind: 'assistant_text',
             id: `${segmentTag}_text${textBubbleCounter++}`,
             text: '',
+            sentAt: parentSentAt,
           };
         }
         currentText.text += evt.text;
@@ -148,6 +163,7 @@ function composeAssistantSegment(segment: readonly SessionEvent[], out: Conversa
             kind: 'assistant_text',
             id: `${segmentTag}_text${textBubbleCounter++}`,
             text: '',
+            sentAt: parentSentAt,
           };
         }
         currentText.thinking = (currentText.thinking ?? '') + evt.text;
@@ -188,13 +204,9 @@ function composeAssistantSegment(segment: readonly SessionEvent[], out: Conversa
         break;
       }
       case 'session_complete': {
+        // v0.1.x: 不再 push '✓ complete' 横条；assistant bubble footer 显示 "Xd ago"
+        // + copy 按钮替代，视觉更轻。consume 但不 emit。
         flushTextBubble();
-        out.push({
-          kind: 'system_notice',
-          id: `${segmentTag}_done${noticeCounter++}`,
-          variant: 'complete',
-          text: '✓ complete',
-        });
         break;
       }
       case 'session_error': {

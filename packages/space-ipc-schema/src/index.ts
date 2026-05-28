@@ -54,7 +54,9 @@ export {
   projectOpenDialogChannel,
   projectRecentAddChannel,
   projectRecentRemoveChannel,
+  projectGitStatsChannel,
   type Project,
+  type ProjectGitStatsDaily,
 } from './channels/project.js';
 
 export {
@@ -80,6 +82,13 @@ export {
   type SkillMeta,
   type SkillSource,
 } from './channels/skill.js';
+
+export {
+  agentDiscoverChannel,
+  type AgentMeta,
+  type AgentSource,
+  type AgentFailure,
+} from './channels/agent.js';
 
 export {
   mcpDiscoverChannel,
@@ -114,6 +123,7 @@ export {
   providerSetDefaultChannel,
   providerAddCustomChannel,
   providerRemoveCustomChannel,
+  providerModelContextWindowChannel,
   type ProviderInfo,
   type ProviderProtocol,
 } from './channels/provider.js';
