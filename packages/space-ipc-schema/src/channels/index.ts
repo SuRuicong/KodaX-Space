@@ -60,6 +60,7 @@ import {
 import { agentDiscoverChannel } from './agent.js';
 import { mcpDiscoverChannel } from './mcp.js';
 import { kodaxGetDefaultsChannel } from './kodax.js';
+import { kodaxQueueGetChannel, kodaxQueueChangedChannel } from './queue.js';
 import {
   providerListChannel,
   providerSetKeyChannel,
@@ -107,6 +108,7 @@ export const invokeChannels = {
   [agentDiscoverChannel.name]: agentDiscoverChannel,
   [mcpDiscoverChannel.name]: mcpDiscoverChannel,
   [kodaxGetDefaultsChannel.name]: kodaxGetDefaultsChannel,
+  [kodaxQueueGetChannel.name]: kodaxQueueGetChannel,
   [providerListChannel.name]: providerListChannel,
   [providerSetKeyChannel.name]: providerSetKeyChannel,
   [providerRemoveKeyChannel.name]: providerRemoveKeyChannel,
@@ -129,6 +131,7 @@ export const pushChannels = {
   [permissionCancelledChannel.name]: permissionCancelledChannel,
   [askUserRequestChannel.name]: askUserRequestChannel,
   [askUserCancelledChannel.name]: askUserCancelledChannel,
+  [kodaxQueueChangedChannel.name]: kodaxQueueChangedChannel,
 } as const;
 
 export type InvokeChannels = typeof invokeChannels;

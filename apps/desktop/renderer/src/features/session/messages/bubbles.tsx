@@ -108,14 +108,15 @@ function MessageFooter({ text, sentAt }: { text: string; sentAt?: number }): JSX
 
   const timeStr = sentAt !== undefined ? formatRelativeTime(sentAt) : null;
 
-  // 时间默认常驻显示（dim），copy 按钮 hover 时才浮出——这样用户不 hover 也能看到
-  // "X ago"，与 Claude Desktop 行为一致。
+  // 时间 + copy 图标都常驻显示 (dim)；hover copy 按钮时图标右边淡入 "copy" 文字
+  // (group/copy 限制 hover 作用域到本按钮，避免 message bubble 整体 hover 时一直显示)。
+  // 这样用户一眼看见两个 affordance，不再需要鼠标先找到 bubble 才知道有 copy 可用。
   return (
     <div className="mt-1 flex items-center gap-2 text-[10px]">
       <button
         type="button"
         onClick={() => void copyToClipboard()}
-        className="flex items-center gap-1 text-zinc-600 hover:text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="group/copy flex items-center gap-1 text-zinc-500 hover:text-zinc-200 transition-colors"
         title="Copy message"
         aria-label="Copy message"
       >
@@ -124,7 +125,9 @@ function MessageFooter({ text, sentAt }: { text: string; sentAt?: number }): JSX
         ) : (
           <>
             <span aria-hidden>⎘</span>
-            <span>copy</span>
+            <span className="opacity-0 max-w-0 overflow-hidden group-hover/copy:opacity-100 group-hover/copy:max-w-[40px] transition-all duration-150">
+              copy
+            </span>
           </>
         )}
       </button>

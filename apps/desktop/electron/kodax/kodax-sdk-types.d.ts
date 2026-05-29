@@ -515,6 +515,53 @@ declare module '@kodax-ai/kodax/agent' {
     provider: KodaXBaseProvider,
     modelOverride: string | undefined,
   ): number;
+
+  // ============= FEATURE_115 + FEATURE_159 MessageQueue =============
+  //
+  // KodaX SDK 内部 2-tier FIFO queue (user > background); Space main 端订阅 mutation 后
+  // push 给 renderer。这里只声明 Space 用到的 surface (getSnapshot/subscribe/size + filter peek)。
+
+  export type MessagePriority = 'user' | 'background';
+  export type MessageMode = 'prompt' | 'task-notification' | 'system-reminder';
+
+  export interface QueuedMessage {
+    readonly id: string;
+    readonly priority: MessagePriority;
+    readonly agentId?: string;
+    readonly mode: MessageMode;
+    readonly content: string;
+    readonly enqueuedAt: number;
+  }
+
+  export interface DequeueFilter {
+    readonly agentId?: string;
+    readonly maxPriority: MessagePriority;
+    readonly limit?: number;
+    readonly mode?: MessageMode;
+    readonly id?: string;
+    readonly predicate?: (message: QueuedMessage) => boolean;
+  }
+
+  export type QueueEvent =
+    | { readonly kind: 'enqueued'; readonly message: QueuedMessage }
+    | { readonly kind: 'dequeued'; readonly messages: readonly QueuedMessage[] }
+    | { readonly kind: 'cleared'; readonly messages: readonly QueuedMessage[] };
+
+  export type QueueEventListener = (event: QueueEvent) => void;
+
+  /** Process-global MessageQueue instance (lazy created)。Subscribe 不为 null。*/
+  export interface MessageQueueInstance {
+    subscribe(listener: QueueEventListener): () => void;
+    getSnapshot(): readonly QueuedMessage[];
+    /** Peek 不消费 — filter 后按 priority+FIFO 顺序返回 */
+    peek(filter: DequeueFilter): QueuedMessage[];
+    /** 整体长度 (跨 priority/agent),Space 用作 badge 数字 */
+    size(): number;
+    count(filter: DequeueFilter): number;
+    has(filter: DequeueFilter): boolean;
+  }
+
+  export function getMessageQueue(): MessageQueueInstance;
 }
 
 // ============= FEATURE_035 @kodax-ai/kodax/skills =============

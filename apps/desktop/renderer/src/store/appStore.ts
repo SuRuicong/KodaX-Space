@@ -19,6 +19,7 @@ import type {
   PermissionRequestPayload,
   AskUserRequestPayload,
   KodaxUserDefaults,
+  QueuedMessageT,
 } from '@kodax-space/space-ipc-schema';
 
 /**
@@ -214,6 +215,13 @@ interface AppState {
    * v0.1.x 不持久化（重启清空）；上限 200 条做 DoS guard。
    */
   inputHistoryBySession: Readonly<Record<string, readonly string[]>>;
+  /**
+   * KodaX SDK process-global MessageQueue 快照 (FEATURE_115/159)。
+   * main 端订阅 SDK queue mutation → push 'kodax.queueChanged' 时更新这里。
+   * Renderer UI badge / popout 读这俩字段;text_delta 等 hot path 与这里无关,不会被打扰。
+   */
+  queueSnapshot: readonly QueuedMessageT[];
+  queueTotalSize: number;
 
   // ----- actions -----
   setProjects(projects: readonly Project[]): void;
@@ -221,6 +229,8 @@ interface AppState {
   setSessions(sessions: readonly SessionMeta[]): void;
   setCurrentSession(sessionId: string | null): void;
   appendEvent(event: SessionEvent): void;
+  /** main 推 'kodax.queueChanged' 时 / renderer 主动 kodax.queueGet 后调用,覆盖 snapshot。*/
+  setQueueState(snapshot: readonly QueuedMessageT[], totalSize: number): void;
   /**
    * History 恢复专用：把一段历史会话**原子前置**到 userMessages + events buckets 前面。
    *
@@ -391,6 +401,8 @@ export const useAppStore = create<AppState>((set) => ({
   pendingToolPaths: {},
   pendingSendBySession: {},
   inputHistoryBySession: {},
+  queueSnapshot: [],
+  queueTotalSize: 0,
   pendingProviderId: null,
   // 持久化用户上次手动选择的 mode — 不再"用一次就消费"，而是变成"下次开 session 的默认偏好"。
   // 用户在 Settings / picker 切的值落 localStorage；新 session 创建时如不显式给值就用这个。
@@ -467,6 +479,9 @@ export const useAppStore = create<AppState>((set) => ({
         },
       };
     }),
+
+  setQueueState: (snapshot, totalSize) =>
+    set({ queueSnapshot: snapshot, queueTotalSize: totalSize }),
 
   appendEvent: (event) =>
     set((state) => {

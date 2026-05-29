@@ -102,6 +102,15 @@ export {
 } from './channels/kodax.js';
 
 export {
+  kodaxQueueGetChannel,
+  kodaxQueueChangedChannel,
+  type QueuedMessageT,
+  type MessagePriorityT,
+  type MessageModeT,
+  type QueueEventKindT,
+} from './channels/queue.js';
+
+export {
   permissionRequestChannel,
   permissionCancelledChannel,
   permissionAnswerChannel,

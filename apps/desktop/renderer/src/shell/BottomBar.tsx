@@ -14,6 +14,7 @@ import { ChipBar } from './ChipBar.js';
 import { ModelEffortSelector } from './ModelEffortSelector.js';
 import { ModeSelector } from './ModeSelector.js';
 import { ContextWindowIndicator } from './ContextWindowIndicator.js';
+import { QueueIndicator } from './QueueIndicator.js';
 import { AttachMenu } from './AttachMenu.js';
 import { SlashCommandPopover, type SlashPickerItem } from './SlashCommandPopover.js';
 import { resolveSessionCreateInputs } from './createSession.js';
@@ -696,8 +697,9 @@ export function BottomBar(): JSX.Element {
             }
             className="w-full bg-transparent text-sm text-zinc-100 placeholder-zinc-500 resize-none focus:outline-none px-0.5 py-1 pr-44 disabled:opacity-50"
           />
-          {/* Context window indicator 浮在输入框右下角 — Claude Desktop 截图 3 同款位置 */}
-          <div className="absolute right-1 bottom-1 pointer-events-auto">
+          {/* Context window indicator + queue badge 浮在输入框右下角 */}
+          <div className="absolute right-1 bottom-1 pointer-events-auto flex items-center gap-3">
+            <QueueIndicator />
             <ContextWindowIndicator />
           </div>
           {/* F031: slash 补全 popover — prompt trim 后以 '/' 开头且未含空白时显示 */}

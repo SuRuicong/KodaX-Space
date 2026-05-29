@@ -19,6 +19,7 @@ import { registerAgentChannels } from './ipc/agent.js';
 import { registerMcpChannels } from './ipc/mcp.js';
 import { prewarmSdkMcpStore } from './mcp/config-reader.js';
 import { registerKodaxChannels } from './ipc/kodax.js';
+import { registerQueueChannels, startQueueWatch } from './ipc/queue.js';
 import { prewarmKodaxUserConfig, registerKodaxCustomProviders } from './kodax/user-config.js';
 import { probeKodaxSdk } from './kodax/kodax-sdk-probe.js';
 import { probeSkillRegistry } from './skill/registry.js';
@@ -234,6 +235,7 @@ app.whenReady().then(async () => {
   registerAgentChannels();
   registerMcpChannels();
   registerKodaxChannels();
+  registerQueueChannels();
   // v0.1.6 cleanup: 预热 SDK MCP module 让首次 mcp.discover 不命中空 fallback
   // （DEFAULT_IMPL 首次同步调返回 {}，prewarm 异步触发后续调用走真 SDK）
   void prewarmSdkMcpStore();
@@ -250,6 +252,11 @@ app.whenReady().then(async () => {
   void settingsStore.ensureWorkspaceExists();
   // push 目标走 getter 间接拿当前 window——dev HMR / 用户重开窗口都能正确切换
   setRendererTarget(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null));
+  // KodaX SDK MessageQueue (process-global) 订阅 — 实时把 enqueued/dequeued/cleared 推 renderer.
+  // 失败 (SDK chunk import 错) 不阻塞启动,renderer 仍能调 kodax.queueGet 轮询。
+  void startQueueWatch().catch((err) => {
+    console.warn('[main] startQueueWatch failed:', err instanceof Error ? err.message : err);
+  });
   // 预加载 always-allow 规则 — broker.request 走 matches() 是同步路径，必须事先 load。
   // 失败不阻塞启动（registry.load 内部 catch 后 cached 落为 []）。
   void permissionRegistry.load();

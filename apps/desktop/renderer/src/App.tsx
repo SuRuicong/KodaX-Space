@@ -47,6 +47,7 @@ export default function App(): JSX.Element {
   const dequeueAskUser = useAppStore((s) => s.dequeueAskUser);
   const setProviders = useAppStore((s) => s.setProviders);
   const setKodaxDefaults = useAppStore((s) => s.setKodaxDefaults);
+  const setQueueState = useAppStore((s) => s.setQueueState);
   const providers = useAppStore((s) => s.providers);
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
   const unsubsRef = useRef<Array<() => void>>([]);
@@ -142,6 +143,18 @@ export default function App(): JSX.Element {
       }),
     );
 
+    // KodaX SDK MessageQueue (FEATURE_115/159) — 启动期拉一次,然后订阅 main 推的实时变更。
+    // SDK queue 当前 mid-turn drain / subagent task-notification / REPL 等场景会写;
+    // Space 这里只读 + 显示,enqueue/dequeue 由 SDK 自己管。
+    bridge.invoke('kodax.queueGet', {}).then((r) => {
+      if (r.ok) setQueueState(r.data.messages, r.data.totalSize);
+    });
+    unsubsRef.current.push(
+      bridge.on('kodax.queueChanged', (payload) => {
+        setQueueState(payload.snapshot, payload.totalSize);
+      }),
+    );
+
     return () => {
       for (const u of unsubsRef.current) u();
       unsubsRef.current = [];
@@ -154,6 +167,7 @@ export default function App(): JSX.Element {
     dequeueAskUser,
     setProviders,
     setKodaxDefaults,
+    setQueueState,
   ]);
 
   // Esc 关 settings 面板

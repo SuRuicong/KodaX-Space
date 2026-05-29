@@ -72,6 +72,13 @@ export function ConversationStreamV2(): JSX.Element {
   const userMessages = useAppStore((s) =>
     currentSessionId ? s.userMessagesBySession[currentSessionId] ?? EMPTY_USER_MESSAGES : EMPTY_USER_MESSAGES,
   );
+  // 用来判断 "is this session loading history?" — persisted session 在 SDK summary
+  // 有 msgCount > 0,而 in-memory buffer 还是空的 → history.IPC 在 flight,显示骨架更友好
+  const currentSessionMsgCount = useAppStore((s) => {
+    const sid = s.currentSessionId;
+    if (!sid) return 0;
+    return s.sessions.find((x) => x.sessionId === sid)?.msgCount ?? 0;
+  });
   const transcriptFontSize = useAppStore((s) => s.transcriptFontSize);
   // 字号映射 — TranscriptViewMenu 的 sm / base / lg → Tailwind class
   const fontClass = transcriptFontSize === 'sm' ? 'text-xs' : transcriptFontSize === 'lg' ? 'text-base' : 'text-sm';
@@ -238,9 +245,15 @@ export function ConversationStreamV2(): JSX.Element {
       >
         <div ref={contentRef} className="space-y-3">
         {viewMessages.length === 0 && (
-          <div className="text-zinc-600 italic text-sm">
-            Send a prompt below to start.
-          </div>
+          currentSessionMsgCount > 0 ? (
+            // 有 SDK summary msgCount 但 buffer 空 → history IPC 正在 flight,显示骨架
+            // 比 "Send a prompt to start" 更准确,也免去用户盯着空白屏幕等几百毫秒
+            <HistoryRestoreSkeleton />
+          ) : (
+            <div className="text-zinc-600 italic text-sm">
+              Send a prompt below to start.
+            </div>
+          )
         )}
         {viewMessages.map((m) => {
           const isMatch = matchSet.has(m.id);
@@ -385,6 +398,39 @@ function ToolGroup({ group, expanded, onToggle }: ToolGroupProps): JSX.Element {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// 历史会话加载骨架 — 点旧 session 后 jsonl IPC 在 flight 时显示 (~50-200ms)。
+// 一组 user/assistant 气泡 shimmer,让用户知道"正在加载"而不是"空白会话"。
+// 用 animate-pulse + 几条灰度 bar 模拟消息形态,无额外 CSS keyframe。
+function HistoryRestoreSkeleton(): JSX.Element {
+  return (
+    <div className="space-y-4 animate-pulse" aria-label="Loading conversation history">
+      {/* user 气泡 (右对齐) */}
+      <div className="flex justify-end">
+        <div className="bg-zinc-800/60 rounded-lg px-3 py-2 max-w-[60%]">
+          <div className="h-3 w-48 bg-zinc-700/60 rounded" />
+        </div>
+      </div>
+      {/* assistant 气泡 (左对齐,多行) */}
+      <div className="space-y-2">
+        <div className="h-3 w-3/4 bg-zinc-800/60 rounded" />
+        <div className="h-3 w-2/3 bg-zinc-800/60 rounded" />
+        <div className="h-3 w-1/2 bg-zinc-800/60 rounded" />
+      </div>
+      {/* user 气泡 #2 */}
+      <div className="flex justify-end">
+        <div className="bg-zinc-800/60 rounded-lg px-3 py-2 max-w-[40%]">
+          <div className="h-3 w-32 bg-zinc-700/60 rounded" />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <div className="h-3 w-5/6 bg-zinc-800/60 rounded" />
+        <div className="h-3 w-2/3 bg-zinc-800/60 rounded" />
+      </div>
+      <div className="pt-2 text-[10px] text-zinc-600 italic">Loading conversation…</div>
     </div>
   );
 }
