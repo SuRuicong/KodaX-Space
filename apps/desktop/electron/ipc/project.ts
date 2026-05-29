@@ -276,7 +276,11 @@ export function registerProjectChannels(): void {
     if (cached && Date.now() - cached.ts < FILE_SEARCH_TTL_MS) {
       paths = cached.paths;
     } else {
-      paths = await walkProjectFiles(projectRoot, FILE_SEARCH_HARD_CAP).catch(() => []);
+      const raw = await walkProjectFiles(projectRoot, FILE_SEARCH_HARD_CAP).catch(() => []);
+      // 入 cache 前 pre-sort: BFS walk 顺序不是字典序,如果搜索 loop 早退会丢前面应该
+      // 排序到顶的项 (审查 M4)。一次性 sort 50k 字符串 ~10-20ms,缓存命中后零成本。
+      raw.sort();
+      paths = raw;
       fileSearchCache.set(projectRoot, { ts: Date.now(), paths });
       // LRU 兜底防 cache 涨爆
       while (fileSearchCache.size > 16) {
@@ -292,7 +296,9 @@ export function registerProjectChannels(): void {
       return { paths: [...out], truncated: paths.length > limit };
     }
 
-    // 过滤 + 排序: basename 命中优先于 path 命中
+    // 过滤 + 排序: basename 命中优先于 path 命中。paths 已预排序,扫一遍即得到
+    // 字典序的 basenameHits / pathHits。**不早退** — 否则可能漏掉后段优先级更高
+    // 的项 (审查 M4)。50k 字符串扫一遍 ~5-15ms,对 UI 可接受。
     const basenameHits: string[] = [];
     const pathHits: string[] = [];
     for (const p of paths) {
@@ -302,10 +308,7 @@ export function registerProjectChannels(): void {
       } else if (p.toLowerCase().includes(query)) {
         pathHits.push(p);
       }
-      if (basenameHits.length + pathHits.length >= limit * 2) break; // 早停
     }
-    basenameHits.sort();
-    pathHits.sort();
     const merged = [...basenameHits, ...pathHits];
     const truncated = merged.length > limit;
     return { paths: merged.slice(0, limit), truncated };
@@ -342,6 +345,10 @@ async function walkProjectFiles(root: string, hardCap: number): Promise<string[]
     for (const ent of entries) {
       if (results.length >= hardCap) break;
       const childRel = rel === '' ? ent.name : `${rel}/${ent.name}`;
+      // 显式跳 symlink: 任何 link (无论指 dir / file / 其他) 都不走入,防 cycle (审查 M1)。
+      // node_modules/.bin 内的 symlink 链 + monorepo 跨链都会触发,不 skip 会无限循环。
+      // skip 后用户在 picker 里看不到 link target,但相对于死循环这是可接受 trade-off。
+      if (ent.isSymbolicLink()) continue;
       if (ent.isDirectory()) {
         if (IGNORED_DIRS.has(ent.name)) continue;
         if (ent.name.startsWith('.')) {
@@ -352,7 +359,7 @@ async function walkProjectFiles(root: string, hardCap: number): Promise<string[]
       } else if (ent.isFile()) {
         results.push(childRel);
       }
-      // symlinks / sockets 跳过
+      // sockets / FIFO 等其他类型自动 fall-through 不处理
     }
   }
   return results;

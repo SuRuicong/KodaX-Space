@@ -701,7 +701,9 @@ export const useAppStore = create<AppState>((set) => ({
           const reasonLabel = event.reason === 'denial_threshold'
             ? 'denial threshold'
             : 'circuit breaker';
-          next.notifications = pushNotificationLocal(state.notifications, {
+          // 用 next.notifications ?? state.notifications 作输入: 防止未来其他分支也写
+          // next.notifications 时本分支误覆盖。当前只有这一处写,fragile-defense (审查 L1)。
+          next.notifications = pushNotificationLocal(next.notifications ?? state.notifications, {
             id: `auto-fallback:${event.sessionId}:${event.reason}`,
             severity: 'warning',
             text: `Auto-mode engine fell back to ${event.engine} (${reasonLabel}).`,

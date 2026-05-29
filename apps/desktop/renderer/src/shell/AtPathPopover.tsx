@@ -56,28 +56,46 @@ export function AtPathPopover({
   const token = findAtToken(text, caret);
   const [matches, setMatches] = useState<readonly string[]>([]);
   const [active, setActive] = useState(0);
-  const open = token !== null && projectRoot !== null;
+  // Esc-dismissed state: 用户在当前 @token 上按过 Esc → 标记 (tokenStart,length) 为 dismissed,
+  // 直到 caret 离开或者 token 又变了才重新启用 (审查 M2)。
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+  const currentKey = token !== null ? `${token.start}:${token.query}` : null;
+  const isDismissed = currentKey !== null && dismissedKey === currentKey;
+  const open = token !== null && projectRoot !== null && !isDismissed;
+  // 离开 token 后允许下次再开
+  useEffect(() => {
+    if (currentKey === null && dismissedKey !== null) {
+      setDismissedKey(null);
+    }
+  }, [currentKey, dismissedKey]);
 
-  // IPC 查询: token.query 变化时去拉,empty query 也会拉 (前 N 个文件清单)
+  // IPC 查询: token.query 变化时去拉,empty query 也会拉 (前 N 个文件清单)。
+  // 加 120ms debounce — 用户快速打 "@src/foo" 时每按一键都打 IPC,虽然 main cache 命中
+  // 快但 IPC 还有 round-trip + zod 校验开销;debounce 把多次塞成一次 (审查 M3)。
   useEffect(() => {
     if (!open || !window.kodaxSpace || !projectRoot || !token) {
       setMatches([]);
       return;
     }
     let cancelled = false;
-    void window.kodaxSpace
-      .invoke('project.fileSearch', {
-        projectRoot,
-        query: token.query,
-        limit: 20,
-      })
-      .then((r) => {
-        if (cancelled || !r.ok) return;
-        setMatches(r.data.paths);
-        setActive(0);
-      });
+    const debounceTimer = setTimeout(() => {
+      if (cancelled) return;
+      if (!window.kodaxSpace) return;
+      void window.kodaxSpace
+        .invoke('project.fileSearch', {
+          projectRoot,
+          query: token.query,
+          limit: 20,
+        })
+        .then((r) => {
+          if (cancelled || !r.ok) return;
+          setMatches(r.data.paths);
+          setActive(0);
+        });
+    }, 120);
     return () => {
       cancelled = true;
+      clearTimeout(debounceTimer);
     };
   }, [open, projectRoot, token?.query]);
 
@@ -108,15 +126,16 @@ export function AtPathPopover({
       }
       if (e.key === 'Escape') {
         e.preventDefault();
-        // 关弹层 = 让 onAccept 收一个 no-op (替换原 token 不变),或者只是不消费让用户继续打
-        // 这里简化: 标记 active = -1 让下次 keydown 不响应,实际"关"靠 caret 移走 @token
+        // 真关弹层: 标记当前 (tokenStart, query) 为 dismissed → open 立即变 false,
+        // popover 卸载。用户改 token (移光标 / 改 query) 后 dismissedKey 自动失效重新开。
+        if (currentKey !== null) setDismissedKey(currentKey);
         return true;
       }
       return false;
     };
     registerKeyHandler(handler);
     return () => registerKeyHandler(null);
-  }, [open, matches, active, token, caret, onAccept, registerKeyHandler]);
+  }, [open, matches, active, token, caret, currentKey, onAccept, registerKeyHandler]);
 
   if (!open || matches.length === 0) return null;
 
