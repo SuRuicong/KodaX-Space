@@ -476,6 +476,33 @@ export const sessionRewindChannel = {
   }),
 } as const;
 
+// ---- Invoke: session.listRunning ---- (FEATURE_125 Team Mode, /status 用)
+//
+// 调用 SDK listRunningSessions(): RunningSessionInfo[]; 列出活在系统里的其他
+// KodaX peer instances (排除自己进程)。包括别的 Space 窗口 / KodaX CLI / REPL 等。
+// 用途: /status slash command + sidebar 上的 "N other peers" badge,让用户知道
+// 不是孤立运行 (多窗口或 CLI 兼容时常见)。
+//
+// pid / startedAt / cwd 是 SDK 直读 instance metadata 文件来的;sessionId 在 peer 还没
+// 显式 publish 时为 undefined (renderer 兜底显示 "(bootstrapping)")。
+const runningSessionInfoSchema = z.object({
+  pid: z.number().int().positive(),
+  startedAt: z.number().int().nonnegative(),
+  cwd: z.string().max(4096),
+  sessionId: z.string().min(1).max(128).optional(),
+});
+
+export const sessionListRunningChannel = {
+  name: 'session.listRunning',
+  direction: 'invoke',
+  input: z.undefined().optional(),
+  output: z.object({
+    peers: z.array(runningSessionInfoSchema).max(64),
+  }),
+} as const;
+
+export type RunningSessionInfoT = z.infer<typeof runningSessionInfoSchema>;
+
 // ---- Push: session.event ----
 //
 // Discriminated union by `kind`。每条都带 sessionId（同时跑多 session 时 renderer 路由用）。

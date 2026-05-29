@@ -458,6 +458,70 @@ export function BottomBar(): JSX.Element {
       return;
     }
 
+    if (action === 'insert-review-template') {
+      if (!window.kodaxSpace || !currentProjectPath) {
+        appendUserMessage(sessionId, '[review] no project / IPC unavailable');
+        return;
+      }
+      const r = await window.kodaxSpace.invoke('project.gitDiff', { projectRoot: currentProjectPath });
+      if (!r.ok) {
+        appendUserMessage(sessionId, `[review] git diff failed: ${r.error?.message ?? 'unknown'}`);
+        return;
+      }
+      if (!r.data.isGitRepo) {
+        appendUserMessage(sessionId, '[review] not a git repository');
+        return;
+      }
+      if (r.data.diff.trim().length === 0) {
+        appendUserMessage(sessionId, '[review] no uncommitted changes vs HEAD');
+        return;
+      }
+      // 把模板 + diff 塞入 textarea (替换当前 prompt) — 用户审阅后按 Send
+      const truncationNote = r.data.truncated ? '\n\n*(diff truncated at 64KB — full review may need narrower scope)*' : '';
+      const template = [
+        'Please review the following uncommitted changes vs HEAD. For each meaningful change:',
+        '- Note correctness bugs or edge cases',
+        '- Flag security / performance issues',
+        '- Suggest concrete improvements (cite file:line)',
+        'Avoid generic "consider X" — name the actual issue or skip.',
+        '',
+        '```diff',
+        r.data.diff,
+        '```',
+        truncationNote,
+      ].join('\n');
+      setPrompt(template);
+      // 焦点回 textarea 让用户能立刻按 Enter 发
+      requestAnimationFrame(() => textareaRef.current?.focus());
+      return;
+    }
+
+    if (action === 'show-status') {
+      if (!window.kodaxSpace) {
+        appendUserMessage(sessionId, '[status] IPC unavailable');
+        return;
+      }
+      const r = await window.kodaxSpace.invoke('session.listRunning', undefined);
+      if (!r.ok) {
+        appendUserMessage(sessionId, `[status] listRunning failed: ${r.error?.message ?? 'unknown'}`);
+        return;
+      }
+      const peers = r.data.peers;
+      if (peers.length === 0) {
+        appendUserMessage(sessionId, '[status] No other KodaX peer instances running.');
+        return;
+      }
+      const lines = [`[status] ${peers.length} other peer instance(s):`];
+      for (const p of peers) {
+        const ageSec = Math.max(0, Math.floor((Date.now() - p.startedAt) / 1000));
+        const ageLabel = ageSec < 60 ? `${ageSec}s` : ageSec < 3600 ? `${Math.floor(ageSec / 60)}m` : `${Math.floor(ageSec / 3600)}h`;
+        const sid = p.sessionId ? p.sessionId.slice(0, 12) : '(bootstrapping)';
+        lines.push(`  pid ${p.pid} · session ${sid} · ${ageLabel} ago · ${p.cwd}`);
+      }
+      appendUserMessage(sessionId, lines.join('\n'));
+      return;
+    }
+
     if (action === 'show-doctor') {
       if (!window.kodaxSpace) {
         appendUserMessage(sessionId, '[doctor] IPC unavailable');

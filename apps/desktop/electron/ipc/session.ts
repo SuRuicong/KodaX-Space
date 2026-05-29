@@ -365,6 +365,31 @@ export function registerSessionChannels(): void {
     return { ok: true, path: targetPath };
   });
 
+  // session.listRunning — FEATURE_125 Team Mode peer 列表
+  //
+  // 调 SDK listRunningSessions(): 全系统活的 KodaX peer 实例 (含别的 Space 窗口 / CLI),
+  // 排除自己。Renderer 用来:
+  //   - /status slash command 输出
+  //   - LeftSidebar 顶部 badge "N other peers" (让用户知道多窗口在跑)
+  // SDK 走 file-based discovery (~/.kodax/instances 目录),NEVER throws,no instances dir →
+  // [],不阻塞 UI。
+  registerChannel('session.listRunning', async () => {
+    const { listRunningSessions } = await import('@kodax-ai/kodax/session');
+    const list = await listRunningSessions();
+    // SDK 返回包括自己 — 用 pid 过滤掉自己; 其他 peer 也限到 64 防 schema 上限
+    const myPid = process.pid;
+    const peers = list
+      .filter((p) => p.pid !== myPid)
+      .slice(0, 64)
+      .map((p) => ({
+        pid: p.pid,
+        startedAt: p.startedAt,
+        cwd: p.cwd,
+        ...(p.sessionId !== undefined ? { sessionId: p.sessionId } : {}),
+      }));
+    return { peers };
+  });
+
   // session.history — 历史 session 切换时恢复对话内容（events / userMessages buffer in-memory，
   // 重启后空；renderer 调本 channel 拉 KodaX SDK 持久化的 messages 数组，flatten 成
   // user / assistant_text / tool_call 序列,回填 store）。

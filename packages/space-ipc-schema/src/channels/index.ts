@@ -29,6 +29,7 @@ import {
   sessionAgentsMdChannel,
   sessionAgentsMdSaveChannel,
   sessionHistoryChannel,
+  sessionListRunningChannel,
   sessionEventChannel,
 } from './session.js';
 import {
@@ -39,6 +40,7 @@ import {
   projectGitStatsChannel,
   projectGitStatusChannel,
   projectFileSearchChannel,
+  projectGitDiffChannel,
 } from './project.js';
 import {
   permissionRequestChannel,
@@ -96,6 +98,7 @@ export const invokeChannels = {
   [sessionAgentsMdChannel.name]: sessionAgentsMdChannel,
   [sessionAgentsMdSaveChannel.name]: sessionAgentsMdSaveChannel,
   [sessionHistoryChannel.name]: sessionHistoryChannel,
+  [sessionListRunningChannel.name]: sessionListRunningChannel,
   [projectListChannel.name]: projectListChannel,
   [projectOpenDialogChannel.name]: projectOpenDialogChannel,
   [projectRecentAddChannel.name]: projectRecentAddChannel,
@@ -103,6 +106,7 @@ export const invokeChannels = {
   [projectGitStatsChannel.name]: projectGitStatsChannel,
   [projectGitStatusChannel.name]: projectGitStatusChannel,
   [projectFileSearchChannel.name]: projectFileSearchChannel,
+  [projectGitDiffChannel.name]: projectGitDiffChannel,
   [permissionAnswerChannel.name]: permissionAnswerChannel,
   [permissionListChannel.name]: permissionListChannel,
   [permissionRevokeChannel.name]: permissionRevokeChannel,

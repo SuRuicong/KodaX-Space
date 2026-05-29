@@ -106,6 +106,32 @@ export const projectGitStatsChannel = {
 
 export type ProjectGitStatsDaily = z.infer<typeof dailyCommitSchema>;
 
+// ---- project.gitDiff ----
+//
+// 返回当前 working tree 相对 HEAD 的 unified diff (`git diff HEAD`),给 /review slash 命令
+// 直接拼模板填入 textarea 用。
+//
+// 设计:
+//   - 限定相对 HEAD 的 diff (含 staged + 未 staged 的所有改动) — 用户最常关心的"我改了啥"
+//   - 上限 64KB: 超出截断,不抛错 (UI 显示 "(diff truncated)" 提示)
+//   - 非 git repo / 命令失败: 返回 isGitRepo: false + 空 diff
+//   - 缓存: 5s mtime (HEAD 不变 + 工作区不变时同 gitStatus,但比起为 review 复用 cache 简单点,
+//     这个先不 cache — 用户用 /review 的频率不会高)
+export const projectGitDiffChannel = {
+  name: 'project.gitDiff',
+  direction: 'invoke',
+  input: z.object({
+    projectRoot: z.string().min(1).max(4096),
+  }),
+  output: z.object({
+    isGitRepo: z.boolean(),
+    /** unified diff 文本; 空字符串 = 无改动 / 非 git repo */
+    diff: z.string().max(65_536),
+    /** true 表示 diff 大于 64KB 被截断,UI 显示 hint */
+    truncated: z.boolean(),
+  }),
+} as const;
+
 // ---- project.fileSearch ----
 //
 // 模糊匹配 project root 下的文件路径,给 BottomBar 的 @path autocomplete 用 (REPL

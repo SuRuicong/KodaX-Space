@@ -258,6 +258,35 @@ export function registerProjectChannels(): void {
     return result;
   });
 
+  // project.gitDiff — /review slash 命令拿当前工作区改动
+  //
+  // `git diff HEAD` 包含 staged + 未 staged 改动 (相对最近一次 commit)。 untracked 文件不含,
+  // 如果想纳入 untracked 还得 git diff --no-index /dev/null <file>,先省略,只关心已 tracked 的改动。
+  // 64KB 上限: 超出 runGit 的 stdout cap 在 maxBuffer 处自动截断,这里再 truncate 一次填 schema。
+  registerChannel('project.gitDiff', async (input) => {
+    const projectRoot = validateProjectRoot(input.projectRoot);
+    const isRepo = await runGit(projectRoot, ['rev-parse', '--git-dir']);
+    if (!isRepo.ok) {
+      return { isGitRepo: false, diff: '', truncated: false };
+    }
+    // --no-color: 避免 ANSI 染色字符进 schema; --unified=3: 默认上下文够阅读
+    const diffResult = await runGit(projectRoot, [
+      'diff', '--no-color', '--unified=3', 'HEAD',
+    ]);
+    if (!diffResult.ok) {
+      return { isGitRepo: true, diff: '', truncated: false };
+    }
+    const MAX = 65_536;
+    if (diffResult.stdout.length > MAX) {
+      return {
+        isGitRepo: true,
+        diff: diffResult.stdout.slice(0, MAX),
+        truncated: true,
+      };
+    }
+    return { isGitRepo: true, diff: diffResult.stdout, truncated: false };
+  });
+
   // project.fileSearch — @path autocomplete 后端
   //
   // 实现:

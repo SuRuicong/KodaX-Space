@@ -401,6 +401,28 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
   },
 
   {
+    name: 'status',
+    description: 'Show other KodaX peer instances (other Space windows / CLI / REPL running)',
+    source: 'builtin',
+    handler: async () => {
+      // renderer 调 session.listRunning + 输出格式化的 peer 列表
+      return { ok: true, message: '__action__:show-status', echo: false };
+    },
+  },
+
+  {
+    name: 'review',
+    description: 'Insert a review template + current uncommitted diff for LLM review',
+    source: 'builtin',
+    handler: async () => {
+      // renderer 端拉 git diff (project.gitDiff IPC) → 拼模板 → 塞入输入框
+      // SDK 的 runLlmReview 是给 self-modify handler 安全审查用的 (FEATURE_088 capability whitelist),
+      // 对 Space 用户场景不适用; 这里实现 user-facing /review = "review my changes" 助手。
+      return { ok: true, message: '__action__:insert-review-template', echo: false };
+    },
+  },
+
+  {
     name: 'memory',
     description: 'Show loaded AGENTS.md files (global + project)',
     source: 'builtin',

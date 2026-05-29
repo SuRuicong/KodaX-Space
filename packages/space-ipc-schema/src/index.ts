@@ -40,6 +40,8 @@ export {
   sessionAgentsMdSaveChannel,
   type AgentsFileMeta,
   sessionHistoryChannel,
+  sessionListRunningChannel,
+  type RunningSessionInfoT,
   type SessionHistoryItem,
   sessionEventChannel,
   type PermissionMode,
@@ -58,6 +60,7 @@ export {
   projectGitStatsChannel,
   projectGitStatusChannel,
   projectFileSearchChannel,
+  projectGitDiffChannel,
   type Project,
   type ProjectGitStatsDaily,
 } from './channels/project.js';

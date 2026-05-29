@@ -11,7 +11,7 @@
 
 import { useState } from 'react';
 import { useAppStore } from '../store/appStore.js';
-import type { QueuedMessageT } from '@kodax-space/space-ipc-schema';
+import type { QueuedMessageT, MessageModeT } from '@kodax-space/space-ipc-schema';
 
 const PRIORITY_COLOR: Record<QueuedMessageT['priority'], string> = {
   user: 'text-amber-300',
@@ -23,12 +23,32 @@ const MODE_LABEL: Record<QueuedMessageT['mode'], string> = {
   'system-reminder': 'system',
 };
 
+// Filter UI: 'all' / 'prompt' / 'task-notification' / 'system-reminder'
+type FilterMode = 'all' | MessageModeT;
+const FILTER_LABEL: Record<FilterMode, string> = {
+  all: 'All',
+  prompt: 'Prompts',
+  'task-notification': 'Tasks',
+  'system-reminder': 'System',
+};
+
 export function QueueIndicator(): JSX.Element | null {
   const snapshot = useAppStore((s) => s.queueSnapshot);
   const total = useAppStore((s) => s.queueTotalSize);
   const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState<FilterMode>('all');
 
   if (total === 0) return null; // 空队列不占位
+
+  // 按 filter 切片 snapshot;'all' 不过滤
+  const filtered = filter === 'all' ? snapshot : snapshot.filter((m) => m.mode === filter);
+  // 各 mode 的计数 (用来给 filter 按钮加 badge 数字,空 mode 不显示按钮)
+  const modeCounts: Record<MessageModeT, number> = {
+    prompt: 0,
+    'task-notification': 0,
+    'system-reminder': 0,
+  };
+  for (const m of snapshot) modeCounts[m.mode] += 1;
 
   return (
     <div className="relative">
@@ -53,14 +73,36 @@ export function QueueIndicator(): JSX.Element | null {
             <span>KodaX Message Queue</span>
             <span>{total} total</span>
           </div>
-          {snapshot.length === 0 ? (
+          {/* Mode filter tabs: 只显示当前有内容的 mode + 'all' */}
+          <div className="flex gap-1 mb-2 flex-wrap">
+            {(['all', 'prompt', 'task-notification', 'system-reminder'] as const).map((m) => {
+              const count = m === 'all' ? snapshot.length : modeCounts[m];
+              // 不显示 0 count 的 mode 按钮 (except 'all' 用作 reset)
+              if (m !== 'all' && count === 0) return null;
+              const isActive = filter === m;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setFilter(m)}
+                  className={`px-2 py-0.5 text-[10px] rounded ${
+                    isActive ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+                  }`}
+                >
+                  {FILTER_LABEL[m]} {count > 0 && <span className="text-zinc-500">{count}</span>}
+                </button>
+              );
+            })}
+          </div>
+          {filtered.length === 0 ? (
             <div className="text-zinc-500 italic">
-              {/* totalSize > 0 但 snapshot 空 — 说明 filter 后 main-thread 没有,subagent 有 */}
-              Items in subagent queues; switch filter to view.
+              {filter === 'all'
+                ? 'Items in subagent queues; switch filter to view.'
+                : `No ${FILTER_LABEL[filter]} messages.`}
             </div>
           ) : (
             <ul className="space-y-2">
-              {snapshot.map((m) => (
+              {filtered.map((m) => (
                 <li key={m.id} className="border-b border-zinc-800 pb-2 last:border-b-0">
                   <div className="flex items-center gap-2 text-[10px]">
                     <span className={PRIORITY_COLOR[m.priority]}>{m.priority}</span>
