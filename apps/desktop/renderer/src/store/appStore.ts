@@ -23,6 +23,23 @@ import type {
 } from '@kodax-space/space-ipc-schema';
 
 /**
+ * Persistent inline notification (NotificationsSurface 渲染源)。
+ *   - id: dedupe key (eg `ctx-warn:${sessionId}` / `auto-fallback:${sessionId}:${reason}`)
+ *   - severity: 视觉色调 + icon
+ *   - text: 用户可读单行 (UI 1-2 行可折行)
+ *   - sessionId?: 仅适用于特定 session 的通知;切走 session 后不显示但保留在 store 里
+ *     (回切回来时再显示);全局通知 sessionId 留空
+ *   - createdAt: 排序用 (新的在前)
+ */
+export interface Notification {
+  readonly id: string;
+  readonly severity: 'info' | 'warning' | 'error';
+  readonly text: string;
+  readonly sessionId?: string;
+  readonly createdAt: number;
+}
+
+/**
  * Recents 列表过滤 / 分组 / 排序 状态 — 对齐 Claude Desktop 截图 3。
  * alpha.1 阶段全部存 renderer 本地（不持久化重启清空）；后续需要的话再持久化到 main。
  */
@@ -223,6 +240,13 @@ interface AppState {
   queueSnapshot: readonly QueuedMessageT[];
   queueTotalSize: number;
   /**
+   * Persistent inline notifications (REPL NotificationsSurface 等价)。区别于 ToastContainer
+   * 的"几秒自动消失"语义 — 这些 notice 一直挂着直到用户主动 dismiss 或来源条件消失。
+   * 典型用例: context 已达 80% 提示压缩、auto engine 因 denial threshold 降到 rules、
+   * provider 反复 retry 的告警等。 id 用来 dedupe (同一来源不重弹)。
+   */
+  notifications: readonly Notification[];
+  /**
    * Slash-action 等场景下请求 Shell 打开特定 popout (eg /memory → agents 面板)。
    * 类型字符串与 Shell.PopoutKind 对齐;Shell 用 useEffect 监听这里,见到非空就 setActivePopout
    * 同时清空回 null,形成"事件式" UI 指令。null = 没人请求,Shell 不动 currentPopout。
@@ -239,6 +263,10 @@ interface AppState {
   setQueueState(snapshot: readonly QueuedMessageT[], totalSize: number): void;
   /** BottomBar slash action 调,Shell 用 useEffect 消费 (置回 null + 打开 popout)。 */
   requestPopout(kind: string | null): void;
+  /** 推入一条持久通知;id 重复时静默 dedupe (避免每个 event 都重弹同一条)。 */
+  pushNotification(notice: Notification): void;
+  /** 用户点 × 关掉一条;主动消化后不应再因同样事件重新弹出 (id 持续 dedupe)。 */
+  dismissNotification(id: string): void;
   /**
    * History 恢复专用：把一段历史会话**原子前置**到 userMessages + events buckets 前面。
    *
@@ -357,6 +385,16 @@ function readPersistedAgentMode(): SessionMeta['agentMode'] | null {
     : null;
 }
 
+// pushNotification 的 set-callback 版本: dedupe id + 上限 50 截断,返回新 array。
+// appendEvent 等内部 reducer 路径用 — 比从外层调 store.getState().pushNotification() 更省一次 set。
+function pushNotificationLocal(
+  current: readonly Notification[],
+  notice: Notification,
+): readonly Notification[] {
+  if (current.some((n) => n.id === notice.id)) return current;
+  return [notice, ...current].slice(0, 50);
+}
+
 // 粗略 token 估算 — 同 bubbles.tsx / ContextWindowIndicator 公式（ASCII/4 + non-ASCII × 1）。
 // 用于 session_complete 时一次性给 tokensBySession 填 estimate，让 Dashboard 不必扫 buffer。
 function approxTokensForStats(text: string): number {
@@ -411,6 +449,7 @@ export const useAppStore = create<AppState>((set) => ({
   inputHistoryBySession: {},
   queueSnapshot: [],
   queueTotalSize: 0,
+  notifications: [],
   requestedPopout: null,
   pendingProviderId: null,
   // 持久化用户上次手动选择的 mode — 不再"用一次就消费"，而是变成"下次开 session 的默认偏好"。
@@ -541,6 +580,20 @@ export const useAppStore = create<AppState>((set) => ({
 
   requestPopout: (kind) => set({ requestedPopout: kind }),
 
+  pushNotification: (notice) =>
+    set((state) => {
+      // dedupe: 同 id 已存在 → 不重弹 (避免每次 iteration_end 都重新插入 ctx-warn)
+      if (state.notifications.some((n) => n.id === notice.id)) return state;
+      // 上限 50 条防内存涨;新通知插前面,旧的挤出去
+      const next = [notice, ...state.notifications].slice(0, 50);
+      return { notifications: next };
+    }),
+
+  dismissNotification: (id) =>
+    set((state) => ({
+      notifications: state.notifications.filter((n) => n.id !== id),
+    })),
+
   appendEvent: (event) =>
     set((state) => {
       // 切项目 / 删除 session 后，旧 session 的迟到事件仍会通过同一 push channel 到达。
@@ -642,6 +695,20 @@ export const useAppStore = create<AppState>((set) => ({
         next.sessions = state.sessions.map((s) =>
           s.sessionId === event.sessionId ? { ...s, autoModeEngine: event.engine } : s,
         );
+        // Non-manual fallback (denial_threshold / circuit_breaker) → 推一条持久通知。
+        // 用户的"manual /auto-engine X"切换不弹 (那是用户主动操作,无需提示)。
+        if (event.reason && event.reason !== 'manual') {
+          const reasonLabel = event.reason === 'denial_threshold'
+            ? 'denial threshold'
+            : 'circuit breaker';
+          next.notifications = pushNotificationLocal(state.notifications, {
+            id: `auto-fallback:${event.sessionId}:${event.reason}`,
+            severity: 'warning',
+            text: `Auto-mode engine fell back to ${event.engine} (${reasonLabel}).`,
+            sessionId: event.sessionId,
+            createdAt: Date.now(),
+          });
+        }
       } else if (event.kind === 'tool_start') {
         // F009：记 toolId → path 暂存；等 tool_result 来配对决定要不要 jump 到 diff
         // input.path 由 mock-session / real adapter 在 tool_start 时附上

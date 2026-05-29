@@ -57,6 +57,7 @@ export {
   projectRecentRemoveChannel,
   projectGitStatsChannel,
   projectGitStatusChannel,
+  projectFileSearchChannel,
   type Project,
   type ProjectGitStatsDaily,
 } from './channels/project.js';

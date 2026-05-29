@@ -17,13 +17,16 @@ import { ContextWindowIndicator } from './ContextWindowIndicator.js';
 import { QueueIndicator } from './QueueIndicator.js';
 import { AttachMenu } from './AttachMenu.js';
 import { AgentPicker } from './AgentPicker.js';
+import { AtPathPopover } from './AtPathPopover.js';
 import { SlashCommandPopover, type SlashPickerItem } from './SlashCommandPopover.js';
 import { resolveSessionCreateInputs } from './createSession.js';
 import { ActivitySpinner, useIsStreaming } from './ActivitySpinner.js';
 import { AgentModeSelector } from './AgentModeSelector.js';
 import { AmaWorkStrip } from './AmaWorkStrip.js';
+import { BackgroundTaskBar } from './BackgroundTaskBar.js';
 import { StashNotice } from './StashNotice.js';
 import { RetryBanner } from './RetryBanner.js';
+import { NotificationsSurface } from './NotificationsSurface.js';
 import { pushToast } from '../store/toastStore.js';
 
 /**
@@ -95,6 +98,11 @@ export function BottomBar(): JSX.Element {
   const [historyIdx, setHistoryIdx] = useState(-1);
   /** 在用户首次按 ↑ 之前，缓存 draft，回到 idx=-1 时还原。 */
   const draftRef = useRef<string>('');
+
+  /** caret 实时位置 (跟 prompt 一起喂给 AtPathPopover 判断是否在 @token 里)。 */
+  const [caret, setCaret] = useState(0);
+  /** AtPathPopover 注册的 keydown 拦截器; 优先消费 Tab/Enter/↑↓/Esc 用于选项 */
+  const atPathKeyHandlerRef = useRef<((e: KeyboardEvent) => boolean) | null>(null);
 
   /** AgentPicker 用: 将 text 插入 textarea 当前 caret 位置 (替换 selection 区间)。 */
   function insertAtCaret(text: string): void {
@@ -723,6 +731,9 @@ export function BottomBar(): JSX.Element {
     <div className="px-3 pt-1 pb-3 flex-shrink-0 space-y-1">
       {err && <div className="text-red-400 text-[11px] font-mono px-1">{err}</div>}
 
+      {/* 持久内联通知 (REPL NotificationsSurface 等价) — auto-engine fallback 等 */}
+      <NotificationsSurface />
+
       {/* Git working tree dirty 提示 (REPL StashNotice 等价)。非 git repo / clean 时返回 null */}
       <StashNotice />
 
@@ -731,6 +742,9 @@ export function BottomBar(): JSX.Element {
 
       {/* P5: AMA agent 形态时展示 worker / harness / 子任务计数 */}
       <AmaWorkStrip />
+
+      {/* REPL BackgroundTaskBar 等价: 多 subagent 并发时按 workerId 聚合显示 chip 条 */}
+      <BackgroundTaskBar />
 
       {/* 流式响应时显示 spinner + 实时 status / iter / tokens */}
       <ActivitySpinner />
@@ -742,8 +756,32 @@ export function BottomBar(): JSX.Element {
           <textarea
             ref={textareaRef}
             value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={onKeyDown}
+            onChange={(e) => {
+              setPrompt(e.target.value);
+              setCaret(e.target.selectionStart ?? e.target.value.length);
+            }}
+            onSelect={(e) => {
+              setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0);
+            }}
+            onClick={(e) => {
+              setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0);
+            }}
+            onKeyDown={(e) => {
+              // AtPathPopover 优先消费 Tab/Enter/↑↓/Esc (它注册了 handler)
+              if (atPathKeyHandlerRef.current) {
+                const consumed = atPathKeyHandlerRef.current(e.nativeEvent);
+                if (consumed) {
+                  // popover 内部已 preventDefault,不走 BottomBar 原 onKeyDown 逻辑
+                  return;
+                }
+              }
+              onKeyDown(e);
+              // 键按下后 caret 可能移动;下一帧读最新位置
+              requestAnimationFrame(() => {
+                const ta = textareaRef.current;
+                if (ta) setCaret(ta.selectionStart ?? 0);
+              });
+            }}
             disabled={busy || !currentProjectPath}
             rows={2}
             placeholder={
@@ -763,6 +801,29 @@ export function BottomBar(): JSX.Element {
           {/* F031: slash 补全 popover — prompt trim 后以 '/' 开头且未含空白时显示 */}
           {slashMode && (
             <SlashCommandPopover query={trimmedPrompt} onPick={onSlashPick} />
+          )}
+          {/* @path 文件补全 popover (REPL SuggestionsDisplay 等价)。slash 模式时不显示避免抢键盘。 */}
+          {!slashMode && (
+            <AtPathPopover
+              text={prompt}
+              caret={caret}
+              projectRoot={currentProjectPath}
+              onAccept={(replacement, tokenStart, tokenEnd) => {
+                const next = prompt.slice(0, tokenStart) + replacement + prompt.slice(tokenEnd);
+                setPrompt(next);
+                const newCaret = tokenStart + replacement.length;
+                requestAnimationFrame(() => {
+                  const live = textareaRef.current;
+                  if (!live) return;
+                  live.focus();
+                  try { live.setSelectionRange(newCaret, newCaret); } catch { /* ignore */ }
+                  setCaret(newCaret);
+                });
+              }}
+              registerKeyHandler={(h) => {
+                atPathKeyHandlerRef.current = h;
+              }}
+            />
           )}
         </div>
 

@@ -38,6 +38,7 @@ import {
   projectRecentRemoveChannel,
   projectGitStatsChannel,
   projectGitStatusChannel,
+  projectFileSearchChannel,
 } from './project.js';
 import {
   permissionRequestChannel,
@@ -101,6 +102,7 @@ export const invokeChannels = {
   [projectRecentRemoveChannel.name]: projectRecentRemoveChannel,
   [projectGitStatsChannel.name]: projectGitStatsChannel,
   [projectGitStatusChannel.name]: projectGitStatusChannel,
+  [projectFileSearchChannel.name]: projectFileSearchChannel,
   [permissionAnswerChannel.name]: permissionAnswerChannel,
   [permissionListChannel.name]: permissionListChannel,
   [permissionRevokeChannel.name]: permissionRevokeChannel,

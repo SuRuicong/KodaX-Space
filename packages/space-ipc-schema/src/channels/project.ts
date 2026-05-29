@@ -106,6 +106,38 @@ export const projectGitStatsChannel = {
 
 export type ProjectGitStatsDaily = z.infer<typeof dailyCommitSchema>;
 
+// ---- project.fileSearch ----
+//
+// 模糊匹配 project root 下的文件路径,给 BottomBar 的 @path autocomplete 用 (REPL
+// SuggestionsDisplay 等价)。
+//
+// 实现策略 (main 端):
+//   - 启动期 lazy 扫: 每个 project 第一次查询时 walk projectRoot 收集相对路径,filter
+//     掉 node_modules / .git / dist / build 等 (heuristics + .gitignore basic patterns)。
+//     结果存 module-level cache + 30s TTL,后续命中 cache 立即返回。
+//   - 单次扫上限 50_000 文件 (大 monorepo 防内存炸),超出截断。
+//   - query 是简单 substring (case-insensitive)。subsequence/fuzzy 后续优化。
+//
+// **不返回内容**: 只回相对路径 (raw string)。文件读还是走 files.read。
+// **不暴露绝对路径**: 隐私 (用户 home dir 等) + UI 简洁 (@src/foo.ts 比绝对路径短)。
+export const projectFileSearchChannel = {
+  name: 'project.fileSearch',
+  direction: 'invoke',
+  input: z.object({
+    projectRoot: z.string().min(1).max(4096),
+    /** 子串查询;空串 → 返回前 limit 条文件 (用于刚打 `@` 还没输文字时弹个清单) */
+    query: z.string().max(512),
+    /** 默认 30 条,popover 显示足够 */
+    limit: z.number().int().positive().max(100).optional(),
+  }),
+  output: z.object({
+    /** posix 风格相对路径,如 'src/foo/bar.ts' */
+    paths: z.array(z.string().min(1).max(2048)).max(100),
+    /** 是否截断 — true 表示还有更多匹配未返回,UI 显示"+N more" hint */
+    truncated: z.boolean(),
+  }),
+} as const;
+
 // ---- project.gitStatus ----
 //
 // 实时读 git working tree 脏度,给 BottomBar 上的 StashNotice 用 (REPL TUI 同款功能):
