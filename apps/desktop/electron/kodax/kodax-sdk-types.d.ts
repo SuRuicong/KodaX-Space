@@ -620,13 +620,28 @@ declare module '@kodax-ai/kodax/skills' {
   }
 
   /**
+   * v0.7.42 — embedder hook for `!`cmd`` dynamic-context. 取代 SDK 内部 execSync 白名单。
+   * 实现者负责: 用户授权弹窗 / audit log / 实际执行 / 返回 stdout 字符串。
+   */
+  export type SkillDynamicContextExecutor = (
+    command: string,
+    cwd: string,
+  ) => Promise<string>;
+
+  /**
    * VariableResolver context — Space 端 wire 时填 sessionId / cwd / env。
    * SDK 内部用 ${VAR}, $1..$N, $ARGUMENTS, !`cmd` 等 token 解析。
+   *
+   * v0.7.42 起对应 SDK 的 SkillContext (兼容超集):
+   *   - executeDynamicContext?: 显式 hook,改走 host 的 permission broker
+   *   - disableDynamicContext?: kill switch,所有 !`cmd` 抛错 (优先级高于 executor)
    */
   export interface VariableContext {
     readonly sessionId: string;
     readonly workingDirectory: string;
     readonly environment: Record<string, string>;
+    readonly executeDynamicContext?: SkillDynamicContextExecutor;
+    readonly disableDynamicContext?: boolean;
   }
 
   /** Skill invoke 结果（SDK SkillRegistry.invoke 返回）。 */

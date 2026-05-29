@@ -222,6 +222,12 @@ interface AppState {
    */
   queueSnapshot: readonly QueuedMessageT[];
   queueTotalSize: number;
+  /**
+   * Slash-action 等场景下请求 Shell 打开特定 popout (eg /memory → agents 面板)。
+   * 类型字符串与 Shell.PopoutKind 对齐;Shell 用 useEffect 监听这里,见到非空就 setActivePopout
+   * 同时清空回 null,形成"事件式" UI 指令。null = 没人请求,Shell 不动 currentPopout。
+   */
+  requestedPopout: string | null;
 
   // ----- actions -----
   setProjects(projects: readonly Project[]): void;
@@ -231,6 +237,8 @@ interface AppState {
   appendEvent(event: SessionEvent): void;
   /** main 推 'kodax.queueChanged' 时 / renderer 主动 kodax.queueGet 后调用,覆盖 snapshot。*/
   setQueueState(snapshot: readonly QueuedMessageT[], totalSize: number): void;
+  /** BottomBar slash action 调,Shell 用 useEffect 消费 (置回 null + 打开 popout)。 */
+  requestPopout(kind: string | null): void;
   /**
    * History 恢复专用：把一段历史会话**原子前置**到 userMessages + events buckets 前面。
    *
@@ -403,6 +411,7 @@ export const useAppStore = create<AppState>((set) => ({
   inputHistoryBySession: {},
   queueSnapshot: [],
   queueTotalSize: 0,
+  requestedPopout: null,
   pendingProviderId: null,
   // 持久化用户上次手动选择的 mode — 不再"用一次就消费"，而是变成"下次开 session 的默认偏好"。
   // 用户在 Settings / picker 切的值落 localStorage；新 session 创建时如不显式给值就用这个。
@@ -529,6 +538,8 @@ export const useAppStore = create<AppState>((set) => ({
 
   setQueueState: (snapshot, totalSize) =>
     set({ queueSnapshot: snapshot, queueTotalSize: totalSize }),
+
+  requestPopout: (kind) => set({ requestedPopout: kind }),
 
   appendEvent: (event) =>
     set((state) => {

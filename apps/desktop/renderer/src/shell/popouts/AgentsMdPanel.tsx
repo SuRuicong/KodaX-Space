@@ -80,19 +80,22 @@ function ContextTab(): JSX.Element {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeIdx, setActiveIdx] = useState(0);
+  // 编辑态: editing!=null 时显示 textarea。draft 是 textarea 当前值; saving = IPC 飞行
+  const [editing, setEditing] = useState<{ scope: 'global' | 'project'; sourcePath?: string } | null>(null);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const reload = (): void => {
     if (!currentSessionId || !window.kodaxSpace) {
       setFiles([]);
       return;
     }
-    let cancelled = false;
     setLoading(true);
     setError(null);
     void window.kodaxSpace
       .invoke('session.agentsMd', { sessionId: currentSessionId })
       .then((r) => {
-        if (cancelled) return;
         if (!r.ok) {
           setError(`${r.error?.code ?? 'ERR_UNKNOWN'}: ${r.error?.message ?? 'unknown error'}`);
           setFiles([]);
@@ -102,17 +105,112 @@ function ContextTab(): JSX.Element {
         setActiveIdx(0);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        setLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
+  };
+
+  useEffect(() => {
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSessionId]);
+
+  function startEdit(scope: 'global' | 'project', initialContent: string, sourcePath?: string): void {
+    setDraft(initialContent);
+    setEditing({ scope, sourcePath });
+    setSaveError(null);
+  }
+  function cancelEdit(): void {
+    setEditing(null);
+    setDraft('');
+    setSaveError(null);
+  }
+  async function commitEdit(): Promise<void> {
+    if (!editing || !currentSessionId || !window.kodaxSpace) return;
+    if (draft.length > 262_144) {
+      setSaveError('Content exceeds 256KB limit');
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const r = await window.kodaxSpace.invoke('session.agentsMd.save', {
+        sessionId: currentSessionId,
+        scope: editing.scope,
+        content: draft,
+      });
+      if (!r.ok) {
+        setSaveError(`${r.error?.code ?? 'ERR_UNKNOWN'}: ${r.error?.message ?? 'save failed'}`);
+        return;
+      }
+      // 成功 → 退编辑 + 重读磁盘 (新文件路径出现在 files 列表里)
+      cancelEdit();
+      reload();
+    } finally {
+      setSaving(false);
+    }
+  }
 
   if (!currentSessionId) {
     return (
       <div className="h-full flex items-center justify-center text-zinc-600 text-xs">
         No active session.
+      </div>
+    );
+  }
+
+  // 编辑模式: textarea + Save / Cancel (REPL /memory inline 等价)
+  if (editing !== null) {
+    return (
+      <div className="h-full flex flex-col text-xs">
+        <header className="px-3 py-2 border-b border-zinc-800/60 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className={SCOPE_COLORS[editing.scope]}>●</span>
+            <span className="text-zinc-300 font-medium">
+              Editing {SCOPE_LABELS[editing.scope]} AGENTS.md
+            </span>
+            {editing.sourcePath && (
+              <span className="text-[10px] text-zinc-500 font-mono truncate" title={editing.sourcePath}>
+                {editing.sourcePath}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={cancelEdit}
+              disabled={saving}
+              className="px-2 py-0.5 text-[10px] rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void commitEdit()}
+              disabled={saving}
+              className="px-2 py-0.5 text-[10px] rounded bg-emerald-600/40 text-emerald-200 hover:bg-emerald-600/60 disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </header>
+        {saveError !== null && (
+          <div className="px-3 py-1 text-[11px] text-red-400 font-mono border-b border-zinc-900">
+            {saveError}
+          </div>
+        )}
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          disabled={saving}
+          spellCheck={false}
+          autoFocus
+          className="flex-1 min-h-0 bg-zinc-950 text-zinc-200 text-[12px] font-mono px-3 py-2 focus:outline-none resize-none leading-relaxed disabled:opacity-50"
+          placeholder={`# AGENTS.md (${editing.scope})\n\nWrite KodaX context here…`}
+        />
+        <div className="px-3 py-1 text-[10px] text-zinc-500 border-t border-zinc-900 flex justify-between">
+          <span>{draft.length.toLocaleString()} / 256k chars</span>
+          <span>{editing.scope === 'global' ? '~/.kodax/AGENTS.md' : '<project>/AGENTS.md'}</span>
+        </div>
       </div>
     );
   }
@@ -145,11 +243,31 @@ function ContextTab(): JSX.Element {
           <code className="text-zinc-400 bg-zinc-900 px-1 rounded">{'<project>/AGENTS.md'}</code>{' '}
           for project context. KodaX will load them on the next send.
         </div>
+        <div className="flex gap-2 mt-2">
+          <button
+            type="button"
+            onClick={() => startEdit('global', '# AGENTS.md (global)\n\n')}
+            className="px-2.5 py-1 text-[11px] rounded bg-amber-600/30 text-amber-200 hover:bg-amber-600/50"
+          >
+            Create global
+          </button>
+          <button
+            type="button"
+            onClick={() => startEdit('project', '# AGENTS.md (project)\n\n')}
+            className="px-2.5 py-1 text-[11px] rounded bg-emerald-600/30 text-emerald-200 hover:bg-emerald-600/50"
+          >
+            Create project
+          </button>
+        </div>
       </div>
     );
   }
 
   const active = files[activeIdx] ?? files[0];
+  // 编辑按钮: 只有 global/project scope 可编辑 (directory 不开放写,见 main handler)
+  const editableScope: 'global' | 'project' | null = active.scope === 'global' || active.scope === 'project'
+    ? active.scope
+    : null;
 
   return (
     <div className="h-full flex flex-col text-xs">
@@ -159,6 +277,39 @@ function ContextTab(): JSX.Element {
           <span className="text-zinc-500 font-normal">
             ({files.length} loaded)
           </span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {editableScope !== null && (
+            <button
+              type="button"
+              onClick={() => startEdit(editableScope, active.content, active.path)}
+              className="px-2 py-0.5 text-[10px] rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+              title={`Edit ${SCOPE_LABELS[editableScope]} AGENTS.md`}
+            >
+              ✎ Edit
+            </button>
+          )}
+          {/* Create the OTHER scope if it's not in the loaded list */}
+          {!files.some((f) => f.scope === 'global') && (
+            <button
+              type="button"
+              onClick={() => startEdit('global', '# AGENTS.md (global)\n\n')}
+              className="px-2 py-0.5 text-[10px] rounded text-amber-400 hover:text-amber-200 hover:bg-amber-900/30"
+              title="Create global AGENTS.md (~/.kodax/AGENTS.md)"
+            >
+              + Global
+            </button>
+          )}
+          {!files.some((f) => f.scope === 'project') && (
+            <button
+              type="button"
+              onClick={() => startEdit('project', '# AGENTS.md (project)\n\n')}
+              className="px-2 py-0.5 text-[10px] rounded text-emerald-400 hover:text-emerald-200 hover:bg-emerald-900/30"
+              title="Create project AGENTS.md"
+            >
+              + Project
+            </button>
+          )}
         </div>
       </header>
 

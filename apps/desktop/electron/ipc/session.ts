@@ -317,6 +317,54 @@ export function registerSessionChannels(): void {
     return { files };
   });
 
+  // session.agentsMd.save — REPL /memory inline edit 等价
+  //
+  // 安全设计:
+  //   - scope 闭集 ['global', 'project'] -- renderer 不能传任意 path
+  //   - target path 在 main 端计算 (~/.kodax/AGENTS.md / <session.projectRoot>/AGENTS.md),
+  //     从 host.get(sessionId).projectRoot 拿,renderer 永远拿不到任意路径写权
+  //   - 原子写: tmp 文件 → fs.rename,避免半写状态被 SDK loadAgentsFiles 读到
+  //   - 文件权限 0o600 (与 ~/.kodax/auto-rules.jsonc 等 sensitive config 一致)
+  //   - content 256KB schema 上限已经在 envelope 校验
+  registerChannel('session.agentsMd.save', async (input) => {
+    const session = kodaxHost.get(input.sessionId);
+    if (!session) {
+      throw new Error(`session not found: ${input.sessionId}`);
+    }
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const os = await import('node:os');
+    const crypto = await import('node:crypto');
+
+    let targetPath: string;
+    if (input.scope === 'global') {
+      const globalDir = path.join(os.homedir(), '.kodax');
+      await fs.mkdir(globalDir, { mode: 0o700, recursive: true }).catch(() => {
+        /* mkdir 失败 (磁盘满 / 权限) 走下面写入时再失败,统一错误处理 */
+      });
+      targetPath = path.join(globalDir, 'AGENTS.md');
+    } else {
+      // 'project'
+      targetPath = path.join(session.projectRoot, 'AGENTS.md');
+    }
+
+    // 原子写: 同目录 tmp 文件 → rename。tmp 名带随机后缀防并发覆盖。
+    const tmpSuffix = crypto.randomBytes(4).toString('hex');
+    const tmpPath = `${targetPath}.tmp-${tmpSuffix}`;
+    try {
+      await fs.writeFile(tmpPath, input.content, { mode: 0o600 });
+      await fs.rename(tmpPath, targetPath);
+    } catch (err) {
+      // 清理 tmp (best-effort, 不影响 error 抛出)
+      await fs.unlink(tmpPath).catch(() => {});
+      throw new Error(
+        `failed to write AGENTS.md: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    return { ok: true, path: targetPath };
+  });
+
   // session.history — 历史 session 切换时恢复对话内容（events / userMessages buffer in-memory，
   // 重启后空；renderer 调本 channel 拉 KodaX SDK 持久化的 messages 数组，flatten 成
   // user / assistant_text / tool_call 序列,回填 store）。

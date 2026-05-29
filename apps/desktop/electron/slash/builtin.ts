@@ -19,6 +19,7 @@ import { kodaxHost } from '../kodax/host.js';
 import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
 import { listSlashCommands } from './registry.js';
+import { getKodaxProviderModelsAndDefault } from '../kodax/sdk-providers.js';
 
 const REASONING_MODES = ['off', 'auto', 'quick', 'balanced', 'deep'] as const;
 type ReasoningMode = (typeof REASONING_MODES)[number];
@@ -130,25 +131,85 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
 
   {
     name: 'model',
-    description: 'Override model for next turn (v0.7.42 SDK wired). Use /model default to clear.',
-    argsHint: '<model-name | default>',
+    description: 'Override model for next turn. Use /model default to clear, /model list to see options.',
+    argsHint: '<model-name | default | list>',
     source: 'builtin',
     handler: async (ctx) => {
       const target = ctx.args[0];
+      const session = kodaxHost.get(ctx.sessionId);
+      if (!session) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+
+      // Lazy lookup provider model list — 失败时退化为"接受任意 string"(不阻塞用户),
+      // 但成功时校验 + 给"did you mean"提示。
+      const providerId = session.provider;
+      const providerInfo = await getKodaxProviderModelsAndDefault(providerId).catch(() => null);
+
       if (!target) {
-        return { ok: false, message: 'Usage: /model <model-name | default>' };
+        // 无参数: 列出当前 provider 下的可用 model + 当前选中值
+        const currentModel = session.model ?? providerInfo?.defaultModel ?? '(provider default)';
+        const list = providerInfo?.models ?? [];
+        if (list.length === 0) {
+          return {
+            ok: false,
+            message: `Usage: /model <model-name | default | list>\nCurrent: ${currentModel} (no model list for provider ${providerId})`,
+          };
+        }
+        return {
+          ok: false,
+          message: [
+            `Usage: /model <model-name | default | list>`,
+            `Current: ${currentModel}`,
+            `Available for ${providerId}:`,
+            ...list.map((m) => `  • ${m}${m === currentModel ? ' ← current' : ''}`),
+          ].join('\n'),
+        };
       }
-      // 仅保留 'default' 作为清除关键字（reviewer LOW-1：'clear'/'reset' 是常见英文词
-      // 未来可能与真实 model slug 冲突；只锁 'default' 与 Claude Code 等同行做法一致）
+
+      // 'list' 等价于无参 — 输出可用 model 列表
+      if (target === 'list') {
+        const list = providerInfo?.models ?? [];
+        if (list.length === 0) {
+          return { ok: false, message: `No model list available for provider ${providerId}` };
+        }
+        const currentModel = session.model ?? providerInfo?.defaultModel;
+        return {
+          ok: true,
+          message: [
+            `Models for ${providerId}:`,
+            ...list.map((m) => `  • ${m}${m === currentModel ? ' ← current' : ''}`),
+            `(use /model <name> to switch, /model default to clear)`,
+          ].join('\n'),
+          echo: true,
+        };
+      }
+
+      // 'default' 清除 override
       const isClear = target === 'default';
-      const ok = kodaxHost.setModel(ctx.sessionId, isClear ? undefined : target);
+      if (isClear) {
+        const ok = kodaxHost.setModel(ctx.sessionId, undefined);
+        if (!ok) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+        return { ok: true, message: 'model → provider default (cleared override)' };
+      }
+
+      // 真实 model 名 — 校验在可用列表里。如果 provider 没暴露列表则放过 (保守 fallback)。
+      if (providerInfo && providerInfo.models.length > 0 && !providerInfo.models.includes(target)) {
+        // 简单 prefix-match suggest 一个最接近的
+        const lower = target.toLowerCase();
+        const suggestion = providerInfo.models.find((m) => m.toLowerCase().startsWith(lower))
+          ?? providerInfo.models.find((m) => m.toLowerCase().includes(lower));
+        return {
+          ok: false,
+          message: [
+            `Unknown model "${target}" for provider ${providerId}.`,
+            suggestion ? `Did you mean: ${suggestion}?` : '',
+            `Available: ${providerInfo.models.join(', ')}`,
+          ].filter(Boolean).join('\n'),
+        };
+      }
+
+      const ok = kodaxHost.setModel(ctx.sessionId, target);
       if (!ok) return { ok: false, message: `session not found: ${ctx.sessionId}` };
-      return {
-        ok: true,
-        message: isClear
-          ? `model → provider default (cleared override)`
-          : `model → ${target} (applies on next send)`,
-      };
+      return { ok: true, message: `model → ${target} (applies on next send)` };
     },
   },
 
@@ -321,6 +382,16 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
       }
       // renderer 端 dispatchSlashAction 读 events buffer 抽 repointel_trace
       return { ok: true, message: '__action__:show-repointel', echo: false };
+    },
+  },
+
+  {
+    name: 'doctor',
+    description: 'Diagnose providers (key configured + HTTP probe + context window)',
+    source: 'builtin',
+    handler: async () => {
+      // renderer 端汇总 provider.list + provider.test 结果做诊断报告
+      return { ok: true, message: '__action__:show-doctor', echo: false };
     },
   },
 

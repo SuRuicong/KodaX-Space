@@ -1,0 +1,119 @@
+// AgentPicker — markdown agent 选择器,REPL "@agent-name" UX 等价 (v0.1.x)
+//
+// 用户点 BottomBar 上的 ⌬ 按钮 → 弹出当前 project 可用的 markdown agents 列表;
+// 点击一个 agent → 把 `@agent-name ` 插入 textarea 当前光标位置。
+//
+// 数据: 每次打开弹层时调一次 agent.discover IPC (no cache; 频次低,~每次打开一次)。
+// 主流程不依赖 agent picker; 没有 agent 也能正常 send,只是发送给 KodaX 时不会激活
+// markdown agent (走默认的 coding agent)。
+
+import { useEffect, useRef, useState } from 'react';
+import type { AgentMeta } from '@kodax-space/space-ipc-schema';
+import { useAppStore } from '../store/appStore.js';
+
+const SOURCE_DOT_COLOR: Record<AgentMeta['source'], string> = {
+  'markdown:user': 'text-amber-400',
+  'markdown:project': 'text-emerald-400',
+};
+
+interface Props {
+  /** 将 `@agent-name ` 插入 input 当前 caret 位置;由 BottomBar 通过 ref 传进来. */
+  readonly insertAtCaret: (text: string) => void;
+}
+
+export function AgentPicker({ insertAtCaret }: Props): JSX.Element | null {
+  const projectRoot = useAppStore((s) => s.currentProjectPath);
+  const [open, setOpen] = useState(false);
+  const [agents, setAgents] = useState<readonly AgentMeta[]>([]);
+  const [loading, setLoading] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // 打开时拉一次
+  useEffect(() => {
+    if (!open || !projectRoot || !window.kodaxSpace) return;
+    let cancelled = false;
+    setLoading(true);
+    void window.kodaxSpace
+      .invoke('agent.discover', { projectRoot })
+      .then((r) => {
+        if (cancelled) return;
+        if (r.ok) setAgents(r.data.agents);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, projectRoot]);
+
+  // 点击其他地方关闭
+  useEffect(() => {
+    if (!open) return;
+    const onClickOutside = (e: MouseEvent): void => {
+      if (!containerRef.current) return;
+      if (containerRef.current.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    window.addEventListener('mousedown', onClickOutside);
+    return () => window.removeEventListener('mousedown', onClickOutside);
+  }, [open]);
+
+  if (!projectRoot) return null;
+
+  function pickAgent(name: string): void {
+    insertAtCaret(`@${name} `);
+    setOpen(false);
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-[10px] flex items-center gap-1 text-zinc-500 hover:text-zinc-300 px-1.5 py-0.5 rounded hover:bg-zinc-800"
+        title="Insert @agent reference (markdown agents)"
+        aria-label="Pick an agent"
+      >
+        <span aria-hidden>⌬</span>
+        <span>Agent</span>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 bottom-full mb-2 w-64 max-h-72 overflow-auto bg-zinc-900 border border-zinc-800 rounded shadow-xl p-2 text-xs z-50">
+          <div className="text-zinc-500 text-[10px] uppercase tracking-wider mb-1.5 px-1">
+            Insert @agent reference
+          </div>
+          {loading ? (
+            <div className="text-zinc-500 italic px-1 py-2">Discovering…</div>
+          ) : agents.length === 0 ? (
+            <div className="text-zinc-500 italic px-1 py-2">
+              No agents. Drop a markdown file into <code className="text-zinc-400">~/.kodax/agents/</code>
+              {' '}or <code className="text-zinc-400">{'<project>/.kodax/agents/'}</code>.
+            </div>
+          ) : (
+            <ul className="space-y-0.5">
+              {agents.map((a) => (
+                <li key={a.path}>
+                  <button
+                    type="button"
+                    onClick={() => pickAgent(a.name)}
+                    className="w-full text-left px-2 py-1.5 rounded hover:bg-zinc-800 flex items-start gap-2"
+                  >
+                    <span className={`${SOURCE_DOT_COLOR[a.source]} mt-0.5`} aria-hidden>●</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-zinc-200 font-mono truncate">{a.name}</div>
+                      <div className="text-zinc-500 text-[10px] truncate" title={a.description}>
+                        {a.description}
+                      </div>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -37,6 +37,7 @@ export {
   sessionForkChannel,
   sessionRewindChannel,
   sessionAgentsMdChannel,
+  sessionAgentsMdSaveChannel,
   type AgentsFileMeta,
   sessionHistoryChannel,
   type SessionHistoryItem,

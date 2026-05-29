@@ -347,6 +347,35 @@ export const sessionAgentsMdChannel = {
 
 export type AgentsFileMeta = z.infer<typeof agentsFileSchema>;
 
+// ---- Invoke: session.agentsMd.save ---- (FEATURE_034 inline edit, REPL /memory 等价)
+//
+// /memory 命令的写入路径: 用户在 AgentsMdPanel ContextTab 切到 edit mode → 改内容 → Save。
+// main 端只允许写两个 scope:
+//   - 'global'  → ~/.kodax/AGENTS.md  (KodaX 全局 context)
+//   - 'project' → <session.projectRoot>/AGENTS.md
+// 'directory' scope 不开放写 (递归扫的目录,任意路径不安全)。
+//
+// 安全:
+//   - sessionId 必须存在 (host.get 命中) — 通过 IPC handler 限定 projectRoot 来源
+//   - scope 是 'global' | 'project' 二选一 — 不允许 renderer 传任意路径
+//   - content 256KB 上限 - DoS guard,同 agentsFileSchema.content max
+//   - main 端原子写 (tmp → rename),与 KodaX REPL /memory 同语义
+export const sessionAgentsMdSaveChannel = {
+  name: 'session.agentsMd.save',
+  direction: 'invoke',
+  input: z.object({
+    sessionId: z.string().min(1),
+    scope: z.enum(['global', 'project']),
+    /** 文件完整内容 (替换写入,不是 patch)。最大 256KB,与 agentsFile.content 限制一致 */
+    content: z.string().max(262_144),
+  }),
+  output: z.object({
+    ok: z.boolean(),
+    /** 写入文件的绝对路径 (回显给 renderer 让用户看到落盘到哪)。 */
+    path: z.string().max(4096),
+  }),
+} as const;
+
 // ---- Invoke: session.history ---- (FEATURE_039 / 历史恢复)
 //
 // 用户点 Recents 里历史 session 时拉过去对话内容。Renderer 的 events / userMessages

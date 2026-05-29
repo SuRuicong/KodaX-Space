@@ -4,7 +4,8 @@
 
 import { registerChannel } from './register.js';
 import { kodaxHost } from '../kodax/host.js';
-import { getSkillRegistry, toSkillMeta, refuseIfUnsafeContent } from '../skill/registry.js';
+import { getSkillRegistry, toSkillMeta } from '../skill/registry.js';
+import { createSkillDynamicContextExecutor } from '../skill/dynamic-context-executor.js';
 
 /**
  * 安全 env：**完全不转发** process.env 给 SDK VariableResolver。
@@ -43,29 +44,37 @@ export function registerSkillChannels(): void {
   });
 
   // skill.invoke
-  // SDK SkillRegistry.invoke 内部已做 markdown 解析 + VariableResolver；
-  // 输出 SkillInvokeResult { success, content, error } 映射到 IPC envelope。
-  // 不在这里直接 session.send —— resolvedPrompt 返回给 renderer，让 UI 走
-  // appendUserMessage + session.send 一条龙，保证 conversation stream 里能看到该 prompt。
+  // SDK SkillRegistry.invoke 内部做 markdown 解析 + VariableResolver；输出 SkillInvokeResult
+  // { success, content, error } 映射到 IPC envelope。
   //
-  // 安全前置检查（reviewer F035 CRITICAL-2）：在调 SDK invoke 前 scan SKILL.md
-  // 是否含 `!`cmd`` dynamic-context 模板。SDK 内部用 execSync 跑这些命令，**完全**
-  // 绕过 F029/F030 permission broker——alpha.1 阶段一律拒绝，让用户的 shell 触发
-  // 仍然走 KodaX runtime 的 tool call 路径（broker 守门）。
+  // 安全设计 (v0.7.42 起):
+  //   旧版 (alpha.1): refuseIfUnsafeContent 一律拒绝含 `!`cmd`` token 的 skill (SDK 用
+  //   execSync 跑这些命令,完全绕过 F029/F030 permission broker)。**过度限制**: 实用 skill
+  //   大量需要 git log / find 等命令查询当前 repo 状态。
+  //   现在 (v0.1.x): 传 executeDynamicContext hook → 每个 !`cmd` 走 permissionBroker
+  //   弹窗征求批准 → 用户授权后 spawn 跑 → stdout 回 SDK 继续解析。
+  //
+  // 不再传 SAFE_ENV={} (改成 {}+session env)，而是: SDK 解析 ${VAR} 时如果 environment
+  // 是空对象,${ANTHROPIC_API_KEY} 等都 resolve 成空串,密钥不会进 resolvedPrompt。维持原 secure stance。
   registerChannel('skill.invoke', async (input) => {
     const session = kodaxHost.get(input.sessionId);
     if (!session) {
       throw new Error(`session not found: ${input.sessionId}`);
     }
     const registry = await getSkillRegistry(session.projectRoot);
-    const refusal = await refuseIfUnsafeContent(registry, input.skillName);
-    if (refusal) {
-      return { ok: false, error: refusal };
-    }
+
+    // 用当前 session 的 permissionMode 创建 executor; 'plan' mode 下任何 !`cmd` 会被 broker
+    // 直接 deny (符合 plan-mode 语义 — 只规划不执行)
+    const executor = createSkillDynamicContextExecutor({
+      sessionId: input.sessionId,
+      permissionMode: session.permissionMode,
+    });
+
     const result = await registry.invoke(input.skillName, joinArgs(input.args), {
       sessionId: input.sessionId,
       workingDirectory: session.projectRoot,
       environment: SAFE_ENV,
+      executeDynamicContext: executor,
     });
     if (!result.success) {
       return { ok: false, error: result.error ?? 'skill invocation failed' };

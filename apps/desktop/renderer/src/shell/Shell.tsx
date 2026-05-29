@@ -129,6 +129,20 @@ export function Shell(): JSX.Element {
   // popout：null 表示无 popout，按右上按钮切换
   const [activePopout, setActivePopout] = useState<PopoutKind | null>(null);
 
+  // BottomBar 发出的"打开 popout"请求消费 — /memory → 'agents' 等。
+  // 拿到 non-null 后立即 setActivePopout + 清回 null,避免被反复消费。
+  const requestedPopout = useAppStore((s) => s.requestedPopout);
+  const clearRequestedPopout = useAppStore((s) => s.requestPopout);
+  useEffect(() => {
+    if (requestedPopout === null) return;
+    // 仅消费已知 PopoutKind;未知值无害忽略
+    const known = ['preview', 'diff', 'terminal', 'tasks', 'plan', 'agents', 'mcp'] as const;
+    if ((known as readonly string[]).includes(requestedPopout)) {
+      setActivePopout(requestedPopout as PopoutKind);
+    }
+    clearRequestedPopout(null);
+  }, [requestedPopout, clearRequestedPopout]);
+
   // P4a: Ctrl+\ 进入/退出"专注阅读"模式 — 隐藏 Left / Right Sidebar，让主区域满宽。
   //   - BottomBar / Breadcrumb / titlebar 保留（用户仍要发消息 + 窗口操作）
   //   - Esc 退出（如果 Help overlay / 搜索框等都已关）

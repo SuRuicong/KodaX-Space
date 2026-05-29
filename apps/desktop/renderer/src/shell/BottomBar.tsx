@@ -16,6 +16,7 @@ import { ModeSelector } from './ModeSelector.js';
 import { ContextWindowIndicator } from './ContextWindowIndicator.js';
 import { QueueIndicator } from './QueueIndicator.js';
 import { AttachMenu } from './AttachMenu.js';
+import { AgentPicker } from './AgentPicker.js';
 import { SlashCommandPopover, type SlashPickerItem } from './SlashCommandPopover.js';
 import { resolveSessionCreateInputs } from './createSession.js';
 import { ActivitySpinner, useIsStreaming } from './ActivitySpinner.js';
@@ -94,6 +95,25 @@ export function BottomBar(): JSX.Element {
   const [historyIdx, setHistoryIdx] = useState(-1);
   /** 在用户首次按 ↑ 之前，缓存 draft，回到 idx=-1 时还原。 */
   const draftRef = useRef<string>('');
+
+  /** AgentPicker 用: 将 text 插入 textarea 当前 caret 位置 (替换 selection 区间)。 */
+  function insertAtCaret(text: string): void {
+    const ta = textareaRef.current;
+    if (!ta) {
+      setPrompt((p) => p + text);
+      return;
+    }
+    const start = ta.selectionStart ?? prompt.length;
+    const end = ta.selectionEnd ?? prompt.length;
+    const next = prompt.slice(0, start) + text + prompt.slice(end);
+    setPrompt(next);
+    // 还原焦点 + 把 caret 移到插入位置之后 (下一帧 textarea 已经反映新值)
+    requestAnimationFrame(() => {
+      const newPos = start + text.length;
+      ta.focus();
+      ta.setSelectionRange(newPos, newPos);
+    });
+  }
 
   /**
    * Auto-grow textarea：min 2 行（rows={2} 提供基线），max 12 行后开始内滚。
@@ -416,34 +436,56 @@ export function BottomBar(): JSX.Element {
     }
 
     if (action === 'show-memory') {
+      // v0.1.x: 直接打开 Agents popout (REPL /memory 同款 — 打开 inline editor)。
+      // Popout 里可以编辑 global / project AGENTS.md (写盘走 session.agentsMd.save IPC)。
+      useAppStore.getState().requestPopout('agents');
+      return;
+    }
+
+    if (action === 'show-doctor') {
       if (!window.kodaxSpace) {
-        appendUserMessage(sessionId, '[memory] IPC unavailable');
+        appendUserMessage(sessionId, '[doctor] IPC unavailable');
         return;
       }
-      const r = await window.kodaxSpace.invoke('session.agentsMd', { sessionId });
+      const r = await window.kodaxSpace.invoke('provider.list', undefined);
       if (!r.ok) {
-        appendUserMessage(
-          sessionId,
-          `[memory] failed: ${r.error?.code ?? 'ERR_UNKNOWN'} ${r.error?.message ?? ''}`,
-        );
+        appendUserMessage(sessionId, `[doctor] provider.list failed: ${r.error?.message ?? 'unknown'}`);
         return;
       }
-      const files = r.data.files;
-      if (files.length === 0) {
-        appendUserMessage(
-          sessionId,
-          '[memory] no AGENTS.md loaded\n  add ~/.kodax/AGENTS.md (global) or <project>/AGENTS.md (project)',
-        );
-        return;
-      }
-      const lines = [
-        `[memory] ${files.length} AGENTS.md file(s) loaded:`,
-        ...files.map((f) => {
-          const sizeKb = (f.content.length / 1024).toFixed(1);
-          return `  • [${f.scope}] ${f.path} (${sizeKb} KB)`;
+      const providers = r.data.providers;
+      // 并发 HTTP probe 已配置的 provider (未配置的不 probe — 必然 401)
+      const probeTargets = providers.filter((p) => p.configured);
+      const probeResults = await Promise.all(
+        probeTargets.map(async (p) => {
+          if (!window.kodaxSpace) return { id: p.id, ok: false, error: 'no IPC' };
+          const tr = await window.kodaxSpace.invoke('provider.test', { providerId: p.id });
+          if (!tr.ok) return { id: p.id, ok: false, error: tr.error?.message ?? 'IPC error' };
+          return {
+            id: p.id,
+            ok: tr.data.ok,
+            latencyMs: tr.data.latencyMs,
+            error: tr.data.error,
+          };
         }),
-        '  use Agents popout for full content',
-      ];
+      );
+      const probeById = new Map(probeResults.map((x) => [x.id, x]));
+
+      const lines: string[] = [`[doctor] ${providers.length} provider(s), default = ${r.data.defaultProviderId ?? '(none)'}, keychain = ${r.data.keychainBackend}`];
+      for (const p of providers) {
+        const isDefault = p.id === r.data.defaultProviderId ? ' ★' : '';
+        const keyStatus = p.configured ? '✓ key' : '⨯ no key';
+        const probe = probeById.get(p.id);
+        let probeStatus = '';
+        if (p.configured && probe) {
+          if (probe.ok) {
+            const lat = probe.latencyMs !== undefined ? ` ${probe.latencyMs}ms` : '';
+            probeStatus = ` · ✓ HTTP${lat}`;
+          } else {
+            probeStatus = ` · ⨯ HTTP: ${probe.error ?? 'failed'}`;
+          }
+        }
+        lines.push(`  ${p.id}${isDefault} (${p.displayName}) — ${keyStatus}${probeStatus}`);
+      }
       appendUserMessage(sessionId, lines.join('\n'));
       return;
     }
@@ -733,6 +775,7 @@ export function BottomBar(): JSX.Element {
               onInsertText={(text) => setPrompt((p) => (p ? `${p} ${text}` : text))}
             />
           </div>
+          <AgentPicker insertAtCaret={insertAtCaret} />
           <ModeSelector />
           <AgentModeSelector />
           <span className="ml-auto" />

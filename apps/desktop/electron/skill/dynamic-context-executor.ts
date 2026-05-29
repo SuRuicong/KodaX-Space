@@ -1,0 +1,110 @@
+// SkillDynamicContextExecutor — Space-side trust-boundary hook (v0.1.x)
+//
+// SDK 0.7.42+ 给 SkillContext.executeDynamicContext 这个钩子,替代原来内部 execSync 白名单。
+// Space 实现: 每个 `!`cmd`` 解析时 → permissionBroker 弹窗征求用户批准 → 批准则 spawn 跑 →
+// 返回 stdout (字符串)。
+//
+// 安全 / DoS:
+//   - permission broker 走 plan/accept-edits/auto 三 mode short-circuit (plan 一律 deny)
+//   - 真正 spawn: shell:true 让用户能用 piped/redirect 命令 (git log | head),由 OS 默认 shell
+//     处理 — 命令本身已经被用户看到 + 批准,与 SDK 旧的 execSync 行为对齐
+//   - 30s timeout: 防长跑命令把 KodaX skill invoke 卡住
+//   - 1 MB stdout 上限: 防超大 stdout 撑爆 IPC envelope (skill 输出会被嵌进 prompt 喂 LLM)
+//   - cwd 强制 caller 传入 (一般是 session.projectRoot); 永远 NOT process.cwd()
+
+import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { permissionBroker, type PermissionRequestInput } from '../permission/broker.js';
+import type { PermissionMode } from '@kodax-space/space-ipc-schema';
+import type { SkillDynamicContextExecutor } from '@kodax-ai/kodax/skills';
+
+const EXEC_TIMEOUT_MS = 30_000;
+const MAX_STDOUT_BYTES = 1_048_576; // 1 MB
+
+/**
+ * 工厂函数: 给特定 session + mode 创建一个 executor。
+ * Skill invoke 时把它塞进 SkillContext.executeDynamicContext。
+ */
+export function createSkillDynamicContextExecutor(opts: {
+  readonly sessionId: string;
+  readonly permissionMode: PermissionMode;
+}): SkillDynamicContextExecutor {
+  return async (command, cwd) => {
+    // 1) 走 permission broker - toolName='skill_dynamic_context' 让规则 + UI 都能识别
+    //    toolId 用 randomUUID — 每次 dynamic-context exec 是独立 request (允许"允许这一次"语义)
+    const req: PermissionRequestInput = {
+      sessionId: opts.sessionId,
+      toolId: randomUUID(),
+      toolName: 'skill_dynamic_context',
+      input: { command, cwd },
+      mode: opts.permissionMode,
+    };
+    const result = await permissionBroker.request(req);
+    if (result.decision === 'deny') {
+      throw new Error(`[skill dynamic-context denied by user] ${command}`);
+    }
+
+    // 2) 用户批准 → spawn 命令。shell:true 使用 OS 默认 shell,支持 piped/redirect 命令。
+    //    用户已经看到完整命令 string,trust 转移成功 (与 SDK 旧版 execSync 行为一致)。
+    return new Promise<string>((resolve, reject) => {
+      let stdout = Buffer.alloc(0);
+      let stderr = Buffer.alloc(0);
+      let truncated = false;
+      let resolved = false;
+
+      const child = spawn(command, {
+        cwd,
+        shell: true,
+        windowsHide: true,
+        // env: 显式空对象 — 不泄 KODAX_ / ANTHROPIC_ 等敏感 env 给用户授权的命令。
+        // PATH 仍需要才能找 git / node 等,所以保留 PATH; 其他全部清掉。
+        env: { PATH: process.env.PATH ?? '' },
+      });
+
+      const timer = setTimeout(() => {
+        if (resolved) return;
+        resolved = true;
+        try { child.kill('SIGKILL'); } catch { /* ignore */ }
+        reject(new Error(`[skill dynamic-context timeout after ${EXEC_TIMEOUT_MS}ms] ${command}`));
+      }, EXEC_TIMEOUT_MS);
+
+      child.stdout?.on('data', (chunk: Buffer) => {
+        if (truncated) return;
+        const next = Buffer.concat([stdout, chunk]);
+        if (next.length > MAX_STDOUT_BYTES) {
+          truncated = true;
+          stdout = next.subarray(0, MAX_STDOUT_BYTES);
+        } else {
+          stdout = next;
+        }
+      });
+      child.stderr?.on('data', (chunk: Buffer) => {
+        if (stderr.length > MAX_STDOUT_BYTES) return;
+        stderr = Buffer.concat([stderr, chunk]);
+      });
+
+      child.on('error', (err) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timer);
+        reject(new Error(`[skill dynamic-context spawn error] ${err.message}`));
+      });
+
+      child.on('close', (code) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timer);
+        if (code !== 0) {
+          const errTail = stderr.toString('utf8').slice(-512);
+          reject(new Error(
+            `[skill dynamic-context exit ${code}] ${command}${errTail ? `\n${errTail}` : ''}`,
+          ));
+          return;
+        }
+        let output = stdout.toString('utf8');
+        if (truncated) output += '\n…(truncated 1MB)';
+        resolve(output);
+      });
+    });
+  };
+}
