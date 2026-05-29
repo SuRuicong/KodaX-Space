@@ -125,10 +125,13 @@ export const projectGitDiffChannel = {
   }),
   output: z.object({
     isGitRepo: z.boolean(),
-    /** unified diff 文本; 空字符串 = 无改动 / 非 git repo */
+    /** unified diff 文本; 空字符串 = 无改动 / git diff 失败 (看 error 字段区分) */
     diff: z.string().max(65_536),
     /** true 表示 diff 大于 64KB 被截断,UI 显示 hint */
     truncated: z.boolean(),
+    /** non-null 表示 git diff 调用本身失败 (timeout / spawn 错等),不是"无改动"。
+     *  Renderer 用来区分"真的没改动"vs"git 命令出错了" (审查 Batch 4 M2)。*/
+    error: z.string().max(256).nullable(),
   }),
 } as const;
 

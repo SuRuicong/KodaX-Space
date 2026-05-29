@@ -32,6 +32,18 @@ import { providerConfigStore } from '../providers/config.js';
 import { loadPersistedSession } from '../kodax/session-store.js';
 import type { AgentsFileMeta, SessionHistoryItem, SessionMeta } from '@kodax-space/space-ipc-schema';
 
+// SDK lazy + cached import — 跟其他 SDK 接入点 (agent.ts, queue.ts, sdk-providers.ts) 同模式。
+// listRunningSessions handler 用; main 是 CJS,SDK subpath 是 ESM-only,必须动态 import 一次,
+// 之后 module cache 直接返回 (审查 Batch 4 M1 consistency)。
+type SdkSessionModule = typeof import('@kodax-ai/kodax/session');
+let sdkSessionCache: SdkSessionModule | null = null;
+async function loadSdkSessionCached(): Promise<SdkSessionModule> {
+  if (sdkSessionCache === null) {
+    sdkSessionCache = await import('@kodax-ai/kodax/session');
+  }
+  return sdkSessionCache;
+}
+
 // FEATURE_034 reviewer MEDIUM-2: 编译期保证 loader 的 AgentsFile 与 schema 的 AgentsFileMeta
 // 结构一致——加字段、改 scope enum 等都会立即编译报错，不让 schema/loader 漂移。
 // (双向 assignability：a→b 和 b→a 都必须成立，等同于结构等价。)
@@ -374,8 +386,8 @@ export function registerSessionChannels(): void {
   // SDK 走 file-based discovery (~/.kodax/instances 目录),NEVER throws,no instances dir →
   // [],不阻塞 UI。
   registerChannel('session.listRunning', async () => {
-    const { listRunningSessions } = await import('@kodax-ai/kodax/session');
-    const list = await listRunningSessions();
+    const sdkSession = await loadSdkSessionCached();
+    const list = await sdkSession.listRunningSessions();
     // SDK 返回包括自己 — 用 pid 过滤掉自己; 其他 peer 也限到 64 防 schema 上限
     const myPid = process.pid;
     const peers = list

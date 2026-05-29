@@ -267,14 +267,20 @@ export function registerProjectChannels(): void {
     const projectRoot = validateProjectRoot(input.projectRoot);
     const isRepo = await runGit(projectRoot, ['rev-parse', '--git-dir']);
     if (!isRepo.ok) {
-      return { isGitRepo: false, diff: '', truncated: false };
+      return { isGitRepo: false, diff: '', truncated: false, error: null };
     }
     // --no-color: 避免 ANSI 染色字符进 schema; --unified=3: 默认上下文够阅读
     const diffResult = await runGit(projectRoot, [
       'diff', '--no-color', '--unified=3', 'HEAD',
     ]);
     if (!diffResult.ok) {
-      return { isGitRepo: true, diff: '', truncated: false };
+      // git diff 失败 — 区分于"无改动"返回 error 让 UI 报错而不是误显示"无改动" (审查 M2)
+      return {
+        isGitRepo: true,
+        diff: '',
+        truncated: false,
+        error: 'git diff failed (timeout / spawn error)',
+      };
     }
     const MAX = 65_536;
     if (diffResult.stdout.length > MAX) {
@@ -282,9 +288,10 @@ export function registerProjectChannels(): void {
         isGitRepo: true,
         diff: diffResult.stdout.slice(0, MAX),
         truncated: true,
+        error: null,
       };
     }
-    return { isGitRepo: true, diff: diffResult.stdout, truncated: false };
+    return { isGitRepo: true, diff: diffResult.stdout, truncated: false, error: null };
   });
 
   // project.fileSearch — @path autocomplete 后端

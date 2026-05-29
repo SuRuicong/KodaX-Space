@@ -472,6 +472,11 @@ export function BottomBar(): JSX.Element {
         appendUserMessage(sessionId, '[review] not a git repository');
         return;
       }
+      if (r.data.error !== null) {
+        // git diff 命令本身失败 (timeout / spawn) — 不同于"无改动"
+        appendUserMessage(sessionId, `[review] ${r.data.error}`);
+        return;
+      }
       if (r.data.diff.trim().length === 0) {
         appendUserMessage(sessionId, '[review] no uncommitted changes vs HEAD');
         return;
