@@ -16,7 +16,7 @@
 //   - "Stash" / "Commit" / "Discard" 一键按钮 — 需要 git 操作 IPC + 安全 review
 //   - 文件路径列表 — 隐私 + UI 噪音
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/appStore.js';
 
 interface GitStatus {
@@ -40,17 +40,19 @@ export function StashNotice(): JSX.Element | null {
   const lastToolResultMarker = useAppStore((s) => {
     if (!currentSessionId) return 0;
     const evs = s.eventsBySession[currentSessionId] ?? [];
-    // 用 events 长度 + 最后一条 tool_result 的 toolId 作为 dirty marker
-    // 不直接 watch events array (太频繁); 找最后一条 tool_result 索引
+    // 倒扫找最近一个 write/edit/bash/multiedit 类 tool_result (那才可能改文件树)。
+    // 非 write 类 tool (grep / read) 跳过,**继续**扫,直到撞 session_start (turn 起点)
+    // 或数组头才退出。原版用 return 0 在第一个非 write tool_result 处即停止,导致
+    // 之前发生的 write 永远拿不到 refetch 触发 (审查 H2)。
     for (let i = evs.length - 1; i >= 0; i--) {
       const ev = evs[i];
-      if (ev.kind === 'tool_result') {
-        const name = (ev as { toolName?: string }).toolName;
-        if (name === 'write' || name === 'edit' || name === 'bash' || name === 'multiedit') {
-          return i; // 索引变化即 refetch trigger
-        }
-        return 0;
+      if (ev.kind === 'session_start') return 0; // 这一 turn 没有 write 过
+      if (ev.kind !== 'tool_result') continue;
+      const name = (ev as { toolName?: string }).toolName;
+      if (name === 'write' || name === 'edit' || name === 'bash' || name === 'multiedit') {
+        return i; // 索引变化即 refetch trigger
       }
+      // 非 write 类 → 继续往前找,不 return 0
     }
     return 0;
   });
@@ -59,8 +61,9 @@ export function StashNotice(): JSX.Element | null {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlightRef = useRef<boolean>(false);
 
-  // 通用 fetch 函数 — 带 in-flight guard,避免多次 trigger 并发打 IPC
-  function fetchStatus(path: string): void {
+  // 通用 fetch 函数 — useCallback 让两个 useEffect deps 拿到稳定引用,
+  // 避免每 render 新建 closure 导致 effect 看不见正确版本 (审查 M2)。
+  const fetchStatus = useCallback((path: string): void => {
     if (!window.kodaxSpace) return;
     if (inFlightRef.current) return;
     inFlightRef.current = true;
@@ -75,7 +78,7 @@ export function StashNotice(): JSX.Element | null {
       .finally(() => {
         inFlightRef.current = false;
       });
-  }
+  }, []);
 
   // 初始 / 切 project 时立即拉
   useEffect(() => {
@@ -84,7 +87,7 @@ export function StashNotice(): JSX.Element | null {
       return;
     }
     fetchStatus(currentProjectPath);
-  }, [currentProjectPath]);
+  }, [currentProjectPath, fetchStatus]);
 
   // tool_result 触发 debounced 重读
   useEffect(() => {
@@ -96,8 +99,7 @@ export function StashNotice(): JSX.Element | null {
     return () => {
       if (debounceRef.current !== null) clearTimeout(debounceRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchStatus 是稳定的;currentProjectPath 已在 deps
-  }, [lastToolResultMarker, currentProjectPath]);
+  }, [lastToolResultMarker, currentProjectPath, fetchStatus]);
 
   if (!status || !status.isGitRepo || !status.dirty) return null;
 

@@ -132,8 +132,13 @@ function snapshotFromEvents(
       if (ev.kind === 'thinking_delta') {
         total += ev.text.length;
       } else if (ev.kind === 'thinking_end') {
-        // thinking_end 携带完整 thinking text;比逐条 delta 更权威,优先用
-        total = ev.thinking.length;
+        // thinking_end 携带完整 thinking text;比逐条 delta 更权威。但若当前 turn 里有多个
+        // thinking block (extended thinking with interleaved tool calls),一个老 thinking_end
+        // 会先碰到。**仅在尚未累积任何 delta 时**才信它 — 否则当前 block 的 delta 已经在跑,
+        // 老 end 不该覆盖 (审查 M3)。
+        if (total === 0) {
+          total = ev.thinking.length;
+        }
         break;
       } else if (ev.kind === 'text_delta' || ev.kind === 'tool_start' || ev.kind === 'tool_result'
               || ev.kind === 'iteration_end' || ev.kind === 'session_start' || ev.kind === 'session_complete') {

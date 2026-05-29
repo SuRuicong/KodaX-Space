@@ -462,12 +462,24 @@ export const useAppStore = create<AppState>((set) => ({
           assistantPendingComplete = false;
         }
       };
+      // composeMessages 按 userMessages 索引配对 events 段。如果 items 以 assistant
+      // 或 tool_call 开头 (KodaX 偶尔会有 greeting / initiative turn 没有 user prompt),
+      // 这些前置 events 会落到 tail 块,把后续真正 turn 的 (user, events) 配对全推错位。
+      // 解决: 第一条非 user item 触发前如果 histMsgs 还空,先塞一条空 user 占位 (sentAt
+      // 用 fallback),让索引对齐。这条占位用户能看到一个空白 user 气泡,体验比错位好。
+      const ensureLeadingUserSentinel = (): void => {
+        if (histMsgs.length === 0) {
+          const id = `u_${sessionId}_${++userMessageCounter}`;
+          histMsgs.push({ id, content: '', sentAt: fallbackSentAt });
+        }
+      };
       for (const item of items) {
         if (item.kind === 'user') {
           flushTurnIfNeeded();
           const id = `u_${sessionId}_${++userMessageCounter}`;
           histMsgs.push({ id, content: item.content, sentAt: item.sentAt ?? fallbackSentAt });
         } else if (item.kind === 'assistant') {
+          ensureLeadingUserSentinel();
           if (item.thinking !== undefined && item.thinking.length > 0) {
             histEvents.push({ kind: 'thinking_delta', sessionId, text: item.thinking });
           }
@@ -478,6 +490,7 @@ export const useAppStore = create<AppState>((set) => ({
         } else {
           // tool_call: emit tool_start + (optional) tool_result。 result 缺失时 (history 损坏
           // 或 tool_use 没匹配上 tool_result) 仍 emit tool_start 让 UI 显示一张 "running" 卡片。
+          ensureLeadingUserSentinel();
           histEvents.push({
             kind: 'tool_start',
             sessionId,

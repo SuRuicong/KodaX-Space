@@ -1,6 +1,6 @@
 # KodaX Space Feature List
 
-> Last Updated: 2026-05-22 (v0.1.1 TUI 对齐 batch 完成 + v0.1.6 持久化 + 0.7.42 升级)
+> Last Updated: 2026-05-29 (opencode 对标批次 OC-01~50 + KX-I-01~09；前: v0.1.1 TUI 对齐 + v0.1.6 持久化 + 0.7.42)
 >
 > **2026-05-18 form-factor reset**：alpha.0 的 UI 形态偏 IDE，alpha.1 按 [ADR-004](ADR/ADR-004-panel-model.md) 重构对齐 Claude Desktop 中的 Claude Code。F006/F008/F009 标记重做（main 端保留）；新增 F011-revised / F012-revised。详见下面 "v0.1.0-alpha.1 重构 plan" 区段。
 >
@@ -9,6 +9,8 @@
 > **2026-05-18 TUI alignment lockdown**（[ADR-005](ADR/ADR-005-permission-mode-canonical.md)）：read KodaX REPL 源码后发现 desktop mode 自创 4 档与 TUI canonical 3 档（plan/accept-edits/auto + engine 子档）完全错位。**FEATURE_029 alpha.1 内完成 schema breaking 重写**（无外部用户，零代价）；**FEATURE_030~037 v0.1.1 内完成 8 个 TUI 对齐 features**（AutoModeGuardrail / slash command / askUser modal / sessions tree fork rewind / AGENTS.md / skills / MCP UI / subagent tree）。完成后 desktop 与 TUI 用户面行为达到 90% 一致。
 > Source of truth: [PRD](PRD.md) · [HLD](HLD.md) · [ADR/](ADR/)
 > Versions: v0.1.0 → v0.1.5（M0–M1，约 3–4 个月）
+>
+> **2026-05-29 opencode 对标批次**：对标 `sst/opencode`（Electron 同形态、商业模式相反）产出 **50 个 OC-feature**（OC-01~50）+ **9 个 KX-I 智能 feature**（KX-I-01~09），并经「极简且智能」哲学复核（砍配置面、提自动化：21 项瘦身/重塑、8 条设计准则、8 条反复杂度规则）。完整设计 + 35 项明确拒绝 + 30 项 SDK 需求见 [features/opencode-benchmark.md](features/opencode-benchmark.md)。新增 **v0.1.8 / v0.1.9** 两个小版本承载净新增能力集群；OC/KX-I 的 Index 见本文末「opencode 对标批次」段。哲学：**opencode 用配置回答能力，KodaX-Space 用智能回答——对用户极简，对内很智能。**
 
 ## Index
 
@@ -177,6 +179,11 @@ v0.1.3 UX polish (4): 主题 / 通知 / .mcpb / 自动更新
 v0.1.4 power (4): 多 tab 终端 / 富预览 / NAPI native-diff + fuzzy
 v0.1.5 release (2): 签名 + notarize / 文档
 v0.1.7 (1): F039 MCP 完整版 (等 SDK MCP manager runtime API)
+
+--- opencode 对标批次 (2026-05-29) ---
+OC-01~50 (50) + KX-I-01~09 (9) — 见下方「opencode 对标批次」段；穿插进 v0.1.1~v0.1.9 + M2
+独立 ID 命名空间，不计入上方 F-feature 计数；设计 home = features/opencode-benchmark.md
+快赢 batch (本周, 高价值/S/零 SDK): OC-01, OC-09, OC-12, OC-18, OC-19, OC-25, KX-I-01
 ```
 
 ## Version Roadmap
@@ -191,6 +198,83 @@ v0.1.7 (1): F039 MCP 完整版 (等 SDK MCP manager runtime API)
 | **v0.1.5** | Release-ready | 签名 + notarize + 文档站；准备 v0.2.0 公开 Beta | 2026-Q4 |
 | **v0.1.6** | Persistence follow-up | F033 sessions tree/fork/rewind 升 KodaX SDK 持久化 API（in-memory → 磁盘） | 与 KodaX SDK ≥ 0.7.42 同步 |
 | **v0.1.7** | MCP management follow-up | F036 MCP popout 升级（read-only → start/stop/log/tool catalog） | 与 KodaX SDK MCP manager 公开 API 同步 |
+| **v0.1.8** | 工具渲染 + 事件架构 + 智能（opencode 批次） | ToolRegistry + 全局 session bus + 智能权限批处理 + Quick Ask 智能升级 | 2026-Q4 |
+| **v0.1.9** | Provider/Model 智能 + i18n + UI 基建（opencode 批次） | 任务感知 model 路由 + 中/英 i18n + 命令面板 + 设置弹窗 | 2026-Q4 末 |
+
+## opencode 对标批次（OC-01~50 + KX-I-01~09）
+
+> 2026-05-29 对标 `sst/opencode` 产出。设计 home：[features/opencode-benchmark.md](features/opencode-benchmark.md)（每项含 designSketch + opencode 参考 + KodaX fit）。
+> 全部经「极简且智能」lens 复核——标注 `(reshape)` / `(min)` 的项目已按哲学瘦身/重塑，详见 benchmark §7.2。
+> Status 统一 `Planned (benchmark)`；独立 ID 命名空间，不与 F-feature 序号冲突。SDK=需 KodaX SDK 新 export。
+
+### OC features（opencode 直接借鉴，50 项）
+
+| ID | Title | 价值 | 工作量 | SDK | Version |
+|----|-------|------|--------|-----|---------|
+| OC-01 | 单实例锁 + 二次启动聚焦（修数据正确性 bug） | 高 | S | — | v0.1.2 |
+| OC-02 | 渲染进程崩溃恢复弹窗 (reshape: 恢复 session) | 中 | S | — | v0.1.3 |
+| OC-03 | 优雅退出强制超时 | 中 | S | — | v0.1.2 |
+| OC-04 | Crashpad 集成 + per-run 日志轮转 | 高 | M | — | v0.1.5 |
+| OC-05 | debug 日志 ZIP 导出 (min) | 中 | M | — | v0.1.5 |
+| OC-06 | renderer 致命错误 IPC 通道 | 中 | S | — | v0.1.3 |
+| OC-07 | macOS Dock 启动 cwd 修复 | 中 | S | — | v0.1.2 |
+| OC-08 | 系统 CA 证书 + HTTP 代理转发 | 中 | S | — | v0.1.5 |
+| OC-09 | IPC schema 校验错误截断（防敏感内容入日志） | 高 | S | — | v0.1.2 |
+| OC-10 | 主进程日志 secret 脱敏 (reshape: 含 GUI key) | 高 | S | — | v0.1.3 |
+| OC-11 | wrapSdkError 人类可读会话错误 | 中 | S | — | v0.1.3 |
+| OC-12 | E2E 测试隔离 KODAX_TEST_ONBOARDING | 高 | S | — | v0.1.2 |
+| OC-13 | 窗口状态持久化 | 中 | S | — | v0.1.3 |
+| OC-14 | 原生右键菜单 | 中 | S | — | v0.1.3 |
+| OC-15 | macOS 原生菜单栏扩展 (min) | 中 | M | — | v0.1.5 |
+| OC-16 | 多渠道构建 dev/beta/prod | 中 | M | — | v0.1.5 |
+| OC-17 | 虚拟化消息时间线 (reshape: 智能滚动锚定) | 高 | M | — | v0.1.4 |
+| OC-18 | auto-scroll markAuto 守卫 | 高 | S | — | v0.1.4 |
+| OC-19 | 流式 markdown LRU 记忆化 | 高 | S | — | v0.1.4 |
+| OC-20 | context/action 工具分组 (reshape: 驱动 popout) | 中 | S | — | v0.1.4 |
+| OC-21 | 可扩展工具渲染注册表 ToolRegistry | 中 | M | — | v0.1.8 |
+| OC-22 | 上下文压缩分隔线 (reshape: + fork CTA) | 中 | S | ✓ | v0.1.7 |
+| OC-23 | 限流重试倒计时显示 | 高 | S | ✓ | v0.1.4 |
+| OC-24 | 运行中工具卡 shimmer (min: 仅完成淡出) | 低 | S | — | v0.1.4 |
+| OC-25 | 代码块复制按钮 | 高 | S | — | v0.1.4 |
+| OC-26 | React i18n 中/英 (reshape: locale 自动检测) | 高 | M | — | v0.1.9 |
+| OC-27 | CSS token 主题层 (reshape: 仅 3 模式, = F019 补全) | 中 | M | — | v0.1.3 |
+| OC-28 | 命令面板 Mod+Shift+P (reshape: 砍 keybind 编辑器) | 中 | M | — | v0.1.9 |
+| OC-29 | 统一设置弹窗 (min: 仅 2 tab) | 中 | M | — | v0.1.9 |
+| OC-30 | 共享 useFuzzyFilteredList hook | 中 | S | — | v0.1.4 |
+| OC-31 | 输入框增强（历史/图片粘贴/@file 提及） | 高 | M | — | v0.1.9 |
+| OC-32 | provider key 来源枚举 (min: 仅配置屏) | 中 | S | — | v0.1.9 |
+| OC-33 | model 能力 (reshape: 内联图标非矩阵表) | 高 | M | ✓ | v0.1.4 |
+| OC-34 | 按 model 过滤 reasoning effort 档位 | 中 | S | ✓ | v0.1.4 |
+| OC-35 | model 名规范化工具 | 中 | S | — | v0.1.9 |
+| OC-36 | OpenAI 兼容 provider 预填 profile (min) | 中 | S | — | v0.1.9 |
+| OC-37 | 结构化会话错误分类 (reshape: 错误即导航) | 中 | S | ✓ | v0.1.4 |
+| OC-38 | 会话导出 JSON/HTML (min: 1 菜单项 + 主动 CTA) | 高 | M | ✓ | v0.1.5 |
+| OC-39 | 多文件会话 diff 面板 (reshape: 自动浮出) | 高 | M | ✓ | v0.1.4 |
+| OC-40 | session 列表游标分页 | 中 | M | ✓ | v0.1.5 |
+| OC-41 | 会话删除 ACK 后延迟 dispose | 中 | S | — | v0.1.3 |
+| OC-42 | 两层事件架构（全局 session bus） | 高 | M | — | v0.1.8 |
+| OC-43 | 模块级 env 改惰性读 | 中 | S | — | v0.1.2 |
+| OC-44 | Playwright mock-server E2E 框架 | 高 | M | — | v0.1.5 |
+| OC-45 | React SlotRegistry UI 扩展点 (defer → M2) | 中 | M | — | M2 |
+| OC-46 | ProviderAuthDefinition 接口 (defer → M2) | 中 | M | — | M2 |
+| OC-47 | 分层 CI Docker 镜像 | 中 | M | — | v0.1.5 |
+| OC-48 | Sentry source map 上传 + 删除 | 中 | S | — | v0.1.5 |
+| OC-49 | WelcomeDashboard 统计增强 (reshape: + 成本 nudge) | 中 | S | — | v0.1.8 |
+| OC-50 | NAPI 二进制平台选择构建插件 | 中 | S | — | v0.1.1 |
+
+### KX-I features（「极简且智能」lens 新增，opencode 没有，9 项）
+
+| ID | Title | 价值 | 工作量 | SDK | Version |
+|----|-------|------|--------|-----|---------|
+| KX-I-01 | 零配置 provider 自动激活（扫 env key 一键激活） | 高 | S | — | v0.1.2 |
+| KX-I-02 | 智能 popout 导播（按 session 状态自动浮 Tasks/Diff/Plan） | 高 | M | — | v0.1.4 |
+| KX-I-03 | 会话自动命名（首条回复后小模型生成语义标题） | 高 | S | — | v0.1.4 |
+| KX-I-04 | 任务感知 model 自动路由（本地分类 prompt 预选 model+effort） | 高 | M | — | v0.1.9 |
+| KX-I-05 | 智能权限批处理（一个合并批准框代替 N 个弹窗） | 高 | M | ✓ | v0.1.8 |
+| KX-I-06 | Repointel 情境感知自动 warm（切项目自动后台 warm） | 高 | S | — | v0.1.5 |
+| KX-I-07 | 会话完成智能通知（>60s 任务原生通知 + 审查动作） | 中 | S | — | v0.1.5 |
+| KX-I-08 | 环境化 provider 健康点（chip 上绿/黄/红延迟点） | 中 | S | — | v0.1.4 |
+| KX-I-09 | Diff 感知 Quick Ask 升级（检测文件/栈/diff 才提示升级） | 中 | S | — | v0.1.8 |
 
 ## ID Conventions
 

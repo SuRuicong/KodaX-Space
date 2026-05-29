@@ -13,31 +13,33 @@
 // 状态保鲜 (来自 events 流尾扫): 倒序找最近 retry_after,如果之后有 iteration_start 就不显示
 // (KodaX 已经恢复正常 retry 后继续了)。
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/appStore.js';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 
-interface BannerState {
+interface BannerRaw {
   readonly kind: 'retry' | 'recovery';
   readonly provider?: string;
   readonly reason?: string;
   readonly attempt: number;
   readonly maxAttempts: number;
-  /** retry: wallclock epoch ms when the retry will fire; recovery: 立即,无倒计时 */
-  readonly retryAt?: number;
+  /** retry: SDK 给的 waitMs (ms 数); recovery 不用 */
+  readonly waitMs?: number;
+  /** retry 在 events 数组的索引,作为"是不是同一条" identity (跨 render 稳定) */
+  readonly eventIdx?: number;
   /** recovery 路径: 走的 recovery action 名 (fallback-provider / sleep / etc) */
   readonly recoveryAction?: string;
 }
 
-function findActiveBanner(events: readonly SessionEvent[]): BannerState | null {
+/** 找最近一个未消化的 retry/recovery event;返回 raw 状态 (不带 wallclock,避免每渲染漂移)。 */
+function findActiveBannerRaw(events: readonly SessionEvent[]): BannerRaw | null {
   // 倒序扫到最近一个 iteration_start / session_complete / session_error 边界 — 那之后的
   // retry/recovery 已经消化掉,不该显示。在边界之前如果有 retry_after / provider_recovery 就用最近一个。
   for (let i = events.length - 1; i >= 0; i--) {
     const ev = events[i];
     if (ev.kind === 'iteration_start' || ev.kind === 'session_complete' || ev.kind === 'session_error') {
-      // 之前没找到 retry/recovery → 没 banner
       return null;
     }
     if (ev.kind === 'retry_after') {
@@ -48,8 +50,8 @@ function findActiveBanner(events: readonly SessionEvent[]): BannerState | null {
         reason: p.reason,
         attempt: p.attempt,
         maxAttempts: p.maxAttempts,
-        // SDK 不带 emit 时间戳; 用 now + waitMs (会比真实晚一点点,可接受)
-        retryAt: Date.now() + p.waitMs,
+        waitMs: p.waitMs,
+        eventIdx: i,
       };
     }
     if (ev.kind === 'provider_recovery') {
@@ -58,6 +60,7 @@ function findActiveBanner(events: readonly SessionEvent[]): BannerState | null {
         recoveryAction: ev.recoveryAction,
         attempt: ev.attempt,
         maxAttempts: ev.maxAttempts,
+        eventIdx: i,
       };
     }
   }
@@ -69,22 +72,43 @@ export function RetryBanner(): JSX.Element | null {
   const events = useAppStore((s) =>
     currentSessionId ? s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS : EMPTY_EVENTS,
   );
-  const banner = findActiveBanner(events);
+  const raw = findActiveBannerRaw(events);
 
-  // retry 路径: 1s 心跳让倒计时数字递减;到点后让 banner 自动消失 (实际由 iteration_start 触发,
+  // 锁住 retryAt: 用 ref 记 (sessionId, eventIdx, waitMs) → 真实壁钟。renderer 每个 tick
+  // 重渲染时若 (sessionId, eventIdx) 仍是同一条,直接复用 stored retryAt,否则按当前
+  // Date.now() + waitMs 新建一个并记下。这样倒计时真实下降到 0,而不是每 render 跳回 waitMs。
+  const retryAtRef = useRef<{ sid: string | null; idx: number; at: number } | null>(null);
+  let retryAt: number | undefined;
+  if (raw?.kind === 'retry' && raw.waitMs !== undefined && raw.eventIdx !== undefined) {
+    const sid = currentSessionId;
+    const idx = raw.eventIdx;
+    const stored = retryAtRef.current;
+    if (stored && stored.sid === sid && stored.idx === idx) {
+      retryAt = stored.at;
+    } else {
+      retryAt = Date.now() + raw.waitMs;
+      retryAtRef.current = { sid, idx, at: retryAt };
+    }
+  } else {
+    // 不是 retry kind → 清掉 ref 让下次 retry 重新算
+    retryAtRef.current = null;
+  }
+
+  // retry 路径: 500ms 心跳让倒计时数字递减;到点后让 banner 自动消失 (实际由 iteration_start 触发,
   // 但 KodaX 重试速度有时比 1s tick 慢,UI 上让用户看到 "0s" 后默认折叠)。
   const [, forceTick] = useState(0);
   useEffect(() => {
-    if (!banner || banner.kind !== 'retry' || !banner.retryAt) return undefined;
+    if (!raw || raw.kind !== 'retry' || retryAt === undefined) return undefined;
     const id = setInterval(() => forceTick((n) => (n + 1) % 1000), 500);
     return () => clearInterval(id);
-  }, [banner?.kind, banner?.retryAt]);
+  }, [raw?.kind, retryAt]);
 
-  if (!banner) return null;
+  if (!raw) return null;
+  const banner = { ...raw, retryAt };
 
   // retry: 倒计时 + 描述
   if (banner.kind === 'retry') {
-    const remainMs = banner.retryAt ? Math.max(0, banner.retryAt - Date.now()) : 0;
+    const remainMs = banner.retryAt !== undefined ? Math.max(0, banner.retryAt - Date.now()) : 0;
     const remainSec = (remainMs / 1000).toFixed(remainMs < 10_000 ? 1 : 0);
     const reasonLabel = banner.reason === 'rate-limit' ? 'Rate-limited' : 'Provider overloaded';
     return (
