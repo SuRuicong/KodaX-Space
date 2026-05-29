@@ -75,6 +75,8 @@ export class RealKodaXSession implements ManagedSession {
   /** FEATURE_033 fork 元数据；root session 都为 undefined。*/
   parentSessionId?: string;
   forkPointTurnIdx?: number;
+  /** /compact one-shot flag (见 ManagedSession.compactRequested 注释)。 */
+  compactRequested = false;
 
   private readonly emit: (e: SessionEvent) => void;
   private readonly requestPermission: PermissionRequestFn;
@@ -589,6 +591,17 @@ export class RealKodaXSession implements ManagedSession {
         gitRoot: this.projectRoot,
         executionCwd: this.projectRoot,
         planModeBlockCheck,
+        // /compact 标记: 把 currentTokens 顶到 999B,SDK needsCompaction 立即触发
+        // 完事后 finally 清掉 flag (不管成功还是失败)
+        ...(this.compactRequested
+          ? {
+              contextTokenSnapshot: {
+                currentTokens: 999_000_000,
+                baselineEstimatedTokens: 999_000_000,
+                source: 'estimate' as const,
+              },
+            }
+          : {}),
       },
       guardrails,
     };
@@ -602,6 +615,10 @@ export class RealKodaXSession implements ManagedSession {
         const message = err instanceof Error ? err.message : String(err);
         this.emit({ kind: 'session_error', sessionId: sid, error: message });
       }
+    } finally {
+      // /compact 标记是 one-shot — 不论本轮成功 / 中断 / 报错，consume 后清掉
+      // 避免下一轮还误触发
+      if (this.compactRequested) this.compactRequested = false;
     }
   }
 }

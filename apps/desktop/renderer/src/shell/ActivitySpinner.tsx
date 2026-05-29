@@ -28,6 +28,10 @@ interface ActivitySnapshot {
   readonly startedAt: number | null;
   /** 当前 tool 正在操作的 path（write/edit/read 等 toolInput 含 path/file_path）— 渲染时显示 basename。*/
   readonly toolPath?: string;
+  /** Thinking…/Writing… 状态时的累积 char count (倒扫到上个非 thinking_delta 边界)。 */
+  readonly thinkingChars?: number;
+  /** Running tool… 状态时当前 toolId 累积 tool_input_delta partialJson char count。 */
+  readonly toolInputChars?: number;
 }
 
 function snapshotFromEvents(
@@ -116,15 +120,56 @@ function snapshotFromEvents(
     }
   }
 
+  // 字符数实时计数 (REPL StatusBar 同款)。让用户看到 LLM 实际在产出多少字符,而不只是"...转圈"。
+  //   - thinking: 累计最近一段连续的 thinking_delta (从最后一个非 thinking 事件起,排除 thinking_end)
+  //   - tool_input: 累计当前 activeToolId 的所有 tool_input_delta partialJson 长度
+  // 都从尾巴扫,边界是: session_start / iteration_end / tool_result / text_delta 等"打断"事件。
+  let thinkingChars: number | undefined;
+  if (status === 'Thinking…' || status === 'Writing…') {
+    let total = 0;
+    for (let i = events.length - 1; i >= 0; i--) {
+      const ev = events[i];
+      if (ev.kind === 'thinking_delta') {
+        total += ev.text.length;
+      } else if (ev.kind === 'thinking_end') {
+        // thinking_end 携带完整 thinking text;比逐条 delta 更权威,优先用
+        total = ev.thinking.length;
+        break;
+      } else if (ev.kind === 'text_delta' || ev.kind === 'tool_start' || ev.kind === 'tool_result'
+              || ev.kind === 'iteration_end' || ev.kind === 'session_start' || ev.kind === 'session_complete') {
+        break;
+      }
+    }
+    if (total > 0) thinkingChars = total;
+  }
+
+  let toolInputChars: number | undefined;
+  if (activeToolId) {
+    let total = 0;
+    for (let i = events.length - 1; i >= 0; i--) {
+      const ev = events[i];
+      if (ev.kind === 'tool_input_delta' && (ev as { toolId?: string }).toolId === activeToolId) {
+        total += ev.partialJson.length;
+      } else if (ev.kind === 'tool_start' && (ev as { toolId?: string }).toolId === activeToolId) {
+        break;
+      } else if (ev.kind === 'tool_result' || ev.kind === 'iteration_end') {
+        break;
+      }
+    }
+    if (total > 0) toolInputChars = total;
+  }
+
   // FEATURE_184/F193 — Sidecar Verifier 在 Worker 文字结束后再跑一次 LLM 评判
   // (~3-10s 尾延迟)。SDK 通过 onManagedTaskStatus 发 phase='verifying'，验证结束
   // 后转回 phase='worker'。覆盖 status，避免 spinner 卡在 "Writing…" 看着像没反应。
   if (managedPhase === 'verifying') {
     status = 'Verifying…';
     toolPath = undefined;
+    thinkingChars = undefined;
+    toolInputChars = undefined;
   }
 
-  return { streaming: true, status, iter, tokens, startedAt, toolPath };
+  return { streaming: true, status, iter, tokens, startedAt, toolPath, thinkingChars, toolInputChars };
 }
 
 function formatTokens(n: number): string {
@@ -216,7 +261,16 @@ export function ActivitySpinner(): JSX.Element | null {
   // tool path 显示 basename — 全路径太长，basename + dim 灰显
   const toolBase = snap.toolPath ? snap.toolPath.split(/[\\/]/).filter(Boolean).pop() : null;
 
-  const tail = [elapsedStr, iterStr, tokenStr].filter(Boolean).join(' · ');
+  // Char counts: REPL StatusBar 同款 — thinking 中显示 "3.4k chars"; 工具 input partial JSON
+  // 累积时显示 "2.1k chars"。让用户看到 LLM 实际产出量，而不只是"...转圈"。
+  let charStr = '';
+  if (snap.thinkingChars !== undefined) {
+    charStr = `${formatTokens(snap.thinkingChars)} chars`;
+  } else if (snap.toolInputChars !== undefined) {
+    charStr = `${formatTokens(snap.toolInputChars)} chars`;
+  }
+
+  const tail = [elapsedStr, iterStr, tokenStr, charStr].filter(Boolean).join(' · ');
 
   return (
     <div className="flex items-center gap-2 text-[11px] text-zinc-400 font-mono px-1 py-0.5">

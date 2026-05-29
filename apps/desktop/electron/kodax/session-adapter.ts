@@ -104,6 +104,12 @@ export interface ManagedSession {
   isRunning(): boolean;
 
   /**
+   * /compact slash command 设置的 flag。下一次 send 时 real-session 通过 contextTokenSnapshot
+   * 把 currentTokens 顶到 999B,让 SDK auto-compaction 立即触发。consume 后必须清回 false。
+   */
+  compactRequested?: boolean;
+
+  /**
    * 提交一条 prompt 到 session。**严格 fire-and-forget**：
    *
    *   - 实现**必须**在返回的 Promise resolve 前**只做同步建账**（如生成 turn id、

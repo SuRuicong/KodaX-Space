@@ -562,6 +562,35 @@ declare module '@kodax-ai/kodax/agent' {
   }
 
   export function getMessageQueue(): MessageQueueInstance;
+
+  // ============= FileTracingProcessor (FEATURE_083) =============
+  //
+  // 写 JSONL span/trace 到 traceDir,给 offline 诊断用。Space 启动期通过
+  // SPACE_TRACE_DIR env 显式启用,不设则默认不写 (避免写文件而用户不知情)。
+
+  export interface TracingSpan {
+    readonly [key: string]: unknown;
+  }
+  export interface TracingTrace {
+    readonly [key: string]: unknown;
+  }
+  export interface TracingProcessor {
+    onSpanStart?(span: TracingSpan): void;
+    onSpanEnd?(span: TracingSpan): void;
+    onTraceEnd?(trace: TracingTrace): void;
+  }
+  export interface FileTracingProcessorOptions {
+    readonly traceDir?: string;
+  }
+  export class FileTracingProcessor implements TracingProcessor {
+    constructor(opts?: FileTracingProcessorOptions);
+    onSpanStart(span: TracingSpan): void;
+    onSpanEnd(span: TracingSpan): void;
+    onTraceEnd(trace: TracingTrace): void;
+    shutdown(): Promise<void>;
+  }
+  /** 注册一个 processor; 返回 unsubscribe 函数。 */
+  export function addTracingProcessor(p: TracingProcessor): () => void;
 }
 
 // ============= FEATURE_035 @kodax-ai/kodax/skills =============

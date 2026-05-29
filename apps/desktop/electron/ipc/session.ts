@@ -318,62 +318,142 @@ export function registerSessionChannels(): void {
   });
 
   // session.history — 历史 session 切换时恢复对话内容（events / userMessages buffer in-memory，
-  // 重启后空；renderer 调本 channel 拉 KodaX SDK 持久化的 messages 数组，flatten 成 user/
-  // assistant text 一对一对，回填 store）。session in-flight 还没 loadPersistedSession 也 OK —
-  // KodaX SDK 直接读磁盘文件。tool_use / tool_result block 跳过（v1 简化），文本上下文保留。
+  // 重启后空；renderer 调本 channel 拉 KodaX SDK 持久化的 messages 数组，flatten 成
+  // user / assistant_text / tool_call 序列,回填 store）。
+  //
+  // **v0.1.x 全量回放**: tool_use / tool_result block 不再丢弃 —— 按原 message 顺序拍平
+  // 成 'tool_call' item (toolId / toolName / input / result)。assistant 一轮内文本和工具
+  // 调用交替时,items 数组顺序就是回放顺序,renderer composeMessages 自动重建气泡 + tool card。
+  //
+  // 工具结果匹配: tool_result block 在后续 user message 里,通过 toolId 与之前的 tool_use 配对。
+  // 失配 (tool_use 没等到 tool_result, 或 tool_result 没找到对应 tool_use) 仍 emit
+  // tool_call item,result 字段缺失 → renderer 会渲染为 "running" 状态卡片。
   registerChannel('session.history', async (input) => {
     const data = await loadPersistedSession(input.sessionId);
     if (!data || !Array.isArray(data.messages)) {
       return { items: [] };
     }
     const items: SessionHistoryItem[] = [];
-    for (const msg of data.messages) {
-      // SDK 标记的合成消息（auto-continue / retry）不显示给用户 — KodaX REPL 也隐藏它们
-      if ((msg as { _synthetic?: boolean })._synthetic) continue;
-      if (msg.role === 'system') continue; // system prompts 内部，不展示
 
-      const { text, thinking } = flattenContentBlocks(msg.content);
+    // 第一步: 走一遍消息收集 toolId → result 映射 (tool_result 永远在 tool_use 之后,
+    // 但同一 message 里也可能有多个 tool_use,先扫一遍简化处理)
+    const toolResults = new Map<string, { content: string; isError: boolean }>();
+    for (const msg of data.messages) {
+      if (!Array.isArray(msg.content)) continue;
+      for (const block of msg.content) {
+        if (!block || typeof block !== 'object') continue;
+        if ((block as { type?: unknown }).type !== 'tool_result') continue;
+        const id = (block as { tool_use_id?: unknown }).tool_use_id;
+        if (typeof id !== 'string') continue;
+        const content = flattenToolResultContent((block as { content?: unknown }).content);
+        const isError = Boolean((block as { is_error?: unknown }).is_error);
+        toolResults.set(id, { content, isError });
+      }
+    }
+
+    // 第二步: 按顺序拍平 messages 成 items
+    for (const msg of data.messages) {
+      if ((msg as { _synthetic?: boolean })._synthetic) continue; // SDK 合成消息隐藏
+      if (msg.role === 'system') continue; // system prompts 内部
 
       if (msg.role === 'user') {
-        if (text.length > 0) items.push({ kind: 'user', content: text });
+        // user message 通常 = pure text;若是工具结果回灌 (content 是 tool_result block 数组),
+        // 则 text === '',不 emit user item (但 tool_results map 已经在第一步抽走了)
+        const userText = extractUserText(msg.content);
+        if (userText.length > 0) items.push({ kind: 'user', content: userText });
       } else if (msg.role === 'assistant') {
-        if (text.length > 0 || thinking.length > 0) {
-          const item: SessionHistoryItem =
-            thinking.length > 0
-              ? { kind: 'assistant', text, thinking }
-              : { kind: 'assistant', text };
-          items.push(item);
+        // assistant: 按 content blocks 顺序逐个发 — text/thinking 累积到下次 tool_use 边界
+        // flush 出 'assistant' item;tool_use 直接 emit 'tool_call' item
+        let textBuf = '';
+        let thinkingBuf = '';
+        const flushText = (): void => {
+          if (textBuf.length > 0 || thinkingBuf.length > 0) {
+            const it: SessionHistoryItem =
+              thinkingBuf.length > 0
+                ? { kind: 'assistant', text: textBuf, thinking: thinkingBuf }
+                : { kind: 'assistant', text: textBuf };
+            items.push(it);
+            textBuf = '';
+            thinkingBuf = '';
+          }
+        };
+        const blocks = Array.isArray(msg.content) ? msg.content : (typeof msg.content === 'string' ? [{ type: 'text', text: msg.content }] : []);
+        for (const block of blocks) {
+          if (!block || typeof block !== 'object') continue;
+          const t = (block as { type?: unknown }).type;
+          if (t === 'text') {
+            const s = (block as { text?: unknown }).text;
+            if (typeof s === 'string') textBuf += s;
+          } else if (t === 'thinking') {
+            const s = (block as { thinking?: unknown }).thinking;
+            if (typeof s === 'string') thinkingBuf += s;
+          } else if (t === 'tool_use') {
+            // 工具调用 → 先 flush 累积的 text/thinking,然后 emit tool_call item
+            flushText();
+            const id = (block as { id?: unknown }).id;
+            const name = (block as { name?: unknown }).name;
+            const rawInput = (block as { input?: unknown }).input;
+            if (typeof id === 'string' && typeof name === 'string') {
+              const matched = toolResults.get(id);
+              const tcItem: SessionHistoryItem = {
+                kind: 'tool_call',
+                toolId: id,
+                toolName: name,
+                ...(rawInput && typeof rawInput === 'object' && !Array.isArray(rawInput)
+                  ? { input: rawInput as Record<string, unknown> }
+                  : {}),
+                ...(matched !== undefined
+                  ? { result: matched.content, ...(matched.isError ? { isError: true } : {}) }
+                  : {}),
+              };
+              items.push(tcItem);
+            }
+          }
+          if (items.length >= 2000) break;
         }
+        flushText();
       }
-      // schema z.array(...).max(2000) DoS 守护 — 超出截断不抛
       if (items.length >= 2000) break;
     }
-    return { items };
+    return { items: items.slice(0, 2000) };
   });
 }
 
-/** 把 KodaX content blocks 拍平成纯 text + 纯 thinking 两路；tool_use/tool_result 等丢弃。
- *  string 形式直接当 text。max-length 守护在 zod 出口（>256KB 报错前 truncate）。*/
-function flattenContentBlocks(content: unknown): { text: string; thinking: string } {
-  if (typeof content === 'string') return { text: content, thinking: '' };
-  if (!Array.isArray(content)) return { text: '', thinking: '' };
+/** user message content 提取纯文本部分;若 content 是 string 直接返回;若是 blocks 数组取 type=='text'.
+ *  tool_result blocks 不在这里出 — 它们在 history handler 第一步单独收集映射到 toolId。 */
+function extractUserText(content: unknown): string {
+  if (typeof content === 'string') return content.length > 256 * 1024 ? content.slice(0, 256 * 1024) + '\n…(truncated)' : content;
+  if (!Array.isArray(content)) return '';
   let text = '';
-  let thinking = '';
   for (const block of content) {
     if (!block || typeof block !== 'object') continue;
     const t = (block as { type?: unknown }).type;
     if (t === 'text') {
       const s = (block as { text?: unknown }).text;
       if (typeof s === 'string') text += s;
-    } else if (t === 'thinking') {
-      const s = (block as { thinking?: unknown }).thinking;
-      if (typeof s === 'string') thinking += s;
     }
-    // tool_use / tool_result / image / cache-boundary / redacted_thinking — 跳过
+    // tool_result / image / 其他 — 跳过
   }
-  // 256KB 截断兜底（避免越过 schema 上限抛错）
-  const MAX = 256 * 1024;
-  if (text.length > MAX) text = text.slice(0, MAX) + '\n…(truncated)';
-  if (thinking.length > MAX) thinking = thinking.slice(0, MAX) + '\n…(truncated)';
-  return { text, thinking };
+  if (text.length > 256 * 1024) text = text.slice(0, 256 * 1024) + '\n…(truncated)';
+  return text;
+}
+
+/** tool_result.content 拍平: 可能是 string,可能是 content blocks 数组 (含 text/image)。
+ *  只保留 text;过长截断兜底防 schema 上限报错。 */
+function flattenToolResultContent(content: unknown): string {
+  if (typeof content === 'string') {
+    return content.length > 512 * 1024 ? content.slice(0, 512 * 1024) + '\n…(truncated)' : content;
+  }
+  if (!Array.isArray(content)) return '';
+  let text = '';
+  for (const block of content) {
+    if (!block || typeof block !== 'object') continue;
+    if ((block as { type?: unknown }).type === 'text') {
+      const s = (block as { text?: unknown }).text;
+      if (typeof s === 'string') text += s;
+    }
+    // image blocks 等丢弃
+  }
+  if (text.length > 512 * 1024) text = text.slice(0, 512 * 1024) + '\n…(truncated)';
+  return text;
 }

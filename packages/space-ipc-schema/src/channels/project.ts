@@ -105,3 +105,37 @@ export const projectGitStatsChannel = {
 } as const;
 
 export type ProjectGitStatsDaily = z.infer<typeof dailyCommitSchema>;
+
+// ---- project.gitStatus ----
+//
+// 实时读 git working tree 脏度,给 BottomBar 上的 StashNotice 用 (REPL TUI 同款功能):
+// 工作区有未提交改动时显示一条"N modified · M untracked"的提示行,避免用户在 dirty 仓库里
+// 误启动 KodaX 跑 task 把变更覆盖掉。轻量 — 单次 `git status --porcelain -b` 调用,~10-30ms。
+//
+// 缓存策略: main 端 module-level mtime + 5s TTL (同 gitStats),renderer 频繁切场景不会撞 git。
+//
+// **不**返回文件路径列表 (DoS guard + 隐私): 只回计数 + branch 名,避免 leak file structure 到 renderer。
+export const projectGitStatusChannel = {
+  name: 'project.gitStatus',
+  direction: 'invoke',
+  input: z.object({
+    projectRoot: z.string().min(1).max(4096),
+  }),
+  output: z.object({
+    /** false = 非 git repo / git 不可用 / projectRoot 不存在等。 */
+    isGitRepo: z.boolean(),
+    /** modified + staged + untracked > 0 → 工作区 dirty (UI 弹 StashNotice 条件)。 */
+    dirty: z.boolean(),
+    /** Modified (worktree 修改未 staged) 文件数。 */
+    modifiedCount: z.number().int().nonnegative(),
+    /** Staged (已 git add 等待 commit) 文件数。 */
+    stagedCount: z.number().int().nonnegative(),
+    /** Untracked (未 git add 也未 .gitignore) 文件数。 */
+    untrackedCount: z.number().int().nonnegative(),
+    /** 当前分支名 (detached HEAD 时返回 'HEAD' 或短 SHA)。 */
+    branch: z.string().max(256).nullable(),
+    /** main/master 上游的领先 / 落后 commit 数 (无上游时 undefined)。 */
+    ahead: z.number().int().nonnegative().optional(),
+    behind: z.number().int().nonnegative().optional(),
+  }),
+} as const;

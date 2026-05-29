@@ -21,6 +21,8 @@ import { resolveSessionCreateInputs } from './createSession.js';
 import { ActivitySpinner, useIsStreaming } from './ActivitySpinner.js';
 import { AgentModeSelector } from './AgentModeSelector.js';
 import { AmaWorkStrip } from './AmaWorkStrip.js';
+import { StashNotice } from './StashNotice.js';
+import { RetryBanner } from './RetryBanner.js';
 import { pushToast } from '../store/toastStore.js';
 
 /**
@@ -670,6 +672,12 @@ export function BottomBar(): JSX.Element {
     // 比"顶 border-t + 三段堆叠"更整体。
     <div className="px-3 pt-1 pb-3 flex-shrink-0 space-y-1">
       {err && <div className="text-red-400 text-[11px] font-mono px-1">{err}</div>}
+
+      {/* Git working tree dirty 提示 (REPL StashNotice 等价)。非 git repo / clean 时返回 null */}
+      <StashNotice />
+
+      {/* Provider retry / recovery / rate-limit 实时提示 (REPL StatusNoticesSurface 等价) */}
+      <RetryBanner />
 
       {/* P5: AMA agent 形态时展示 worker / harness / 子任务计数 */}
       <AmaWorkStrip />

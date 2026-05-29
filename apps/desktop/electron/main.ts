@@ -257,6 +257,11 @@ app.whenReady().then(async () => {
   void startQueueWatch().catch((err) => {
     console.warn('[main] startQueueWatch failed:', err instanceof Error ? err.message : err);
   });
+  // FEATURE_083 FileTracingProcessor (opt-in): 设 SPACE_TRACE_DIR=/some/abs/path 后启动期注册,
+  // SDK 把 span/trace lifecycle JSONL 写入该目录。默认不写 (避免文件落盘而用户不知情)。
+  void startFileTracingIfEnabled().catch((err) => {
+    console.warn('[main] file tracing init failed:', err instanceof Error ? err.message : err);
+  });
   // 预加载 always-allow 规则 — broker.request 走 matches() 是同步路径，必须事先 load。
   // 失败不阻塞启动（registry.load 内部 catch 后 cached 落为 []）。
   void permissionRegistry.load();
@@ -280,6 +285,28 @@ app.on('window-all-closed', () => {
   }
 });
 
+// FileTracingProcessor 启用入口 — opt-in via env SPACE_TRACE_DIR (绝对路径)。
+// 设置后 SDK 把所有 span lifecycle 写到该目录的 JSONL。诊断诡异 bug 时启用。
+let _fileTracingShutdown: (() => Promise<void>) | null = null;
+async function startFileTracingIfEnabled(): Promise<void> {
+  const traceDir = process.env.SPACE_TRACE_DIR;
+  if (!traceDir || traceDir.length === 0) return;
+  // 安全: 必须 abs path (避免相对路径在 unpacked Electron app 路径误指向 app.asar)
+  if (!path.isAbsolute(traceDir)) {
+    console.warn(`[main] SPACE_TRACE_DIR must be absolute (got: ${traceDir}); tracing disabled`);
+    return;
+  }
+  try {
+    const agentMod = await import('@kodax-ai/kodax/agent');
+    const processor = new agentMod.FileTracingProcessor({ traceDir });
+    agentMod.addTracingProcessor(processor);
+    _fileTracingShutdown = () => processor.shutdown();
+    console.info(`[main] FileTracingProcessor enabled → ${traceDir}`);
+  } catch (err) {
+    console.warn('[main] FileTracingProcessor failed to load:', err instanceof Error ? err.message : err);
+  }
+}
+
 // 关闭前清空所有活跃 session——Mock 阶段只是 abort 内存里的 AbortController，
 // Real adapter 接入后会负责 kill 工具子进程、关 FileSessionStorage 句柄、断 HTTP 流。
 // 不放在 will-quit 是因为那时 event loop 即将停，async dispose 容易跑不完。
@@ -290,6 +317,15 @@ app.on('window-all-closed', () => {
 app.on('before-quit', (event) => {
   permissionBroker.cancelAll('shutdown');
   askUserBroker.cancelAll('shutdown');
+  // FileTracingProcessor.shutdown() 必须在退出前调,刷 pending write 到磁盘。
+  // 即便没 in-flight session 也得 flush — 单独 fire-and-forget,quit 不等它。
+  if (_fileTracingShutdown !== null) {
+    const shutdown = _fileTracingShutdown;
+    _fileTracingShutdown = null;
+    void shutdown().catch((err) =>
+      console.warn('[main] tracing shutdown:', err instanceof Error ? err.message : err),
+    );
+  }
   if (kodaxHost.listInFlight().length === 0) return;
   event.preventDefault();
   void kodaxHost

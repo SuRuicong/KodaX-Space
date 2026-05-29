@@ -248,18 +248,21 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
 
   {
     name: 'compact',
-    description: 'Manually compact conversation context (next send triggers compaction)',
+    description: 'Request context compaction on next turn (spikes token budget to force trigger)',
     argsHint: '',
     source: 'builtin',
     handler: async (ctx) => {
-      // KodaX SDK 暴露 compact 触发：当前版本 Space 没有直接 API，先记录意图，让下
-      // 一次 send 时 real-session 走 compact 路径（标记 setter 占位）。
-      // 真实接 KodaX compactContext() 等 v0.1.7+；现在仅 echo 提示。
       const s = kodaxHost.get(ctx.sessionId);
       if (!s) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      // 设置 flag — real-session 下一次 runKodaX 时通过 contextTokenSnapshot 把 currentTokens
+      // 顶到 999B (远超任何 contextWindow),让 SDK 的 needsCompaction 立即返回 true → 触发
+      // auto-compaction。完事后 real-session 清掉 flag。
+      // 比真正 manual SDK 调用 (DefaultSummaryCompaction + applySessionCompaction) 简单太多,
+      // 缺点是必须用户至少再输入一条消息才生效。后续如 SDK 出"compactNow"原子调用再升级。
+      kodaxHost.requestCompact(ctx.sessionId);
       return {
         ok: true,
-        message: 'compact requested — will be applied on next turn (full wiring v0.1.7+)',
+        message: 'Compaction requested — will trigger on your next message.',
         echo: true,
       };
     },

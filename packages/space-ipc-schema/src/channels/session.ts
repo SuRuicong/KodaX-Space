@@ -351,13 +351,28 @@ export type AgentsFileMeta = z.infer<typeof agentsFileSchema>;
 //
 // 用户点 Recents 里历史 session 时拉过去对话内容。Renderer 的 events / userMessages
 // buffer 是 in-memory，重启后空；session 元数据由 KodaX SDK 持久化但 messages 不进
-// 我们的 push channel。这里读 KodaX 的 loadSession(sid) → flatten content blocks →
-// 喂给 renderer 用 user/assistant text 一对一对的简化形式。
+// 我们的 push channel。这里读 KodaX 的 loadSession(sid) → 按顺序拍平 content blocks →
+// 喂给 renderer 让 composeMessages 重建对话。
 //
-// 简化策略（v1）：只回 text + thinking；中间的 tool_use / tool_result block 跳过（用户看
-// 不到工具调用细节但能看到上下文文本）。后续需要时升级到 full event replay。
+// **v0.1.x: 全量回放**——除 user / assistant text 外，还回 tool_call（toolId / toolName /
+// input / result）。assistant 一个 turn 内的 text/tool 顺序通过 items 数组顺序保留:
+//   [user, assistant_text "Let me check", tool_call grep, assistant_text "found it", user, ...]
+// renderer 收到后 prependSessionHistory 会按这个顺序发 text_delta + tool_start + tool_result
+// + session_complete 进 events buffer,composeMessages 自动重建出气泡 + tool card。
 //
 // 上限：items 最多 2000 — 长会话也罕见超过这个；每条 user/assistant 含 content 文本上限同 text_delta。
+const historyToolCallSchema = z.object({
+  kind: z.literal('tool_call'),
+  toolId: z.string().min(1).max(128),
+  toolName: z.string().min(1).max(64),
+  /** SDK 持久化的 tool_use 输入参数 (JSON 对象)。可能缺失 (历史 message 损坏 / 早期版本)。*/
+  input: z.record(z.unknown()).optional(),
+  /** 对应的 tool_result 内容 (拍平字符串)。空字符串 = 工具被 cancel/skip;undefined = 没匹配上 result。*/
+  result: z.string().max(MAX_TOOL_RESULT).optional(),
+  /** SDK 已知 toolId,但实际 tool_result 出错时的 error 字段 (string)。*/
+  isError: z.boolean().optional(),
+});
+
 const sessionHistoryItemSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('user'),
@@ -372,6 +387,7 @@ const sessionHistoryItemSchema = z.discriminatedUnion('kind', [
     thinking: z.string().max(MAX_TEXT_CHUNK).optional(),
     sentAt: z.number().int().nonnegative().optional(),
   }),
+  historyToolCallSchema,
 ]);
 
 export const sessionHistoryChannel = {

@@ -447,24 +447,58 @@ export const useAppStore = create<AppState>((set) => ({
       if (!state.sessions.some((s) => s.sessionId === sessionId)) return state;
       // 在 set callback 内构造 historical buckets,确保读到最新 currentBucket,避免 await 期
       // user 已经 append 了新消息后被覆盖。
+      //
+      // v0.1.x 全量回放: items 可能是 user / assistant / tool_call 交替序列。
+      //   一个 turn = 一段从 user 到下一个 user 之前的 events; session_complete 在 turn 末尾插。
+      //   composeMessages 按 session_complete 切段配对 user message ↔ events。
       const histMsgs: UserMessage[] = [];
       const histEvents: SessionEvent[] = [];
+      // 用来跟踪"上一项是否为 user (turn 边界)"-- 在 user 到来前如果有 pending assistant
+      // events 还没 session_complete,先 flush 一个 complete
+      let assistantPendingComplete = false;
+      const flushTurnIfNeeded = (): void => {
+        if (assistantPendingComplete) {
+          histEvents.push({ kind: 'session_complete', sessionId });
+          assistantPendingComplete = false;
+        }
+      };
       for (const item of items) {
         if (item.kind === 'user') {
+          flushTurnIfNeeded();
           const id = `u_${sessionId}_${++userMessageCounter}`;
           histMsgs.push({ id, content: item.content, sentAt: item.sentAt ?? fallbackSentAt });
-        } else {
-          // assistant: thinking_delta? + text_delta? + session_complete 序列,跟之前
-          // Shell.tsx 内联逻辑等价,确保 composeMessages 按 session_complete 切段成立
+        } else if (item.kind === 'assistant') {
           if (item.thinking !== undefined && item.thinking.length > 0) {
             histEvents.push({ kind: 'thinking_delta', sessionId, text: item.thinking });
           }
           if (item.text.length > 0) {
             histEvents.push({ kind: 'text_delta', sessionId, text: item.text });
           }
-          histEvents.push({ kind: 'session_complete', sessionId });
+          assistantPendingComplete = true;
+        } else {
+          // tool_call: emit tool_start + (optional) tool_result。 result 缺失时 (history 损坏
+          // 或 tool_use 没匹配上 tool_result) 仍 emit tool_start 让 UI 显示一张 "running" 卡片。
+          histEvents.push({
+            kind: 'tool_start',
+            sessionId,
+            toolId: item.toolId,
+            toolName: item.toolName,
+            ...(item.input ? { input: item.input } : {}),
+          });
+          if (item.result !== undefined) {
+            histEvents.push({
+              kind: 'tool_result',
+              sessionId,
+              toolId: item.toolId,
+              toolName: item.toolName,
+              content: item.result,
+            });
+          }
+          assistantPendingComplete = true;
         }
       }
+      // tail: 最后一项是 assistant/tool_call 时补一个 session_complete 让段闭合
+      flushTurnIfNeeded();
       const currentMsgs = state.userMessagesBySession[sessionId] ?? [];
       const currentEvents = state.eventsBySession[sessionId] ?? [];
       return {

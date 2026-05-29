@@ -160,6 +160,132 @@ export function registerProjectChannels(): void {
     writeGitStatsCache(projectRoot, sinceDays, result);
     return result;
   });
+
+  // project.gitStatus — 工作区 dirty 状态轻量查询 (StashNotice 用)
+  //
+  // `git status --porcelain=v1 -b` 单次输出: 第一行 "## branch [ahead N, behind M]",
+  // 后续每行 XY <path>:
+  //   X = staged 状态 (M/A/D/R/C),   Y = worktree 状态 (M/D),  '??' = untracked
+  // 统计四个 counter,**不**回 path (隐私 + DoS guard)。
+  //
+  // 缓存: module-level + 5s TTL, 同 gitStats; 用 projectRoot 作 key。
+  registerChannel('project.gitStatus', async (input) => {
+    const projectRoot = validateProjectRoot(input.projectRoot);
+    const cached = readGitStatusCache(projectRoot);
+    if (cached) return cached;
+
+    const isRepo = await runGit(projectRoot, ['rev-parse', '--git-dir']);
+    if (!isRepo.ok) {
+      const fallback = {
+        isGitRepo: false,
+        dirty: false,
+        modifiedCount: 0,
+        stagedCount: 0,
+        untrackedCount: 0,
+        branch: null,
+      } as const;
+      writeGitStatusCache(projectRoot, fallback);
+      return fallback;
+    }
+
+    const status = await runGit(projectRoot, ['status', '--porcelain=v1', '-b']);
+    if (!status.ok) {
+      const fallback = {
+        isGitRepo: true,
+        dirty: false,
+        modifiedCount: 0,
+        stagedCount: 0,
+        untrackedCount: 0,
+        branch: null,
+      } as const;
+      writeGitStatusCache(projectRoot, fallback);
+      return fallback;
+    }
+
+    // 解析 stdout
+    let modifiedCount = 0;
+    let stagedCount = 0;
+    let untrackedCount = 0;
+    let branch: string | null = null;
+    let ahead: number | undefined;
+    let behind: number | undefined;
+
+    const lines = status.stdout.split('\n');
+    for (const rawLine of lines) {
+      if (!rawLine) continue;
+      if (rawLine.startsWith('## ')) {
+        // "## main" / "## main...origin/main" / "## main...origin/main [ahead 2, behind 1]" / "## HEAD (no branch)"
+        const body = rawLine.slice(3);
+        const dotsIdx = body.indexOf('...');
+        const bracketIdx = body.indexOf(' [');
+        const branchEnd = dotsIdx >= 0 ? dotsIdx : bracketIdx >= 0 ? bracketIdx : body.length;
+        const rawBranch = body.slice(0, branchEnd).trim();
+        // 防 IPC schema max 256
+        branch = rawBranch.length > 0 ? rawBranch.slice(0, 256) : 'HEAD';
+        if (bracketIdx >= 0) {
+          const trail = body.slice(bracketIdx + 2, body.endsWith(']') ? -1 : undefined);
+          const aheadMatch = /ahead (\d+)/.exec(trail);
+          const behindMatch = /behind (\d+)/.exec(trail);
+          if (aheadMatch) ahead = Math.min(parseInt(aheadMatch[1], 10), 1_000_000);
+          if (behindMatch) behind = Math.min(parseInt(behindMatch[1], 10), 1_000_000);
+        }
+        continue;
+      }
+      if (rawLine.startsWith('??')) {
+        untrackedCount++;
+        continue;
+      }
+      // XY <path>: char[0] = staged, char[1] = worktree。 空格代表无该侧改动。
+      const x = rawLine.charAt(0);
+      const y = rawLine.charAt(1);
+      if (x !== ' ' && x !== '?') stagedCount++;
+      if (y !== ' ' && y !== '?') modifiedCount++;
+    }
+
+    const result = {
+      isGitRepo: true,
+      dirty: modifiedCount + stagedCount + untrackedCount > 0,
+      modifiedCount,
+      stagedCount,
+      untrackedCount,
+      branch,
+      ...(ahead !== undefined ? { ahead } : {}),
+      ...(behind !== undefined ? { behind } : {}),
+    };
+    writeGitStatusCache(projectRoot, result);
+    return result;
+  });
+}
+
+// gitStatus cache (类比 gitStats 但 key 更简单 — 不带 sinceDays)
+type GitStatusOutput = {
+  isGitRepo: boolean;
+  dirty: boolean;
+  modifiedCount: number;
+  stagedCount: number;
+  untrackedCount: number;
+  branch: string | null;
+  ahead?: number;
+  behind?: number;
+};
+const GIT_STATUS_TTL_MS = 5_000;
+const gitStatusCache = new Map<string, { ts: number; data: GitStatusOutput }>();
+function readGitStatusCache(projectRoot: string): GitStatusOutput | null {
+  const entry = gitStatusCache.get(projectRoot);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > GIT_STATUS_TTL_MS) {
+    gitStatusCache.delete(projectRoot);
+    return null;
+  }
+  return entry.data;
+}
+function writeGitStatusCache(projectRoot: string, data: GitStatusOutput): void {
+  gitStatusCache.set(projectRoot, { ts: Date.now(), data });
+  // module 级缓存,避免无限增长
+  if (gitStatusCache.size > 32) {
+    const firstKey = gitStatusCache.keys().next().value;
+    if (firstKey !== undefined) gitStatusCache.delete(firstKey);
+  }
 }
 
 // ---- git child_process helper ----
