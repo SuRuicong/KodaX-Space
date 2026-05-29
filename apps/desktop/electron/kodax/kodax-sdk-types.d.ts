@@ -593,6 +593,83 @@ declare module '@kodax-ai/kodax/agent' {
   export function addTracingProcessor(p: TracingProcessor): () => void;
 }
 
+// ============= MCP Manager (FEATURE_186 v0.7.42) =============
+//
+// Space main 端持有 process-global McpManager 实例 (mcp/manager.ts) 给 popout 用。
+// 这里声明 Space 实际调到的 surface; 其他高级方法 (search/describe/execute/read/getCatalog)
+// 暂未在 main IPC 暴露,不在此 ambient 声明。
+declare module '@kodax-ai/kodax/mcp' {
+  export type McpRuntimeStatus = 'idle' | 'connecting' | 'ready' | 'error' | 'disabled';
+  export type McpConnectMode = 'lazy' | 'prewarm' | 'disabled';
+  export type McpCapabilityKind = 'tool' | 'resource' | 'prompt';
+
+  export interface McpCapabilityDescriptor {
+    readonly id: string;
+    readonly kind: McpCapabilityKind;
+    readonly name: string;
+    readonly description?: string;
+  }
+
+  export interface McpServerStatus {
+    readonly serverId: string;
+    readonly config: unknown;
+    readonly connect: McpConnectMode;
+    readonly status: McpRuntimeStatus;
+    readonly tools: number;
+    readonly resources: number;
+    readonly prompts: number;
+    readonly dirty: boolean;
+    readonly cachedAt?: string;
+    readonly lastError?: string;
+  }
+
+  export interface McpServerLogs {
+    readonly serverId: string;
+    readonly status: McpRuntimeStatus;
+    readonly connect: McpConnectMode;
+    readonly lastError?: string;
+    readonly cachedAt?: string;
+  }
+
+  export interface McpServerToolList {
+    readonly serverId: string;
+    readonly tools: readonly McpCapabilityDescriptor[];
+    readonly cachedAt?: string;
+  }
+
+  export interface McpServerConfig {
+    type?: 'stdio' | 'sse' | 'streamable-http';
+    command?: string;
+    args?: string[];
+    cwd?: string;
+    env?: Record<string, string>;
+    url?: string;
+    headers?: Record<string, string>;
+    connect?: McpConnectMode;
+    startupTimeoutMs?: number;
+    requestTimeoutMs?: number;
+  }
+  export type McpServersConfig = Record<string, McpServerConfig>;
+
+  export class McpManager {
+    constructor(servers: McpServersConfig | undefined, options?: Record<string, unknown>);
+    listServers(): McpServerStatus[];
+    startServer(serverId: string): Promise<McpServerStatus>;
+    stopServer(serverId: string): Promise<McpServerStatus>;
+    getServerLogs(serverId: string): McpServerLogs;
+    listTools(
+      serverId: string,
+      options?: { forceRefresh?: boolean },
+    ): Promise<McpServerToolList>;
+    dispose(): Promise<void>;
+  }
+
+  export function createMcpManager(
+    servers: McpServersConfig | undefined,
+    options?: Record<string, unknown>,
+  ): McpManager;
+}
+
 // ============= FEATURE_035 @kodax-ai/kodax/skills =============
 //
 // 同 coding 子包：SDK 内部走 `export * from '@kodax-ai/skills'` 但 @kodax-ai/skills

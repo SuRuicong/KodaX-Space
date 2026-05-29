@@ -1,11 +1,37 @@
-// MCP IPC handlers — FEATURE_036 alpha.1 (read-only).
+// MCP IPC handlers — FEATURE_036 + v0.1.x lifecycle (Batch 3 #5 follow-up).
 //
-// 仅 mcp.discover——读 ~/.kodax/config.json + ${projectRoot}/.kodax/config.json 的 mcpServers。
-// 启停 / 日志 / tool catalog 等需要 KodaX SDK 公开 MCP 管理 API，等 v0.1.7 F039 接磁盘版后做。
+//   mcp.discover    读 ~/.kodax/config.json + project (Space 投影, 不触发连接)
+//   mcp.servers     McpManager.listServers — runtime 状态快照 + catalog 大小
+//   mcp.start       强制连接 + catalog refresh
+//   mcp.stop        断开 + drop pending queue, 保留配置
+//   mcp.logs        最近 diagnostic envelope (status + lastError + cachedAt)
+//   mcp.tools       拿 tool descriptors (lazy connect if needed)
+//   mcp.reload      用户改 config 后调, dispose 现有 Manager + 重建
 
 import { registerChannel } from './register.js';
 import { kodaxHost } from '../kodax/host.js';
 import { discoverMcpServers } from '../mcp/config-reader.js';
+import { getMcpManager, reloadMcpManager } from '../mcp/manager.js';
+import type {
+  McpServerStatusT,
+  McpRuntimeStatusT,
+} from '@kodax-space/space-ipc-schema';
+
+/** SDK McpServerStatus → IPC McpServerStatusT 投影。两端 shape 几乎一致,只把 number 字段
+ *  clamp 到 IPC schema 上限防御异常值。 */
+function projectStatus(s: import('@kodax-ai/kodax/mcp').McpServerStatus): McpServerStatusT {
+  return {
+    serverId: s.serverId,
+    connect: s.connect,
+    status: s.status as McpRuntimeStatusT,
+    tools: Math.min(s.tools, 10_000),
+    resources: Math.min(s.resources, 10_000),
+    prompts: Math.min(s.prompts, 10_000),
+    dirty: s.dirty,
+    ...(s.cachedAt !== undefined ? { cachedAt: s.cachedAt } : {}),
+    ...(s.lastError !== undefined ? { lastError: s.lastError } : {}),
+  };
+}
 
 export function registerMcpChannels(): void {
   registerChannel('mcp.discover', async (input) => {
@@ -14,5 +40,66 @@ export function registerMcpChannels(): void {
       throw new Error(`session not found: ${input.sessionId}`);
     }
     return discoverMcpServers({ projectRoot: session.projectRoot });
+  });
+
+  registerChannel('mcp.servers', async () => {
+    const manager = await getMcpManager();
+    const list = manager.listServers();
+    // schema cap is 128
+    const projected = list.slice(0, 128).map(projectStatus);
+    return { servers: projected };
+  });
+
+  registerChannel('mcp.start', async (input) => {
+    const manager = await getMcpManager();
+    const status = await manager.startServer(input.serverId);
+    return { status: projectStatus(status) };
+  });
+
+  registerChannel('mcp.stop', async (input) => {
+    const manager = await getMcpManager();
+    const status = await manager.stopServer(input.serverId);
+    return { status: projectStatus(status) };
+  });
+
+  registerChannel('mcp.logs', async (input) => {
+    const manager = await getMcpManager();
+    const logs = manager.getServerLogs(input.serverId);
+    return {
+      serverId: logs.serverId,
+      connect: logs.connect,
+      status: logs.status as McpRuntimeStatusT,
+      ...(logs.lastError !== undefined ? { lastError: logs.lastError } : {}),
+      ...(logs.cachedAt !== undefined ? { cachedAt: logs.cachedAt } : {}),
+    };
+  });
+
+  registerChannel('mcp.tools', async (input) => {
+    const manager = await getMcpManager();
+    const list = await manager.listTools(input.serverId, {
+      forceRefresh: input.forceRefresh,
+    });
+    // SDK 给出全 capability descriptor; 投影到 IPC schema (id/name/description), cap 1024
+    const tools = list.tools.slice(0, 1024).map((t) => ({
+      id: t.id,
+      name: t.name,
+      ...(t.description !== undefined ? { description: t.description } : {}),
+    }));
+    return {
+      tools,
+      ...(list.cachedAt !== undefined ? { cachedAt: list.cachedAt } : {}),
+    };
+  });
+
+  registerChannel('mcp.reload', async () => {
+    await reloadMcpManager();
+    // reload 后 lazy: 调一次 listServers 拿当前 count
+    try {
+      const manager = await getMcpManager();
+      const count = manager.listServers().length;
+      return { ok: true, serverCount: Math.min(count, 128) };
+    } catch {
+      return { ok: false, serverCount: 0 };
+    }
   });
 }

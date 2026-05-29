@@ -63,7 +63,15 @@ import {
   skillInvokeChannel,
 } from './skill.js';
 import { agentDiscoverChannel } from './agent.js';
-import { mcpDiscoverChannel } from './mcp.js';
+import {
+  mcpDiscoverChannel,
+  mcpServersChannel,
+  mcpStartChannel,
+  mcpStopChannel,
+  mcpLogsChannel,
+  mcpToolsChannel,
+  mcpReloadChannel,
+} from './mcp.js';
 import { kodaxGetDefaultsChannel } from './kodax.js';
 import { kodaxQueueGetChannel, kodaxQueueChangedChannel } from './queue.js';
 import {
@@ -117,6 +125,12 @@ export const invokeChannels = {
   [skillInvokeChannel.name]: skillInvokeChannel,
   [agentDiscoverChannel.name]: agentDiscoverChannel,
   [mcpDiscoverChannel.name]: mcpDiscoverChannel,
+  [mcpServersChannel.name]: mcpServersChannel,
+  [mcpStartChannel.name]: mcpStartChannel,
+  [mcpStopChannel.name]: mcpStopChannel,
+  [mcpLogsChannel.name]: mcpLogsChannel,
+  [mcpToolsChannel.name]: mcpToolsChannel,
+  [mcpReloadChannel.name]: mcpReloadChannel,
   [kodaxGetDefaultsChannel.name]: kodaxGetDefaultsChannel,
   [kodaxQueueGetChannel.name]: kodaxQueueGetChannel,
   [providerListChannel.name]: providerListChannel,

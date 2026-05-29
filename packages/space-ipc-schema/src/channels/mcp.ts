@@ -55,3 +55,127 @@ export const mcpDiscoverChannel = {
 
 export type McpServerMeta = z.infer<typeof mcpServerMetaSchema>;
 export type McpTransport = z.infer<typeof mcpTransportSchema>;
+
+// ============================================================================
+// v0.1.x: McpManager lifecycle channels (Batch 3 #5 follow-up)
+// ============================================================================
+//
+// Wraps `@kodax-ai/kodax/mcp` McpManager. main 端持有一个 process-singleton manager,
+// 通过 IPC 暴露 list/start/stop/logs/tools/reload。McpPanel 渲染时调用以驱动 UI。
+//
+// 与 mcp.discover 的关系: discover 只读 config 文件展示 list (不触发任何 server 连接);
+// 这里的 servers/start/... 才真正触发 SDK 与 server 进程通信。两者并存,语义不冲突。
+
+// 对齐 SDK McpServerRuntimeDiagnostics.status (config.d.ts:52)
+const mcpRuntimeStatusSchema = z.enum(['idle', 'connecting', 'ready', 'error', 'disabled']);
+// 对齐 SDK McpConnectMode (config.d.ts:9)
+const mcpConnectModeSchema = z.enum(['lazy', 'prewarm', 'disabled']);
+
+const mcpServerStatusSchema = z.object({
+  serverId: z.string().min(1).max(128),
+  connect: mcpConnectModeSchema,
+  status: mcpRuntimeStatusSchema,
+  /** Tools 总数 (catalog 已加载时填,未连接时为 0) */
+  tools: z.number().int().nonnegative().max(10_000),
+  resources: z.number().int().nonnegative().max(10_000),
+  prompts: z.number().int().nonnegative().max(10_000),
+  /** SDK 内部 "config / catalog 待 refresh" 标志 */
+  dirty: z.boolean(),
+  /** ISO 时间戳; catalog 缓存生成时间 */
+  cachedAt: z.string().max(64).optional(),
+  /** 上一次错误消息 (status=error 时显示在 panel) */
+  lastError: z.string().max(2048).optional(),
+});
+
+// ---- Invoke: mcp.servers ----
+// 列出所有配置的 server + runtime 状态。listServers 是同步 + 廉价的快照,不触发 server 连接。
+export const mcpServersChannel = {
+  name: 'mcp.servers',
+  direction: 'invoke',
+  input: z.undefined().optional(),
+  output: z.object({
+    servers: z.array(mcpServerStatusSchema).max(128),
+  }),
+} as const;
+
+// ---- Invoke: mcp.start ----
+// 强制启动 (lazy server 显式连接, prewarm 重新跑 prewarm 流程)。返回 post-start status。
+export const mcpStartChannel = {
+  name: 'mcp.start',
+  direction: 'invoke',
+  input: z.object({
+    serverId: z.string().min(1).max(128),
+  }),
+  output: z.object({
+    status: mcpServerStatusSchema,
+  }),
+} as const;
+
+// ---- Invoke: mcp.stop ----
+// 断开 server (保留配置,后续 start 可恢复)。
+export const mcpStopChannel = {
+  name: 'mcp.stop',
+  direction: 'invoke',
+  input: z.object({
+    serverId: z.string().min(1).max(128),
+  }),
+  output: z.object({
+    status: mcpServerStatusSchema,
+  }),
+} as const;
+
+// ---- Invoke: mcp.logs ----
+// 拿最近 diagnostic envelope (SDK v0.7.42 surface 比较保守,仅 status + lastError + cachedAt)。
+export const mcpLogsChannel = {
+  name: 'mcp.logs',
+  direction: 'invoke',
+  input: z.object({
+    serverId: z.string().min(1).max(128),
+  }),
+  output: z.object({
+    serverId: z.string().min(1).max(128),
+    connect: mcpConnectModeSchema,
+    status: mcpRuntimeStatusSchema,
+    lastError: z.string().max(2048).optional(),
+    cachedAt: z.string().max(64).optional(),
+  }),
+} as const;
+
+// ---- Invoke: mcp.tools ----
+// 列出 server 暴露的 tool 描述 (capability descriptors)。触发 lazy connect + catalog fetch。
+const mcpToolDescriptorSchema = z.object({
+  /** 完整 capability id, 格式 `mcp://<serverId>/tool/<name>` */
+  id: z.string().min(1).max(512),
+  name: z.string().min(1).max(256),
+  description: z.string().max(4096).optional(),
+});
+
+export const mcpToolsChannel = {
+  name: 'mcp.tools',
+  direction: 'invoke',
+  input: z.object({
+    serverId: z.string().min(1).max(128),
+    /** true → 跳过 catalog 缓存, 强制重新连接刷新 */
+    forceRefresh: z.boolean().optional(),
+  }),
+  output: z.object({
+    tools: z.array(mcpToolDescriptorSchema).max(1024),
+    cachedAt: z.string().max(64).optional(),
+  }),
+} as const;
+
+// ---- Invoke: mcp.reload ----
+// 用户改了 ~/.kodax/config.json 后调,重建 Manager。dispose 老的 + 用新 config 创建。
+export const mcpReloadChannel = {
+  name: 'mcp.reload',
+  direction: 'invoke',
+  input: z.undefined().optional(),
+  output: z.object({
+    ok: z.boolean(),
+    /** Reload 后服务器数 (用 listServers 数过)。0 = config 里没 mcpServers 或全 disabled */
+    serverCount: z.number().int().nonnegative().max(128),
+  }),
+} as const;
+
+export type McpServerStatusT = z.infer<typeof mcpServerStatusSchema>;
+export type McpRuntimeStatusT = z.infer<typeof mcpRuntimeStatusSchema>;

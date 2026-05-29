@@ -18,6 +18,7 @@ import { registerSkillChannels } from './ipc/skill.js';
 import { registerAgentChannels } from './ipc/agent.js';
 import { registerMcpChannels } from './ipc/mcp.js';
 import { prewarmSdkMcpStore } from './mcp/config-reader.js';
+import { disposeMcpManager } from './mcp/manager.js';
 import { registerKodaxChannels } from './ipc/kodax.js';
 import { registerQueueChannels, startQueueWatch } from './ipc/queue.js';
 import { prewarmKodaxUserConfig, registerKodaxCustomProviders } from './kodax/user-config.js';
@@ -326,6 +327,11 @@ app.on('before-quit', (event) => {
       console.warn('[main] tracing shutdown:', err instanceof Error ? err.message : err),
     );
   }
+  // McpManager: 释放 stdio transport 子进程,免得 quit 后 server 进程作为 zombie 留着。
+  // 同样 fire-and-forget,失败不阻塞退出。
+  void disposeMcpManager().catch((err) =>
+    console.warn('[main] mcp shutdown:', err instanceof Error ? err.message : err),
+  );
   if (kodaxHost.listInFlight().length === 0) return;
   event.preventDefault();
   void kodaxHost

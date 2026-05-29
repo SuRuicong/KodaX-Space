@@ -98,8 +98,16 @@ export {
 
 export {
   mcpDiscoverChannel,
+  mcpServersChannel,
+  mcpStartChannel,
+  mcpStopChannel,
+  mcpLogsChannel,
+  mcpToolsChannel,
+  mcpReloadChannel,
   type McpServerMeta,
   type McpTransport,
+  type McpServerStatusT,
+  type McpRuntimeStatusT,
 } from './channels/mcp.js';
 
 export {
