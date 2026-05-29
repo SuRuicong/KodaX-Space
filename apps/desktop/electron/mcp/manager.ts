@@ -30,6 +30,11 @@ let cached: {
   manager: ManagerInstance;
 } | null = null;
 let lastConstructError: string | null = null;
+// In-flight init promise — 第一次 IPC 触发 import + new McpManager 时两个 await 之间会让出
+// event loop,后续并发 IPC 调用如果只检查 cached !== null 会全部漏过 guard,各自 new 一个 manager
+// 出来,前面那个就被 cached 覆盖丢失 (其 stdio child 进程留作 zombie)。用一个 initPromise 串行
+// 所有并发首调 (审查 HIGH)。
+let initPromise: Promise<ManagerInstance> | null = null;
 
 /**
  * 拿当前 Manager 实例; 缓存命中直接返回, 没有则 lazy 创建。
@@ -40,17 +45,24 @@ export async function getMcpManager(): Promise<ManagerInstance> {
   if (lastConstructError !== null) {
     throw new Error(`McpManager unavailable: ${lastConstructError}`);
   }
-  try {
-    const mod = await import('@kodax-ai/kodax/mcp');
-    const servers = await loadKodaxUserConfig().catch(() => undefined);
-    const manager = new mod.McpManager(servers);
-    cached = { module: mod, manager };
-    return manager;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    lastConstructError = msg;
-    throw new Error(`McpManager init failed: ${msg}`);
-  }
+  if (initPromise !== null) return initPromise;
+  initPromise = (async (): Promise<ManagerInstance> => {
+    try {
+      const mod = await import('@kodax-ai/kodax/mcp');
+      const servers = await loadKodaxUserConfig().catch(() => undefined);
+      const manager = new mod.McpManager(servers);
+      cached = { module: mod, manager };
+      return manager;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      lastConstructError = msg;
+      throw new Error(`McpManager init failed: ${msg}`);
+    } finally {
+      // 清掉 in-flight 引用,允许 reload 后下次从头来过
+      initPromise = null;
+    }
+  })();
+  return initPromise;
 }
 
 /**
@@ -61,6 +73,9 @@ export async function reloadMcpManager(): Promise<void> {
   const prev = cached;
   cached = null;
   lastConstructError = null;
+  // 同时清掉 initPromise — 如果 reload 在初次 init 还没 resolve 时被调,旧 init 完成后会被
+  // finally 里的 `initPromise = null` 自然清掉; 但 reload 走在前面时显式清避免被 prev 覆盖。
+  initPromise = null;
   if (prev !== null) {
     try {
       await prev.manager.dispose();

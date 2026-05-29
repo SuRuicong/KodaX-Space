@@ -136,8 +136,12 @@ export function McpPanel(): JSX.Element {
 
   async function toggleTools(serverId: string): Promise<void> {
     if (!window.kodaxSpace) return;
-    if (expandedTools[serverId]) {
-      // 已展开 → 折叠
+    const current = expandedTools[serverId];
+    // 'loading' 状态下点击 = 用户改主意要取消,不进入"折叠"分支否则 race 后 IPC reply 会复活
+    // 它认为已经折叠的 tool 列表 (审查 M2)。直接 noop,等 in-flight 自然 resolve。
+    if (current === 'loading') return;
+    if (current !== undefined) {
+      // 已展开 (array) / 报错 (error) → 折叠
       setExpandedTools((cur) => {
         const next = { ...cur };
         delete next[serverId];
@@ -147,11 +151,16 @@ export function McpPanel(): JSX.Element {
     }
     setExpandedTools((cur) => ({ ...cur, [serverId]: 'loading' }));
     const r = await window.kodaxSpace.invoke('mcp.tools', { serverId });
-    if (!r.ok) {
-      setExpandedTools((cur) => ({ ...cur, [serverId]: 'error' }));
-      return;
-    }
-    setExpandedTools((cur) => ({ ...cur, [serverId]: r.data.tools as ToolItem[] }));
+    // setter form 防 stale closure;另外若用户在 in-flight 期再次点击 toggle (上面 noop 已挡)
+    // 或 reload (mcp.reload → 我们不清 expandedTools,但下次 IPC 结果仍是新 manager 的),
+    // 这里照写最新结果即可。
+    setExpandedTools((cur) => {
+      // 如果 in-flight 期间 cur 里这一项已被外部 (eg session switch + remount) 清理,我们就别
+      // 再灌回去——避免被用户视为"自己刚关掉的卡又跳出来"
+      if (cur[serverId] !== 'loading') return cur;
+      if (!r.ok) return { ...cur, [serverId]: 'error' };
+      return { ...cur, [serverId]: r.data.tools as ToolItem[] };
+    });
   }
 
   // 合并 statusList + meta(discover) 成统一视图:status 优先,meta 仅给"command/url"补展示
