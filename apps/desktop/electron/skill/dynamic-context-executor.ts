@@ -64,7 +64,19 @@ export function createSkillDynamicContextExecutor(opts: {
       const timer = setTimeout(() => {
         if (resolved) return;
         resolved = true;
-        try { child.kill('SIGKILL'); } catch { /* ignore */ }
+        // Windows: child.kill 只 kill shell (cmd.exe),它 spawn 的真实 git/find/etc 不在
+        // job object 里,会成为孤儿继续跑。用 taskkill /F /T /PID 杀整棵进程树 (审查 H1)。
+        // POSIX: 默认 detached=false,child 与 parent 同 process group,直接 kill PID 即可。
+        try {
+          if (process.platform === 'win32' && child.pid !== undefined) {
+            // fire-and-forget; taskkill 失败就退回 child.kill (单进程,杀不掉 shell 子孙)
+            spawn('taskkill', ['/F', '/T', '/PID', String(child.pid)], { windowsHide: true });
+          } else {
+            child.kill('SIGKILL');
+          }
+        } catch {
+          /* 杀进程失败一般是 race (已退出); 不再重试 */
+        }
         reject(new Error(`[skill dynamic-context timeout after ${EXEC_TIMEOUT_MS}ms] ${command}`));
       }, EXEC_TIMEOUT_MS);
 

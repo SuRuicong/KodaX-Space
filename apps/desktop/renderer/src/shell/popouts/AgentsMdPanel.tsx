@@ -7,7 +7,7 @@
 //
 // 数据每次 popout 打开或 session/项目切换都重拉，与磁盘保持同步。
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AgentsFileMeta, AgentMeta, AgentFailure } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
 
@@ -86,16 +86,24 @@ function ContextTab(): JSX.Element {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // 取消令牌: useRef 让 cancelToken 跨 render 稳定,并允许从外部 (commitEdit 等)
+  // 调 reload 时也能合并到同一个 token 序列。每次 reload 自递增,旧 IPC 回来后比对就知道
+  // 自己已经过期 (审查 H3)。
+  const reloadTokenRef = useRef(0);
   const reload = (): void => {
     if (!currentSessionId || !window.kodaxSpace) {
       setFiles([]);
       return;
     }
+    reloadTokenRef.current += 1;
+    const myToken = reloadTokenRef.current;
     setLoading(true);
     setError(null);
     void window.kodaxSpace
       .invoke('session.agentsMd', { sessionId: currentSessionId })
       .then((r) => {
+        // 期间用户切了 session / 又调了 reload → 当前 token 已经不是我了 → 丢弃结果
+        if (reloadTokenRef.current !== myToken) return;
         if (!r.ok) {
           setError(`${r.error?.code ?? 'ERR_UNKNOWN'}: ${r.error?.message ?? 'unknown error'}`);
           setFiles([]);
@@ -105,7 +113,7 @@ function ContextTab(): JSX.Element {
         setActiveIdx(0);
       })
       .finally(() => {
-        setLoading(false);
+        if (reloadTokenRef.current === myToken) setLoading(false);
       });
   };
 

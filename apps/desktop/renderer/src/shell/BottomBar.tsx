@@ -107,11 +107,19 @@ export function BottomBar(): JSX.Element {
     const end = ta.selectionEnd ?? prompt.length;
     const next = prompt.slice(0, start) + text + prompt.slice(end);
     setPrompt(next);
-    // 还原焦点 + 把 caret 移到插入位置之后 (下一帧 textarea 已经反映新值)
+    // 还原焦点 + 把 caret 移到插入位置之后 (下一帧 textarea 已经反映新值)。
+    // rAF 期间组件可能 unmount/remount (路由切换等),旧 `ta` 变 detached node。
+    // 重新读 ref 拿当前真实节点 (审查 M4)。
+    const newPos = start + text.length;
     requestAnimationFrame(() => {
-      const newPos = start + text.length;
-      ta.focus();
-      ta.setSelectionRange(newPos, newPos);
+      const live = textareaRef.current;
+      if (!live) return;
+      live.focus();
+      try {
+        live.setSelectionRange(newPos, newPos);
+      } catch {
+        /* detached / readonly textarea — no-op */
+      }
     });
   }
 

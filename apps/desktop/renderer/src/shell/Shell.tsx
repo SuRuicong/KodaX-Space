@@ -131,17 +131,21 @@ export function Shell(): JSX.Element {
 
   // BottomBar 发出的"打开 popout"请求消费 — /memory → 'agents' 等。
   // 拿到 non-null 后立即 setActivePopout + 清回 null,避免被反复消费。
+  //
+  // **load-bearing**: 同步把 store 的 requestedPopout 重置成 null 会触发本 useEffect 再跑一次,
+  // 但 if(requestedPopout === null) return 守门 + zustand "set same value 不通知 subscriber"
+  // 双重短路,不会进 setActivePopout 的反复循环。如果未来 zustand 升级 / 添加 immer 等中间件
+  // 改变 set 比较语义,这条 guard 必须保留。
   const requestedPopout = useAppStore((s) => s.requestedPopout);
-  const clearRequestedPopout = useAppStore((s) => s.requestPopout);
+  const setRequestedPopout = useAppStore((s) => s.requestPopout);
   useEffect(() => {
     if (requestedPopout === null) return;
-    // 仅消费已知 PopoutKind;未知值无害忽略
     const known = ['preview', 'diff', 'terminal', 'tasks', 'plan', 'agents', 'mcp'] as const;
     if ((known as readonly string[]).includes(requestedPopout)) {
       setActivePopout(requestedPopout as PopoutKind);
     }
-    clearRequestedPopout(null);
-  }, [requestedPopout, clearRequestedPopout]);
+    setRequestedPopout(null); // 消费完清回 null,允许下次 slash command 再次触发
+  }, [requestedPopout, setRequestedPopout]);
 
   // P4a: Ctrl+\ 进入/退出"专注阅读"模式 — 隐藏 Left / Right Sidebar，让主区域满宽。
   //   - BottomBar / Breadcrumb / titlebar 保留（用户仍要发消息 + 窗口操作）

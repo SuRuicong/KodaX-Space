@@ -165,18 +165,23 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
         };
       }
 
-      // 'list' 等价于无参 — 输出可用 model 列表
+      // 'list' 等价于无参 — 输出可用 model 列表。OpenRouter 这种 provider 可能给 200+ model,
+      // 输出超 2048 字符 schema 上限会被 envelope 拒。取前 30 个 + 提示总数。
       if (target === 'list') {
         const list = providerInfo?.models ?? [];
         if (list.length === 0) {
           return { ok: false, message: `No model list available for provider ${providerId}` };
         }
         const currentModel = session.model ?? providerInfo?.defaultModel;
+        const MAX_DISPLAY = 30;
+        const shown = list.slice(0, MAX_DISPLAY);
+        const overflow = list.length - shown.length;
         return {
           ok: true,
           message: [
-            `Models for ${providerId}:`,
-            ...list.map((m) => `  • ${m}${m === currentModel ? ' ← current' : ''}`),
+            `Models for ${providerId} (${list.length} total):`,
+            ...shown.map((m) => `  • ${m}${m === currentModel ? ' ← current' : ''}`),
+            ...(overflow > 0 ? [`  … +${overflow} more (use /model <name> to switch directly)`] : []),
             `(use /model <name> to switch, /model default to clear)`,
           ].join('\n'),
           echo: true,

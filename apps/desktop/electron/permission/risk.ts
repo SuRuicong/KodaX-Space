@@ -40,6 +40,10 @@ const TOOL_BASE_RISK: Readonly<Record<string, PermissionRisk>> = {
   bash: 'medium',
   shell: 'medium',
   exec: 'medium',
+  // FEATURE: Space-side hook for SDK skill `!`cmd`` dynamic-context resolution
+  // (sdk-skills SkillDynamicContextExecutor)。base risk 与 bash/exec 同级 — extractCommandText
+  // 已经从 input.command 里抽出命令文本,会被 dangerous 模式正常扫描 (审查 H2 验证)。
+  skill_dynamic_context: 'medium',
   fetch: 'high',
   http: 'high',
   curl: 'high',
