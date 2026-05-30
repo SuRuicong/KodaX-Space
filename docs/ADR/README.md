@@ -9,6 +9,7 @@
 | [ADR-003](ADR-003-kodax-integration-in-process.md) | KodaX 集成模式：in-process import | Accepted |
 | [ADR-004](ADR-004-panel-model.md) | 面板模型：双面板 + Quick Ask | Accepted |
 | [ADR-005](ADR-005-permission-mode-canonical.md) | Permission Mode 对齐 KodaX REPL canonical 3 + Auto engine 子档 | Accepted |
+| [ADR-006](ADR-006-positioning-vs-opencode.md) | 相对 opencode 的定位 + 5 gap cluster + OC-XX backlog（planning） | Accepted |
 
 ## 写 ADR 的约束
 
