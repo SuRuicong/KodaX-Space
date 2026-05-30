@@ -84,9 +84,12 @@ test('loadAgentsMd: reflects disk changes on subsequent call (no cache)', async 
   try {
     const first = await loadAgentsMd({ projectRoot: tmpProjectRoot, kodaxGlobalDir: tmpGlobal });
     assert.equal(first[0]?.content, 'v1');
-    fs.writeFileSync(agentsPath, 'v2');
+    // 50ms 等 mtime 跳格 —— Windows NTFS mtime 分辨率较 Unix 粗，
+    // 紧接 write/read 可能撞 SDK 内 mtime-cache 命中旧值。
+    await new Promise((r) => setTimeout(r, 50));
+    fs.writeFileSync(agentsPath, 'v2-content-differs');
     const second = await loadAgentsMd({ projectRoot: tmpProjectRoot, kodaxGlobalDir: tmpGlobal });
-    assert.equal(second[0]?.content, 'v2', 'second load should see v2 (no cache)');
+    assert.equal(second[0]?.content, 'v2-content-differs', 'second load should see v2 (no cache)');
   } finally {
     fs.rmSync(tmpGlobal, { recursive: true, force: true });
   }
