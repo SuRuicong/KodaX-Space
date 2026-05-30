@@ -64,10 +64,15 @@ jobs:
         # tracked separately) — allow non-fatal until that's fixed
         continue-on-error: true
 
+      - name: Configure npm script-shell (Windows)
+        if: runner.os == 'Windows'
+        # npm 默认在 Windows 用 cmd.exe 跑 script —— cmd 不展开 `electron/test/*.test.ts`
+        # glob，node 收到字面量 '*.test.ts' 报 "Could not find"。把 npm 的 script-shell
+        # 改成 bash，让 Git Bash 展 glob（macOS/Linux 默认就是 bash）。
+        shell: bash
+        run: npm config set script-shell bash
+
       - name: Unit tests
-        # bash on all OSes — Windows cmd doesn't expand the `electron/test/*.test.ts`
-        # glob in the test script, leading to "Could not find" errors. Git Bash on
-        # the Windows runner expands the glob just like Linux/macOS bash.
         shell: bash
         run: npm test
 
