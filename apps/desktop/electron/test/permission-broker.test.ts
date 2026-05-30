@@ -138,7 +138,7 @@ test('timeout: auto-resolves to deny + pushes permission.cancelled(timeout)', as
     toolId: 't1',
     toolName: 'unknown_tool',
     input: { path: 'a' },
-    timeoutMs: 30,
+    timeoutMs: 300, // 见 ask-user-broker 同款理由 — CI 慢机 30ms 偶尔被父 kill
   });
   const result = await pending;
   assert.equal(result.decision, 'deny');

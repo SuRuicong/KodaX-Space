@@ -71,7 +71,7 @@ test('timeout fires "block" + pushes cancelled', async () => {
     sessionId: 's_timeout',
     reason: 'will timeout',
     toolCall: { toolId: 't_to', toolName: 'edit' },
-    timeoutMs: 30, // 30ms
+    timeoutMs: 300, // 300ms — CI runner scheduling jitter 经常 >100ms,30ms 偶尔被 kill
   });
   const result = await pending;
   assert.equal(result, 'block', 'timeout must auto-block');
