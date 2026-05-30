@@ -78,10 +78,10 @@ jobs:
 
       - name: Build installer
         run: npm run ${{ matrix.build_script }}
+        # 不传 GH_TOKEN —— electron-builder 检测到 GH_TOKEN + tag push 会自动开启 GitHub
+        # Publisher 创建 draft release 上传 artifact，跟 release job 的 action-gh-release
+        # 撞同一 tag 导致 'already_exists' 失败。build script 已加 `-p never` 双保险。
         env:
-          # electron-builder 在 push tag 时会调 GitHub API auto-publish
-          # 我们这里手动用 release step 上传，所以关掉
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # 关闭 native rebuild 在 CI（keytar 在 v0.1.0 是 optional + memory fallback）
           npm_config_build_from_source: 'false'
 
