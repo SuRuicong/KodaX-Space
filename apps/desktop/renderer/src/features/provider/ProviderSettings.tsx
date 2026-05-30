@@ -83,15 +83,15 @@ export function ProviderSettings({ onClose }: ProviderSettingsProps): JSX.Elemen
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
         {err && (
-          <div className="text-xs font-mono text-red-300 border border-red-900 rounded p-2 bg-red-950/40">
+          <div className="text-xs font-mono rounded p-2 border dark:text-red-300 dark:border-red-900 dark:bg-red-950/40 text-red-900 border-red-300 bg-red-50">
             {err}
           </div>
         )}
 
         {keychainBackend === 'memory' && (
-          <div className="text-xs border border-amber-800 rounded p-3 bg-amber-950/40 text-amber-100">
+          <div className="text-xs rounded p-3 border dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100 border-amber-300 bg-amber-50 text-amber-900">
             <div className="font-semibold mb-1">⚠ Keychain unavailable — keys stored in memory only</div>
-            <div className="text-amber-200/80">
+            <div className="dark:text-amber-200/80 text-amber-800">
               Could not load <code className="font-mono">keytar</code> or the system keychain
               (macOS Keychain / Windows Credential Manager / Linux libsecret). API keys you set
               here will work this session but <strong>will be lost on app restart</strong>.

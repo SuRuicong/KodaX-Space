@@ -195,7 +195,12 @@ function ContextTab(): JSX.Element {
               type="button"
               onClick={() => void commitEdit()}
               disabled={saving}
-              className="px-2 py-0.5 text-[10px] rounded bg-emerald-600/40 text-emerald-200 hover:bg-emerald-600/60 disabled:opacity-50"
+              className={[
+                'px-2 py-0.5 text-[10px] rounded disabled:opacity-50',
+                'dark:bg-emerald-600/40 dark:text-emerald-200 dark:hover:bg-emerald-600/60',
+                // Light: 实色绿 + 白字 — 是关键操作 (Save) 要明显
+                'bg-emerald-600 text-white hover:bg-emerald-500',
+              ].join(' ')}
             >
               {saving ? 'Saving…' : 'Save'}
             </button>
@@ -255,14 +260,24 @@ function ContextTab(): JSX.Element {
           <button
             type="button"
             onClick={() => startEdit('global', '# AGENTS.md (global)\n\n')}
-            className="px-2.5 py-1 text-[11px] rounded bg-amber-600/30 text-amber-200 hover:bg-amber-600/50"
+            className={[
+              'px-2.5 py-1 text-[11px] rounded',
+              'dark:bg-amber-600/30 dark:text-amber-200 dark:hover:bg-amber-600/50',
+              // Light: 浅琥珀衬 + 深字 — 跟"global" scope 的 amber 色码呼应
+              'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200',
+            ].join(' ')}
           >
             Create global
           </button>
           <button
             type="button"
             onClick={() => startEdit('project', '# AGENTS.md (project)\n\n')}
-            className="px-2.5 py-1 text-[11px] rounded bg-emerald-600/30 text-emerald-200 hover:bg-emerald-600/50"
+            className={[
+              'px-2.5 py-1 text-[11px] rounded',
+              'dark:bg-emerald-600/30 dark:text-emerald-200 dark:hover:bg-emerald-600/50',
+              // Light: 浅翠衬 + 深字
+              'bg-emerald-100 text-emerald-900 border border-emerald-300 hover:bg-emerald-200',
+            ].join(' ')}
           >
             Create project
           </button>

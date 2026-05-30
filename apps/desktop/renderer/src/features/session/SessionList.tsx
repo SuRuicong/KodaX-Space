@@ -208,9 +208,11 @@ export function SessionList(): JSX.Element {
                   setCurrentSession(s.sessionId);
                 }
               }}
+              // 选中行: dark 用半透深蓝衬底 (与暗黑卡片层叠出蓝调); light 用实色浅蓝衬底
+              // (在白底卡片上能"鼓出来"). 边线 light 用 blue-300 增强 vs blue-50 衬底的反差。
               className={`group cursor-pointer text-left px-2 py-2 rounded text-sm flex flex-col gap-0.5 ${
                 isActive
-                  ? 'bg-blue-900/30 border border-blue-800/50 text-blue-100'
+                  ? 'dark:bg-blue-900/30 dark:border-blue-800/50 dark:text-blue-100 bg-blue-100 border-blue-300 text-blue-900 border'
                   : 'hover:bg-zinc-800 text-zinc-300 border border-transparent'
               }`}
               title={s.sessionId}

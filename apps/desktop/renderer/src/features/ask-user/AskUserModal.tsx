@@ -19,10 +19,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AskUserSignal, AskUserVerdict } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
 
+// Severity badge — 双主题。同 PermissionModal RISK_STYLE 同款思路: dark 深底浅字, light 浅底深字。
 const SEVERITY_STYLE: Record<AskUserSignal['severity'], string> = {
-  info: 'bg-blue-900 text-blue-200',
-  warning: 'bg-amber-900 text-amber-200',
-  danger: 'bg-red-900 text-red-100',
+  info:    'dark:bg-blue-900 dark:text-blue-200 bg-blue-100 text-blue-900',
+  warning: 'dark:bg-amber-900 dark:text-amber-200 bg-amber-100 text-amber-900',
+  danger:  'dark:bg-red-900 dark:text-red-100 bg-red-100 text-red-900',
 };
 
 function truncate(s: string, max: number): string {

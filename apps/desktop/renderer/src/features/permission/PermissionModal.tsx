@@ -18,11 +18,30 @@ import type {
 } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
 
+// Risk badge 颜色. Dark 模式: 深色实底 + 淡色文字 (经典 badge 风);
+// Light 模式: 淡色实底 + 深色文字 — 视觉等价倒置, 在白底卡片上仍清晰.
+// border 双主题: dark 用同色相 *-700 (深色边); light 用 *-400 (中浓边, 跟浅底有反差).
 const RISK_STYLE: Record<PermissionRisk, { badge: string; border: string; label: string }> = {
-  low: { badge: 'bg-blue-900 text-blue-200', border: 'border-blue-700', label: 'LOW' },
-  medium: { badge: 'bg-amber-900 text-amber-200', border: 'border-amber-700', label: 'MEDIUM' },
-  high: { badge: 'bg-orange-900 text-orange-200', border: 'border-orange-700', label: 'HIGH' },
-  danger: { badge: 'bg-red-900 text-red-100', border: 'border-red-700', label: 'DANGER' },
+  low: {
+    badge: 'dark:bg-blue-900 dark:text-blue-200 bg-blue-100 text-blue-900',
+    border: 'dark:border-blue-700 border-blue-400',
+    label: 'LOW',
+  },
+  medium: {
+    badge: 'dark:bg-amber-900 dark:text-amber-200 bg-amber-100 text-amber-900',
+    border: 'dark:border-amber-700 border-amber-400',
+    label: 'MEDIUM',
+  },
+  high: {
+    badge: 'dark:bg-orange-900 dark:text-orange-200 bg-orange-100 text-orange-900',
+    border: 'dark:border-orange-700 border-orange-400',
+    label: 'HIGH',
+  },
+  danger: {
+    badge: 'dark:bg-red-900 dark:text-red-100 bg-red-100 text-red-900',
+    border: 'dark:border-red-700 border-red-500',
+    label: 'DANGER',
+  },
 };
 
 const DANGER_CONFIRM_PHRASE = 'CONFIRM';

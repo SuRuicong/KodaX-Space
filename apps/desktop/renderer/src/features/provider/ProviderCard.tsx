@@ -121,9 +121,11 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
 
   return (
     <div
+      // Default provider 卡: dark 用半透深翠衬底 + 翠绿边, light 用浅翠衬底 + 中翠边
+      // (亮模式下"哪个是默认 provider"得一眼能看出来)
       className={`border rounded-lg p-3 ${
         provider.isDefault
-          ? 'border-emerald-700 bg-emerald-950/30'
+          ? 'dark:border-emerald-700 dark:bg-emerald-950/30 border-emerald-400 bg-emerald-50'
           : provider.configured
             ? 'border-zinc-700 bg-zinc-900'
             : 'border-zinc-800 bg-zinc-900/40'
@@ -134,12 +136,12 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-zinc-100 truncate">{provider.displayName}</span>
             {provider.isDefault && (
-              <span className="px-1.5 py-0.5 text-[9px] font-mono rounded bg-emerald-800 text-emerald-100">
+              <span className="px-1.5 py-0.5 text-[9px] font-mono rounded dark:bg-emerald-800 dark:text-emerald-100 bg-emerald-200 text-emerald-900">
                 DEFAULT
               </span>
             )}
             {provider.isCustom && (
-              <span className="px-1.5 py-0.5 text-[9px] font-mono rounded bg-violet-800 text-violet-100">
+              <span className="px-1.5 py-0.5 text-[9px] font-mono rounded dark:bg-violet-800 dark:text-violet-100 bg-violet-200 text-violet-900">
                 CUSTOM
               </span>
             )}
@@ -244,7 +246,7 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
                   type="button"
                   onClick={() => void handleSetDefault()}
                   disabled={busy}
-                  className="px-2 py-1 text-xs rounded bg-emerald-800 text-emerald-100 hover:bg-emerald-700 disabled:opacity-50"
+                  className="px-2 py-1 text-xs rounded disabled:opacity-50 dark:bg-emerald-800 dark:text-emerald-100 dark:hover:bg-emerald-700 bg-emerald-600 text-white hover:bg-emerald-500"
                 >
                   Set default
                 </button>
@@ -253,7 +255,7 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
                 type="button"
                 onClick={() => void handleRemove()}
                 disabled={busy}
-                className="px-2 py-1 text-xs rounded bg-red-900 text-red-100 hover:bg-red-800 disabled:opacity-50"
+                className="px-2 py-1 text-xs rounded disabled:opacity-50 dark:bg-red-900 dark:text-red-100 dark:hover:bg-red-800 bg-red-600 text-white hover:bg-red-500"
               >
                 Remove key
               </button>

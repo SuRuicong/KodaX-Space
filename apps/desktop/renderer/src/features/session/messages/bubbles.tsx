@@ -213,12 +213,25 @@ export function AssistantBubble({
           <button
             type="button"
             onClick={() => setShowThinking((v) => !v)}
-            className="text-[11px] text-purple-400 hover:text-purple-300 font-mono"
+            className={[
+              'text-[11px] font-mono',
+              // Dark: pale purple (默认), light: 同色相的深紫 (亮模式 styles.css text-purple-400
+              // 已被反转,这里再加 hover 显式覆盖避免依赖反转表)
+              'text-purple-400 hover:text-purple-300',
+              'dark:text-purple-400 dark:hover:text-purple-300',
+            ].join(' ')}
           >
             {showThinking ? '▼' : '▶'} Thinking (~{approxTokens(thinking)} tokens)
           </button>
           {showThinking && (
-            <div className="mt-1 ml-3 pl-2 border-l-2 border-purple-900/60 text-purple-300/80 text-xs whitespace-pre-wrap">
+            <div
+              className={[
+                'mt-1 ml-3 pl-2 border-l-2 text-xs whitespace-pre-wrap',
+                // Dark: 暗紫边 + 半透明紫字; Light: 中紫边 + 深紫字 — 文字明显,边线明显
+                'dark:border-purple-900/60 dark:text-purple-300/80',
+                'border-purple-300 text-purple-800',
+              ].join(' ')}
+            >
               {thinking}
             </div>
           )}
@@ -234,13 +247,16 @@ export function AssistantBubble({
 
 // ---- Tool Call Card ----
 
+// Tool 类型 → 色码。Dark 模式用 *-950/30 (深色衬底, 暗卡片上低饱和), light 模式
+// 用 *-50/border-*-200 (浅色衬底, 白卡片上仍有明显色相区分)。让 read / write / bash /
+// grep 在两个主题下都能"一眼分清"工具种类 (审查 P1.1).
 const TOOL_KIND_COLOR: Record<string, string> = {
-  read: 'border-blue-800/40 bg-blue-950/30',
-  write: 'border-amber-800/40 bg-amber-950/30',
-  edit: 'border-amber-800/40 bg-amber-950/30',
-  bash: 'border-red-800/40 bg-red-950/30',
-  grep: 'border-emerald-800/40 bg-emerald-950/30',
-  glob: 'border-emerald-800/40 bg-emerald-950/30',
+  read:  'dark:border-blue-800/40 dark:bg-blue-950/30 border-blue-200 bg-blue-50',
+  write: 'dark:border-amber-800/40 dark:bg-amber-950/30 border-amber-200 bg-amber-50',
+  edit:  'dark:border-amber-800/40 dark:bg-amber-950/30 border-amber-200 bg-amber-50',
+  bash:  'dark:border-red-800/40 dark:bg-red-950/30 border-red-200 bg-red-50',
+  grep:  'dark:border-emerald-800/40 dark:bg-emerald-950/30 border-emerald-200 bg-emerald-50',
+  glob:  'dark:border-emerald-800/40 dark:bg-emerald-950/30 border-emerald-200 bg-emerald-50',
 };
 
 export function ToolCallCard({
@@ -326,7 +342,15 @@ export function ToolCallCard({
                   </button>
                 )}
               </div>
-              <pre className="text-[11px] text-emerald-300 whitespace-pre-wrap break-all max-h-64 overflow-auto">
+              <pre
+                className={[
+                  'text-[11px] whitespace-pre-wrap break-all max-h-64 overflow-auto',
+                  // Dark: pale emerald 文字保留原表意 (tool output 成功用绿区分);
+                  // Light: 深绿字 — text-emerald-300 已被 styles.css accent override 翻成 emerald-700,
+                  // 但显式 dark: 标注让意图更清楚
+                  'dark:text-emerald-300 text-emerald-700',
+                ].join(' ')}
+              >
                 {showFullResult ? result : resultCollapse.body}
               </pre>
             </section>
@@ -340,13 +364,26 @@ export function ToolCallCard({
 function StatusBadge({ status }: { status: 'running' | 'done' }): JSX.Element {
   if (status === 'running') {
     return (
-      <span className="text-[10px] uppercase text-amber-400 bg-amber-950/40 border border-amber-800/40 px-1.5 py-0.5 rounded">
+      <span
+        className={[
+          'text-[10px] uppercase px-1.5 py-0.5 rounded border',
+          'dark:text-amber-400 dark:bg-amber-950/40 dark:border-amber-800/40',
+          // Light: 深琥珀字 + 中浅琥珀衬底 + 中深边 — running 显眼
+          'text-amber-800 bg-amber-100 border-amber-300',
+        ].join(' ')}
+      >
         running
       </span>
     );
   }
   return (
-    <span className="text-[10px] uppercase text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-1.5 py-0.5 rounded">
+    <span
+      className={[
+        'text-[10px] uppercase px-1.5 py-0.5 rounded border',
+        'dark:text-emerald-400 dark:bg-emerald-950/40 dark:border-emerald-800/40',
+        // Light: 深翠字 + 中浅翠衬底 — done 视觉确认强
+        'text-emerald-800 bg-emerald-100 border-emerald-300',
+      ].join(' ')}>
       done
     </span>
   );
