@@ -65,6 +65,10 @@ jobs:
         continue-on-error: true
 
       - name: Unit tests
+        # bash on all OSes — Windows cmd doesn't expand the `electron/test/*.test.ts`
+        # glob in the test script, leading to "Could not find" errors. Git Bash on
+        # the Windows runner expands the glob just like Linux/macOS bash.
+        shell: bash
         run: npm test
 
       - name: Build installer
