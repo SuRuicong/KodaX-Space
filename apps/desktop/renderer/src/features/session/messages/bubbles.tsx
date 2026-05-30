@@ -178,7 +178,15 @@ export function UserBubble({
 }): JSX.Element {
   return (
     <div className="group flex flex-col items-end">
-      <div className="max-w-[80%] rounded-lg bg-blue-900/40 border border-blue-800/40 px-3 py-2 text-sm whitespace-pre-wrap">
+      <div
+        className={[
+          'max-w-[80%] rounded-lg border px-3 py-2 text-sm whitespace-pre-wrap',
+          // Dark: 深蓝 40% tint + 同色边 — 跟暗黑卡片清晰区隔
+          'dark:bg-blue-900/40 dark:border-blue-800/40',
+          // Light: 浅蓝实色 + 中色边 — 白底卡片上一眼能看出"这是用户在说话"
+          'bg-blue-100 border-blue-300 text-blue-950',
+        ].join(' ')}
+      >
         {content}
       </div>
       <MessageFooter text={content} sentAt={sentAt} />
