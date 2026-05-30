@@ -17,10 +17,10 @@ test('skill.discover + skill.invoke channels are registered', () => {
   assert.ok(INVOKE_CHANNEL_NAMES.has('skill.invoke'));
 });
 
-test('skill.discover input requires sessionId', () => {
-  assert.equal(skillDiscoverChannel.input.safeParse({ sessionId: 's_1' }).success, true);
+test('skill.discover input requires projectRoot', () => {
+  assert.equal(skillDiscoverChannel.input.safeParse({ projectRoot: 'C:\\proj' }).success, true);
   assert.equal(skillDiscoverChannel.input.safeParse({}).success, false);
-  assert.equal(skillDiscoverChannel.input.safeParse({ sessionId: '' }).success, false);
+  assert.equal(skillDiscoverChannel.input.safeParse({ projectRoot: '' }).success, false);
 });
 
 test('skill.discover output accepts user/project/plugin/builtin sources', () => {

@@ -153,8 +153,10 @@ test('auto mode (pre-F030 fallback) auto-allows edits like accept-edits', async 
   }
 });
 
-test('auto mode (pre-F030 fallback) still asks for bash', async () => {
-  // auto fallback 不应让 bash silent allow — 那会比 accept-edits 更松
+test('auto mode: non-dangerous bash falls through to SDK guardrail (no modal)', async () => {
+  // F030 wired 后 broker 这层不再为 bash 弹窗 — auto 模式真正的决策在 SDK
+  // guardrail (AutoModeToolGuardrail)，broker 在这里 allow_once 让 SDK 接手。
+  // dangerous bash 仍由 broker 兜底弹窗（见下面的 dangerous bash 测试）。
   const pending = permissionBroker.request({
     sessionId: 's_auto2',
     toolId: 't_bash',
@@ -162,12 +164,10 @@ test('auto mode (pre-F030 fallback) still asks for bash', async () => {
     input: { command: 'echo hi' },
     mode: 'auto',
   });
-  await new Promise((r) => setImmediate(r));
+  const result = await pending;
+  assert.equal(result.decision, 'allow_once', 'non-dangerous bash must short-circuit in auto');
   const reqs = captured.filter((c) => c.channel === 'permission.request');
-  assert.equal(reqs.length, 1, 'auto fallback + bash should still show modal pre-F030');
-  const { reqId } = reqs[0].payload as { reqId: string };
-  permissionBroker.resolve(reqId, 'allow_once');
-  await pending;
+  assert.equal(reqs.length, 0, 'non-dangerous bash in auto mode must NOT pop broker modal');
 });
 
 test('auto mode (pre-F030 fallback) still asks for dangerous bash', async () => {

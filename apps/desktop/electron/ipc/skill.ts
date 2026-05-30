@@ -33,12 +33,10 @@ function joinArgs(args: readonly string[]): string {
 export function registerSkillChannels(): void {
   // skill.discover
   // 列 user-invocable skill（不含 disableModelInvocation 的）。
+  // 输入 projectRoot —— 不依赖 live SDK session：用户从 Recents 恢复历史会话时
+  // UI 有 sessionId 但 kodaxHost 没对应 session；discover 是只读操作不需要 live session。
   registerChannel('skill.discover', async (input) => {
-    const session = kodaxHost.get(input.sessionId);
-    if (!session) {
-      throw new Error(`session not found: ${input.sessionId}`);
-    }
-    const registry = await getSkillRegistry(session.projectRoot);
+    const registry = await getSkillRegistry(input.projectRoot);
     const skills = registry.listUserInvocable().map(toSkillMeta);
     return { skills };
   });

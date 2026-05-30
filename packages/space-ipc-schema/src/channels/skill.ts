@@ -33,11 +33,15 @@ const skillMetaSchema = z.object({
 });
 
 // ---- Invoke: skill.discover ----
+//
+// 只需要 projectRoot —— skill discovery 不依赖 live SDK session。
+// 用户从 Recents 恢复历史会话时 UI 有 sessionId 但 SDK 没 live session，
+// 历史路径不该让 discover 失败。
 export const skillDiscoverChannel = {
   name: 'skill.discover',
   direction: 'invoke',
   input: z.object({
-    sessionId: z.string().min(1),
+    projectRoot: z.string().min(1).max(4096),
   }),
   output: z.object({
     /** 最多 256 个 skill / project root—— 防 path traversal 误注册大量产物。*/

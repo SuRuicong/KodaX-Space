@@ -33,7 +33,7 @@ export interface SlashCommandPopoverProps {
 let cachedCommands: SlashCommandMeta[] | null = null;
 // FEATURE_035: skill 缓存 per-session—— skill list 由 projectRoot 决定，
 // 切 session 可能进了不同 project（不同 .kodax/skills/）。
-let cachedSkills: { sessionId: string; list: SkillMeta[] } | null = null;
+let cachedSkills: { projectRoot: string; list: SkillMeta[] } | null = null;
 
 async function loadCommandsOnce(): Promise<SlashCommandMeta[]> {
   if (cachedCommands) return cachedCommands;
@@ -44,16 +44,16 @@ async function loadCommandsOnce(): Promise<SlashCommandMeta[]> {
   return cachedCommands;
 }
 
-async function loadSkillsForSession(sessionId: string): Promise<SkillMeta[]> {
-  if (cachedSkills && cachedSkills.sessionId === sessionId) return cachedSkills.list;
+async function loadSkillsForProject(projectRoot: string): Promise<SkillMeta[]> {
+  if (cachedSkills && cachedSkills.projectRoot === projectRoot) return cachedSkills.list;
   if (!window.kodaxSpace) return [];
-  const result = await window.kodaxSpace.invoke('skill.discover', { sessionId });
+  const result = await window.kodaxSpace.invoke('skill.discover', { projectRoot });
   if (!result.ok) {
     // skill.discover 失败不阻塞 slash 命令——返回空列表即可
-    cachedSkills = { sessionId, list: [] };
+    cachedSkills = { projectRoot, list: [] };
     return [];
   }
-  cachedSkills = { sessionId, list: [...result.data.skills] };
+  cachedSkills = { projectRoot, list: [...result.data.skills] };
   return cachedSkills.list;
 }
 
@@ -70,17 +70,17 @@ export function _resetSlashCacheForTesting(): void {
 export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Element | null {
   const [items, setItems] = useState<readonly SlashPickerItem[]>([]);
   const [selectedIdx, setSelectedIdx] = useState(0);
-  const sessionId = useAppStore((s) => s.currentSessionId);
+  const projectRoot = useAppStore((s) => s.currentProjectPath);
   const listRef = useRef<HTMLDivElement>(null);
 
   // 启动时拉两份：slash + skills，合成 unified picker list（按 name 字典序）
   useEffect(() => {
-    if (!sessionId) {
+    if (!projectRoot) {
       setItems([]);
       return;
     }
     let cancelled = false;
-    void Promise.all([loadCommandsOnce(), loadSkillsForSession(sessionId)]).then(
+    void Promise.all([loadCommandsOnce(), loadSkillsForProject(projectRoot)]).then(
       ([cmds, skills]) => {
         if (cancelled) return;
         const merged: SlashPickerItem[] = [
@@ -94,7 +94,7 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [projectRoot]);
 
   // query 变化重置选中索引
   useEffect(() => {
@@ -138,7 +138,7 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
     el?.scrollIntoView({ block: 'nearest' });
   }, [selectedIdx]);
 
-  if (!sessionId) return null;
+  if (!projectRoot) return null;
   if (filtered.length === 0) return null;
 
   return (

@@ -214,6 +214,41 @@ test('READONLY_TOOLS fast-path: grep in auto-mode short-circuits to allow_once',
   assert.equal(reqs.length, 0, 'readonly tool must not prompt under auto');
 });
 
+test('auto mode: non-dangerous bash short-circuits to allow_once (guardrail F030 接管)', async () => {
+  // 用户反馈：auto[LLM] 模式 bash 还弹窗 → 这是 broker 的双闸 bug。
+  // auto 模式下 broker 这层放过非 dangerous，让 SDK guardrail 决策；dangerous 仍弹窗。
+  captured.length = 0;
+  const pending = permissionBroker.request({
+    sessionId: 's-bash-auto',
+    toolId: 't1',
+    toolName: 'bash',
+    input: { command: 'npx tsc --noEmit' },
+    mode: 'auto',
+  });
+  const result = await pending;
+  assert.equal(result.decision, 'allow_once');
+  const reqs = captured.filter((c) => c.channel === 'permission.request');
+  assert.equal(reqs.length, 0, 'non-dangerous bash must not prompt in auto mode');
+});
+
+test('auto mode: dangerous bash still prompts (rm -rf etc.)', async () => {
+  captured.length = 0;
+  const pending = permissionBroker.request({
+    sessionId: 's-bash-auto-danger',
+    toolId: 't1',
+    toolName: 'bash',
+    input: { command: 'rm -rf /tmp/whatever' },
+    mode: 'auto',
+  });
+  await new Promise((r) => setImmediate(r));
+  const reqs = captured.filter((c) => c.channel === 'permission.request');
+  assert.equal(reqs.length, 1, 'dangerous bash must prompt even in auto mode');
+  // 清理 pending 让测试不挂
+  const reqId = (reqs[0].payload as { reqId: string }).reqId;
+  permissionBroker.resolve(reqId, 'deny');
+  await pending;
+});
+
 test('C2-sec: broker.peek returns trustedPattern from pending entry', async () => {
   const pending = permissionBroker.request({
     sessionId: 's1',

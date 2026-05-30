@@ -6,17 +6,19 @@
 //   📁 Add folder
 //   ⌗ Slash commands
 //   ⚙ Connectors ›
-//   🧩 Plugins ›
+//   🧩 Skills ›
 //
 // alpha.1 范围：
 //   - Add files：native picker 选文件 → 把 path 注入到 prompt 末尾作为 inline 引用
 //   - Add folder：project.openDialog → 切到所选目录（开新 project）
 //   - Slash commands：弹个简单的 list，点击插入到 prompt
-//   - Connectors：拉 mcp.discover 显示当前 session 的 MCP servers（只读）
-//   - Plugins：拉 skill.discover 显示已注册 skills（点击插入 /<name> 到 prompt）
+//   - Connectors：拉 mcp.discover 显示当前 project 的 MCP servers（只读）
+//   - Skills：拉 skill.discover 显示已注册 skills（点击插入 /<name> 到 prompt）
 //
-// Connectors / Plugins 需要 session 才能 discover（IPC 要 sessionId）。
-// 无 session 时这俩 item 仍可点 — 提示用户先开 session。
+// Discover (skills / mcp servers / agents) 走 projectRoot —— 不再要求 live SDK
+// session：用户从 Recents 恢复历史会话时，UI 有 sessionId 但 SDK 没 spin up live
+// session；强制 sessionId 会让 handler 报 "session not found"。projectRoot 来自
+// currentProjectPath，永远可用。
 
 import { useEffect, useState } from 'react';
 import type { McpServerMeta, SkillMeta } from '@kodax-space/space-ipc-schema';
@@ -35,10 +37,10 @@ const SLASH_COMMANDS = [
   { cmd: '/model', desc: 'Switch model' },
 ];
 
-type SubMenu = 'root' | 'slash' | 'connectors' | 'plugins';
+type SubMenu = 'root' | 'slash' | 'connectors' | 'skills';
 
 export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JSX.Element | null {
-  const currentSessionId = useAppStore((s) => s.currentSessionId);
+  const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const setCurrentProject = useAppStore((s) => s.setCurrentProject);
   const [sub, setSub] = useState<SubMenu>('root');
   const [mcpServers, setMcpServers] = useState<readonly McpServerMeta[] | null>(null);
@@ -88,14 +90,14 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
 
   async function loadConnectors(): Promise<void> {
     if (!window.kodaxSpace) return;
-    if (!currentSessionId) {
-      setDiscoverErr('Open a session first to see this project\'s MCP servers.');
+    if (!currentProjectPath) {
+      setDiscoverErr('Open a project first to see its MCP servers.');
       setSub('connectors');
       return;
     }
     setSub('connectors');
     setDiscoverErr(null);
-    const r = await window.kodaxSpace.invoke('mcp.discover', { sessionId: currentSessionId });
+    const r = await window.kodaxSpace.invoke('mcp.discover', { projectRoot: currentProjectPath });
     if (r.ok) {
       setMcpServers(r.data.servers);
       if (r.data.errors.length > 0) {
@@ -106,16 +108,16 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
     }
   }
 
-  async function loadPlugins(): Promise<void> {
+  async function loadSkills(): Promise<void> {
     if (!window.kodaxSpace) return;
-    if (!currentSessionId) {
-      setDiscoverErr('Open a session first to see this project\'s skills.');
-      setSub('plugins');
+    if (!currentProjectPath) {
+      setDiscoverErr('Open a project first to see its skills.');
+      setSub('skills');
       return;
     }
-    setSub('plugins');
+    setSub('skills');
     setDiscoverErr(null);
-    const r = await window.kodaxSpace.invoke('skill.discover', { sessionId: currentSessionId });
+    const r = await window.kodaxSpace.invoke('skill.discover', { projectRoot: currentProjectPath });
     if (r.ok) {
       setSkills(r.data.skills);
     } else {
@@ -174,9 +176,9 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
     );
   }
 
-  if (sub === 'plugins') {
+  if (sub === 'skills') {
     return (
-      <SubMenuFrame title="Plugins (Skills)" onBack={() => setSub('root')}>
+      <SubMenuFrame title="Skills" onBack={() => setSub('root')}>
         {discoverErr && <div className="px-3 py-1 text-[10px] text-amber-400">{discoverErr}</div>}
         {skills === null && !discoverErr && (
           <div className="px-3 py-1 text-[10px] text-zinc-400">Loading…</div>
@@ -213,7 +215,7 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
       <AttachRow icon="📁" label="Add folder" onClick={() => void addFolder()} />
       <AttachRow icon="⌗" label="Slash commands" onClick={() => setSub('slash')} chevron />
       <AttachRow icon="⚙" label="Connectors" onClick={() => void loadConnectors()} chevron />
-      <AttachRow icon="🧩" label="Plugins" onClick={() => void loadPlugins()} chevron />
+      <AttachRow icon="🧩" label="Skills" onClick={() => void loadSkills()} chevron />
     </div>
   );
 }

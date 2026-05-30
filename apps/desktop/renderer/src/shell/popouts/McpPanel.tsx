@@ -41,7 +41,7 @@ interface ToolItem {
 }
 
 export function McpPanel(): JSX.Element {
-  const currentSessionId = useAppStore((s) => s.currentSessionId);
+  const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const [statusList, setStatusList] = useState<readonly McpServerStatusT[]>([]);
   const [meta, setMeta] = useState<readonly McpServerMeta[]>([]);
   const [discoverErrors, setDiscoverErrors] = useState<ReadonlyArray<{ path: string; error: string }>>([]);
@@ -61,8 +61,8 @@ export function McpPanel(): JSX.Element {
       // discover 出现但 statusList 缺 — UI 用 meta 补 command 等展示。
       const [statusR, discoverR] = await Promise.all([
         window.kodaxSpace.invoke('mcp.servers', undefined),
-        currentSessionId
-          ? window.kodaxSpace.invoke('mcp.discover', { sessionId: currentSessionId })
+        currentProjectPath
+          ? window.kodaxSpace.invoke('mcp.discover', { projectRoot: currentProjectPath })
           : Promise.resolve(null),
       ]);
       if (!statusR.ok) {
@@ -86,7 +86,7 @@ export function McpPanel(): JSX.Element {
   useEffect(() => {
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSessionId]);
+  }, [currentProjectPath]);
 
   async function startServer(serverId: string): Promise<void> {
     if (!window.kodaxSpace) return;

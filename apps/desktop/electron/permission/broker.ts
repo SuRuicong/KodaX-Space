@@ -96,21 +96,27 @@ class PermissionBroker {
     //
     //   plan         → 全 deny，agent 只能 plan 不能执行
     //                  (planModeBlockCheck 也会拦下 mutating tools，本钩子双闸防 TOCTOU)
-    //   accept-edits → edit/write 自动批，dangerous 仍走弹窗（rm -rf 等不能 silent 跳过）
+    //   accept-edits → edit/write 自动批，readonly 自动批，其他走 always-allow 规则 + 弹窗
     //   auto         → 真正守门由 FEATURE_030 AutoModeToolGuardrail 接管 (走 KodaX
-    //                  KodaXOptions.guardrails)；本 broker 在 F030 wire 前 fallback 到
-    //                  accept-edits 行为——edit auto-allow、其他走弹窗。这样 mode='auto'
-    //                  至少跟 accept-edits 一样严，**不会比 accept-edits 更松**。
+    //                  KodaXOptions.guardrails)，guardrail 不确定时由 askUserBroker (F032)
+    //                  弹窗。broker 这一层在 auto 模式下只拦 dangerous (rm -rf 等)，
+    //                  非 dangerous 工具一律 allow_once 让 SDK guardrail 接手 ——
+    //                  否则 bash / web_fetch 等非 EDIT/READONLY 工具会被本 broker 强弹，
+    //                  guardrail 根本没机会发言 (用户反馈：auto[LLM] 还是弹窗)。
     if (mode === 'plan') {
       return { decision: 'deny', risk: assessment.risk };
     }
-    if ((mode === 'accept-edits' || mode === 'auto')
+    if (mode === 'auto' && !assessment.dangerous) {
+      // 非 dangerous 工具一律放过，由 SDK guardrail (F030) 决策；dangerous 仍弹窗
+      return { decision: 'allow_once', risk: assessment.risk };
+    }
+    if (mode === 'accept-edits'
         && !assessment.dangerous
         && (EDIT_TOOLS.has(req.toolName) || READONLY_TOOLS.has(req.toolName))) {
       return { decision: 'allow_once', risk: assessment.risk };
     }
 
-    // accept-edits / auto 中 dangerous / 非 edit 工具：走 always-allow 规则 + 弹窗
+    // accept-edits 中 dangerous / 非 edit 工具，或 auto 中的 dangerous：走 always-allow 规则 + 弹窗
 
     // 确保规则已加载——idempotent，已加载时立即返回
     await permissionRegistry.load();

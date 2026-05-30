@@ -9,7 +9,6 @@
 //   mcp.reload      用户改 config 后调, dispose 现有 Manager + 重建
 
 import { registerChannel } from './register.js';
-import { kodaxHost } from '../kodax/host.js';
 import { discoverMcpServers } from '../mcp/config-reader.js';
 import { getMcpManager, reloadMcpManager } from '../mcp/manager.js';
 import type {
@@ -35,11 +34,7 @@ function projectStatus(s: import('@kodax-ai/kodax/mcp').McpServerStatus): McpSer
 
 export function registerMcpChannels(): void {
   registerChannel('mcp.discover', async (input) => {
-    const session = kodaxHost.get(input.sessionId);
-    if (!session) {
-      throw new Error(`session not found: ${input.sessionId}`);
-    }
-    return discoverMcpServers({ projectRoot: session.projectRoot });
+    return discoverMcpServers({ projectRoot: input.projectRoot });
   });
 
   registerChannel('mcp.servers', async () => {

@@ -3,8 +3,12 @@
 // 行为：
 //   - 全局监听 push 'permission.request' / 'permission.cancelled'，进 store 的 permissionQueue
 //   - 任一时刻只显示队列头部那个；用户决策后自动 dequeue 弹下一个
-//   - 危险等级（risk='danger'）强制 typed-confirm：必须键入 CONFIRM 才能 enable Allow once / Always
+//   - 危险等级（risk='danger'）强制 typed-confirm：必须键入 CONFIRM 才能 enable Allow once
+//     —— danger 永不出 "Always allow" 按钮（不该让危险命令静默白名单化）
 //   - Escape = Deny；Enter（非危险时）= Allow once
+//
+// UX 历史：之前 "Always allow" 是 checkbox + 单 Allow 按钮，用户要先勾再点 —— 心智成本高。
+// 现在改成 3 个按钮 (Deny / Allow once / Always allow `pattern`)，一键搞定。
 //
 // 安全注意：
 //   - input 字段值原样 toString，不走 dangerouslySetInnerHTML——LLM 可能把 HTML 当做参数返回
@@ -61,13 +65,11 @@ export function PermissionModal(): JSX.Element | null {
   const head = queue[0] ?? null;
 
   // 每次切换 head（新弹窗）重置本地状态
-  const [alwaysAllow, setAlwaysAllow] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    setAlwaysAllow(false);
     setConfirmText('');
     setBusy(false);
     setErr(null);
@@ -202,44 +204,44 @@ export function PermissionModal(): JSX.Element | null {
             </div>
           )}
 
-          {!isDanger && head.suggestedPattern && (
-            <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={alwaysAllow}
-                onChange={(e) => setAlwaysAllow(e.target.checked)}
-                className="rounded"
-              />
-              <span>
-                Always allow{' '}
-                <code className="text-amber-300 font-mono text-[11px]">{head.suggestedPattern}</code>
-              </span>
-            </label>
-          )}
-
           {err && <div className="text-xs text-red-400 font-mono">{err}</div>}
         </div>
 
-        <div className="px-5 py-3 border-t border-zinc-800 flex items-center justify-end gap-2 flex-shrink-0">
+        <div className="px-5 py-3 border-t border-zinc-800 dark:bg-transparent bg-zinc-50 flex items-center justify-end gap-2 flex-shrink-0 flex-wrap">
           <button
             type="button"
             disabled={busy}
             onClick={() => void answer('deny')}
-            className="px-3 py-1.5 text-xs rounded bg-zinc-800 text-zinc-200 hover:bg-zinc-700 disabled:opacity-50"
+            className="px-3 py-1.5 text-xs rounded dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 bg-zinc-200 text-zinc-800 hover:bg-zinc-300 disabled:opacity-50"
           >
             Deny (Esc)
           </button>
+          {/* danger 永不出 Always allow——危险命令不能进白名单 */}
+          {!isDanger && head.suggestedPattern && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void answer('allow_always')}
+              title={`Add ${head.suggestedPattern} to allow-rules and skip prompt next time`}
+              className="px-3 py-1.5 text-xs rounded font-medium border dark:border-emerald-700 dark:text-emerald-200 dark:hover:bg-emerald-900/30 border-emerald-600 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Always allow{' '}
+              <code className="font-mono text-[11px] dark:text-amber-300 text-amber-700">
+                {head.suggestedPattern}
+              </code>
+            </button>
+          )}
           <button
             type="button"
             disabled={busy || !dangerConfirmed}
-            onClick={() => void answer(alwaysAllow && !isDanger ? 'allow_always' : 'allow_once')}
+            onClick={() => void answer('allow_once')}
             className={`px-3 py-1.5 text-xs rounded font-medium ${
               isDanger
                 ? 'bg-red-700 text-zinc-100 hover:bg-red-600'
-                : 'bg-emerald-700 text-zinc-100 hover:bg-emerald-600'
+                : 'bg-emerald-600 text-white hover:bg-emerald-500 dark:bg-emerald-700 dark:hover:bg-emerald-600'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
-            {alwaysAllow && !isDanger ? 'Always allow' : isDanger ? 'Allow (danger)' : 'Allow once (Enter)'}
+            {isDanger ? 'Allow (danger)' : 'Allow once (Enter)'}
           </button>
         </div>
       </div>

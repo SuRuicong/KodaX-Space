@@ -181,7 +181,8 @@ interface AppState {
   pendingAgentMode: SessionMeta['agentMode'] | null;
   /** Pending model — 用户在右下角 picker 选的 model 名 (provider.models 之一)。
    *  无 session 时存这里；session 创建后通过 /model slash 命令应用到 KodaX 运行时。
-   *  alpha.1 不持久化到 SessionMeta (SDK 暂无 model field)，重启丢失但当前会话内有效。*/
+   *  持久化到 localStorage，让用户偏好跨重启保留 (SDK 暂无 SessionMeta.model 字段，
+   *  暂在 Space 这层托管)。 */
   pendingModel: string | null;
   /**
    * Session UX flags — alpha.1 阶段不持久化（重启清空）。
@@ -360,6 +361,10 @@ const LS_KEY_PROJECT = 'kodax-space.currentProjectPath';
 const LS_KEY_PENDING_PERMISSION = 'kodax-space.pendingPermissionMode';
 const LS_KEY_PENDING_REASONING = 'kodax-space.pendingReasoningMode';
 const LS_KEY_PENDING_AGENT = 'kodax-space.pendingAgentMode';
+// pendingModel 是 provider-specific 字符串 (eg "anthropic/claude-opus-4-8")，
+// 不像 mode 是封闭 enum——用宽校验：非空 + 长度上限避免 LS 被改成异常长字符串。
+const LS_KEY_PENDING_MODEL = 'kodax-space.pendingModel';
+const PENDING_MODEL_MAX_LEN = 256;
 
 // 持久化 pending* 模式时校验合法 enum 值，避免 LS 被改成非法值后崩 (typescript 编译期没法知道)
 const PERMISSION_MODE_VALUES = ['plan', 'accept-edits', 'auto'] as const;
@@ -383,6 +388,12 @@ function readPersistedAgentMode(): SessionMeta['agentMode'] | null {
   return v !== null && (AGENT_MODE_VALUES as readonly string[]).includes(v)
     ? (v as SessionMeta['agentMode'])
     : null;
+}
+function readPersistedModel(): string | null {
+  const v = lsGet(LS_KEY_PENDING_MODEL);
+  if (v === null) return null;
+  if (v.length === 0 || v.length > PENDING_MODEL_MAX_LEN) return null;
+  return v;
 }
 
 // pushNotification 的 set-callback 版本: dedupe id + 上限 50 截断,返回新 array。
@@ -457,7 +468,7 @@ export const useAppStore = create<AppState>((set) => ({
   pendingReasoningMode: readPersistedReasoningMode(),
   pendingPermissionMode: readPersistedPermissionMode(),
   pendingAgentMode: readPersistedAgentMode(),
-  pendingModel: null,
+  pendingModel: readPersistedModel(),
   sessionFlags: {},
   recentsFilter: DEFAULT_RECENTS_FILTER,
   theme: (typeof window !== 'undefined' && (localStorage.getItem('kodax-space.theme') as 'dark' | 'light' | 'system' | null)) || 'dark',
@@ -817,7 +828,11 @@ export const useAppStore = create<AppState>((set) => ({
     lsSet(LS_KEY_PENDING_AGENT, mode);
     set({ pendingAgentMode: mode });
   },
-  setPendingModel: (model) => set({ pendingModel: model }),
+  setPendingModel: (model) => {
+    // model 名是 provider-specific 字符串；写 LS 让重启后默认沿用上次选择。
+    lsSet(LS_KEY_PENDING_MODEL, model);
+    set({ pendingModel: model });
+  },
 
   setPendingSend: (sessionId, pending) =>
     set((state) => {

@@ -13,10 +13,10 @@ test('mcp.discover channel is registered', () => {
   assert.ok(INVOKE_CHANNEL_NAMES.has('mcp.discover'));
 });
 
-test('mcp.discover input requires sessionId', () => {
-  assert.equal(mcpDiscoverChannel.input.safeParse({ sessionId: 's_1' }).success, true);
+test('mcp.discover input requires projectRoot', () => {
+  assert.equal(mcpDiscoverChannel.input.safeParse({ projectRoot: 'C:\\proj' }).success, true);
   assert.equal(mcpDiscoverChannel.input.safeParse({}).success, false);
-  assert.equal(mcpDiscoverChannel.input.safeParse({ sessionId: '' }).success, false);
+  assert.equal(mcpDiscoverChannel.input.safeParse({ projectRoot: '' }).success, false);
 });
 
 test('mcp.discover output accepts stdio + http transports', () => {

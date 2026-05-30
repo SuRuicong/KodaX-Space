@@ -6,11 +6,13 @@
 import type { Toast, ToastTone } from '../store/toastStore.js';
 import { useToastStore } from '../store/toastStore.js';
 
+// Dark：深色 bg + 浅色 text；Light：浅色 bg + 深色 text。
+// 之前只写 dark-only，文字经全局反转后跟 bg 同深 → 看不清 (用户反馈：Stop 后弹窗黑乎乎)。
 const TONE_CLASS: Record<ToastTone, string> = {
-  info: 'bg-zinc-800/95 border-zinc-700 text-zinc-100',
-  success: 'bg-emerald-900/90 border-emerald-700 text-emerald-100',
-  warning: 'bg-amber-900/90 border-amber-700 text-amber-100',
-  error: 'bg-red-900/90 border-red-700 text-red-100',
+  info: 'dark:bg-zinc-800/95 dark:border-zinc-700 dark:text-zinc-100 bg-zinc-100 border-zinc-300 text-zinc-900',
+  success: 'dark:bg-emerald-900/90 dark:border-emerald-700 dark:text-emerald-100 bg-emerald-50 border-emerald-300 text-emerald-900',
+  warning: 'dark:bg-amber-900/90 dark:border-amber-700 dark:text-amber-100 bg-amber-50 border-amber-300 text-amber-900',
+  error: 'dark:bg-red-900/90 dark:border-red-700 dark:text-red-100 bg-red-50 border-red-300 text-red-900',
 };
 
 const TONE_ICON: Record<ToastTone, string> = {
@@ -41,7 +43,7 @@ export function ToastContainer(): JSX.Element | null {
           <button
             type="button"
             onClick={() => dismiss(t.id)}
-            className="text-zinc-400 hover:text-white px-0.5 leading-none"
+            className="dark:text-zinc-400 dark:hover:text-white text-zinc-500 hover:text-zinc-900 px-0.5 leading-none"
             aria-label="Dismiss"
           >
             ×

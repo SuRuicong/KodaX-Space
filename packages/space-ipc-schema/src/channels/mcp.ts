@@ -31,13 +31,16 @@ const mcpServerMetaSchema = z.object({
 
 // ---- Invoke: mcp.discover ----
 //
-// 拉当前 session.projectRoot 对应的 MCP server 列表 (global + project 合并；同名 project 覆盖 global)。
+// 拉当前 projectRoot 对应的 MCP server 列表 (global + project 合并；同名 project 覆盖 global)。
 // 每次走 disk read——KodaX REPL 改完 config.json 后立刻在 desktop popout 生效。
+//
+// projectRoot —— 不再要求 live SDK session：用户从 Recents 恢复历史会话时
+// UI 有 sessionId 但 SDK 没 spin up；discover 是只读操作，绑 projectRoot 就够。
 export const mcpDiscoverChannel = {
   name: 'mcp.discover',
   direction: 'invoke',
   input: z.object({
-    sessionId: z.string().min(1),
+    projectRoot: z.string().min(1).max(4096),
   }),
   output: z.object({
     servers: z.array(mcpServerMetaSchema).max(128),
