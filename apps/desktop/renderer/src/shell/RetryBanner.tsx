@@ -113,7 +113,11 @@ export function RetryBanner(): JSX.Element | null {
     const reasonLabel = banner.reason === 'rate-limit' ? 'Rate-limited' : 'Provider overloaded';
     return (
       <div
-        className="px-3 py-1 text-[11px] flex items-center gap-2 text-amber-300/90 bg-amber-900/15 border-t border-b border-amber-900/30 font-mono"
+        className={[
+          'px-3 py-1 text-[11px] flex items-center gap-2 border-t border-b font-mono',
+          'text-amber-800 bg-amber-100/70 border-amber-300',
+          'dark:text-amber-300/90 dark:bg-amber-900/15 dark:border-amber-900/30',
+        ].join(' ')}
         role="status"
         aria-live="polite"
       >
@@ -121,7 +125,7 @@ export function RetryBanner(): JSX.Element | null {
         <span>
           {reasonLabel}{banner.provider ? ` by ${banner.provider}` : ''} · retrying in {remainSec}s
         </span>
-        <span className="text-amber-300/60 ml-auto">
+        <span className="text-amber-700/80 dark:text-amber-300/60 ml-auto">
           attempt {banner.attempt}/{banner.maxAttempts}
         </span>
       </div>
@@ -131,13 +135,17 @@ export function RetryBanner(): JSX.Element | null {
   // recovery: 显示 recovery action + attempt
   return (
     <div
-      className="px-3 py-1 text-[11px] flex items-center gap-2 text-sky-300/90 bg-sky-900/15 border-t border-b border-sky-900/30 font-mono"
+      className={[
+        'px-3 py-1 text-[11px] flex items-center gap-2 border-t border-b font-mono',
+        'text-sky-800 bg-sky-100/70 border-sky-300',
+        'dark:text-sky-300/90 dark:bg-sky-900/15 dark:border-sky-900/30',
+      ].join(' ')}
       role="status"
       aria-live="polite"
     >
       <span aria-hidden>↻</span>
       <span>Provider recovery: {banner.recoveryAction}</span>
-      <span className="text-sky-300/60 ml-auto">
+      <span className="text-sky-700/80 dark:text-sky-300/60 ml-auto">
         attempt {banner.attempt}/{banner.maxAttempts}
       </span>
     </div>

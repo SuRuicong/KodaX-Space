@@ -918,12 +918,15 @@ export function BottomBar(): JSX.Element {
           <AgentModeSelector />
           <span className="ml-auto" />
           <ModelEffortSelector />
-          {/* Send / Stop 圆形按钮 — Claude Code / ChatGPT 同款。streaming 时变成 Stop。*/}
+          {/* Send / Stop 圆形按钮 — Claude Code / ChatGPT 同款。streaming 时变成 Stop。
+              亮 / 暗双主题: enable 态都是绿/红 + 白字 (色相饱和不变);
+              disable 态分主题做 — 暗 zinc-800 衬 zinc-500 字, 亮 zinc-300 衬 zinc-500 字,
+              保证按钮在白底卡片上仍能"看得见"而不是融化掉。 */}
           {isStreaming ? (
             <button
               type="button"
               onClick={() => void handleCancel()}
-              className="ml-1 w-7 h-7 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center"
+              className="ml-1 w-7 h-7 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-sm"
               title="Stop (Esc)"
               aria-label="Stop generation"
             >
@@ -934,7 +937,15 @@ export function BottomBar(): JSX.Element {
               type="button"
               onClick={() => void handleSend()}
               disabled={!canSend}
-              className="ml-1 w-7 h-7 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white flex items-center justify-center disabled:cursor-not-allowed"
+              className={[
+                'ml-1 w-7 h-7 rounded-full flex items-center justify-center disabled:cursor-not-allowed shadow-sm',
+                // Enable: 暗/亮都用 emerald 绿 + 白字
+                'bg-emerald-600 hover:bg-emerald-500 text-white',
+                // Disable (dark): 暗灰圈 + 中灰箭头
+                'dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500',
+                // Disable (light): 用 zinc-300 衬底 + zinc-500 字 → 白底卡片上仍可见
+                'disabled:bg-zinc-300 disabled:text-zinc-500 disabled:shadow-none',
+              ].join(' ')}
               title={canSend ? 'Send (Enter)' : 'Type a message first'}
               aria-label="Send message"
             >

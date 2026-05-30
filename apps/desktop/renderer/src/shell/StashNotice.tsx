@@ -112,14 +112,20 @@ export function StashNotice(): JSX.Element | null {
 
   return (
     <div
-      className="px-3 py-1 text-[11px] flex items-center gap-2 text-amber-300/90 bg-amber-900/15 border-t border-b border-amber-900/30"
+      className={[
+        'px-3 py-1 text-[11px] flex items-center gap-2 border-t border-b',
+        // Dark (默认主题): 暖橙文字 + 暗琥珀衬底
+        'dark:text-amber-300/90 dark:bg-amber-900/15 dark:border-amber-900/30',
+        // Light: 深琥珀文字 (>7:1 对比度) + 浅暖米衬底 + 中性暖边
+        'text-amber-800 bg-amber-100/70 border-amber-300',
+      ].join(' ')}
       role="status"
       aria-label="Working tree has uncommitted changes"
     >
       <span aria-hidden>●</span>
       <span>Uncommitted: {summary}</span>
       {status.branch && (
-        <span className="text-amber-300/60">on {status.branch}</span>
+        <span className="text-amber-700/80 dark:text-amber-300/60">on {status.branch}</span>
       )}
     </div>
   );

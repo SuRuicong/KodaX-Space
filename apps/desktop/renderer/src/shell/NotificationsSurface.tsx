@@ -14,10 +14,18 @@
 import { useAppStore } from '../store/appStore.js';
 import type { Notification } from '../store/appStore.js';
 
+// 双主题色: 暗模式延续原 zinc-900 衬底家族,亮模式用深色文字 + 浅暖/冷衬底保证对比度。
+// 选择 deep-700/800 文字色 + light-100/70 衬底是为了 WCAG AA (4.5:1) 以上对比。
 const SEVERITY_BG: Record<Notification['severity'], string> = {
-  info: 'bg-sky-900/20 border-sky-700/40 text-sky-200',
-  warning: 'bg-amber-900/20 border-amber-700/40 text-amber-200',
-  error: 'bg-red-900/30 border-red-700/40 text-red-200',
+  info:
+    'text-sky-800 bg-sky-100/70 border-sky-300 ' +
+    'dark:text-sky-200 dark:bg-sky-900/20 dark:border-sky-700/40',
+  warning:
+    'text-amber-800 bg-amber-100/70 border-amber-300 ' +
+    'dark:text-amber-200 dark:bg-amber-900/20 dark:border-amber-700/40',
+  error:
+    'text-red-800 bg-red-100/70 border-red-400 ' +
+    'dark:text-red-200 dark:bg-red-900/30 dark:border-red-700/40',
 };
 const SEVERITY_ICON: Record<Notification['severity'], string> = {
   info: 'ℹ',
