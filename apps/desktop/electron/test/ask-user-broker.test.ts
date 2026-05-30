@@ -17,16 +17,24 @@ import { setRendererTarget } from '../ipc/push.js';
 interface Captured { channel: string; payload: unknown }
 const captured: Captured[] = [];
 
+// Broker 的 setTimeout 在生产里 unref()——避免悬挂 timer 阻止 app 退出。
+// 在 node:test 里如果没有别的 active handle，loop 会直接退出，timer 永不触发，
+// 测试报 'Promise resolution is still pending but the event loop has already resolved'。
+// 用非 unref 的 interval 兜底 keep-alive。
+let keepalive: NodeJS.Timeout | null = null;
+
 beforeEach(() => {
   captured.length = 0;
   setRendererTarget(() => ({
     send: (channel: string, payload: unknown) => captured.push({ channel, payload }),
     isDestroyed: () => false,
   }) as unknown as Electron.WebContents);
+  keepalive = setInterval(() => {}, 1000);
 });
 
 afterEach(() => {
   setRendererTarget(() => null);
+  if (keepalive) { clearInterval(keepalive); keepalive = null; }
 });
 
 function lastRequest(): { reqId: string; sessionId: string } {
