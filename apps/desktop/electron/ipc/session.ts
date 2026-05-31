@@ -32,7 +32,7 @@ import { providerConfigStore } from '../providers/config.js';
 import { loadPersistedSession } from '../kodax/session-store.js';
 import type { AgentsFileMeta, SessionHistoryItem, SessionMeta } from '@kodax-space/space-ipc-schema';
 
-// SDK lazy + cached import — 跟其他 SDK 接入点 (agent.ts, queue.ts, sdk-providers.ts) 同模式。
+// SDK lazy + cached import — 跟其他 SDK 接入点 (agent.ts, queue.ts, catalog.ts) 同模式。
 // listRunningSessions handler 用; main 是 CJS,SDK subpath 是 ESM-only,必须动态 import 一次,
 // 之后 module cache 直接返回 (审查 Batch 4 M1 consistency)。
 type SdkSessionModule = typeof import('@kodax-ai/kodax/session');

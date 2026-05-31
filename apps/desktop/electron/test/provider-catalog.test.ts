@@ -1,17 +1,22 @@
 // Built-in provider catalog tests — FEATURE_004
 //
+// catalog 是 SDK 薄适配层 —— 模块顶层一次性从 KodaX 的
+// provider-capabilities.json (`@kodax-ai/kodax/dist/provider-capabilities.json`)
+// 读 apiKeyEnv / defaultModel / models[]，Space 自己只 override displayName /
+// protocol / testEndpoint。SDK 升级 → Space 自动跟上不再需要手 sync。
+//
 // 验收：
-//   - 13 个 built-in providers 全部存在
-//   - id / apiKeyEnv / protocol 唯一性 + 必填
+//   - SDK 已知的 provider 全部出现在 catalog (数量 >= 13，SDK 后续加 provider 自动跟上)
+//   - id 唯一 + apiKeyEnv / defaultModel / displayName 非空 + protocol 合法
 //   - getBuiltin / isBuiltinId 行为正确
-//   - 字段约束符合 schema（id 长度、protocol enum）
+//   - 关键 anchor provider 存在 (anthropic / openai / zhipu-coding)
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BUILTIN_PROVIDERS, getBuiltin, isBuiltinId } from '../providers/catalog.js';
 
-test('catalog has 13 built-in providers', () => {
-  assert.equal(BUILTIN_PROVIDERS.length, 13);
+test('catalog includes at least 13 built-in providers (SDK can add more)', () => {
+  assert.ok(BUILTIN_PROVIDERS.length >= 13);
 });
 
 test('all built-in provider ids are unique', () => {

@@ -1,34 +1,26 @@
-// Built-in provider catalog — FEATURE_004
+// Built-in provider catalog —— **薄适配层**
 //
-// 来源：snapshot from KodaX `packages/llm/src/providers/provider-capabilities.json`
-// (sync 至 2026-05-25 KodaX 本地 npm-link 版本).
-// 等 `@kodax-ai/llm` 发到 npm 后这里改成 `import { KODAX_PROVIDER_SNAPSHOTS }`，
-// 保留 catalog.ts 作为薄适配层（map 到 Space 的 ProviderInfo shape）。
+// 数据来源拆分（单一事实源原则）：
+//   • SDK 单一来源：直接读 `@kodax-ai/kodax/dist/provider-capabilities.json`
+//     —— KodaX 在 build 时把 packages/llm 的 capability JSON copy 到顶层 dist。
+//     拉 apiKeyEnv / defaultModel / models[]，不再手 copy 一份 snapshot 到 Space 里。
+//     之前 (v0.7.40 snapshot) 手 copy 导致 KodaX 改了 env 名 Space 不知道，必须人工 sync；
+//     现在 KodaX 改 → Space 自动跟上。
+//   • Space override (本文件 SPACE_OVERRIDES)：displayName / testEndpoint / protocol —— 纯 UI / 测连接元数据
+//     SDK 不关心这些（KodaX 用 `capabilityProfile` 表达更丰富的能力，Space 暂时只用一个
+//     四值 protocol 标识"测连接走啥协议"）。
 //
-// 同步策略：
-//   - KodaX 升级时手动 sync 本文件（增删 provider / 改 default model）
-//   - apiKeyEnv 必须与 KodaX 端完全一致——main 启动时按这个 env var 名注入 keychain key，
-//     LLM SDK 通过同一个 env 读 key
+// 为什么不 dynamic-import @kodax-ai/kodax 读 KODAX_PROVIDER_SNAPSHOTS：
+//   1. JSON 直读是 SYNC 的，catalog 可以保持模块顶层 const 不需要 init step。
+//   2. 加载整个 SDK runtime 仅为读 13 条 provider 数据是巨大浪费 (transitive deps 几十个)。
+//   3. tsx/esm 测试环境下 SDK 全量加载有 cli-boxes 等深层 dep 解析问题；JSON 直读绕开。
 //
-// 2026-05-31 sync：KodaX 把 5 个 coding-plan provider 的 env 名从"和普通版共享"改成独立后缀，
-// 让用户能给"普通 API"和"coding plan"配不同的 key (这俩是不同的计费 endpoint)：
-//   kimi-code:      KIMI_API_KEY     → KIMI_CODE_API_KEY
-//   zhipu-coding:   ZHIPU_API_KEY    → ZHIPU_CODING_API_KEY
-//   minimax-coding: MINIMAX_API_KEY  → MINIMAX_CODING_API_KEY
-//   mimo-coding:    MIMO_API_KEY     → MIMO_CODING_API_KEY
-//   ark-coding:     ARK_API_KEY      → ARK_CODING_API_KEY
-// keychain 数据无需迁移 (account=providerId 不变)；shell-export 的 legacy env 名用户
-// 需手动加一条新名。
-//
-// 字段说明：
-//   - id          稳定标识符（不要变；keychain account 名按此存）
-//   - displayName UI 用
-//   - apiKeyEnv   `process.env[apiKeyEnv]` 是 SDK 读 key 的入口
-//   - protocol    SDK 协议族——决定 test connection 调哪个 endpoint shape
-//   - testEndpoint 测连接用的 GET endpoint（minimal probe）；undefined 表示这个 provider
-//                 不支持 HTTP probe（如 CLI bridge），跳过测试
-//   - defaultModel + models KodaX SDK 的默认模型 + 可选模型列表
+// 与 SDK 的 schema 对齐：JSON 的 `models[]` 是 `{ id, displayName, ... }` 对象数组，
+// 这里映射成 string[] (只取 id) 给 UI 用。
 
+import path from 'node:path';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import type { ProviderProtocol } from '@kodax-space/space-ipc-schema';
 
 export interface BuiltinProvider {
@@ -42,124 +34,175 @@ export interface BuiltinProvider {
   readonly models?: readonly string[];
 }
 
-export const BUILTIN_PROVIDERS: readonly BuiltinProvider[] = [
-  {
-    id: 'anthropic',
+/**
+ * Space-only override：SDK 不提供的 UI / 测连接元数据。
+ * id 必须与 SDK provider-capabilities.json key 一致。
+ *
+ * SDK 增加新 provider 时本表没条目 → 自动用兜底 displayName=id + protocol='openai' +
+ * 无 testEndpoint，并打 warn 提醒补 override（让 UI 显示更友好）。
+ */
+interface SpaceOverride {
+  readonly displayName: string;
+  readonly protocol: ProviderProtocol;
+  readonly testEndpoint?: string;
+  /**
+   * JSON 没 model 字段时的兜底（CLI bridge provider 用 —— KodaX SDK runtime 调
+   * `getCodexCliDefaultModel()` 等动态填，JSON 里是空的）。
+   */
+  readonly defaultModelFallback?: string;
+}
+
+const SPACE_OVERRIDES: Record<string, SpaceOverride> = {
+  anthropic: {
     displayName: 'Anthropic',
-    apiKeyEnv: 'ANTHROPIC_API_KEY',
     protocol: 'anthropic',
     testEndpoint: 'https://api.anthropic.com/v1/models',
-    defaultModel: 'claude-sonnet-4-6',
-    models: ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5'],
   },
-  {
-    id: 'openai',
+  openai: {
     displayName: 'OpenAI',
-    apiKeyEnv: 'OPENAI_API_KEY',
     protocol: 'openai',
     testEndpoint: 'https://api.openai.com/v1/models',
-    defaultModel: 'gpt-5.3-codex',
-    models: ['gpt-5.4', 'gpt-5.3-codex', 'gpt-5.3-codex-spark'],
   },
-  {
-    id: 'deepseek',
+  deepseek: {
     displayName: 'DeepSeek',
-    apiKeyEnv: 'DEEPSEEK_API_KEY',
     protocol: 'openai',
     testEndpoint: 'https://api.deepseek.com/v1/models',
-    defaultModel: 'deepseek-v4-flash',
-    models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
   },
-  {
-    id: 'kimi',
+  kimi: {
     displayName: 'Kimi (Moonshot)',
-    apiKeyEnv: 'KIMI_API_KEY',
     protocol: 'openai',
     testEndpoint: 'https://api.moonshot.cn/v1/models',
-    defaultModel: 'kimi-k2.6',
-    models: ['kimi-k2.6', 'k2.5'],
   },
-  {
-    id: 'kimi-code',
+  'kimi-code': {
     displayName: 'Kimi for Coding',
-    apiKeyEnv: 'KIMI_CODE_API_KEY',
     protocol: 'anthropic',
-    // Kimi-for-Coding 的 endpoint 是 Anthropic-compat 但不暴露 /v1/models GET；
-    // 测连接走 POST minimal completion——见 test-connection.ts。这里仍标 testEndpoint
-    // 让 ProviderHandler 知道"我有 HTTP probe path"，但实际请求方式由 protocol 决定。
+    // Anthropic-compat 端点；test-connection.ts 走 POST minimal completion 不依赖 GET /v1/models
     testEndpoint: 'https://api.moonshot.cn/anthropic/v1/messages',
-    defaultModel: 'kimi-for-coding',
   },
-  {
-    id: 'qwen',
+  qwen: {
     displayName: 'Qwen (Alibaba)',
-    apiKeyEnv: 'QWEN_API_KEY',
     protocol: 'openai',
     testEndpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/models',
-    defaultModel: 'qwen3.5-plus',
   },
-  {
-    id: 'zhipu',
+  zhipu: {
     displayName: 'Zhipu (BigModel)',
-    apiKeyEnv: 'ZHIPU_API_KEY',
     protocol: 'openai',
     testEndpoint: 'https://open.bigmodel.cn/api/paas/v4/models',
-    defaultModel: 'glm-5',
-    models: ['glm-5', 'glm-5.1', 'glm-5-turbo'],
   },
-  {
-    id: 'zhipu-coding',
+  'zhipu-coding': {
     displayName: 'Zhipu Coding Plan',
-    apiKeyEnv: 'ZHIPU_CODING_API_KEY',
     protocol: 'anthropic',
     testEndpoint: 'https://open.bigmodel.cn/api/anthropic/v1/messages',
-    defaultModel: 'glm-5',
-    models: ['glm-5', 'glm-5.1', 'glm-5-turbo'],
   },
-  {
-    id: 'minimax-coding',
+  'minimax-coding': {
     displayName: 'MiniMax Coding',
-    apiKeyEnv: 'MINIMAX_CODING_API_KEY',
     protocol: 'anthropic',
     testEndpoint: 'https://api.minimax.chat/v1/messages',
-    defaultModel: 'MiniMax-M2.7',
-    models: ['MiniMax-M2.7', 'MiniMax-M2.5', 'MiniMax-M2.1'],
   },
-  {
-    id: 'mimo-coding',
+  'mimo-coding': {
     displayName: 'MiMo (Xiaomi)',
-    apiKeyEnv: 'MIMO_CODING_API_KEY',
     protocol: 'anthropic',
     testEndpoint: 'https://api.xiaomi.com/mimo/anthropic/v1/messages',
-    defaultModel: 'mimo-v2.5-pro',
-    models: ['mimo-v2.5-pro', 'mimo-v2.5'],
   },
-  {
-    id: 'ark-coding',
+  'ark-coding': {
     displayName: 'Volcengine Ark Coding',
-    apiKeyEnv: 'ARK_CODING_API_KEY',
     protocol: 'anthropic',
     testEndpoint: 'https://ark.cn-beijing.volces.com/api/v3/messages',
-    defaultModel: 'glm-5.1',
-    models: ['glm-5.1', 'glm-4.7', 'kimi-k2.6', 'minimax-latest', 'deepseek-v3.2'],
   },
-  {
-    id: 'gemini-cli',
+  'gemini-cli': {
     displayName: 'Gemini CLI',
-    apiKeyEnv: 'GEMINI_API_KEY',
     protocol: 'gemini-cli',
-    // CLI bridge — no HTTP probe applicable
-    defaultModel: 'gemini-3.0-pro',
+    // CLI bridge — no HTTP probe applicable；defaultModel 由本地 gemini CLI 自报
+    defaultModelFallback: 'gemini-3.0-pro',
   },
-  {
-    id: 'codex-cli',
+  'codex-cli': {
     displayName: 'Codex CLI (OpenAI)',
-    apiKeyEnv: 'OPENAI_API_KEY',
     protocol: 'codex-cli',
-    // CLI bridge — no HTTP probe applicable
-    defaultModel: 'gpt-5.3-codex',
+    // CLI bridge — no HTTP probe applicable；defaultModel 由本地 codex CLI 自报
+    defaultModelFallback: 'gpt-5.3-codex',
   },
-];
+};
+
+// ---- 读 SDK JSON 单一事实源 ----
+
+// JSON 形态：
+//   {
+//     version: 1,
+//     updatedAt: 'YYYY-MM-DD',
+//     providers: {
+//       [id: string]: {
+//         apiKeyEnv: string,
+//         model: string,
+//         models?: Array<{ id: string, displayName?: string, ... }>,
+//         ...
+//       }
+//     }
+//   }
+interface CapabilityJsonEntry {
+  readonly apiKeyEnv: string;
+  /** CLI bridge provider 没此字段；其他都有。*/
+  readonly model?: string;
+  readonly models?: ReadonlyArray<{ readonly id: string }>;
+}
+interface CapabilityJson {
+  readonly version: number;
+  readonly providers: Readonly<Record<string, CapabilityJsonEntry>>;
+}
+
+function resolveCapabilityJsonPath(): string {
+  // require.resolve('@kodax-ai/kodax/package.json') 在 exports map 里显式列了，
+  // 永远可解析；从那里推 sibling dist/provider-capabilities.json 路径稳定。
+  // ESM 没 require —— createRequire(import.meta.url) 通用兼容，main build (CJS) 也吃得下。
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const meta = (typeof require !== 'undefined' ? null : (import.meta as any));
+  const req = meta ? createRequire(meta.url) : require;
+  const pkgPath = req.resolve('@kodax-ai/kodax/package.json');
+  return path.join(path.dirname(pkgPath), 'dist', 'provider-capabilities.json');
+}
+
+function loadProvidersFromJson(): readonly BuiltinProvider[] {
+  const jsonPath = resolveCapabilityJsonPath();
+  const raw = readFileSync(jsonPath, 'utf8');
+  const parsed = JSON.parse(raw) as CapabilityJson;
+  if (parsed.version !== 1) {
+    // 不抛 —— 仍尝试按 v1 shape 解析。若 KodaX 真的 bump 到 v2 且字段不兼容，
+    // 这里会在下面 forEach 里因字段缺失抛出更具体的错误。
+    console.warn(
+      `[catalog] provider-capabilities.json version=${parsed.version}, expected 1 — `
+      + `Space catalog may need a sync with KodaX schema changes`,
+    );
+  }
+  const list: BuiltinProvider[] = [];
+  for (const [id, entry] of Object.entries(parsed.providers)) {
+    const ov = SPACE_OVERRIDES[id];
+    if (!ov) {
+      console.warn(
+        `[catalog] SDK provider '${id}' has no Space override; using fallback `
+        + `displayName/protocol. Add an entry to SPACE_OVERRIDES in catalog.ts.`,
+      );
+    }
+    // entry.model 缺失时（CLI bridge）走 Space override fallback；都没有则用 id 兜底
+    const defaultModel = entry.model ?? ov?.defaultModelFallback ?? id;
+    // JSON 的 models[] 不含 default — 拼到开头让 UI 直接遍历就有 default 在第一位
+    const variants = (entry.models ?? []).map((m) => m.id);
+    const models = [defaultModel, ...variants.filter((m) => m !== defaultModel)];
+    list.push({
+      id,
+      displayName: ov?.displayName ?? id,
+      apiKeyEnv: entry.apiKeyEnv,
+      protocol: ov?.protocol ?? 'openai',
+      testEndpoint: ov?.testEndpoint,
+      defaultModel,
+      models,
+    });
+  }
+  return list;
+}
+
+// 模块顶层一次性 load —— 失败就抛，让 main 启动期 fail-fast 而不是静默 fallback 到空。
+// 启动后 catalog 数据 immutable，重新 hot-reload Space 进程才会重读 (KodaX 升 SDK 时
+// 用户重启 Space 自然吃到新 catalog)。
+export const BUILTIN_PROVIDERS: readonly BuiltinProvider[] = loadProvidersFromJson();
 
 export function getBuiltin(id: string): BuiltinProvider | undefined {
   return BUILTIN_PROVIDERS.find((p) => p.id === id);

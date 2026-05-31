@@ -19,7 +19,7 @@ import { kodaxHost } from '../kodax/host.js';
 import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
 import { listSlashCommands } from './registry.js';
-import { getKodaxProviderModelsAndDefault } from '../kodax/sdk-providers.js';
+import { getBuiltin } from '../providers/catalog.js';
 
 const REASONING_MODES = ['off', 'auto', 'quick', 'balanced', 'deep'] as const;
 type ReasoningMode = (typeof REASONING_MODES)[number];
@@ -139,10 +139,14 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
       const session = kodaxHost.get(ctx.sessionId);
       if (!session) return { ok: false, message: `session not found: ${ctx.sessionId}` };
 
-      // Lazy lookup provider model list — 失败时退化为"接受任意 string"(不阻塞用户),
-      // 但成功时校验 + 给"did you mean"提示。
+      // Provider model list 来自 built-in catalog（已在启动期从 SDK init）。
+      // 未识别的 provider id（custom_xxx）→ providerInfo = undefined，退化为"接受任意 string"
+      // 不阻塞用户；成功时校验 + 给"did you mean"提示。
       const providerId = session.provider;
-      const providerInfo = await getKodaxProviderModelsAndDefault(providerId).catch(() => null);
+      const providerInfo = (() => {
+        const b = getBuiltin(providerId);
+        return b ? { defaultModel: b.defaultModel, models: b.models ?? [] } : null;
+      })();
 
       if (!target) {
         // 无参数: 列出当前 provider 下的可用 model + 当前选中值

@@ -17,7 +17,6 @@
 import { registerChannel } from './register.js';
 import { BUILTIN_PROVIDERS, isBuiltinId, getBuiltin } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
-import { getKodaxProviderModelsAndDefault } from '../kodax/sdk-providers.js';
 import {
   setKey,
   deleteKey,
@@ -185,22 +184,17 @@ export function registerProviderChannels(): void {
 
     const list: ProviderInfo[] = [];
 
-    // Built-in providers: defaultModel + models 从 SDK KODAX_PROVIDER_SNAPSHOTS 拉,
-    // 失败 (SDK 未识别) 回 catalog 的硬编码 fallback。一次 dynamic import 后零成本.
-    // 并发 fetch — 13 个 provider 同时 await 一次 SDK lookup.
-    const sdkModelInfos = await Promise.all(
-      BUILTIN_PROVIDERS.map((b) => getKodaxProviderModelsAndDefault(b.id)),
-    );
-    for (let i = 0; i < BUILTIN_PROVIDERS.length; i++) {
-      const b = BUILTIN_PROVIDERS[i];
-      const sdkInfo = sdkModelInfos[i];
+    // catalog 模块顶层已经从 SDK JSON 单一事实源 load 完整 provider 数据 ——
+    // BuiltinProvider 的 apiKeyEnv / defaultModel / models 就是 SDK 的真相，
+    // 不再需要每次 provider.list 调用时二次 dynamic-import SDK 取值。
+    for (const b of BUILTIN_PROVIDERS) {
       list.push({
         id: b.id,
         displayName: b.displayName,
         apiKeyEnv: b.apiKeyEnv,
         protocol: b.protocol,
-        defaultModel: sdkInfo?.defaultModel ?? b.defaultModel,
-        models: sdkInfo ? [...sdkInfo.models] : (b.models ? [...b.models] : undefined),
+        defaultModel: b.defaultModel,
+        models: b.models ? [...b.models] : undefined,
         configured: keychainAccounts.has(b.id) || hasEnvKey(b.apiKeyEnv),
         isDefault: defaultId === b.id,
         isCustom: false,
