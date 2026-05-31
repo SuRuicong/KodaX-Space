@@ -19,7 +19,9 @@ import { z } from 'zod';
 
 const execFileAsync = promisify(execFile);
 
-const SPACE_DATA_DIR = path.join(os.homedir(), '.kodax', 'space');
+// OC-12 测试模式 (KODAX_TEST_ONBOARDING) 下重定向到 tmpdir/kodax-test-<id>/space
+import { getSpaceDataDir } from '../kodax/data-paths.js';
+const SPACE_DATA_DIR = getSpaceDataDir();
 const SETTINGS_FILE = path.join(SPACE_DATA_DIR, 'settings.json');
 
 const fileSchema = z.object({

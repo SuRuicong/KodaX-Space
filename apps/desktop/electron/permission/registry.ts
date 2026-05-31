@@ -14,11 +14,12 @@
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { z } from 'zod';
 import { matchesPattern } from './risk.js';
+import { getKodaxDir } from '../kodax/data-paths.js';
 
-const PERMISSIONS_DIR = path.join(os.homedir(), '.kodax');
+// OC-12 测试模式下重定向到 tmpdir/kodax-test-<id>
+const PERMISSIONS_DIR = getKodaxDir();
 const PERMISSIONS_FILE = path.join(PERMISSIONS_DIR, 'permissions.json');
 
 const ruleSchema = z.object({

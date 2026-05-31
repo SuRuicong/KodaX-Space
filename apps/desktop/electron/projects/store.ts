@@ -8,13 +8,14 @@
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { z } from 'zod';
 import { validateProjectRoot } from '../ipc/validate.js';
+import { getSpaceDataDir } from '../kodax/data-paths.js';
 
 // 注：与 KodaX CLI 共享 ~/.kodax 根，但 Space 自己的目录是 ~/.kodax/space/。
 // 与 KodaX session JSONL 完全隔离，避免一方误删另一方文件。
-const SPACE_DATA_DIR = path.join(os.homedir(), '.kodax', 'space');
+// OC-12 测试模式 (KODAX_TEST_ONBOARDING) 下 getSpaceDataDir() 返 tmpdir 隔离目录。
+const SPACE_DATA_DIR = getSpaceDataDir();
 const PROJECTS_FILE = path.join(SPACE_DATA_DIR, 'projects.json');
 
 const fileSchema = z.object({

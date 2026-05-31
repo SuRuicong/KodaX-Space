@@ -17,14 +17,15 @@
 import { promises as fs } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
-import os from 'node:os';
 import { z } from 'zod';
 import { isBuiltinId } from './catalog.js';
+import { getKodaxDir, getSpaceDataDir } from '../kodax/data-paths.js';
 
-const SPACE_CONFIG_DIR = path.join(os.homedir(), '.kodax', 'space');
+// OC-12 测试模式下重定向到 tmpdir/kodax-test-<id>
+const SPACE_CONFIG_DIR = getSpaceDataDir();
 const SPACE_CONFIG_FILE = path.join(SPACE_CONFIG_DIR, 'provider-config.json');
 
-const KODAX_DIR = path.join(os.homedir(), '.kodax');
+const KODAX_DIR = getKodaxDir();
 const CUSTOM_PROVIDERS_FILE = path.join(KODAX_DIR, 'custom-providers.json');
 
 // ---- Space 自己的 provider 配置 ----

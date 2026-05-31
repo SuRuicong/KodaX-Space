@@ -26,6 +26,7 @@ function canonProjectRoot(p: string): string {
   return process.platform === 'win32' ? n.toLowerCase() : n;
 }
 import { loadAgentsMd, type AgentsFile } from '../kodax/agents-md-loader.js';
+import { getKodaxDir } from '../kodax/data-paths.js';
 import { loadKodaxUserDefaults } from '../kodax/user-config.js';
 import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
@@ -345,12 +346,12 @@ export function registerSessionChannels(): void {
     }
     const fs = await import('node:fs/promises');
     const path = await import('node:path');
-    const os = await import('node:os');
     const crypto = await import('node:crypto');
 
     let targetPath: string;
     if (input.scope === 'global') {
-      const globalDir = path.join(os.homedir(), '.kodax');
+      // OC-12 测试模式下走 tmpdir/kodax-test-<id>
+      const globalDir = getKodaxDir();
       await fs.mkdir(globalDir, { mode: 0o700, recursive: true }).catch(() => {
         /* mkdir 失败 (磁盘满 / 权限) 走下面写入时再失败,统一错误处理 */
       });
