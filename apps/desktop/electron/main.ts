@@ -181,6 +181,23 @@ function createMainWindow(): void {
   }
 }
 
+// OC-01 单实例锁：HLD §10.3「No-duplicate-session-truth」要求同时只能有一个 Space 进程
+// 写 ~/.kodax/，否则 projects.json / sessions 可能被并发写花。
+// app.requestSingleInstanceLock() 必须在 app.whenReady() 之前调，第二个进程会立即 quit。
+// 第一个进程收到 second-instance 事件 → show + focus 已有窗口（Slack/Discord 同款行为）。
+const gotInstanceLock = app.requestSingleInstanceLock();
+if (!gotInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
 app.whenReady().then(async () => {
   // Minimal application menu — 仅 View / Window，保留 DevTools / Reload / Zoom /
   // Fullscreen 等开发与可访问性入口。其它（File / Edit / Help 等）我们没有真实操作可放，
