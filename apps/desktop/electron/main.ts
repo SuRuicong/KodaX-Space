@@ -26,6 +26,7 @@ import { probeKodaxSdk } from './kodax/kodax-sdk-probe.js';
 import { probeSkillRegistry } from './skill/registry.js';
 import { hydrateShellEnvOnce } from './kodax/shell-env-hydrate.js';
 import { registerProviderChannels, injectAllKeysToEnv } from './ipc/provider.js';
+import { autoActivateProvidersFromEnv } from './providers/auto-activate.js';
 import { registerFilesChannels } from './ipc/files.js';
 import { registerTitlebarChannels } from './ipc/titlebar.js';
 import { registerSettingsChannels } from './ipc/settings.js';
@@ -285,9 +286,14 @@ app.whenReady().then(async () => {
   void permissionRegistry.load();
   // FEATURE_004 启动期把 keychain 里的 key 注入 process.env，
   // 让 KodaX SDK（getProvider）从 env 读到。失败不阻塞启动——provider 配置 UI 仍能用
-  void providerConfigStore.load().then(() => injectAllKeysToEnv()).catch((err) => {
-    console.error('[main] inject keychain keys to env failed:', err instanceof Error ? err.message : err);
-  });
+  // KX-I-01：injectAllKeysToEnv 后 process.env 是最新状态，autoActivate 检测 shell-set
+  // 的 env key 并在 defaultProviderId 为 null 时自动选首个匹配的 built-in 为默认。
+  void providerConfigStore.load()
+    .then(() => injectAllKeysToEnv())
+    .then(() => autoActivateProvidersFromEnv())
+    .catch((err) => {
+      console.error('[main] inject keychain keys / auto-activate failed:', err instanceof Error ? err.message : err);
+    });
   createMainWindow();
 
   app.on('activate', () => {
