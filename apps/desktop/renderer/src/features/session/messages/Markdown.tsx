@@ -14,13 +14,46 @@
 // CSP 兼容：rehype-highlight 通过 <span class="hljs-..."> 注入 class，不需要 inline style。
 // 配套的 highlight.js CSS 主题在 styles.css 全局引入。
 
-import { useState, type ReactNode } from 'react';
+import { memo, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 
 interface MarkdownProps {
   readonly content: string;
+}
+
+// OC-19 流式 markdown LRU memoization
+//
+// 同一份 markdown content 多次渲染时（虚拟列表回滚、主题切换、parent 重 render 等）
+// ReactMarkdown 走全量 parse + remark-gfm + rehype-highlight 链路，长 prose 容易
+// 占 10-30ms 主线程。模块级 LRU cache 把 content → 渲染 JSX 节点缓存下来，命中即返。
+//
+// 注意：cache 只对**完整 final content** 有意义；text_delta 期间每条都是新字符串，
+// 不会命中。真正受益场景 = 长会话回滚 / 历史会话切换 / 主题切换重 render。
+//
+// 配合下方 export default React.memo(Markdown) 让 parent 重 render 但 content 未变时
+// 整个组件 short-circuit；两层一起把"内容稳定的 markdown 渲染"开销压到接近 0。
+const LRU_CAP = 500;
+const lruCache = new Map<string, JSX.Element>();
+
+function rememberInLru(content: string, rendered: JSX.Element): JSX.Element {
+  // 命中已存在的 entry —— delete + set 让它跳到 insertion-order 最末（LRU "最近用过"）
+  if (lruCache.has(content)) lruCache.delete(content);
+  lruCache.set(content, rendered);
+  // 上限保护：超 cap 删最早 entry（Map 迭代按插入顺序，第一个就是 oldest）
+  if (lruCache.size > LRU_CAP) {
+    const oldest = lruCache.keys().next().value;
+    if (oldest !== undefined) lruCache.delete(oldest);
+  }
+  return rendered;
+}
+
+/**
+ * 测试 hook：清缓存。生产路径不该调用。
+ */
+export function _clearMarkdownLruCacheForTesting(): void {
+  lruCache.clear();
 }
 
 // OC-25 代码块复制按钮：hover 时浮出，点一下复制 pre 文本内容、2 秒后回弹。
@@ -90,11 +123,20 @@ function extractTextFromNode(node: ReactNode): string {
   return '';
 }
 
-export function Markdown({ content }: MarkdownProps): JSX.Element {
+function MarkdownInner({ content }: MarkdownProps): JSX.Element {
+  // OC-19 module-level LRU 命中即返。命中率高=稳定内容反复 render；流式 delta 不会命中。
+  const cached = lruCache.get(content);
+  if (cached !== undefined) {
+    // 触发 LRU "刚用过"重排
+    lruCache.delete(content);
+    lruCache.set(content, cached);
+    return cached;
+  }
+
   // 注：不用 tailwindcss/typography 的 prose class——本仓库未装 @tailwindcss/typography。
   // 每个 element 用 components 里的覆盖样式手动控制。
   // 全 zinc-100 文字 + styles.css light-override 自动翻成深色,亮暗双主题都吃得下。
-  return (
+  const rendered = (
     <div className="markdown-body text-zinc-100 leading-relaxed text-sm">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
@@ -240,4 +282,14 @@ export function Markdown({ content }: MarkdownProps): JSX.Element {
       </ReactMarkdown>
     </div>
   );
+
+  return rememberInLru(content, rendered);
 }
+
+// React.memo: parent 重 render 但 content prop 未变时整个组件 short-circuit。
+// 配合 LRU cache 形成两层短路：
+//   • content 引用未变 (parent reuse 同字符串) → React.memo 直接跳过
+//   • content 引用变了但字符串相同 → LRU 命中返已渲染节点
+// 流式 text_delta 期间两层都不命中（每条 delta 是新字符串），但流结束后的稳定
+// 状态下重 render 几乎零成本。
+export const Markdown = memo(MarkdownInner);
