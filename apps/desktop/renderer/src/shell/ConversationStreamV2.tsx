@@ -27,40 +27,116 @@ import {
 } from '../features/session/messages/bubbles.js';
 import { WelcomeDashboard } from './WelcomeDashboard.js';
 
-// 聚合后的 view-only message kind
-type ToolGroupMessage = {
-  kind: 'tool_group';
+// 聚合后的 view-only message kind —— 两层折叠对齐 Claude Desktop "Ran 6 commands ⌄":
+//
+//   ▸ Ran 6 commands · 12s              ← 外层 cluster (此处折叠 = 默认)
+//     ▸ List workspaces and docs        ← 内层 sub-cluster (一个 LLM step 的 N 个工具)
+//       [individual ToolCallCard]       ← 工具细节 (再折一次)
+//     ▸ Read more README + FEATURE_LIST
+//     ...
+//
+// Sub-cluster 切分边界 = 每个 LLM step (assistant_text 段之间)。每个 step 通常是
+// "thinking → 决定调几个 tool"，所以 step 内 0..N 个 tool_call 形成一个 sub-cluster，
+// title 取 step 前 assistant_text 的首句 (preceding `assistant_text.text` 或 `thinking`)。
+type ToolCallMsg = Extract<ConversationMessage, { kind: 'tool_call' }>;
+type SubCluster = {
   id: string;
-  tools: Array<
-    Extract<ConversationMessage, { kind: 'tool_call' }>
-  >;
+  title: string;
+  tools: ToolCallMsg[];
+};
+type ToolClusterMessage = {
+  kind: 'tool_cluster';
+  id: string;
+  subClusters: SubCluster[];
+  totalTools: number;
 };
 
-type ViewMessage = Exclude<ConversationMessage, { kind: 'tool_call' }> | ToolGroupMessage;
+type ViewMessage = Exclude<ConversationMessage, { kind: 'tool_call' }> | ToolClusterMessage;
+
+/**
+ * 从一段文本里取首句作为 sub-cluster 标题。
+ * - 去掉首尾空白
+ * - 在 '. ! ? 。！？\n' 切第一个出现点
+ * - 限到 80 字符
+ */
+function firstSentence(text: string | undefined, maxLen = 80): string | null {
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/^[^.!?。！？\n]{1,200}([.!?。！？]|$)/);
+  const sentence = (match?.[0] ?? trimmed).replace(/[.!?。！？]\s*$/, '').trim();
+  if (sentence.length === 0) return null;
+  return sentence.length > maxLen ? sentence.slice(0, maxLen - 1) + '…' : sentence;
+}
+
+/**
+ * Fallback：assistant 没说话也没 thinking 时，按 tool 名汇总 "Ran 3 reads + 1 grep"。
+ */
+function summarizeTools(tools: readonly ToolCallMsg[]): string {
+  const counts = new Map<string, number>();
+  for (const t of tools) counts.set(t.toolName, (counts.get(t.toolName) ?? 0) + 1);
+  const parts = [...counts.entries()].map(
+    ([name, n]) => (n > 1 ? `${n} ${name}s` : `1 ${name}`),
+  );
+  return `Ran ${parts.join(' + ')}`;
+}
 
 function groupTools(messages: ConversationMessage[]): ViewMessage[] {
   const out: ViewMessage[] = [];
-  let buffer: ToolGroupMessage['tools'] = [];
+  let pendingCluster: SubCluster[] = [];
+  let clusterCounter = 0;
 
-  const flushBuffer = (): void => {
-    if (buffer.length === 0) return;
+  const flushCluster = (): void => {
+    if (pendingCluster.length === 0) return;
+    const totalTools = pendingCluster.reduce((acc, sc) => acc + sc.tools.length, 0);
     out.push({
-      kind: 'tool_group',
-      id: `group_${buffer[0].id}_${buffer.length}`,
-      tools: buffer,
+      kind: 'tool_cluster',
+      id: `cluster_${clusterCounter++}_${pendingCluster[0].id}`,
+      subClusters: pendingCluster,
+      totalTools,
     });
-    buffer = [];
+    pendingCluster = [];
   };
 
-  for (const m of messages) {
-    if (m.kind === 'tool_call') {
-      buffer.push(m);
-    } else {
-      flushBuffer();
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+
+    if (m.kind === 'user' || m.kind === 'system_notice') {
+      flushCluster();
       out.push(m);
+      continue;
+    }
+
+    if (m.kind === 'assistant_text') {
+      // 前看：紧跟的 tool_call 序列归入本 step 的 sub-cluster；
+      // 若不跟 tool 则当成 final answer 独立渲染。
+      const tools: ToolCallMsg[] = [];
+      let j = i + 1;
+      while (j < messages.length && messages[j].kind === 'tool_call') {
+        tools.push(messages[j] as ToolCallMsg);
+        j++;
+      }
+      if (tools.length > 0) {
+        const title =
+          firstSentence(m.text) ??
+          firstSentence(m.thinking) ??
+          summarizeTools(tools);
+        pendingCluster.push({ id: m.id, title, tools });
+        i = j - 1; // 跳过 consumed tool_calls (for loop ++ 再 +1 到 j)
+      } else {
+        flushCluster();
+        out.push(m);
+      }
+      continue;
+    }
+
+    if (m.kind === 'tool_call') {
+      // 没前置 assistant_text 的 tool (罕见，首轮 thinking 直接出工具)：
+      // 单独成一个 sub-cluster，标题用 tool 汇总。
+      pendingCluster.push({ id: m.id, title: summarizeTools([m]), tools: [m] });
     }
   }
-  flushBuffer();
+  flushCluster();
   return out;
 }
 
@@ -138,9 +214,12 @@ export function ConversationStreamV2(): JSX.Element {
         case 'system_notice':
           txt = m.text;
           break;
-        case 'tool_group':
-          txt = m.tools
-            .map((t) => `${t.toolName} ${JSON.stringify(t.input ?? {})} ${t.result ?? ''}`)
+        case 'tool_cluster':
+          txt = m.subClusters
+            .flatMap((sc) => [
+              sc.title,
+              ...sc.tools.map((t) => `${t.toolName} ${JSON.stringify(t.input ?? {})} ${t.result ?? ''}`),
+            ])
             .join(' ');
           break;
       }
@@ -274,12 +353,14 @@ export function ConversationStreamV2(): JSX.Element {
             case 'system_notice':
               inner = <SystemNotice {...m} />;
               break;
-            case 'tool_group':
+            case 'tool_cluster':
               inner = (
-                <ToolGroup
-                  group={m}
+                <ToolCluster
+                  cluster={m}
                   expanded={expanded.has(m.id)}
                   onToggle={() => toggleGroup(m.id)}
+                  expandedSubs={expanded}
+                  toggleSub={toggleGroup}
                 />
               );
               break;
@@ -366,36 +447,83 @@ export function ConversationStreamV2(): JSX.Element {
   );
 }
 
-interface ToolGroupProps {
-  group: ToolGroupMessage;
+interface ToolClusterProps {
+  cluster: ToolClusterMessage;
   expanded: boolean;
   onToggle: () => void;
+  expandedSubs: Set<string>;
+  toggleSub: (id: string) => void;
 }
 
-function ToolGroup({ group, expanded, onToggle }: ToolGroupProps): JSX.Element {
-  const n = group.tools.length;
-  const allDone = group.tools.every((t) => t.status === 'done');
-  const label = n === 1 ? 'Ran 1 command' : `Ran ${n} commands`;
-  // 运行中的工具名预览
-  const running = group.tools.find((t) => t.status === 'running');
+/**
+ * 两层折叠 cluster：
+ *   外层 "Ran 6 commands · 12s ⌄" → 展开后看到 6 个 sub-cluster
+ *   每个 sub-cluster "▸ List workspaces and docs" → 展开后看到具体 ToolCallCard
+ * 状态全用 expanded Set<id> 管：外层 id 是 cluster.id，内层 id 是 sub.id。
+ */
+function ToolCluster({
+  cluster,
+  expanded,
+  onToggle,
+  expandedSubs,
+  toggleSub,
+}: ToolClusterProps): JSX.Element {
+  const allTools = cluster.subClusters.flatMap((sc) => sc.tools);
+  const allDone = allTools.every((t) => t.status === 'done');
+  const running = allTools.find((t) => t.status === 'running');
+  const label =
+    cluster.totalTools === 1 ? 'Ran 1 command' : `Ran ${cluster.totalTools} commands`;
   const runningHint = running ? ` · running ${running.toolName}…` : '';
 
   return (
-    <div>
+    <div className="text-xs">
       <button
         type="button"
         onClick={onToggle}
-        className="text-xs text-zinc-500 hover:text-zinc-300 flex items-center gap-1 font-mono"
+        className="dark:text-zinc-400 dark:hover:text-zinc-200 text-zinc-600 hover:text-zinc-900 flex items-center gap-1.5"
       >
-        <span aria-hidden className="text-zinc-600">{expanded ? '▾' : '▸'}</span>
+        <span aria-hidden className="dark:text-zinc-600 text-zinc-400">
+          {expanded ? '⌄' : '›'}
+        </span>
         <span>{label}</span>
         {!allDone && <span className="text-amber-500">{runningHint}</span>}
       </button>
       {expanded && (
-        <div className="mt-1.5 ml-4 space-y-2 border-l border-zinc-900 pl-3">
-          {group.tools.map((t) => (
-            <ToolCallCard key={t.id} {...t} />
-          ))}
+        <div className="mt-1.5 ml-3 space-y-1.5 border-l dark:border-zinc-800 border-zinc-200 pl-3">
+          {cluster.subClusters.map((sc) => {
+            const subOpen = expandedSubs.has(sc.id);
+            const subAllDone = sc.tools.every((t) => t.status === 'done');
+            const subRunning = sc.tools.find((t) => t.status === 'running');
+            return (
+              <div key={sc.id}>
+                <button
+                  type="button"
+                  onClick={() => toggleSub(sc.id)}
+                  className="w-full text-left flex items-start gap-1.5 dark:text-zinc-300 dark:hover:text-zinc-100 text-zinc-700 hover:text-zinc-900"
+                >
+                  <span
+                    aria-hidden
+                    className="dark:text-zinc-600 text-zinc-400 flex-shrink-0 mt-px"
+                  >
+                    {subOpen ? '⌄' : '›'}
+                  </span>
+                  <span className="truncate">{sc.title}</span>
+                  {!subAllDone && subRunning && (
+                    <span className="text-amber-500 text-[10px] flex-shrink-0">
+                      · {subRunning.toolName}…
+                    </span>
+                  )}
+                </button>
+                {subOpen && (
+                  <div className="mt-1 ml-3 space-y-2">
+                    {sc.tools.map((t) => (
+                      <ToolCallCard key={t.id} {...t} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

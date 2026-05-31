@@ -192,15 +192,16 @@ export function UserBubble({
   content: string;
   sentAt?: number;
 }): JSX.Element {
+  // Claude Desktop 风格 ——「对话即文档」单列布局：user pill **左对齐**与 assistant
+  // 同列，浅蓝窄底色、收宽到 max-w-[80%]、width 跟内容走 (inline-block) 不撑满。
+  // 这样比之前 80% 右对齐蓝 bubble 视觉更克制，整体读起来像一段文档流。
   return (
-    <div className="group flex flex-col items-end">
+    <div className="group flex flex-col items-start">
       <div
         className={[
-          'max-w-[80%] rounded-lg border px-3 py-2 text-sm whitespace-pre-wrap',
-          // Dark: 深蓝 40% tint + 同色边 — 跟暗黑卡片清晰区隔
-          'dark:bg-blue-900/40 dark:border-blue-800/40',
-          // Light: 浅蓝实色 + 中色边 — 白底卡片上一眼能看出"这是用户在说话"
-          'bg-blue-100 border-blue-300 text-blue-950',
+          'inline-block max-w-[80%] rounded-2xl px-3 py-1.5 text-[13px] whitespace-pre-wrap border',
+          'dark:bg-blue-900/25 dark:border-blue-800/40 dark:text-blue-100',
+          'bg-blue-50 border-blue-200 text-blue-900',
         ].join(' ')}
       >
         {content}
@@ -222,39 +223,43 @@ export function AssistantBubble({
   sentAt?: number;
 }): JSX.Element {
   const [showThinking, setShowThinking] = useState(false);
+  // 「对话即文档」—— assistant 不包 bubble，直接 markdown 进入文档流。
+  // thinking 改成一行折叠摘要 (▸ Thinking (~N tokens))，跟外层 ToolCluster header 视觉一致。
   return (
-    <div className="group flex flex-col gap-1.5">
+    <div className="group">
       {thinking !== undefined && (
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowThinking((v) => !v)}
-            className={[
-              'text-[11px] font-mono',
-              // Dark: pale purple (默认), light: 同色相的深紫 (亮模式 styles.css text-purple-400
-              // 已被反转,这里再加 hover 显式覆盖避免依赖反转表)
-              'text-purple-400 hover:text-purple-300',
-              'dark:text-purple-400 dark:hover:text-purple-300',
-            ].join(' ')}
-          >
-            {showThinking ? '▼' : '▶'} Thinking (~{approxTokens(thinking)} tokens)
-          </button>
-          {showThinking && (
-            <div
-              className={[
-                'mt-1 ml-3 pl-2 border-l-2 text-xs whitespace-pre-wrap',
-                // Dark: 暗紫边 + 半透明紫字; Light: 中紫边 + 深紫字 — 文字明显,边线明显
-                'dark:border-purple-900/60 dark:text-purple-300/80',
-                'border-purple-300 text-purple-800',
-              ].join(' ')}
-            >
-              {thinking}
-            </div>
-          )}
+        <button
+          type="button"
+          onClick={() => setShowThinking((v) => !v)}
+          className={[
+            'text-[11px] font-mono mb-1.5 flex items-center gap-1.5',
+            'dark:text-purple-400 dark:hover:text-purple-300',
+            'text-purple-700 hover:text-purple-900',
+          ].join(' ')}
+        >
+          <span aria-hidden className="dark:text-zinc-600 text-zinc-400">
+            {showThinking ? '⌄' : '›'}
+          </span>
+          <span>Thinking (~{approxTokens(thinking)} tokens)</span>
+        </button>
+      )}
+      {showThinking && thinking !== undefined && (
+        <div
+          className={[
+            'mb-2 ml-3 pl-2 border-l text-xs whitespace-pre-wrap',
+            'dark:border-purple-900/60 dark:text-purple-300/80',
+            'border-purple-200 text-purple-800',
+          ].join(' ')}
+        >
+          {thinking}
         </div>
       )}
-      <div className="text-sm text-zinc-100">
-        {text.length > 0 ? <Markdown content={text} /> : <span className="text-zinc-600 italic">…</span>}
+      <div className="text-sm leading-relaxed dark:text-zinc-100 text-zinc-900">
+        {text.length > 0 ? (
+          <Markdown content={text} />
+        ) : (
+          <span className="dark:text-zinc-600 text-zinc-400 italic">…</span>
+        )}
       </div>
       {text.length > 0 && <MessageFooter text={text} sentAt={sentAt} />}
     </div>

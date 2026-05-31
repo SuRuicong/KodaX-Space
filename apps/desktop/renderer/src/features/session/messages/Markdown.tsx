@@ -48,8 +48,10 @@ export function Markdown({ content }: MarkdownProps): JSX.Element {
                 </code>
               );
             }
+            // Inline code —— Claude Desktop 风格 rose pill：浅色背景 + 中浓饱和文字。
+            // 双主题：dark = rose-300 字 + rose-950/40 衬底；light = rose-700 字 + rose-50 衬底。
             return (
-              <code className="bg-zinc-800 text-amber-300 px-1 py-0.5 rounded text-[12px] font-mono">
+              <code className="dark:bg-rose-950/40 dark:text-rose-300 bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded text-[12px] font-mono">
                 {children}
               </code>
             );
