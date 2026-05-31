@@ -11,6 +11,7 @@ import {
   invokeChannels,
   fail,
   ok,
+  truncateZodError,
   type IpcResult,
   type InvokeChannelName,
   type ChannelInput,
@@ -33,9 +34,11 @@ export function registerChannel<C extends InvokeChannelName>(name: C, handler: H
   ipcMain.handle(name, async (_event, rawInput): Promise<IpcResult<ChannelOutput<C>>> => {
     const parsedInput = def.input.safeParse(rawInput);
     if (!parsedInput.success) {
-      return fail('SCHEMA_INVALID', `[${name}] input failed schema validation`, {
-        issues: parsedInput.error.flatten(),
-      });
+      // OC-09 安全：用 truncateZodError 替代 .flatten() —— flatten() 会把所有
+      // issue 全塞进去，对大 payload (>1MB prompt) 可能产出 KB 级 details，进而
+      // 流到 main 日志 / renderer console。truncateZodError 剥掉原值字段、限到 1KB。
+      return fail('SCHEMA_INVALID', `[${name}] input failed schema validation`,
+        truncateZodError(parsedInput.error));
     }
 
     let result: ChannelOutput<C>;
@@ -49,9 +52,9 @@ export function registerChannel<C extends InvokeChannelName>(name: C, handler: H
 
     const parsedOutput = def.output.safeParse(result);
     if (!parsedOutput.success) {
-      return fail('OUTPUT_INVALID', `[${name}] handler returned schema-invalid output`, {
-        issues: parsedOutput.error.flatten(),
-      });
+      // OC-09 同入参：output 也走 truncate，handler 可能返回包含敏感字段的对象
+      return fail('OUTPUT_INVALID', `[${name}] handler returned schema-invalid output`,
+        truncateZodError(parsedOutput.error));
     }
 
     return ok(parsedOutput.data as ChannelOutput<C>);

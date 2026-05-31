@@ -17,6 +17,12 @@ export {
   type IpcResult,
 } from './envelope.js';
 
+export {
+  truncateZodError,
+  type SafeZodIssue,
+  type SafeZodErrorDetails,
+} from './utils.js';
+
 export { invokeChannels, pushChannels } from './channels/index.js';
 export type { InvokeChannels, PushChannels } from './channels/index.js';
 
