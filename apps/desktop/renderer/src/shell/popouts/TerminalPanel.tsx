@@ -151,10 +151,31 @@ export function TerminalPanel(): JSX.Element {
                 <button
                   type="button"
                   onClick={() => void copyCommand(c.command, c.toolId)}
-                  className="text-[10px] text-zinc-500 hover:text-zinc-200 px-1.5 py-0.5 rounded hover:bg-zinc-800"
+                  className="text-[10px] text-zinc-400 hover:text-zinc-100 px-1.5 py-0.5 rounded hover:bg-zinc-800 flex items-center gap-1"
                   title="Copy command"
                 >
-                  {copied === c.toolId ? '✓ copied' : '⎘ copy'}
+                  {copied === c.toolId ? (
+                    '✓ copied'
+                  ) : (
+                    <>
+                      {/* Lucide-style copy icon —— 之前 Unicode ⎘ 太弱看不见 */}
+                      <svg
+                        aria-hidden
+                        width="11"
+                        height="11"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <rect width="14" height="14" x="8" y="8" rx="2" />
+                        <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                      </svg>
+                      copy
+                    </>
+                  )}
                 </button>
               </div>
               {resultPreview !== null && (

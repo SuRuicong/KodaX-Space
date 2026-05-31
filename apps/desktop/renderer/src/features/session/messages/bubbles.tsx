@@ -116,7 +116,7 @@ function MessageFooter({ text, sentAt }: { text: string; sentAt?: number }): JSX
       <button
         type="button"
         onClick={() => void copyToClipboard()}
-        className="group/copy flex items-center gap-1 text-zinc-500 hover:text-zinc-200 transition-colors"
+        className="group/copy flex items-center gap-1 text-zinc-400 hover:text-zinc-100 transition-colors"
         title="Copy message"
         aria-label="Copy message"
       >
@@ -124,7 +124,23 @@ function MessageFooter({ text, sentAt }: { text: string; sentAt?: number }): JSX
           <span className="text-emerald-400">✓ copied</span>
         ) : (
           <>
-            <span aria-hidden>⎘</span>
+            {/* Lucide-style copy icon — 之前用的 Unicode ⎘ (U+2398) 在多数字体里
+                几乎看不见 (用户反馈"不显眼")，换成内联 SVG 在所有字体下都清晰。
+                stroke=currentColor 让浅/深主题都跟随 text color。 */}
+            <svg
+              aria-hidden
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect width="14" height="14" x="8" y="8" rx="2" />
+              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+            </svg>
             <span className="opacity-0 max-w-0 overflow-hidden group-hover/copy:opacity-100 group-hover/copy:max-w-[40px] transition-all duration-150">
               copy
             </span>
@@ -247,16 +263,24 @@ export function AssistantBubble({
 
 // ---- Tool Call Card ----
 
-// Tool 类型 → 色码。Dark 模式用 *-950/30 (深色衬底, 暗卡片上低饱和), light 模式
-// 用 *-50/border-*-200 (浅色衬底, 白卡片上仍有明显色相区分)。让 read / write / bash /
-// grep 在两个主题下都能"一眼分清"工具种类 (审查 P1.1).
-const TOOL_KIND_COLOR: Record<string, string> = {
-  read:  'dark:border-blue-800/40 dark:bg-blue-950/30 border-blue-200 bg-blue-50',
-  write: 'dark:border-amber-800/40 dark:bg-amber-950/30 border-amber-200 bg-amber-50',
-  edit:  'dark:border-amber-800/40 dark:bg-amber-950/30 border-amber-200 bg-amber-50',
-  bash:  'dark:border-red-800/40 dark:bg-red-950/30 border-red-200 bg-red-50',
-  grep:  'dark:border-emerald-800/40 dark:bg-emerald-950/30 border-emerald-200 bg-emerald-50',
-  glob:  'dark:border-emerald-800/40 dark:bg-emerald-950/30 border-emerald-200 bg-emerald-50',
+// Card body 颜色按**状态**而非工具种类决定 —— 用户反馈：bash done 还显示浅红色
+// 与 DONE 浅绿标签矛盾。红色全局语义=错误，不应当作 bash 的常态色。
+// 状态主导后 done=emerald / running=amber，跟 DONE 徽章语义一致。
+const TOOL_STATUS_COLOR: Record<'running' | 'done', string> = {
+  running: 'dark:border-amber-800/30 dark:bg-amber-950/20 border-amber-200 bg-amber-50/70',
+  done:    'dark:border-emerald-800/30 dark:bg-emerald-950/20 border-emerald-200 bg-emerald-50/70',
+};
+
+// 工具种类色相留在 tool name 文字上 —— 用户仍能一眼分清工具类型，但不再霸占 body。
+// 注意：bash 不用 red (语义=错误)，改 rose 表达"powerful + 注意"。
+const TOOL_NAME_COLOR: Record<string, string> = {
+  read:  'dark:text-blue-300 text-blue-700',
+  write: 'dark:text-amber-300 text-amber-700',
+  edit:  'dark:text-amber-300 text-amber-700',
+  multi_edit:  'dark:text-amber-300 text-amber-700',
+  bash:  'dark:text-rose-300 text-rose-700',
+  grep:  'dark:text-emerald-300 text-emerald-700',
+  glob:  'dark:text-emerald-300 text-emerald-700',
 };
 
 export function ToolCallCard({
@@ -269,7 +293,8 @@ export function ToolCallCard({
   const [expanded, setExpanded] = useState(false);
   const [showFullResult, setShowFullResult] = useState(false);
   const [showFullInput, setShowFullInput] = useState(false);
-  const colorClass = TOOL_KIND_COLOR[toolName] ?? 'border-zinc-700 bg-zinc-900/50';
+  const colorClass = TOOL_STATUS_COLOR[status] ?? 'border-zinc-700 bg-zinc-900/50';
+  const toolNameColor = TOOL_NAME_COLOR[toolName] ?? 'dark:text-zinc-200 text-zinc-800';
   const argSummary = summarizeInput(input);
 
   // P4c: result 走行级折叠（diff middle-collapse / 极端守门）
@@ -296,7 +321,7 @@ export function ToolCallCard({
         className="w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-zinc-900/40 rounded"
       >
         <span className="text-zinc-500">{expanded ? '▼' : '▶'}</span>
-        <span className="font-semibold text-zinc-200">{toolName}</span>
+        <span className={`font-semibold ${toolNameColor}`}>{toolName}</span>
         <span className="text-zinc-400 truncate flex-1">{argSummary}</span>
         <StatusBadge status={status} />
       </button>
