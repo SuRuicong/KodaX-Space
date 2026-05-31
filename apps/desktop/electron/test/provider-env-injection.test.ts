@@ -67,11 +67,12 @@ test('keychain set then delete then check: key gone from memory store', async ()
   assert.equal(env.ANTHROPIC_API_KEY, undefined);
 });
 
-test('shared apiKeyEnv (kimi + kimi-code both use KIMI_API_KEY)', async () => {
+test('related providers with distinct envs (kimi → KIMI_API_KEY, kimi-code → KIMI_CODE_API_KEY)', async () => {
+  // 2026-05-31：KodaX 把 coding-plan provider env 名从共享改成独立后缀；
+  // 现在 kimi-code 走 KIMI_CODE_API_KEY，跟 kimi 完全隔离。keychain 仍按 providerId
+  // 存账号，两条独立 account 同时存在。
   await setKey('kimi', 'sk-kimi-1');
   await setKey('kimi-code', 'sk-kimi-code-2');
-  // 两个 account 都写 KIMI_API_KEY；后写的胜出，默认 provider 再覆盖一次。
-  // 这里只验证 keychain 存了两条独立的 account
   const { getKey, listAccounts } = await import('../providers/keychain.js');
   const accounts = await listAccounts();
   assert.ok(accounts.includes('kimi'));
@@ -80,7 +81,7 @@ test('shared apiKeyEnv (kimi + kimi-code both use KIMI_API_KEY)', async () => {
   assert.equal(await getKey('kimi-code'), 'sk-kimi-code-2');
 });
 
-test('removing one of shared-env providers: the other key remains in keychain', async () => {
+test('removing kimi-code does not touch kimi key in keychain', async () => {
   await setKey('kimi', 'sk-kimi-1');
   await setKey('kimi-code', 'sk-kimi-code-2');
   await deleteKey('kimi-code');

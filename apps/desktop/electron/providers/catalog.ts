@@ -1,6 +1,7 @@
 // Built-in provider catalog — FEATURE_004
 //
-// 来源：snapshot from `@kodax-ai/llm` `KODAX_PROVIDER_SNAPSHOTS`（截至 KodaX v0.7.40）。
+// 来源：snapshot from KodaX `packages/llm/src/providers/provider-capabilities.json`
+// (sync 至 2026-05-25 KodaX 本地 npm-link 版本).
 // 等 `@kodax-ai/llm` 发到 npm 后这里改成 `import { KODAX_PROVIDER_SNAPSHOTS }`，
 // 保留 catalog.ts 作为薄适配层（map 到 Space 的 ProviderInfo shape）。
 //
@@ -8,6 +9,16 @@
 //   - KodaX 升级时手动 sync 本文件（增删 provider / 改 default model）
 //   - apiKeyEnv 必须与 KodaX 端完全一致——main 启动时按这个 env var 名注入 keychain key，
 //     LLM SDK 通过同一个 env 读 key
+//
+// 2026-05-31 sync：KodaX 把 5 个 coding-plan provider 的 env 名从"和普通版共享"改成独立后缀，
+// 让用户能给"普通 API"和"coding plan"配不同的 key (这俩是不同的计费 endpoint)：
+//   kimi-code:      KIMI_API_KEY     → KIMI_CODE_API_KEY
+//   zhipu-coding:   ZHIPU_API_KEY    → ZHIPU_CODING_API_KEY
+//   minimax-coding: MINIMAX_API_KEY  → MINIMAX_CODING_API_KEY
+//   mimo-coding:    MIMO_API_KEY     → MIMO_CODING_API_KEY
+//   ark-coding:     ARK_API_KEY      → ARK_CODING_API_KEY
+// keychain 数据无需迁移 (account=providerId 不变)；shell-export 的 legacy env 名用户
+// 需手动加一条新名。
 //
 // 字段说明：
 //   - id          稳定标识符（不要变；keychain account 名按此存）
@@ -71,7 +82,7 @@ export const BUILTIN_PROVIDERS: readonly BuiltinProvider[] = [
   {
     id: 'kimi-code',
     displayName: 'Kimi for Coding',
-    apiKeyEnv: 'KIMI_API_KEY',
+    apiKeyEnv: 'KIMI_CODE_API_KEY',
     protocol: 'anthropic',
     // Kimi-for-Coding 的 endpoint 是 Anthropic-compat 但不暴露 /v1/models GET；
     // 测连接走 POST minimal completion——见 test-connection.ts。这里仍标 testEndpoint
@@ -99,7 +110,7 @@ export const BUILTIN_PROVIDERS: readonly BuiltinProvider[] = [
   {
     id: 'zhipu-coding',
     displayName: 'Zhipu Coding Plan',
-    apiKeyEnv: 'ZHIPU_API_KEY',
+    apiKeyEnv: 'ZHIPU_CODING_API_KEY',
     protocol: 'anthropic',
     testEndpoint: 'https://open.bigmodel.cn/api/anthropic/v1/messages',
     defaultModel: 'glm-5',
@@ -108,7 +119,7 @@ export const BUILTIN_PROVIDERS: readonly BuiltinProvider[] = [
   {
     id: 'minimax-coding',
     displayName: 'MiniMax Coding',
-    apiKeyEnv: 'MINIMAX_API_KEY',
+    apiKeyEnv: 'MINIMAX_CODING_API_KEY',
     protocol: 'anthropic',
     testEndpoint: 'https://api.minimax.chat/v1/messages',
     defaultModel: 'MiniMax-M2.7',
@@ -117,7 +128,7 @@ export const BUILTIN_PROVIDERS: readonly BuiltinProvider[] = [
   {
     id: 'mimo-coding',
     displayName: 'MiMo (Xiaomi)',
-    apiKeyEnv: 'MIMO_API_KEY',
+    apiKeyEnv: 'MIMO_CODING_API_KEY',
     protocol: 'anthropic',
     testEndpoint: 'https://api.xiaomi.com/mimo/anthropic/v1/messages',
     defaultModel: 'mimo-v2.5-pro',
@@ -126,7 +137,7 @@ export const BUILTIN_PROVIDERS: readonly BuiltinProvider[] = [
   {
     id: 'ark-coding',
     displayName: 'Volcengine Ark Coding',
-    apiKeyEnv: 'ARK_API_KEY',
+    apiKeyEnv: 'ARK_CODING_API_KEY',
     protocol: 'anthropic',
     testEndpoint: 'https://ark.cn-beijing.volces.com/api/v3/messages',
     defaultModel: 'glm-5.1',

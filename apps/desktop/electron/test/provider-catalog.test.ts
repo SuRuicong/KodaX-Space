@@ -43,14 +43,19 @@ test('catalog includes expected anchor providers (anthropic, openai, zhipu-codin
 
 test('apiKeyEnv values match KodaX upstream catalog (env var naming convention)', () => {
   // 关键 provider 的 apiKeyEnv 必须与 KodaX 端一致——SDK 通过相同 env 读 key
+  // 2026-05-31 sync：5 个 coding-plan provider 的 env 名加了独立后缀 (KodaX 分离
+  // 普通版 / coding plan key 入口)，详见 catalog.ts header 注释。
   const expected: Record<string, string> = {
     anthropic: 'ANTHROPIC_API_KEY',
     openai: 'OPENAI_API_KEY',
-    'zhipu-coding': 'ZHIPU_API_KEY',
     'zhipu': 'ZHIPU_API_KEY',
+    'zhipu-coding': 'ZHIPU_CODING_API_KEY',
     deepseek: 'DEEPSEEK_API_KEY',
     kimi: 'KIMI_API_KEY',
-    'kimi-code': 'KIMI_API_KEY', // 共享 KIMI_API_KEY
+    'kimi-code': 'KIMI_CODE_API_KEY',
+    'minimax-coding': 'MINIMAX_CODING_API_KEY',
+    'mimo-coding': 'MIMO_CODING_API_KEY',
+    'ark-coding': 'ARK_CODING_API_KEY',
   };
   for (const [id, env] of Object.entries(expected)) {
     const p = getBuiltin(id);

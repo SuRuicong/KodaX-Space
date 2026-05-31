@@ -78,13 +78,13 @@ function validateApiKey(key: string): string | null {
  *   - main 启动后调一次（载入所有已配置的 key）
  *   - setKey / removeKey 后实时增量更新 env
  *   - 注入策略：按 provider 的 apiKeyEnv（如 ANTHROPIC_API_KEY）。
- *     多个 provider 共享同一 apiKeyEnv（kimi + kimi-code 都用 KIMI_API_KEY）时，
+ *     多个 provider 共享同一 apiKeyEnv（e.g. codex-cli + openai 都用 OPENAI_API_KEY）时，
  *     **默认 provider 的 key 胜出**——其他共享同 env 的 provider 用同一个值
  *
  * review H4-code（2026-05-17）：原本只 set，不 unset。删 key 后 env 残留——
  * UI 显示 NOT SET 但 SDK 仍能用旧 key 直到进程重启。修复：构造"本次该出现的
  * apiKeyEnv 集合"，把所有由 Space 管的 apiKeyEnv 先清空，再按集合重新填回。
- * 这样多 provider 共享 env 时也能正确处理：删了 kimi-code 但 kimi 还在 → KIMI_API_KEY 保留 kimi 的 key
+ * 这样多 provider 共享 env 时也能正确处理：删了 codex-cli 但 openai 还在 → OPENAI_API_KEY 保留 openai 的 key
  *
  * review M4-sec：未知 account（旧版本残留、provider 被改名等）现在会 log warn
  * 而不是静默 drop——便于排查"我配了 key 但 SDK 看不见"
