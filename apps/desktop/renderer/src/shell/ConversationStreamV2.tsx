@@ -259,7 +259,27 @@ export function ConversationStreamV2(): JSX.Element {
   const currentMatchId = matchIds[Math.min(currentMatchIdx, matchIds.length - 1)];
   const matchSet = useMemo(() => new Set(matchIds), [matchIds]);
 
+  // OC-18 markAuto guard：区分**程序滚动**和**用户滚动**。
+  //
+  // 之前的 bug 时序：
+  //   1. ResizeObserver fires：内容增长 → 程序设 scrollTop = scrollHeight (跳到底)
+  //   2. 几乎同时 ResizeObserver fires 又一次：又长了几像素 → 再设 scrollTop
+  //   3. (1) 的 scroll 事件异步派发，此时已经到 (2) 状态，distanceFromBottom > 32
+  //   4. handleScroll 误以为用户上滚了 → wasAtBottomRef.current = false
+  //   5. 后续 observer 看到 false → 停止 follow → 屏幕卡在中间
+  //
+  // 守卫：程序滚动前打 timestamp，handleScroll 在 PROGRAMMATIC_SCROLL_GUARD_MS 内跳过更新。
+  // 用户真的上滚时无 timestamp / 已过期 → 正常处理。
+  const lastProgrammaticScrollRef = useRef<number>(0);
+  const PROGRAMMATIC_SCROLL_GUARD_MS = 150;
+
+  function markProgrammaticScroll(): void {
+    lastProgrammaticScrollRef.current = Date.now();
+  }
+
   function handleScroll(e: React.UIEvent<HTMLDivElement>): void {
+    // 守卫期内的 scroll 事件来自 ResizeObserver 自己的 scrollTop 赋值，不视为用户上滚
+    if (Date.now() - lastProgrammaticScrollRef.current < PROGRAMMATIC_SCROLL_GUARD_MS) return;
     const el = e.currentTarget;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     const atBottom = distanceFromBottom < 32;
@@ -281,6 +301,7 @@ export function ConversationStreamV2(): JSX.Element {
     if (!scroller || !content) return;
     const ro = new ResizeObserver(() => {
       if (wasAtBottomRef.current) {
+        markProgrammaticScroll();
         scroller.scrollTop = scroller.scrollHeight;
       }
     });
@@ -290,6 +311,7 @@ export function ConversationStreamV2(): JSX.Element {
 
   useEffect(() => {
     if (scrollRef.current) {
+      markProgrammaticScroll();
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       wasAtBottomRef.current = true;
       setShowJumpToBottom(false);
@@ -299,6 +321,7 @@ export function ConversationStreamV2(): JSX.Element {
 
   function jumpToBottom(): void {
     if (!scrollRef.current) return;
+    markProgrammaticScroll();
     scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }
 
