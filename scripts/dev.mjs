@@ -85,8 +85,9 @@ process.on('SIGTERM', () => shutdown(0));
 // 1. Vite dev server
 spawnProc('vite', 'npm', ['run', 'dev', '-w', '@kodax-space/desktop']);
 
-// 2. esbuild watch
-spawnProc('esbuild', 'node', ['scripts/build-main.mjs', '--watch']);
+// 2. esbuild watch —— 显式传 NODE_ENV=development，让 build-main 出带 sourcemap 的 dev 产物。
+//    build-main 默认 production，不靠外层 shell；dev 调试体验靠这里显式开启。
+spawnProc('esbuild', 'node', ['scripts/build-main.mjs', '--watch'], { NODE_ENV: 'development' });
 
 // 3. Electron when Vite AND main bundle are both ready.
 // 之前用 setTimeout(1500) 等 esbuild 首轮产出——慢机器/CI 上不稳；改成

@@ -29,7 +29,10 @@ fs.writeFileSync(
 );
 
 const watch = process.argv.includes('--watch');
-const isDev = process.env.NODE_ENV !== 'production';
+// 默认 production：生产构建（本地 build:* / CI）即使不设 NODE_ENV 也出压缩产物，
+// 不再依赖外层 shell 的全局 NODE_ENV（那是不可靠的隐式依赖）。
+// dev 模式由 scripts/dev.mjs 的 esbuild watch spawn 显式传 NODE_ENV=development 触发。
+const isDev = process.env.NODE_ENV === 'development';
 
 /** @type {esbuild.BuildOptions} */
 const sharedOptions = {
