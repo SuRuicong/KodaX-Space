@@ -14,13 +14,80 @@
 // CSP 兼容：rehype-highlight 通过 <span class="hljs-..."> 注入 class，不需要 inline style。
 // 配套的 highlight.js CSS 主题在 styles.css 全局引入。
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 
 interface MarkdownProps {
   readonly content: string;
+}
+
+// OC-25 代码块复制按钮：hover 时浮出，点一下复制 pre 文本内容、2 秒后回弹。
+// per-message copy 已经在 MessageFooter；这里给每个 ``` 块单独一个按钮，
+// 长回复里有多个代码片段时不用整段复制再剪。
+function CopyCodeButton({ getText }: { getText: () => string }): JSX.Element {
+  const [copied, setCopied] = useState(false);
+  async function onCopy(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(getText());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard 不可用 (隐私模式等) — 静默；mainly desktop Electron 不会进这里
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => void onCopy()}
+      // hover 浮现；focus-within 让键盘用户也能 tab 到
+      className={[
+        'absolute top-2 right-2 px-1.5 py-0.5 text-[10px] rounded flex items-center gap-1',
+        'opacity-0 group-hover/codeblock:opacity-100 focus:opacity-100 transition-opacity',
+        'dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-300',
+        'bg-zinc-200 hover:bg-zinc-300 text-zinc-700',
+      ].join(' ')}
+      title={copied ? 'Copied' : 'Copy code'}
+      aria-label={copied ? 'Code copied to clipboard' : 'Copy code to clipboard'}
+    >
+      {copied ? (
+        <span className="text-emerald-500">✓ copied</span>
+      ) : (
+        <>
+          <svg
+            aria-hidden
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect width="14" height="14" x="8" y="8" rx="2" />
+            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+          </svg>
+          copy
+        </>
+      )}
+    </button>
+  );
+}
+
+// 从 children 里抽出代码文本 —— ReactMarkdown 给 pre 的 children 是 React element 树
+// (一个 <code> 包着字符串)。textContent 会丢 highlight.js 加的换行 fidelity，
+// 用 React.Children 递归收 string node 拼接更稳。
+function extractTextFromNode(node: ReactNode): string {
+  if (node === null || node === undefined || typeof node === 'boolean') return '';
+  if (typeof node === 'string') return node;
+  if (typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(extractTextFromNode).join('');
+  if (typeof node === 'object' && 'props' in node) {
+    return extractTextFromNode((node as { props: { children?: ReactNode } }).props.children);
+  }
+  return '';
 }
 
 export function Markdown({ content }: MarkdownProps): JSX.Element {
@@ -34,8 +101,10 @@ export function Markdown({ content }: MarkdownProps): JSX.Element {
         rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
         components={{
           // ---- 代码 ----
+          // group/codeblock 让 CopyCodeButton 的 hover 作用域限定到本 pre 而非整个消息
           pre: ({ children }) => (
-            <pre className="relative bg-zinc-950 border border-zinc-800 rounded-md p-3 my-2.5 overflow-x-auto text-xs leading-relaxed">
+            <pre className="group/codeblock relative bg-zinc-950 border border-zinc-800 rounded-md p-3 my-2.5 overflow-x-auto text-xs leading-relaxed">
+              <CopyCodeButton getText={() => extractTextFromNode(children)} />
               {children}
             </pre>
           ),
