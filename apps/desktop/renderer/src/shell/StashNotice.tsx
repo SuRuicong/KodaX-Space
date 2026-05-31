@@ -101,6 +101,27 @@ export function StashNotice(): JSX.Element | null {
     };
   }, [lastToolResultMarker, currentProjectPath, fetchStatus]);
 
+  // 实时刷新两条额外触发：
+  //   1. 窗口 focus / visibility → 切回 Space 立即刷一次
+  //      (用户在外部编辑器/CLI 改了文件，回来时看到最新状态)
+  //   2. 30s 间隔兜底 → 一直停在 Space 不切窗口也能定期更新
+  //   main 端 5s TTL cache 防 hammer git binary，所以这两个 trigger 都是轻量的。
+  useEffect(() => {
+    if (!currentProjectPath) return;
+    const refresh = (): void => fetchStatus(currentProjectPath);
+    const onVisibility = (): void => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisibility);
+    const interval = setInterval(refresh, 30_000);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisibility);
+      clearInterval(interval);
+    };
+  }, [currentProjectPath, fetchStatus]);
+
   if (!status || !status.isGitRepo || !status.dirty) return null;
 
   // 组装显示文本: "● Uncommitted: 3 modified · 1 staged · 2 untracked on main"
