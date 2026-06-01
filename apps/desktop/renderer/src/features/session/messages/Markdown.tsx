@@ -34,6 +34,12 @@ interface MarkdownProps {
 //
 // 配合下方 export default React.memo(Markdown) 让 parent 重 render 但 content 未变时
 // 整个组件 short-circuit；两层一起把"内容稳定的 markdown 渲染"开销压到接近 0。
+//
+// **缓存键安全性**：cache key 只是 `content` 字符串。这要求 `components` 覆盖里所有
+// 样式 / 行为**仅依赖 content**，不能依赖 props 或外部 reactive 值。如果未来要给
+// Markdown 加 prop（`theme` / `tableStyle` / `linkPrefix` 等让 components 变量化），
+// **必须**把这些 prop 也纳入 cache key（如 `${theme}:${content}`），否则会返回旧主题的
+// JSX 元素。当前 components 内联在 MarkdownInner 里、零外部依赖，安全。
 const LRU_CAP = 500;
 const lruCache = new Map<string, JSX.Element>();
 

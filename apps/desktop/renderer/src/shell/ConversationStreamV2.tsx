@@ -270,16 +270,22 @@ export function ConversationStreamV2(): JSX.Element {
   //
   // 守卫：程序滚动前打 timestamp，handleScroll 在 PROGRAMMATIC_SCROLL_GUARD_MS 内跳过更新。
   // 用户真的上滚时无 timestamp / 已过期 → 正常处理。
+  //
+  // 时钟源：performance.now() 而非 Date.now() —— 后者随系统时钟可跳变 (NTP / DST)，
+  //   监测短时间间隔 (<1s) 必须用单调 monotonic clock.
+  // 时长：400ms 覆盖 jumpToBottom 的 `behavior:'smooth'` 动画 (~300ms) + 余量；
+  //   ResizeObserver 阶段一般 16-50ms 也包在内。
   const lastProgrammaticScrollRef = useRef<number>(0);
-  const PROGRAMMATIC_SCROLL_GUARD_MS = 150;
+  const PROGRAMMATIC_SCROLL_GUARD_MS = 400;
 
   function markProgrammaticScroll(): void {
-    lastProgrammaticScrollRef.current = Date.now();
+    lastProgrammaticScrollRef.current = performance.now();
   }
 
   function handleScroll(e: React.UIEvent<HTMLDivElement>): void {
-    // 守卫期内的 scroll 事件来自 ResizeObserver 自己的 scrollTop 赋值，不视为用户上滚
-    if (Date.now() - lastProgrammaticScrollRef.current < PROGRAMMATIC_SCROLL_GUARD_MS) return;
+    // 守卫期内的 scroll 事件来自 ResizeObserver / smooth scroll 自己的 scrollTop 赋值，
+    // 不视为用户上滚
+    if (performance.now() - lastProgrammaticScrollRef.current < PROGRAMMATIC_SCROLL_GUARD_MS) return;
     const el = e.currentTarget;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     const atBottom = distanceFromBottom < 32;

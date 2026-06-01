@@ -40,7 +40,13 @@ const PRIORITY: readonly string[] = [
 ];
 
 // 本次启动激活过的 provider id（首次启动且 env 有 key 时非空）。
-// renderer 可以通过 provider.list 顺带读，决定是否给用户一个"已自动激活 N 个"toast。
+//
+// **TODO(KX-I-01.2)**：renderer 端 toast wiring 暂未接入 —— 当前 getter 是
+// dead-on-the-wire：值已记录但未通过 IPC channel 透出。后续 follow-up commit 应当：
+//   1. 在 provider.list 输出加 `autoActivatedFromEnv?: string[]` (optional 兼容);
+//   2. 或新增 push channel 'provider.auto-activated' 在主进程主动推一次;
+//   3. renderer 用 toastStore 显示 "Auto-activated N providers from env: ..."
+// 现状下保留 in-memory 状态 + 控制台 info log，让真正接入时不需要改 main 侧 wiring。
 let autoActivatedThisBoot: readonly string[] = [];
 
 /**

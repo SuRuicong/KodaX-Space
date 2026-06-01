@@ -63,3 +63,56 @@ test('no truncation when all issues fit', () => {
   assert.equal(truncated.truncated, false);
   assert.equal(truncated.issues.length, truncated.totalIssues);
 });
+
+// CRITICAL fix: 防 message 嵌入用户值泄漏
+test('invalid_enum_value message is redacted (would otherwise embed value)', () => {
+  const schema = z.object({ role: z.enum(['admin', 'user', 'guest']) });
+  // 用户原值是个看似 API key 的字符串 —— 不能进 issue.message
+  const sensitive = 'sk-ant-secret-key-pretend-leaked-here';
+  const result = schema.safeParse({ role: sensitive });
+  assert.equal(result.success, false);
+  const truncated = truncateZodError(result.error!);
+  const msg = truncated.issues[0].message;
+  // 原 Zod message 会有 received '<sensitive>'；redact 后必须不见
+  assert.ok(!msg.includes(sensitive), `message must not contain raw value, got: ${msg}`);
+  assert.ok(msg.toLowerCase().includes('redacted'), `message should signal redaction, got: ${msg}`);
+});
+
+test('unrecognized_keys message is redacted (would otherwise embed key names)', () => {
+  const schema = z.object({ name: z.string() }).strict();
+  // 假设用户错配字段名，把 API key 当字段名往里塞 (极端案例但 schema 允许任何 string key)
+  const sensitive = 'sk-ant-leaked-fieldname';
+  const result = schema.safeParse({ name: 'ok', [sensitive]: 'foo' });
+  assert.equal(result.success, false);
+  const truncated = truncateZodError(result.error!);
+  const msg = truncated.issues[0].message;
+  assert.ok(!msg.includes(sensitive), `message must not contain raw key name, got: ${msg}`);
+  assert.ok(msg.toLowerCase().includes('redacted'), `message should signal redaction, got: ${msg}`);
+});
+
+test('invalid_type message is preserved (safe — only type names)', () => {
+  const schema = z.object({ count: z.number() });
+  const result = schema.safeParse({ count: 'not a number' });
+  assert.equal(result.success, false);
+  const truncated = truncateZodError(result.error!);
+  // invalid_type 的 message 只含类型名 ("Expected number, received string")，安全保留
+  assert.ok(truncated.issues[0].message.includes('Expected'));
+  assert.ok(truncated.issues[0].message.includes('number'));
+});
+
+// MEDIUM fix: 单 issue 自身超 maxLen 时 message 应被截短
+test('single oversize issue still fits maxLen via message truncation', () => {
+  const schema = z.string().refine((s) => s === 'never-matches', {
+    // 故意长 message
+    message: 'x'.repeat(2000),
+  });
+  const result = schema.safeParse('foo');
+  assert.equal(result.success, false);
+  const truncated = truncateZodError(result.error!, 256);
+  assert.equal(truncated.issues.length, 1);
+  // 整体 serialized 必须 <= maxLen
+  const serialized = JSON.stringify(truncated.issues);
+  assert.ok(serialized.length <= 256, `should fit in 256 chars, got ${serialized.length}`);
+  // message 被截断时应有省略号
+  assert.ok(truncated.issues[0].message.endsWith('…'), 'expected ellipsis on truncated message');
+});
