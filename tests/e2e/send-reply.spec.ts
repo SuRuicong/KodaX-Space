@@ -43,19 +43,24 @@ test('S3: send a prompt and see assistant reply via mock adapter', async () => {
     await textarea.waitFor({ state: 'visible', timeout: 10_000 });
     await expect(textarea).toBeEnabled({ timeout: 10_000 });
 
+    // scope 到对话流容器：避免匹配 breadcrumb / Recents 里同 session title
+    const stream = space.page.getByTestId('conversation-stream');
+
     // 发 prompt
     const prompt = 'hello from playwright e2e';
     await textarea.fill(prompt);
     await textarea.press('Enter');
 
     // user message 出现：对话流里 prompt 文本可见
-    await expect(space.page.getByText(prompt).first()).toBeVisible({ timeout: 10_000 });
+    await expect(stream.getByText(prompt).first()).toBeVisible({ timeout: 10_000 });
 
-    // assistant 回复出现：mock adapter 固定回 "我收到了你的 prompt: ..."
-    // 用 partial match 抓 reply chunk
+    // mock adapter 完整跑：emit text_delta → tool_start("read") → tool_result → iteration_end。
+    // composeMessages 把 text + tools 聚成 sub-cluster，外层 cluster header 显示 "Ran 1 command"。
+    // 用这条作"mock adapter 跑完"的稳定信号，比 text 内容更稳（text 在折叠的子 cluster 标题里，
+    // 不展开看不到）。
     await expect(
-      space.page.getByText(/我收到了你的 prompt/).first(),
-    ).toBeVisible({ timeout: 10_000 });
+      stream.getByText(/Ran 1 command/).first(),
+    ).toBeVisible({ timeout: 15_000 });
   } finally {
     await space.close();
     await fs.rm(projectDir, { recursive: true, force: true }).catch(() => {});

@@ -345,7 +345,7 @@ export function ConversationStreamV2(): JSX.Element {
   }
 
   return (
-    <div className="relative flex-1 overflow-hidden">
+    <div className="relative flex-1 overflow-hidden" data-testid="conversation-stream">
       <div
         ref={scrollRef}
         onScroll={handleScroll}
