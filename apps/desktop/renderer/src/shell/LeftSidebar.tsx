@@ -20,7 +20,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Mode } from './Shell.js';
 import { useAppStore } from '../store/appStore.js';
-import type { SessionMeta } from '@kodax-space/space-ipc-schema';
+import type { SessionMeta, RunningSessionInfoT } from '@kodax-space/space-ipc-schema';
 import { resolveSessionCreateInputs } from './createSession.js';
 import { SessionContextMenu } from './SessionContextMenu.js';
 import { RecentsFilterMenu } from './RecentsFilterMenu.js';
@@ -181,6 +181,10 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
         <DisabledMenuItem icon="💼" label="Customize" hint="v0.1.x" />
         <DisabledMenuItem icon="▾" label="More" hint="" />
       </div>
+
+      {/* F017 Running peers — 其他 KodaX 进程（CLI / 别的 Space 窗口）当前活动的 session。
+          peers.length === 0 时整段隐藏不占空间。 */}
+      <RunningPeersPanel />
 
       {/* Recents 标题 + 过滤按钮 (对齐 Claude Desktop 截图 3 的 ⚙) */}
       <RecentsHeader />
@@ -468,6 +472,81 @@ function RenameInput({
     />
   );
 }
+
+// F017 Running peers panel — 列其他 KodaX 进程当前活动的 session。
+//   - 数据源：SDK listRunningSessions() 通过 session.listRunning IPC
+//   - 轮询：10s 一次（cheap — 走 instance-state 文件读，不开 socket）
+//   - 点击有 sessionId 的 peer → setCurrentSession (Space tryResume 会从 disk 读 jsonl)
+//     注：CLI 还在跑时 Space 接管会和 CLI 双写 jsonl；KodaX storage 有 serializedWrite
+//     队列防腐败，但内容会乱序。v1 当"只读 / passive resume"语义；显式 takeover SDK 没出
+//   - peers 为空时 panel 不渲染（不占侧栏空间）
+function RunningPeersPanel(): JSX.Element | null {
+  const [peers, setPeers] = useState<readonly RunningSessionInfoT[]>(EMPTY_PEERS);
+  const setCurrentSession = useAppStore((s) => s.setCurrentSession);
+  const currentSessionId = useAppStore((s) => s.currentSessionId);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function refresh(): Promise<void> {
+      if (!window.kodaxSpace) return;
+      const r = await window.kodaxSpace.invoke('session.listRunning', undefined);
+      if (cancelled) return;
+      if (r.ok) setPeers(r.data.peers);
+    }
+    void refresh();
+    const interval = window.setInterval(refresh, 10_000);
+    // window focus 也触发一次刷新——切回 Space 立刻看到新 peer 状态
+    function onFocus(): void {
+      void refresh();
+    }
+    window.addEventListener('focus', onFocus);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
+
+  if (peers.length === 0) return null;
+
+  return (
+    <div className="border-b border-border-default px-2 py-1.5">
+      <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1 px-1 flex items-center gap-1.5">
+        <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+        <span>Running · {peers.length}</span>
+      </div>
+      {peers.map((p) => {
+        const cwdName = (p.cwd.split(/[\\/]/).filter(Boolean).pop() ?? p.cwd).slice(0, 32);
+        const ageSec = Math.max(0, Math.floor((Date.now() - p.startedAt) / 1000));
+        const ageLabel = ageSec < 60 ? `${ageSec}s` : ageSec < 3600 ? `${Math.floor(ageSec / 60)}m` : `${Math.floor(ageSec / 3600)}h`;
+        const isClickable = p.sessionId !== undefined && p.sessionId !== currentSessionId;
+        return (
+          <button
+            key={`${p.pid}-${p.sessionId ?? 'bootstrapping'}`}
+            type="button"
+            onClick={() => p.sessionId && setCurrentSession(p.sessionId)}
+            disabled={!isClickable}
+            className={[
+              'w-full text-left text-[11px] px-1.5 py-1 rounded flex items-center gap-1.5',
+              isClickable
+                ? 'hover:bg-zinc-800 text-zinc-300 cursor-pointer'
+                : 'text-zinc-500 cursor-default',
+            ].join(' ')}
+            title={p.sessionId
+              ? `pid ${p.pid} · session ${p.sessionId}\ncwd: ${p.cwd}\nclick to open (read-only resume while peer is alive)`
+              : `pid ${p.pid} · session bootstrapping\ncwd: ${p.cwd}`}
+          >
+            <span aria-hidden className="text-zinc-600 font-mono flex-shrink-0">⚙</span>
+            <span className="truncate flex-1">{cwdName}</span>
+            <span className="text-[9px] text-zinc-500 font-mono flex-shrink-0">{ageLabel}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const EMPTY_PEERS: readonly RunningSessionInfoT[] = [];
 
 function RecentsHeader(): JSX.Element {
   const [menuOpen, setMenuOpen] = useState(false);
