@@ -31,12 +31,16 @@
     "link:kodax": "node scripts/link-kodax.mjs",
     "unlink:kodax": "node scripts/link-kodax.mjs --unlink",
     "test": "npm run test --workspaces --if-present",
+    "e2e": "npm run build:smoke && npm run e2e:run",
+    "e2e:run": "playwright test",
+    "e2e:headed": "playwright test --headed",
     "postinstall": "electron-builder install-app-deps || true"
   },
   "dependencies": {
     "@kodax-ai/kodax": "^0.7.42"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/node": "^22.19.19",
     "@typescript-eslint/eslint-plugin": "^8.18.0",
     "@typescript-eslint/parser": "^8.18.0",

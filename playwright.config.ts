@@ -1,0 +1,32 @@
+// Playwright config — OC-12 / OC-44
+//
+// 用 @playwright/test 的 `_electron` API 启 Space 进程跑端到端测试。
+// 隔离原则：每条 spec 起一个新进程 + 唯一 KODAX_TEST_ONBOARDING 值，
+// 让 data-paths.ts 把 ~/.kodax 重定向到 tmpdir/kodax-test-<id>，不污染用户数据。
+//
+// 跑法：
+//   npm run e2e          —— build:smoke 后跑全部 spec
+//   npm run e2e:run      —— 只跑（假定已 build）
+//   npm run e2e:headed   —— 显示窗口（debug 用）
+//
+// CI 待接：v0.1.x 暂不进 release.yml，避免给三平台 build 加 ~5min；
+// 先在本地 + 手动触发的 e2e job 里跑。
+
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './tests/e2e',
+  // Electron 启动 + main process bootstrap 不快，给宽松超时
+  timeout: 30_000,
+  expect: { timeout: 5_000 },
+  // 顺序跑 —— 单 process / spec 模型下并发起多个 Electron 会撞资源
+  fullyParallel: false,
+  workers: 1,
+  retries: process.env.CI ? 1 : 0,
+  reporter: [['list']],
+  use: {
+    // 默认抓 trace 到本地，方便排查
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+  },
+});
