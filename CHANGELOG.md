@@ -29,7 +29,7 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 - **Auto-scroll guard** (OC-18): the conversation stream no longer false-detects "user scrolled up" during its own programmatic scroll animations (400ms guard using `performance.now()`).
 - **Conversation layout**: Claude Desktop-style two-level tool cluster (`Ran 6 commands ⌄ → sub-cluster → individual tool call`), left-aligned narrow user pill, drop the `<bubble>` wrapper around assistant markdown, rose-pill inline code styling.
 - **Tool card colors are status-driven** (was tool-kind based): bash success no longer reads as "error" because of a red body. Card body = `done`/`running` status color; tool kind moves to the tool name text color.
-- **`@kodax-ai/kodax` pinned to `^0.7.45`** with provider env name updates (KodaX upstream sync).
+- **Provider env name updates** (KodaX upstream sync from `0.7.45`-line). `@kodax-ai/kodax` published-version pin stays at `^0.7.42` until `0.7.45` lands on npm; local dev uses `npm run link:kodax` to get the upcoming version.
 
 ### Fixed
 
@@ -47,7 +47,7 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 
 ### Known limitations
 
-- **`@kodax-ai/kodax@0.7.45` not yet on npm**: `package-lock.json` has empty `integrity` for that version. Local dev uses `npm run link:kodax` to point at the KodaX repo. CI build step uses `npm ci || npm install` so it tolerates the unresolved lock entry until 0.7.45 publishes.
+- **`@kodax-ai/kodax@0.7.45` not yet on npm**: published-version pin stays at `^0.7.42` for installable CI/release builds. OC-23 retry-after extraction uses `parseRetryAfter` / `extractHeadersFromError` from the SDK's `/llm` subpath — if the installed SDK lacks them, `extractRetryAfterMs()` catches the load failure and returns `undefined`, gracefully degrading to a plain Retry button (no countdown). Local dev uses `npm run link:kodax` to point at the bleeding-edge KodaX repo.
 - **`change_model` / `check_network` action buttons** in error notices: text tells you what to do, but the action buttons themselves are not wired yet (followups OC-37 / KX-I-02).
 
 ## [0.1.0] - 2026-05-30
