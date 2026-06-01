@@ -26,6 +26,7 @@ import { EventStream } from './features/session/EventStream.js';
 import { PermissionModal } from './features/permission/PermissionModal.js';
 import { AskUserModal } from './features/ask-user/AskUserModal.js';
 import { ProviderSettings } from './features/provider/ProviderSettings.js';
+import { QuickAskPopover } from './features/quick-ask/QuickAskPopover.js';
 import { FilePanel } from './features/code/FilePanel.js';
 import { Shell } from './shell/Shell.js';
 
@@ -40,6 +41,8 @@ export default function App(): JSX.Element {
   const [version, setVersion] = useState<SpaceVersionOutput | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useState(true);
+  // F018 Quick Ask popover —— Cmd/Ctrl+K toggles
+  const [showQuickAsk, setShowQuickAsk] = useState(false);
   const appendEvent = useAppStore((s) => s.appendEvent);
   const enqueuePermission = useAppStore((s) => s.enqueuePermission);
   const dequeuePermission = useAppStore((s) => s.dequeuePermission);
@@ -188,6 +191,19 @@ export default function App(): JSX.Element {
     return () => window.removeEventListener('kodax-space.open-provider-settings', open);
   }, []);
 
+  // F018 Quick Ask global shortcut: Cmd+K (macOS) / Ctrl+K (others)
+  // 跟 VSCode Quick Open / Slack / Linear 一致的 muscle memory。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setShowQuickAsk((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const configuredCount = providers.filter((p) => p.configured).length;
   const defaultProvider = providers.find((p) => p.id === defaultProviderId);
 
@@ -202,6 +218,7 @@ export default function App(): JSX.Element {
       <>
         <Shell />
         {showSettings && <ProviderSettings onClose={() => setShowSettings(false)} />}
+        <QuickAskPopover open={showQuickAsk} onClose={() => setShowQuickAsk(false)} />
       </>
     );
   }
