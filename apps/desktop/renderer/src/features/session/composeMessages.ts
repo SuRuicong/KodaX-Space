@@ -53,6 +53,9 @@ export type ConversationMessage =
        *  v0.1.x: 'complete' variant 已废弃——assistant bubble footer 自带 "Xd ago"，
        *  原来的横条 "✓ complete" 视觉太重、对每轮都打断阅读节奏。 */
       text: string;
+      /** OC-11: error variant 携带的 wrapSdkError 分类。SystemNotice 据此渲染按钮。*/
+      action?: 'retry' | 'open_provider_settings' | 'check_network' | 'change_model';
+      retriable?: boolean;
     };
 
 interface ComposeInput {
@@ -216,6 +219,9 @@ function composeAssistantSegment(
           id: `${segmentTag}_err${noticeCounter++}`,
           variant: 'error',
           text: evt.error,
+          // OC-11 透传分类信息 —— SystemNotice 据此渲染 retry / open-settings 按钮
+          ...(evt.action !== undefined ? { action: evt.action } : {}),
+          ...(evt.retriable !== undefined ? { retriable: evt.retriable } : {}),
         });
         break;
       }

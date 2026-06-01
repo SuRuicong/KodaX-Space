@@ -40,6 +40,7 @@ import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { askUserBroker } from '../permission/ask-user-broker.js';
 import { bootstrapAutoMode } from './auto-mode-bootstrap.js';
 import { getSessionStorageHandle } from './session-store.js';
+import { wrapSdkError } from './sdk-errors.js';
 import type {
   ManagedSession,
   PermissionRequestFn,
@@ -610,10 +611,20 @@ export class RealKodaXSession implements ManagedSession {
       await sdk.runKodaX(options, prompt);
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
-        this.emit({ kind: 'session_error', sessionId: sid, error: 'cancelled' });
+        this.emit({ kind: 'session_error', sessionId: sid, error: 'cancelled', category: 'cancelled', retriable: true });
       } else if (!signal.aborted) {
-        const message = err instanceof Error ? err.message : String(err);
-        this.emit({ kind: 'session_error', sessionId: sid, error: message });
+        // OC-11: SDK 原始异常字符串往往含 stack / HTTP 内部细节，对用户没用。
+        // wrapSdkError 分类并产出友好文案 + action；main 日志保留 debugMessage 便于排查。
+        const wrapped = wrapSdkError(err);
+        console.warn(`[real-session ${sid}] sdk error (${wrapped.category}): ${wrapped.debugMessage}`);
+        this.emit({
+          kind: 'session_error',
+          sessionId: sid,
+          error: wrapped.userMessage,
+          category: wrapped.category,
+          retriable: wrapped.retriable,
+          ...(wrapped.action ? { action: wrapped.action } : {}),
+        });
       }
     } finally {
       // /compact 标记是 one-shot — 不论本轮成功 / 中断 / 报错，consume 后清掉

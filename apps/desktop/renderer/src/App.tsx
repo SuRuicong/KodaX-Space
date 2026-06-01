@@ -180,6 +180,14 @@ export default function App(): JSX.Element {
     return () => window.removeEventListener('keydown', onKey);
   }, [showSettings]);
 
+  // OC-11: SystemNotice 的 "Provider settings" 按钮派发 CustomEvent —— 这里接住
+  // 打开 Settings 模态，让 auth/quota 错误一键能跳转到改 key 的界面。
+  useEffect(() => {
+    const open = (): void => setShowSettings(true);
+    window.addEventListener('kodax-space.open-provider-settings', open);
+    return () => window.removeEventListener('kodax-space.open-provider-settings', open);
+  }, []);
+
   const configuredCount = providers.filter((p) => p.configured).length;
   const defaultProvider = providers.find((p) => p.id === defaultProviderId);
 

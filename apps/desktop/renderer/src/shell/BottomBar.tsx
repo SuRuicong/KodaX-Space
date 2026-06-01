@@ -162,6 +162,14 @@ export function BottomBar(): JSX.Element {
     ta.style.overflowY = ta.scrollHeight > maxHeightRef.current ? 'auto' : 'hidden';
   }, [prompt]);
 
+  // OC-11: SystemNotice "Retry" 按钮派发 CustomEvent → 聚焦 textarea，让用户立即按 Enter 重发。
+  // 目前不主动还填 prompt（避免覆盖正在输入的草稿）；用户可按 ↑ 调取历史最后一条。
+  useEffect(() => {
+    const onFocus = (): void => textareaRef.current?.focus();
+    window.addEventListener('kodax-space.focus-textarea', onFocus);
+    return () => window.removeEventListener('kodax-space.focus-textarea', onFocus);
+  }, []);
+
   /**
    * 没 session 时第一条 prompt 触发自动建 session。
    * project 必须先打开（projectRoot 是 session.create 必填）。

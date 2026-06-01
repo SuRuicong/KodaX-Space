@@ -436,15 +436,41 @@ function summarizeInput(input?: Record<string, unknown>): string {
 
 // ---- System Notice (iteration_end / error) ----
 
+// OC-11 SystemNotice action button：
+//   - retry                  → focus textarea (用户按 Send 重发上次 prompt)
+//   - open_provider_settings → 打开 Provider settings 模态
+//
+// change_model / check_network 当前没有干净的 renderer 入口，文案已经告诉用户该做什么，
+// 不强行加按钮：错的按钮比没按钮更恼人。
+const ACTION_BUTTONS: Partial<Record<NonNullable<Extract<ConversationMessage, { kind: 'system_notice' }>['action']>, { label: string; event: string }>> = {
+  retry: { label: 'Retry', event: 'kodax-space.focus-textarea' },
+  open_provider_settings: { label: 'Provider settings', event: 'kodax-space.open-provider-settings' },
+};
+
 export function SystemNotice({
   variant,
   text,
+  action,
 }: Extract<ConversationMessage, { kind: 'system_notice' }>): JSX.Element {
   const color =
     variant === 'iteration'
       ? 'text-amber-400 border-amber-900/40'
       : 'text-red-400 border-red-900/40';
+
+  const actionDef = action ? ACTION_BUTTONS[action] : undefined;
+
   return (
-    <div className={`text-[10px] font-mono text-center py-1 border-y ${color}`}>{text}</div>
+    <div className={`text-[10px] font-mono text-center py-1 border-y ${color} flex items-center justify-center gap-2 flex-wrap`}>
+      <span>{text}</span>
+      {actionDef && (
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent(actionDef.event))}
+          className="px-1.5 py-0.5 rounded border border-current/30 hover:bg-current/10 transition-colors"
+        >
+          {actionDef.label}
+        </button>
+      )}
+    </div>
   );
 }

@@ -668,7 +668,29 @@ export const sessionEventChannel = {
     z.object({
       kind: z.literal('session_error'),
       sessionId: z.string().min(1),
+      /** 用户可读文案 (已经过 wrapSdkError 友好化)。renderer 显示这条。*/
       error: z.string(),
+      /** OC-11 wrapSdkError 分类 —— renderer 据此决定 retry / open-settings 按钮。
+       *  optional 保持向后兼容：旧 'cancelled' / guardrail 失败等仍可不带 category。*/
+      category: z.enum([
+        'rate_limit',
+        'auth',
+        'quota',
+        'network',
+        'model_unavailable',
+        'bad_request',
+        'server_error',
+        'cancelled',
+        'unknown',
+      ]).optional(),
+      /** 用户该做的下一步动作；renderer 据此渲染按钮。 */
+      action: z.enum([
+        'retry',
+        'open_provider_settings',
+        'check_network',
+        'change_model',
+      ]).optional(),
+      retriable: z.boolean().optional(),
     }),
     // ---- Context compaction（KodaX onCompact* 系列）----
     z.object({
