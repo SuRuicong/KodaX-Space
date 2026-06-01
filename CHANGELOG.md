@@ -4,6 +4,52 @@ All notable changes to KodaX-Space will be documented in this file.
 
 KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.com/icetomoyo/KodaX) — Claude Desktop-style interactive surface, GUI alternative to the `kodax` REPL.
 
+## [0.1.1] - 2026-06-01
+
+### Theme
+
+**Stability + UX hardening.** First patch release after v0.1.0 — locks in user-visible fixes from real-world dogfooding, adds a Playwright e2e suite covering 5 critical flows, switches the provider catalog to the SDK as single source of truth, and bumps `@kodax-ai/kodax` to 0.7.45.
+
+### Added
+
+- **Friendly SDK error envelope** (OC-11): SDK exceptions now surface as user-readable categories (`rate_limit` / `auth` / `quota` / `network` / `model_unavailable` / `bad_request` / `server_error` / `cancelled` / `unknown`) with action buttons (`Retry` / `Provider settings`) instead of raw stack frames in the conversation stream.
+- **Rate-limit retry countdown** (OC-23): when the provider sends `Retry-After`, the SystemNotice shows a live `Retry in 28s` ticker and disables the button until the window passes. Works for both `429` and `5xx` responses.
+- **Single-instance lock** (OC-01): double-clicking the launcher brings the existing window forward instead of starting a duplicate process (which could race-write `~/.kodax/`).
+- **IPC schema error truncation** (OC-09): Zod error envelopes now keep only `{path, code, message}` per issue, redact `invalid_enum_value` / `unrecognized_keys` messages that would otherwise embed user values, and binary-search-trim to 1KB max.
+- **Test-isolation env var** (OC-12): setting `KODAX_TEST_ONBOARDING` redirects `~/.kodax` to `$TMPDIR/kodax-test-<id>` so e2e specs and onboarding tests can run without polluting real user data.
+- **Per-code-block copy button** (OC-25): hover any fenced code block in markdown to reveal a `📋 copy` button.
+- **StashNotice realtime refresh**: the "uncommitted changes" bar in BottomBar now refreshes on window focus, visibility change, and every 30s — picks up external `git commit` immediately without re-selecting project.
+- **Zero-config provider auto-activation** (KX-I-01): on first launch, if any provider API key env var is set (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / etc.), the corresponding provider is auto-set as default — no Settings detour needed.
+- **Playwright e2e suite (5 specs)**: first-launch UI, isolated data dir, send-prompt + mock-reply roundtrip, Shift+Tab mode cycle, and `/clear` slash command. Runs in ~20s on Windows; foundation for future regression coverage. `npm run e2e` / `npm run e2e:headed`.
+
+### Changed
+
+- **Provider catalog reads SDK truth** (`provider-capabilities.json` directly), with a hardcoded fallback so a broken `npm link` no longer crashes the main process. Future KodaX upstream provider additions propagate automatically on the next launch.
+- **Markdown rendering perf** (OC-19): module-level LRU cache (cap 500) + `React.memo` on the Markdown component — re-renders of stable content (theme switch, history scroll-back) drop from 10-30ms to near-zero.
+- **Auto-scroll guard** (OC-18): the conversation stream no longer false-detects "user scrolled up" during its own programmatic scroll animations (400ms guard using `performance.now()`).
+- **Conversation layout**: Claude Desktop-style two-level tool cluster (`Ran 6 commands ⌄ → sub-cluster → individual tool call`), left-aligned narrow user pill, drop the `<bubble>` wrapper around assistant markdown, rose-pill inline code styling.
+- **Tool card colors are status-driven** (was tool-kind based): bash success no longer reads as "error" because of a red body. Card body = `done`/`running` status color; tool kind moves to the tool name text color.
+- **`@kodax-ai/kodax` pinned to `^0.7.45`** with provider env name updates (KodaX upstream sync).
+
+### Fixed
+
+- **Provider env name drift**: 5 coding-plan providers (kimi-code / zhipu-coding / minimax-coding / mimo-coding / ark-coding) had outdated env var names. Now mirrored from KodaX SDK.
+- **PermissionModal "Always allow" UX**: was a checkbox + Allow-once button (two clicks); now a third dedicated button. Danger-class commands hide the Always button (cannot silently whitelist).
+- **auto[LLM] mode double-prompting**: broker no longer pops permission modals for non-dangerous tools in `auto` mode — lets the SDK guardrail (F030) own that path. Dangerous tools (rm -rf etc.) still pop the modal.
+- **skill.discover / mcp.discover from historical sessions**: switched from requiring a live SDK session to taking `projectRoot` directly. Recents-restored sessions no longer throw `session not found`.
+- **Model selection persistence**: last-used model now persists across reloads via localStorage.
+- **Stop-confirm toast contrast**: light-mode toasts had dark-on-dark text; all 4 tones now dual-themed.
+- **Inline copy icon visibility**: replaced the near-invisible `⎘` Unicode glyph with an inline Lucide-style SVG icon.
+
+### Security
+
+- **API keys cannot leak via IPC error envelopes** (OC-09): Zod `invalid_enum_value` / `unrecognized_keys` issue messages — which embed the user's raw value in the template — are now redacted before flowing through the IpcError `details` field.
+
+### Known limitations
+
+- **`@kodax-ai/kodax@0.7.45` not yet on npm**: `package-lock.json` has empty `integrity` for that version. Local dev uses `npm run link:kodax` to point at the KodaX repo. CI build step uses `npm ci || npm install` so it tolerates the unresolved lock entry until 0.7.45 publishes.
+- **`change_model` / `check_network` action buttons** in error notices: text tells you what to do, but the action buttons themselves are not wired yet (followups OC-37 / KX-I-02).
+
 ## [0.1.0] - 2026-05-30
 
 ### Theme

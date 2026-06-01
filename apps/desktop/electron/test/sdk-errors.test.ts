@@ -152,3 +152,10 @@ test('non-rate-limit + retryAfterMs ctx → ctx ignored (not relevant to categor
   assert.equal(w.category, 'auth');
   assert.equal(w.retryAfterMs, undefined);
 });
+
+test('server_error + retryAfterMs ctx → wrapped propagates (5xx countdown)', () => {
+  // 5xx 也可能带 Retry-After，wrap 应该透传到 retryAfterMs 让 UI 显示倒计时
+  const w = wrapSdkError(new Error('503 Service Unavailable'), { retryAfterMs: 10000 });
+  assert.equal(w.category, 'server_error');
+  assert.equal(w.retryAfterMs, 10000);
+});

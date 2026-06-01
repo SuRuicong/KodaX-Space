@@ -19,6 +19,12 @@ export interface SpaceInstance {
   readonly app: ElectronApplication;
   readonly page: Page;
   readonly testDataDir: string;
+  /**
+   * Inject a project path into the store (localStorage hydrate + project.recent.add),
+   * reload renderer, return when DOM ready. Without this textarea stays disabled
+   * because currentProjectPath is null on first launch in isolated mode.
+   */
+  seedProject(projectDir: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -63,10 +69,25 @@ export async function launchSpace(testId: string): Promise<SpaceInstance> {
   // 等 renderer mount —— index.html bundle 进来后才有 body
   await page.waitForLoadState('domcontentloaded');
 
+  // hook：把 project dir 注入 store + recent list + reload，让 textarea / ModeSelector 都活
+  // 抽到这里避免 3 个 spec 都拷一份相同 4 行代码 (review LOW: dedup)
+  const seedProject = async (projectDir: string): Promise<void> => {
+    await page.evaluate((p) => {
+      localStorage.setItem('kodax-space.currentProjectPath', p);
+    }, projectDir);
+    await page.evaluate((p) => {
+      return (window as unknown as { kodaxSpace: { invoke: (n: string, i: unknown) => Promise<unknown> } })
+        .kodaxSpace.invoke('project.recent.add', { path: p });
+    }, projectDir);
+    await page.reload();
+    await page.waitForLoadState('domcontentloaded');
+  };
+
   return {
     app,
     page,
     testDataDir,
+    seedProject,
     async close() {
       await app.close().catch(() => {});
       await fs.rm(testDataDir, { recursive: true, force: true }).catch(() => {});

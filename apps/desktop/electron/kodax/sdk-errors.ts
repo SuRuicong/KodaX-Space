@@ -168,6 +168,8 @@ export function wrapSdkError(err: unknown, ctx?: WrapContext): WrappedSdkError {
       category: 'server_error',
       retriable: true,
       action: 'retry',
+      // 5xx 也可能带 Retry-After (大厂 SDK 普遍如此)，透传到 UI 显示倒计时 (review MEDIUM)
+      ...(ctx?.retryAfterMs !== undefined ? { retryAfterMs: ctx.retryAfterMs } : {}),
       debugMessage: rawMessage,
     };
   }

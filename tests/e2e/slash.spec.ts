@@ -20,15 +20,7 @@ test('S5: /clear wipes the conversation buffer', async () => {
 
   const space = await launchSpace(testId);
   try {
-    await space.page.evaluate((p) => {
-      localStorage.setItem('kodax-space.currentProjectPath', p);
-    }, projectDir);
-    await space.page.evaluate((p) => {
-      return (window as unknown as { kodaxSpace: { invoke: (n: string, i: unknown) => Promise<unknown> } })
-        .kodaxSpace.invoke('project.recent.add', { path: p });
-    }, projectDir);
-    await space.page.reload();
-    await space.page.waitForLoadState('domcontentloaded');
+    await space.seedProject(projectDir);
 
     const textarea = space.page.locator('textarea').first();
     await expect(textarea).toBeEnabled({ timeout: 10_000 });

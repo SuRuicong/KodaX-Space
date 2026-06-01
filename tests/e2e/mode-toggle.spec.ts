@@ -20,16 +20,8 @@ test('S4: Shift+Tab cycles permission mode through plan/accept-edits/auto', asyn
 
   const space = await launchSpace(testId);
   try {
-    // 先把 project 注入让 ModeSelector / textarea 都活
-    await space.page.evaluate((p) => {
-      localStorage.setItem('kodax-space.currentProjectPath', p);
-    }, projectDir);
-    await space.page.evaluate((p) => {
-      return (window as unknown as { kodaxSpace: { invoke: (n: string, i: unknown) => Promise<unknown> } })
-        .kodaxSpace.invoke('project.recent.add', { path: p });
-    }, projectDir);
-    await space.page.reload();
-    await space.page.waitForLoadState('domcontentloaded');
+    // 先把 project 注入让 ModeSelector / textarea 都活 (fixture 共享 helper)
+    await space.seedProject(projectDir);
 
     // ModeSelector 显示在 ChipBar；初始（无 session）label 为 "Accept edits (next)"
     // 三种 label 任一存在即认为 ModeSelector mount 了

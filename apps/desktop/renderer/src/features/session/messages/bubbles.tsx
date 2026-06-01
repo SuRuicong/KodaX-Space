@@ -457,8 +457,13 @@ function useRetryCountdown(retryAvailableAt: number | undefined): number {
     if (retryAvailableAt === undefined) return;
     const remaining = retryAvailableAt - Date.now();
     if (remaining <= 0) return;
-    // 用 setInterval 每秒更新；clean up by id
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    // 每秒 tick；倒计时归零时主动停 interval，避免 SystemNotice 长期 mount 时
+    // 一直每秒空转 setState (review MEDIUM)
+    const id = window.setInterval(() => {
+      const tickNow = Date.now();
+      setNow(tickNow);
+      if (tickNow >= retryAvailableAt) window.clearInterval(id);
+    }, 1000);
     return () => window.clearInterval(id);
   }, [retryAvailableAt]);
   if (retryAvailableAt === undefined) return 0;

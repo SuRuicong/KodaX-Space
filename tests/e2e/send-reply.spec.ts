@@ -24,19 +24,8 @@ test('S3: send a prompt and see assistant reply via mock adapter', async () => {
 
   const space = await launchSpace(testId);
   try {
-    // 把 project path 注入 localStorage 让 store 启动时 hydrate 进 currentProjectPath
-    await space.page.evaluate((p) => {
-      localStorage.setItem('kodax-space.currentProjectPath', p);
-    }, projectDir);
-    // 注册到 recents 让 App.tsx project.list 能看见（避免 currentProjectPath 被覆盖）
-    await space.page.evaluate((p) => {
-      return (window as unknown as { kodaxSpace: { invoke: (n: string, i: unknown) => Promise<unknown> } })
-        .kodaxSpace
-        .invoke('project.recent.add', { path: p });
-    }, projectDir);
-
-    await space.page.reload();
-    await space.page.waitForLoadState('domcontentloaded');
+    // 把 project dir 注入 store + 注册 recents + reload (fixture 共享 helper)
+    await space.seedProject(projectDir);
 
     // textarea 出现且未 disabled
     const textarea = space.page.locator('textarea').first();

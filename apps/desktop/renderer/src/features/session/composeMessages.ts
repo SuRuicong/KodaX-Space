@@ -57,8 +57,9 @@ export type ConversationMessage =
       action?: 'retry' | 'open_provider_settings' | 'check_network' | 'change_model';
       retriable?: boolean;
       /** OC-23 倒计时：retry 按钮在此 epoch ms 之前 disabled + 显示 "Retry in Ns"。
-       *  composeMessages 把 main 传过来的 retryAfterMs 加上当时的 Date.now() 锁定一个
-       *  绝对时间戳；这样即使消息被 re-render，倒计时也不会重新计数。*/
+       *  Main 端在 emit session_error 时已 stamp = Date.now() + waitMs，selector 这里
+       *  直接透传 evt.retryAvailableAt 不再加工，避免 composeMessages 每次重跑都让倒计时
+       *  漂移 (review HIGH-2 修复后的定型形态)。*/
       retryAvailableAt?: number;
     };
 
