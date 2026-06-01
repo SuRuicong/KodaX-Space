@@ -226,10 +226,9 @@ function composeAssistantSegment(
           // OC-11 透传分类信息 —— SystemNotice 据此渲染 retry / open-settings 按钮
           ...(evt.action !== undefined ? { action: evt.action } : {}),
           ...(evt.retriable !== undefined ? { retriable: evt.retriable } : {}),
-          // OC-23 retry-after 倒计时；SystemNotice 据此显示 "Retry in Ns"
-          ...(evt.retryAfterMs !== undefined ? {
-            retryAvailableAt: Date.now() + evt.retryAfterMs,
-          } : {}),
+          // OC-23 retry-after 倒计时；retryAvailableAt 已经是 main 端 stamp 的绝对
+          // 时间戳，直接透传，不在 selector 里重 stamp 防漂移 (review HIGH-2)
+          ...(evt.retryAvailableAt !== undefined ? { retryAvailableAt: evt.retryAvailableAt } : {}),
         });
         break;
       }

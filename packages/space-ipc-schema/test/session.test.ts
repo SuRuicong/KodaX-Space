@@ -32,6 +32,53 @@ test('session.event push channel is registered', () => {
   assert.equal(sessionEventChannel.direction, 'push');
 });
 
+// OC-11 + OC-23: session_error event schema 接受所有可选 wrap 字段
+test('session_error event: minimal (back-compat) shape OK', () => {
+  const r = sessionEventChannel.payload.safeParse({
+    kind: 'session_error',
+    sessionId: 's_1',
+    error: 'Request cancelled.',
+  });
+  assert.equal(r.success, true);
+});
+
+test('session_error event: full OC-11 + OC-23 shape OK', () => {
+  const r = sessionEventChannel.payload.safeParse({
+    kind: 'session_error',
+    sessionId: 's_1',
+    error: 'Rate limit reached. Wait a moment and try again.',
+    category: 'rate_limit',
+    retriable: true,
+    action: 'retry',
+    retryAvailableAt: Date.now() + 30000,
+  });
+  assert.equal(r.success, true);
+});
+
+test('session_error event: unknown category rejected', () => {
+  const r = sessionEventChannel.payload.safeParse({
+    kind: 'session_error',
+    sessionId: 's_1',
+    error: 'x',
+    category: 'made_up_category',
+  });
+  assert.equal(r.success, false);
+});
+
+test('session_error event: retryAvailableAt accepts large future epoch', () => {
+  // 1h ahead, 1 year ahead — schema 不应当 clip 这些 (avoid the old rejection-on-cap bug)
+  for (const ms of [60_000, 3_600_000, 365 * 24 * 3_600_000]) {
+    const r = sessionEventChannel.payload.safeParse({
+      kind: 'session_error',
+      sessionId: 's_1',
+      error: 'x',
+      category: 'rate_limit',
+      retryAvailableAt: Date.now() + ms,
+    });
+    assert.equal(r.success, true, `should accept retryAvailableAt = now+${ms}ms`);
+  }
+});
+
 test('session.create input: requires projectRoot and provider', () => {
   assert.equal(sessionCreateChannel.input.safeParse({ projectRoot: '/r', provider: 'mock' }).success, true);
   assert.equal(sessionCreateChannel.input.safeParse({ provider: 'mock' }).success, false);

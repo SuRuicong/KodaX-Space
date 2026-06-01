@@ -691,11 +691,14 @@ export const sessionEventChannel = {
         'change_model',
       ]).optional(),
       retriable: z.boolean().optional(),
-      /** OC-23 限流重试倒计时：rate_limit / 5xx 时上游 Retry-After header 给的等待毫秒。
-       *  renderer 据此显示 "Retry in 30s" 倒计时，到点 enable Retry 按钮。
-       *  上限 1 小时 (3_600_000ms) —— 超出明显是 header 异常 / 误读，UI 不该显示几小时倒计时；
-       *  下限 0 —— Retry-After=0 表示"立即可重试" (Anthropic burst limit 恢复)。*/
-      retryAfterMs: z.number().int().min(0).max(3_600_000).optional(),
+      /** OC-23 限流重试**到点 epoch 毫秒**（绝对时间戳，**非** delta）。
+       *  Main 端 stamp = Date.now() + Retry-After header 等待毫秒；renderer 用
+       *  setInterval 算剩余秒数显示 "Retry in 30s"。
+       *  绝对时间戳比 delta 更稳：composeMessages 是 selector，每次 events 变都重跑，
+       *  delta 形式会导致每跑一次就把 retryAvailableAt 推后一格 (review HIGH-2)。
+       *  上限：Date.now() + 1 小时 ≈ 1768000000000ish；下限：0 也接受 (虽然语义古怪)。
+       *  超出上限走 `.catch` clamp 而非 reject —— 不让 1 个异常 header 把整条 error event 丢掉。*/
+      retryAvailableAt: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
     }),
     // ---- Context compaction（KodaX onCompact* 系列）----
     z.object({

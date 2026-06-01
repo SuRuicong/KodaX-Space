@@ -29,17 +29,21 @@ async function loadSdkCoding(): Promise<SdkCodingModule> {
 
 // OC-23: SDK /llm 暴露 extractHeadersFromError + parseRetryAfter 帮我们从 rate_limit
 // 错误里抠出 Retry-After header 的等待时间 (Anthropic 还有 retry-after-ms 扩展)。
-// 单独 lazy-load /llm 子包；失败时返 undefined 不影响主错误流程。
+// 单独 lazy-load /llm 子包；失败时返 null 不影响主错误流程。
+//
+// 缓存 **Promise** 而非 resolved value —— 并发调下两个 caller 各自 import() 是 Node
+// module registry 安全的（去重），但本地缓存的赋值时机需要并发安全。存 Promise 让所有
+// 并发 caller await 同一个 in-flight promise，避免多次 try 且行为确定 (review HIGH-1)。
 type SdkLlmModule = typeof import('@kodax-ai/kodax/llm');
-let sdkLlmCache: SdkLlmModule | null = null;
-async function loadSdkLlm(): Promise<SdkLlmModule | null> {
+let sdkLlmCache: Promise<SdkLlmModule | null> | null = null;
+function loadSdkLlm(): Promise<SdkLlmModule | null> {
   if (sdkLlmCache === null) {
-    try {
-      sdkLlmCache = await import('@kodax-ai/kodax/llm');
-    } catch (err) {
+    sdkLlmCache = import('@kodax-ai/kodax/llm').catch((err) => {
       console.warn(`[real-session] failed to load @kodax-ai/kodax/llm subpath: ${err instanceof Error ? err.message : err}`);
+      // 失败的 promise 留在 cache 里返 null，避免反复重试一个本来就拿不到的包。
+      // 如果 SDK 之后真"突然能加载了"也无所谓 —— Space 进程整生命周期 SDK 是 immutable。
       return null;
-    }
+    });
   }
   return sdkLlmCache;
 }
@@ -659,6 +663,11 @@ export class RealKodaXSession implements ManagedSession {
         const retryAfterMs = await extractRetryAfterMs(err);
         const wrapped = wrapSdkError(err, retryAfterMs !== undefined ? { retryAfterMs } : undefined);
         console.warn(`[real-session ${sid}] sdk error (${wrapped.category}): ${wrapped.debugMessage}`);
+        // OC-23 review HIGH-2: stamp 绝对时间戳在 main 端 (emit 时刻)，避免 renderer
+        // composeMessages 每次 events 变都重新 Date.now()+delta 让倒计时不断推后。
+        const retryAvailableAt = wrapped.retryAfterMs !== undefined
+          ? Date.now() + wrapped.retryAfterMs
+          : undefined;
         this.emit({
           kind: 'session_error',
           sessionId: sid,
@@ -666,7 +675,7 @@ export class RealKodaXSession implements ManagedSession {
           category: wrapped.category,
           retriable: wrapped.retriable,
           ...(wrapped.action ? { action: wrapped.action } : {}),
-          ...(wrapped.retryAfterMs !== undefined ? { retryAfterMs: wrapped.retryAfterMs } : {}),
+          ...(retryAvailableAt !== undefined ? { retryAvailableAt } : {}),
         });
       }
     } finally {
