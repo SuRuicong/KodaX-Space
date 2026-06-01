@@ -17,6 +17,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAppStore, type UserMessage } from '../store/appStore.js';
+import { SessionLineagePanel } from '../features/session/SessionLineagePanel.js';
 
 // 稳定空数组，防 selector `?? []` literal 每次新引用触发 zustand re-render loop (React #185)。
 const EMPTY_USER_MESSAGES: readonly UserMessage[] = [];
@@ -40,6 +41,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
 
   const [renaming, setRenaming] = useState(false);
   const [newTitle, setNewTitle] = useState(session?.title ?? '');
+  const [showLineage, setShowLineage] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -50,6 +52,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
         d: () => void doDelete(),
         f: () => void doFork(),
         w: () => void doRewind(),
+        l: () => setShowLineage((v) => !v),
         p: () => { toggleFlag(sessionId, 'pinned'); onClose(); },
         u: () => { toggleFlag(sessionId, 'unread'); onClose(); },
         a: () => { toggleFlag(sessionId, 'archived'); onClose(); },
@@ -228,7 +231,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
 
   return (
     <div
-      className="absolute left-0 top-full mt-1 w-52 bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 text-xs z-50"
+      className={`absolute left-0 top-full mt-1 ${showLineage ? 'w-80' : 'w-52'} bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 text-xs z-50`}
       onMouseLeave={onClose}
     >
       <MenuRow icon="↗" label="Open in" shortcut="" disabled hint="External app — v0.1.x" />
@@ -254,6 +257,23 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
         disabled={userMessages.length === 0}
         hint={userMessages.length === 0 ? 'No turns yet' : undefined}
       />
+      <MenuRow
+        icon="🌳"
+        label={showLineage ? 'Hide lineage' : 'Show lineage'}
+        shortcut="L"
+        onClick={() => setShowLineage((v) => !v)}
+      />
+      {showLineage && (
+        <div className="border-t border-zinc-800 mt-1 pt-1">
+          <SessionLineagePanel
+            anchorSessionId={sessionId}
+            onPickSession={(sid) => {
+              setCurrentSession(sid);
+              onClose();
+            }}
+          />
+        </div>
+      )}
       <MenuRow icon="📂" label="Move to group" shortcut="" disabled hint="v0.1.x" />
       <MenuRow
         icon={sessionFlags?.archived ? '📦✓' : '📦'}
