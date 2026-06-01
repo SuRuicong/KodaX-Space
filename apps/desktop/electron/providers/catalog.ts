@@ -50,6 +50,13 @@ interface SpaceOverride {
    * `getCodexCliDefaultModel()` 等动态填，JSON 里是空的）。
    */
   readonly defaultModelFallback?: string;
+  /**
+   * **完全 fallback** —— provider-capabilities.json 缺失 / 损坏时也能撑起 catalog。
+   * 与 KodaX SDK fa7213f 的 env 名一致 (sync 自上游)。生产路径不依赖此字段，
+   * 只作 disaster recovery。
+   */
+  readonly fallbackApiKeyEnv: string;
+  readonly fallbackDefaultModel: string;
 }
 
 const SPACE_OVERRIDES: Record<string, SpaceOverride> = {
@@ -57,69 +64,95 @@ const SPACE_OVERRIDES: Record<string, SpaceOverride> = {
     displayName: 'Anthropic',
     protocol: 'anthropic',
     testEndpoint: 'https://api.anthropic.com/v1/models',
+    fallbackApiKeyEnv: 'ANTHROPIC_API_KEY',
+    fallbackDefaultModel: 'claude-sonnet-4-6',
   },
   openai: {
     displayName: 'OpenAI',
     protocol: 'openai',
     testEndpoint: 'https://api.openai.com/v1/models',
+    fallbackApiKeyEnv: 'OPENAI_API_KEY',
+    fallbackDefaultModel: 'gpt-5.3-codex',
   },
   deepseek: {
     displayName: 'DeepSeek',
     protocol: 'openai',
     testEndpoint: 'https://api.deepseek.com/v1/models',
+    fallbackApiKeyEnv: 'DEEPSEEK_API_KEY',
+    fallbackDefaultModel: 'deepseek-v4-flash',
   },
   kimi: {
     displayName: 'Kimi (Moonshot)',
     protocol: 'openai',
     testEndpoint: 'https://api.moonshot.cn/v1/models',
+    fallbackApiKeyEnv: 'KIMI_API_KEY',
+    fallbackDefaultModel: 'kimi-k2.6',
   },
   'kimi-code': {
     displayName: 'Kimi for Coding',
     protocol: 'anthropic',
     // Anthropic-compat 端点；test-connection.ts 走 POST minimal completion 不依赖 GET /v1/models
     testEndpoint: 'https://api.moonshot.cn/anthropic/v1/messages',
+    fallbackApiKeyEnv: 'KIMI_CODE_API_KEY',
+    fallbackDefaultModel: 'kimi-for-coding',
   },
   qwen: {
     displayName: 'Qwen (Alibaba)',
     protocol: 'openai',
     testEndpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/models',
+    fallbackApiKeyEnv: 'QWEN_API_KEY',
+    fallbackDefaultModel: 'qwen3.5-plus',
   },
   zhipu: {
     displayName: 'Zhipu (BigModel)',
     protocol: 'openai',
     testEndpoint: 'https://open.bigmodel.cn/api/paas/v4/models',
+    fallbackApiKeyEnv: 'ZHIPU_API_KEY',
+    fallbackDefaultModel: 'glm-5',
   },
   'zhipu-coding': {
     displayName: 'Zhipu Coding Plan',
     protocol: 'anthropic',
     testEndpoint: 'https://open.bigmodel.cn/api/anthropic/v1/messages',
+    fallbackApiKeyEnv: 'ZHIPU_CODING_API_KEY',
+    fallbackDefaultModel: 'glm-5',
   },
   'minimax-coding': {
     displayName: 'MiniMax Coding',
     protocol: 'anthropic',
     testEndpoint: 'https://api.minimax.chat/v1/messages',
+    fallbackApiKeyEnv: 'MINIMAX_CODING_API_KEY',
+    fallbackDefaultModel: 'MiniMax-M2.7',
   },
   'mimo-coding': {
     displayName: 'MiMo (Xiaomi)',
     protocol: 'anthropic',
     testEndpoint: 'https://api.xiaomi.com/mimo/anthropic/v1/messages',
+    fallbackApiKeyEnv: 'MIMO_CODING_API_KEY',
+    fallbackDefaultModel: 'mimo-v2.5-pro',
   },
   'ark-coding': {
     displayName: 'Volcengine Ark Coding',
     protocol: 'anthropic',
     testEndpoint: 'https://ark.cn-beijing.volces.com/api/v3/messages',
+    fallbackApiKeyEnv: 'ARK_CODING_API_KEY',
+    fallbackDefaultModel: 'glm-5.1',
   },
   'gemini-cli': {
     displayName: 'Gemini CLI',
     protocol: 'gemini-cli',
     // CLI bridge — no HTTP probe applicable；defaultModel 由本地 gemini CLI 自报
     defaultModelFallback: 'gemini-3.0-pro',
+    fallbackApiKeyEnv: 'GEMINI_API_KEY',
+    fallbackDefaultModel: 'gemini-3.0-pro',
   },
   'codex-cli': {
     displayName: 'Codex CLI (OpenAI)',
     protocol: 'codex-cli',
     // CLI bridge — no HTTP probe applicable；defaultModel 由本地 codex CLI 自报
     defaultModelFallback: 'gpt-5.3-codex',
+    fallbackApiKeyEnv: 'OPENAI_API_KEY',
+    fallbackDefaultModel: 'gpt-5.3-codex',
   },
 };
 
@@ -199,10 +232,51 @@ function loadProvidersFromJson(): readonly BuiltinProvider[] {
   return list;
 }
 
-// 模块顶层一次性 load —— 失败就抛，让 main 启动期 fail-fast 而不是静默 fallback 到空。
+// Disaster fallback —— provider-capabilities.json 缺失/损坏时用 SPACE_OVERRIDES 构造。
+// 触发场景：
+//   - npm link 断了 (dist 不再 junction，被 npm install 覆盖成 0.7.42 tarball 内容
+//     而 tarball 里 dist/ 不含 provider-capabilities.json) — 见 2026-06-01 主进程崩溃
+//   - 用户手动删了 node_modules 但忘 reinstall
+//   - KodaX upstream schema 变了我们没跟上
+//
+// fallback 数据来源：与 KodaX SDK 最近 sync 一致 (fa7213f sync 自上游)，
+// 比真相旧一些但能让 Space 跑起来 + log 警告提示用户 reinstall / re-link。
+function buildFallbackProviders(): readonly BuiltinProvider[] {
+  const list: BuiltinProvider[] = [];
+  for (const [id, ov] of Object.entries(SPACE_OVERRIDES)) {
+    list.push({
+      id,
+      displayName: ov.displayName,
+      apiKeyEnv: ov.fallbackApiKeyEnv,
+      protocol: ov.protocol,
+      testEndpoint: ov.testEndpoint,
+      defaultModel: ov.fallbackDefaultModel,
+      // fallback 不提供 model variant 列表 —— UI 显示单条 default 即可
+      models: [ov.fallbackDefaultModel],
+    });
+  }
+  return list;
+}
+
+// 模块顶层一次性 load —— 优先读 SDK 真相（provider-capabilities.json）；任何错误
+// (ENOENT / JSON 解析 / 字段缺失) 都退化到 fallback，不让 Space 崩。
 // 启动后 catalog 数据 immutable，重新 hot-reload Space 进程才会重读 (KodaX 升 SDK 时
 // 用户重启 Space 自然吃到新 catalog)。
-export const BUILTIN_PROVIDERS: readonly BuiltinProvider[] = loadProvidersFromJson();
+function loadProvidersWithFallback(): readonly BuiltinProvider[] {
+  try {
+    return loadProvidersFromJson();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[catalog] failed to load provider-capabilities.json — using built-in fallback. ` +
+      `Run \`npm install --force\` or \`npm run link:kodax\` to restore SDK truth. ` +
+      `Error: ${message}`,
+    );
+    return buildFallbackProviders();
+  }
+}
+
+export const BUILTIN_PROVIDERS: readonly BuiltinProvider[] = loadProvidersWithFallback();
 
 export function getBuiltin(id: string): BuiltinProvider | undefined {
   return BUILTIN_PROVIDERS.find((p) => p.id === id);
