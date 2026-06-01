@@ -56,6 +56,10 @@ export type ConversationMessage =
       /** OC-11: error variant 携带的 wrapSdkError 分类。SystemNotice 据此渲染按钮。*/
       action?: 'retry' | 'open_provider_settings' | 'check_network' | 'change_model';
       retriable?: boolean;
+      /** OC-23 倒计时：retry 按钮在此 epoch ms 之前 disabled + 显示 "Retry in Ns"。
+       *  composeMessages 把 main 传过来的 retryAfterMs 加上当时的 Date.now() 锁定一个
+       *  绝对时间戳；这样即使消息被 re-render，倒计时也不会重新计数。*/
+      retryAvailableAt?: number;
     };
 
 interface ComposeInput {
@@ -222,6 +226,10 @@ function composeAssistantSegment(
           // OC-11 透传分类信息 —— SystemNotice 据此渲染 retry / open-settings 按钮
           ...(evt.action !== undefined ? { action: evt.action } : {}),
           ...(evt.retriable !== undefined ? { retriable: evt.retriable } : {}),
+          // OC-23 retry-after 倒计时；SystemNotice 据此显示 "Retry in Ns"
+          ...(evt.retryAfterMs !== undefined ? {
+            retryAvailableAt: Date.now() + evt.retryAfterMs,
+          } : {}),
         });
         break;
       }

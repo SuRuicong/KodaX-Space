@@ -26,6 +26,43 @@ async function loadSdkCoding(): Promise<SdkCodingModule> {
   }
   return sdkCodingCache;
 }
+
+// OC-23: SDK /llm 暴露 extractHeadersFromError + parseRetryAfter 帮我们从 rate_limit
+// 错误里抠出 Retry-After header 的等待时间 (Anthropic 还有 retry-after-ms 扩展)。
+// 单独 lazy-load /llm 子包；失败时返 undefined 不影响主错误流程。
+type SdkLlmModule = typeof import('@kodax-ai/kodax/llm');
+let sdkLlmCache: SdkLlmModule | null = null;
+async function loadSdkLlm(): Promise<SdkLlmModule | null> {
+  if (sdkLlmCache === null) {
+    try {
+      sdkLlmCache = await import('@kodax-ai/kodax/llm');
+    } catch (err) {
+      console.warn(`[real-session] failed to load @kodax-ai/kodax/llm subpath: ${err instanceof Error ? err.message : err}`);
+      return null;
+    }
+  }
+  return sdkLlmCache;
+}
+
+/**
+ * 从 SDK 抛出的 error 里抠 Retry-After（rate_limit / 5xx 时有）。
+ * SDK /llm 加载失败 / err 里没 header → undefined。返 'header' type 的 waitMs；
+ * 'backoff' fallback 类型不当做服务器明确建议，返 undefined。
+ */
+async function extractRetryAfterMs(err: unknown): Promise<number | undefined> {
+  const llm = await loadSdkLlm();
+  if (llm === null) return undefined;
+  try {
+    const headers = llm.extractHeadersFromError(err);
+    if (headers === undefined) return undefined;
+    // attempt=0 是 ParseRetryAfterOptions 必填 — backoff fallback 才用，我们只关心 header branch
+    const result = llm.parseRetryAfter(headers, { attempt: 0 });
+    if (result.type === 'header') return result.waitMs;
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
 import type {
   AutoModeAskUser,
   AutoModeAskUserVerdict,
@@ -615,7 +652,12 @@ export class RealKodaXSession implements ManagedSession {
       } else if (!signal.aborted) {
         // OC-11: SDK 原始异常字符串往往含 stack / HTTP 内部细节，对用户没用。
         // wrapSdkError 分类并产出友好文案 + action；main 日志保留 debugMessage 便于排查。
-        const wrapped = wrapSdkError(err);
+        // OC-23: rate_limit / 5xx 情况下，从 Retry-After header (Anthropic 还有
+        // retry-after-ms 扩展) 算出建议等待时间，UI 给倒计时按钮。SDK 找不到 header
+        // → parseRetryAfter 返 backoff fallback，我们当 undefined 处理（不显示倒计时，
+        // 只显示普通 Retry 按钮）。
+        const retryAfterMs = await extractRetryAfterMs(err);
+        const wrapped = wrapSdkError(err, retryAfterMs !== undefined ? { retryAfterMs } : undefined);
         console.warn(`[real-session ${sid}] sdk error (${wrapped.category}): ${wrapped.debugMessage}`);
         this.emit({
           kind: 'session_error',
@@ -624,6 +666,7 @@ export class RealKodaXSession implements ManagedSession {
           category: wrapped.category,
           retriable: wrapped.retriable,
           ...(wrapped.action ? { action: wrapped.action } : {}),
+          ...(wrapped.retryAfterMs !== undefined ? { retryAfterMs: wrapped.retryAfterMs } : {}),
         });
       }
     } finally {

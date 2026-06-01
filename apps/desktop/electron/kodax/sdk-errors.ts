@@ -37,8 +37,17 @@ export interface WrappedSdkError {
   readonly category: SdkErrorCategory;
   readonly retriable: boolean;
   readonly action?: SdkErrorAction;
+  /** OC-23: rate_limit / server_error 时建议等待毫秒数。
+   *  上游通过 Retry-After header 给（Anthropic 还有 retry-after-ms 扩展）；
+   *  callers 在拿到 SDK error 时用 extractRetryAfter() 算出后传进 wrap。*/
+  readonly retryAfterMs?: number;
   /** 原始 err.message —— main 日志保留；renderer 不显示。便于 debug。*/
   readonly debugMessage: string;
+}
+
+export interface WrapContext {
+  /** Caller 通过 SDK parseRetryAfter 算出来的等待毫秒数（仅 rate_limit / 5xx 有意义）。*/
+  readonly retryAfterMs?: number;
 }
 
 interface ErrLike {
@@ -63,7 +72,7 @@ function matchesAny(haystack: string, needles: readonly string[]): boolean {
   return needles.some((n) => lower.includes(n));
 }
 
-export function wrapSdkError(err: unknown): WrappedSdkError {
+export function wrapSdkError(err: unknown, ctx?: WrapContext): WrappedSdkError {
   // Cancelled 路径单独处理 —— 不应当当成错误展示给用户
   if (err instanceof Error && err.name === 'AbortError') {
     return {
@@ -106,6 +115,7 @@ export function wrapSdkError(err: unknown): WrappedSdkError {
       category: 'rate_limit',
       retriable: true,
       action: 'retry',
+      ...(ctx?.retryAfterMs !== undefined ? { retryAfterMs: ctx.retryAfterMs } : {}),
       debugMessage: rawMessage,
     };
   }

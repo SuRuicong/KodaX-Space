@@ -691,6 +691,11 @@ export const sessionEventChannel = {
         'change_model',
       ]).optional(),
       retriable: z.boolean().optional(),
+      /** OC-23 限流重试倒计时：rate_limit / 5xx 时上游 Retry-After header 给的等待毫秒。
+       *  renderer 据此显示 "Retry in 30s" 倒计时，到点 enable Retry 按钮。
+       *  上限 1 小时 (3_600_000ms) —— 超出明显是 header 异常 / 误读，UI 不该显示几小时倒计时；
+       *  下限 0 —— Retry-After=0 表示"立即可重试" (Anthropic burst limit 恢复)。*/
+      retryAfterMs: z.number().int().min(0).max(3_600_000).optional(),
     }),
     // ---- Context compaction（KodaX onCompact* 系列）----
     z.object({

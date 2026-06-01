@@ -1,7 +1,7 @@
 // Bubble + ToolCallCard + SystemNotice 组件集合。
 // 单文件聚合：每个组件 < 80 行，共享 ConversationMessage 类型，拆分反而提高复杂度。
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ConversationMessage } from '../composeMessages.js';
 import { Markdown } from './Markdown.js';
 
@@ -447,10 +447,30 @@ const ACTION_BUTTONS: Partial<Record<NonNullable<Extract<ConversationMessage, { 
   open_provider_settings: { label: 'Provider settings', event: 'kodax-space.open-provider-settings' },
 };
 
+/**
+ * OC-23 倒计时 hook：把绝对时间戳 retryAvailableAt 转成"剩余秒数"。0 表示已可重试。
+ * 每秒 tick；retryAvailableAt 未设/已过期 → 返 0，组件不渲染倒计时态。
+ */
+function useRetryCountdown(retryAvailableAt: number | undefined): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (retryAvailableAt === undefined) return;
+    const remaining = retryAvailableAt - Date.now();
+    if (remaining <= 0) return;
+    // 用 setInterval 每秒更新；clean up by id
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [retryAvailableAt]);
+  if (retryAvailableAt === undefined) return 0;
+  const remainingMs = retryAvailableAt - now;
+  return remainingMs > 0 ? Math.ceil(remainingMs / 1000) : 0;
+}
+
 export function SystemNotice({
   variant,
   text,
   action,
+  retryAvailableAt,
 }: Extract<ConversationMessage, { kind: 'system_notice' }>): JSX.Element {
   const color =
     variant === 'iteration'
@@ -458,6 +478,8 @@ export function SystemNotice({
       : 'text-red-400 border-red-900/40';
 
   const actionDef = action ? ACTION_BUTTONS[action] : undefined;
+  const secondsLeft = useRetryCountdown(retryAvailableAt);
+  const countdownActive = action === 'retry' && secondsLeft > 0;
 
   return (
     <div className={`text-[10px] font-mono text-center py-1 border-y ${color} flex items-center justify-center gap-2 flex-wrap`}>
@@ -465,10 +487,12 @@ export function SystemNotice({
       {actionDef && (
         <button
           type="button"
+          disabled={countdownActive}
           onClick={() => window.dispatchEvent(new CustomEvent(actionDef.event))}
-          className="px-1.5 py-0.5 rounded border border-current/30 hover:bg-current/10 transition-colors"
+          className="px-1.5 py-0.5 rounded border border-current/30 hover:bg-current/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+          title={countdownActive ? `Wait ${secondsLeft}s before retry` : undefined}
         >
-          {actionDef.label}
+          {countdownActive ? `Retry in ${secondsLeft}s` : actionDef.label}
         </button>
       )}
     </div>

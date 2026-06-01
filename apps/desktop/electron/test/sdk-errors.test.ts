@@ -132,3 +132,23 @@ test('debugMessage always retains original message for main-side logging', () =>
   const w = wrapSdkError(new Error(original));
   assert.equal(w.debugMessage, original);
 });
+
+// OC-23 retryAfterMs context propagation
+test('rate_limit + retryAfterMs ctx → wrapped carries retryAfterMs', () => {
+  const w = wrapSdkError(new Error('429 Too Many Requests'), { retryAfterMs: 30000 });
+  assert.equal(w.category, 'rate_limit');
+  assert.equal(w.retryAfterMs, 30000);
+});
+
+test('rate_limit without ctx → retryAfterMs is undefined', () => {
+  const w = wrapSdkError(new Error('429 Too Many Requests'));
+  assert.equal(w.category, 'rate_limit');
+  assert.equal(w.retryAfterMs, undefined);
+});
+
+test('non-rate-limit + retryAfterMs ctx → ctx ignored (not relevant to category)', () => {
+  // auth 类不该挂 retry-after，即使 ctx 给了也不当真
+  const w = wrapSdkError(new Error('401 Unauthorized'), { retryAfterMs: 5000 });
+  assert.equal(w.category, 'auth');
+  assert.equal(w.retryAfterMs, undefined);
+});
