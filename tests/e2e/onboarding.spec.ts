@@ -50,24 +50,34 @@ test('S1: first launch with isolated data dir shows welcome / no-project state',
 
 test('S2: Space actually writes into the isolated data dir (OC-12 plumbing alive)', async () => {
   // 验证 KODAX_TEST_ONBOARDING 真的让 data-paths.ts 重定向 Space 持久化目录到 tmpdir。
-  // 启动 + wait UI 出现后，dataDir 必须存在 + 至少一个 Space-known 文件 (settings.json
-  // 或 space/projects.json 之类) 写入过 —— 否则说明隔离机制没生效。
+  // Space 启动期不会主动 mkdir SPACE_DATA_DIR —— 真正触发写入需要一个 IPC 调用，比如
+  // project.recent.add 写 projects.json (会 mkdir recursive 父目录)。
+  // 触发 IPC 后 dataDir / dataDir/space/projects.json 才出现。
   const testId = `s2-${Date.now()}`;
   const dataDir = path.join(os.tmpdir(), `kodax-test-${testId}`);
+  // 预先创建一个真实存在的 project 路径 (validateProjectRoot 会检查盘上是否存在)
+  const projectDir = path.join(os.tmpdir(), `kodax-test-${testId}-project`);
+  await fs.mkdir(projectDir, { recursive: true });
 
   const space = await launchSpace(testId);
   try {
     await space.page.waitForSelector('textarea, h1', { timeout: 15_000 });
 
-    // 目录被 Space 创建过 (mkdir on first write)
+    // 触发一次 IPC 写入：project.recent.add 会写 projects.json，mkdir SPACE_DATA_DIR
+    const writeResult = await space.page.evaluate((p) => {
+      return (window as unknown as { kodaxSpace: { invoke: (n: string, i: unknown) => Promise<unknown> } })
+        .kodaxSpace.invoke('project.recent.add', { path: p });
+    }, projectDir);
+    expect(writeResult).toBeTruthy();
+
+    // 现在 dataDir + dataDir/space/projects.json 都应该存在
     const dirExists = await fs.access(dataDir).then(() => true).catch(() => false);
     expect(dirExists).toBe(true);
-
-    // 至少有 space/ 子目录 (settingsStore 兜底创建 ~/.kodax/space/)
-    const spaceDir = path.join(dataDir, 'space');
-    const spaceDirExists = await fs.access(spaceDir).then(() => true).catch(() => false);
-    expect(spaceDirExists).toBe(true);
+    const projectsFile = path.join(dataDir, 'space', 'projects.json');
+    const fileExists = await fs.access(projectsFile).then(() => true).catch(() => false);
+    expect(fileExists).toBe(true);
   } finally {
     await space.close();
+    await fs.rm(projectDir, { recursive: true, force: true }).catch(() => {});
   }
 });
