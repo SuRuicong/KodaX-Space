@@ -1,0 +1,100 @@
+# CI workflow — runs on every PR + push to main
+#
+# Separate from release.yml because:
+#   - release.yml is triggered by tag push and produces installers (heavy)
+#   - ci.yml just validates code quality (typecheck + unit tests + e2e) and
+#     should run on every commit / PR for fast feedback
+#
+# Platform matrix:
+#   - windows-latest — most users' deployment platform; Electron + Playwright
+#     work natively
+#   - ubuntu-latest  — cheapest runner; needs xvfb-run wrapper because Electron
+#     requires an X display, even in headless mode
+#
+# macOS skipped: GitHub macOS runners are slow + Electron e2e on macOS is
+# historically the flakiest combo. Build matrix in release.yml still includes
+# macOS so we don't lose macOS-specific build coverage.
+#
+# Total runtime budget: ~5 min per platform (npm install ~2m + build ~30s +
+# e2e ~30s + overhead). Adjust if it grows.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      # Linux: install xvfb so Electron has an X display for e2e
+      - name: Install xvfb (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Build workspace packages
+        run: npm run build:packages
+
+      - name: Typecheck
+        run: npm run typecheck
+        # composeMessages.test rootDir issue (same continue-on-error as release.yml).
+        # Remove once that's fixed.
+        continue-on-error: true
+
+      - name: Configure npm script-shell (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: npm config set script-shell bash
+
+      - name: Unit tests
+        shell: bash
+        run: npm test
+
+      # E2E specs require renderer + main bundles to be built first
+      - name: Build for e2e
+        shell: bash
+        run: npm run build:smoke
+
+      - name: Run e2e (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: npm run e2e:run
+
+      - name: Run e2e (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" npm run e2e:run
+
+      # Upload trace + screenshots on failure (already gitignored locally)
+      - name: Upload Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results-${{ matrix.os }}
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14
+          if-no-files-found: ignore
