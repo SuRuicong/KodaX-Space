@@ -4,6 +4,28 @@ All notable changes to KodaX-Space will be documented in this file.
 
 KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.com/icetomoyo/KodaX) — Claude Desktop-style interactive surface, GUI alternative to the `kodax` REPL.
 
+## [0.1.2] - 2026-06-01
+
+### Theme
+
+**KodaX ecosystem wiring.** Surfaces 4 existing-but-hidden KodaX capabilities directly in the Space UI — repo-intelligence status, fork lineage, CLI peer discovery, and one-shot Quick Ask — plus adds a CI pipeline that runs the e2e suite on every commit.
+
+### Added
+
+- **`⚡ Quick Ask` popover** (F018) — press `Cmd/Ctrl+K` anywhere to open a centered modal, type a one-shot question, get a markdown reply, `Esc` to close. Uses an ephemeral plan-mode session so it can't accidentally write files or run bash. Reuses your current project's provider + model.
+- **`● Repointel · <mode>` chip** (F015) — repo-intelligence status pill in the ChipBar showing the resolved SDK mode (`OSS` / `Premium (shared)` / `Premium` / `off` / `idle`). Click for the last 3 trace events with engine / latency / cache-hit metadata. Color-coded dot at a glance.
+- **`🌳 Show lineage` in session menu** (F016) — keyboard shortcut `L`. Expands the session menu to show the full fork tree the current session lives in (root + all descendants), indented by depth, annotated with `@turn N` for each fork point. Click any node to jump to that session.
+- **`Running · N` peers panel** (F017) — shows other live KodaX processes (CLI, other Space windows, REPL) at the top of the LeftSidebar. Click a peer with a sessionId to teleport into its conversation (read-only resume via SDK session storage). 10s polling + window-focus refresh. Auto-hides when there are no other peers.
+- **GitHub Actions CI** — new `ci.yml` runs typecheck + unit tests + Playwright e2e on every PR and push to `main`, across Windows + Linux runners (~3 min each). The 5-spec e2e suite (~20s) now blocks regressions automatically.
+
+### Changed
+
+- **`@kodax-ai/kodax` pin bumped to `^0.7.45`** (now published on npm); the catalog reads provider-capabilities.json from the live SDK package.
+
+### Fixed
+
+- **S2 e2e false-fail on CI** — was asserting that the isolated data dir exists right after Space launches; Space mkdir's lazily on first write. The spec now triggers a `project.recent.add` IPC call and then asserts both the dir and `projects.json` exist — a stronger isolation-alive signal that works on clean CI runners.
+
 ## [0.1.1] - 2026-06-01
 
 ### Theme
