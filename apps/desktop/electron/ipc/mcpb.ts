@@ -1,16 +1,13 @@
-// .mcpb IPC handlers — F021 (v0.1.3)
+// .mcpb IPC handlers — F021 (v0.1.3) + v0.1.3.1 patches
 //
-// Channels:
-//   - mcpb.install (invoke) — filePath → { extension }
-//   - mcpb.uninstall (invoke) — extensionId → { ok }
-//   - mcpb.list (invoke) — → { extensions[] }
-//   - mcpb.changed (push) — install/uninstall 后 main 主动推 latest list
-//
-// 失败处理：handler throw 会被 registerChannel 转 IpcResult.fail；message 含
-// manifest 路径 / 校验失败原因，不含敏感字段（installer.installMcpb 内 sanitize）。
+// v0.1.3.1 修复：
+//   - F021-SEC-H2: 卸载守护改用 isInsideExtractBase（path.resolve + startsWith(base+sep)），
+//                  不再 substring includes('.kodax-space')（可被 ~/.kodax-space-evil 绕过）
+//   - F021-FUNC-M3: 升级时拿 addOrReplace 返回的 displacedInstallDir，把旧 install 目录 rm
+//                  （之前升级遗留旧 ver 目录在磁盘上）
+//   - installMcpb 新签名带 tmpDir —— TOCTOU 防御副本目录
 
 import { promises as fsp } from 'node:fs';
-import path from 'node:path';
 import { BrowserWindow, dialog } from 'electron';
 import { registerChannel } from './register.js';
 import { pushToRenderer } from './push.js';
@@ -22,12 +19,25 @@ import {
   buildExtensionFromManifest,
   toExternal,
   getExtractBase,
+  getTmpBase,
+  isInsideExtractBase,
 } from '../mcpb/registry.js';
 
 async function pushChanged(): Promise<void> {
   const reg = await readRegistry();
   pushToRenderer('mcpb.changed', {
     extensions: reg.extensions.map(toExternal),
+  });
+}
+
+/** rm 一个 install 目录 —— 必须先过 isInsideExtractBase 才执行，防 registry 被篡改时越界删 */
+async function safeRmInstallDir(installDir: string, label: string): Promise<void> {
+  if (!isInsideExtractBase(installDir)) {
+    console.warn(`[mcpb] refusing to rm ${label} dir outside extract base: ${installDir}`);
+    return;
+  }
+  await fsp.rm(installDir, { recursive: true, force: true }).catch((err) => {
+    console.warn(`[mcpb] failed to rm ${label} dir:`, err instanceof Error ? err.message : err);
   });
 }
 
@@ -52,10 +62,12 @@ export function registerMcpbChannels(): void {
       }
       filePath = dlg.filePaths[0];
     }
-    const baseDir = getExtractBase();
-    const installed = await installMcpb(filePath, baseDir);
+    const installed = await installMcpb(filePath, getExtractBase(), getTmpBase());
     const entry = buildExtensionFromManifest(installed.manifest, installed.installDir);
-    await addOrReplace(entry);
+    const { displacedInstallDir } = await addOrReplace(entry);
+    if (displacedInstallDir) {
+      await safeRmInstallDir(displacedInstallDir, 'displaced (upgrade)');
+    }
     void pushChanged();
     return { extension: toExternal(entry) };
   });
@@ -63,14 +75,8 @@ export function registerMcpbChannels(): void {
   registerChannel('mcpb.uninstall', async (input) => {
     const res = await removeByExtensionId(input.extensionId);
     if (!res.removed) return { ok: false };
-    // 删 install 目录 —— 失败不阻塞 IPC（registry 已经更新），下次清理工具回收
-    if (res.installDir && path.isAbsolute(res.installDir) && res.installDir.includes('.kodax-space')) {
-      await fsp.rm(res.installDir, { recursive: true, force: true }).catch((err) => {
-        console.warn(
-          '[mcpb] failed to remove install dir:',
-          err instanceof Error ? err.message : err,
-        );
-      });
+    if (res.installDir) {
+      await safeRmInstallDir(res.installDir, 'uninstall');
     }
     void pushChanged();
     return { ok: true };

@@ -209,12 +209,21 @@ export default function App(): JSX.Element {
   useSessionCompleteNotification();
 
   // F020 notification click → main 推 'notification.clicked' 带 sessionId；
-  // 这里订阅 push 通道，切到对应 session 让用户回到正在跑的对话
+  // 这里订阅 push 通道，切到对应 session 让用户回到正在跑的对话。
+  //
+  // v0.1.3.1 修复（F020-H2）：notification 在 OS 通知中心可能存留几分钟到数小时，
+  // 期间用户可能删了对应 session。点已删 session 会把 currentSessionId 写成一个不存在
+  // 的 id，后续 Shell / ConversationStreamV2 读取时会 null-deref。检查 sessionId 仍存在
+  // 才 setCurrentSession；否则静默丢弃（用户感知就是"点了通知没反应"，比白屏 crash 好）。
   const setCurrentSessionForNotif = useAppStore((s) => s.setCurrentSession);
   useEffect(() => {
     if (!window.kodaxSpace) return;
     const unsub = window.kodaxSpace.on('notification.clicked', (payload) => {
-      if (payload.sessionId) setCurrentSessionForNotif(payload.sessionId);
+      if (!payload.sessionId) return;
+      const exists = useAppStore
+        .getState()
+        .sessions.some((s) => s.sessionId === payload.sessionId);
+      if (exists) setCurrentSessionForNotif(payload.sessionId);
     });
     return () => unsub();
   }, [setCurrentSessionForNotif]);

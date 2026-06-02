@@ -21,6 +21,29 @@ import { z } from 'zod';
 
 const envValueSchema = z.string().min(0).max(4096);
 
+/**
+ * v0.1.3.1 安全 patch：command 必须落在 allowlist 内，禁止 manifest 指定 bash / sh / cmd /
+ * powershell / curl 等 shell-runner 或 fetcher 二进制 —— 否则 mcp_config 直接被当成命令
+ * 注入向量。允许的全部是 MCP 生态里 DXT 规范实际使用的 runtime：
+ *   - node:   Node.js JavaScript server
+ *   - python / python3 / uv / uvx: Python server (uvx 是 uv 的 ephemeral runner)
+ *   - npx:    Node.js package runner（直接跑 npm 包，DXT 规范允许）
+ *   - deno / bun: 现代 JS runtime（少数 server 用）
+ *
+ * 不在 allowlist 的（bash, sh, cmd, powershell, pwsh, curl, wget, python2 等）一律拒绝。
+ * 这是硬约束 —— 用户安装时显示明确错误，让他举报恶意 manifest 而非 silent reject。
+ */
+const COMMAND_ALLOWLIST = [
+  'node',
+  'python',
+  'python3',
+  'uv',
+  'uvx',
+  'npx',
+  'deno',
+  'bun',
+] as const;
+
 const serverSchema = z.object({
   /** 'node' | 'python' | 'binary' — DXT 规范字段，Space 当前只用 'node' / 'binary'，
    *  'python' 走 binary（用户提供解释器路径） */
@@ -36,15 +59,21 @@ const serverSchema = z.object({
     )
     .refine((v) => !v.split(/[\\/]/).includes('..'), 'entry_point must not contain ..')
     .optional(),
-  /** 实际执行命令 —— 'node' / 'python' / 二进制名 */
+  /** 实际执行命令 —— 必须是 COMMAND_ALLOWLIST 中的 runtime 名（不允许绝对路径 / shell） */
   mcp_config: z
     .object({
-      command: z.string().min(1).max(512),
+      command: z
+        .string()
+        .min(1)
+        .max(64)
+        .refine((v) => (COMMAND_ALLOWLIST as readonly string[]).includes(v), {
+          message: `command must be one of: ${COMMAND_ALLOWLIST.join(', ')}`,
+        }),
       args: z.array(z.string().min(0).max(1024)).max(64).optional(),
       env: z.record(envValueSchema).optional(),
     })
-    .passthrough(),
-}).passthrough();
+    .strict(),
+}).strict();
 
 const toolSchema = z
   .object({
