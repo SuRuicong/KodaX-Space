@@ -44,6 +44,10 @@ type SubCluster = {
   id: string;
   title: string;
   tools: ToolCallMsg[];
+  /** title 是不是 summarizeTools 兜底生成（"1 read"）而非真正的 assistant 文本。
+   *  synthetic=true 时 UI 可以选择性隐藏 title 避免噪音；synthetic=false 时**必须**
+   *  显示，否则 assistant 的真实回复内容会从对话流里消失。 */
+  syntheticTitle: boolean;
 };
 type ToolClusterMessage = {
   kind: 'tool_cluster';
@@ -70,23 +74,13 @@ type ViewMessage =
   | ThinkingMessage;
 
 /**
- * 从一段文本里取首句作为 sub-cluster 标题。
- * - 去掉首尾空白
- * - 在 '. ! ? 。！？\n' 切第一个出现点
- * - 限到 80 字符
- */
-function firstSentence(text: string | undefined, maxLen = 80): string | null {
-  if (!text) return null;
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  const match = trimmed.match(/^[^.!?。！？\n]{1,200}([.!?。！？]|$)/);
-  const sentence = (match?.[0] ?? trimmed).replace(/[.!?。！？]\s*$/, '').trim();
-  if (sentence.length === 0) return null;
-  return sentence.length > maxLen ? sentence.slice(0, maxLen - 1) + '…' : sentence;
-}
-
-/**
- * Fallback：assistant 没说话也没 thinking 时，按 tool 名汇总 "Ran 3 reads + 1 grep"。
+ * v0.1.4: assistant_text 的 text/thinking 内容都拆成独立 view-message 渲染了
+ * （AssistantBubble + ThinkingBlock），不再需要为 sub-cluster 取首句当 title。
+ * sub-cluster title 现在固定走 summarizeTools 兜底，syntheticTitle=true。
+ *
+ * 旧 firstSentence 函数若未来重新需要"标题摘要"再恢复。
+ *
+ * Fallback：按 tool 名汇总 "Ran 3 reads + 1 grep"。
  */
 function summarizeTools(tools: readonly ToolCallMsg[]): string {
   const counts = new Map<string, number>();
@@ -133,22 +127,35 @@ function groupTools(messages: ConversationMessage[]): ViewMessage[] {
         j++;
       }
       if (tools.length > 0) {
-        // v0.1.4 修复：thinking 之前跟 text 一起被 sub-cluster 吸收只剩 title，
-        // 内容彻底丢失。现在把 thinking 拆出来 flush 在 cluster 前 —— 单独一条
-        // 可折叠记录（对齐 VSCode Claude Code "Thought for Xs" 行）。
+        // v0.1.4 修复：thinking 和 text 之前都被 sub-cluster 吸进 title 只剩首句 80 char。
+        // assistant 真说了 200 字也只剩第一句 —— 用户报告"正常输出，过一会消失了"就是这。
+        // 现在两者都拆出来当独立 view-message 在 cluster 前 flush。
         const hasThinking = Boolean(m.thinking && m.thinking.length > 0);
-        if (hasThinking) {
+        const hasText = m.text.length > 0;
+        if (hasThinking || hasText) {
           flushCluster();
+        }
+        if (hasThinking) {
           out.push({ kind: 'thinking', id: `${m.id}_thinking`, thinking: m.thinking! });
         }
-        // 标题 fallback 链：thinking 已经拆成独立行了，就**不再**回退到 thinking
-        // firstSentence，否则同一段 thinking 内容会在"Thinking ~N tokens"和
-        // sub-cluster 标题里各出现一次（用户报告的"Thinking 在 Run 中也有一份"bug）。
-        const title =
-          firstSentence(m.text) ??
-          (hasThinking ? null : firstSentence(m.thinking)) ??
-          summarizeTools(tools);
-        pendingCluster.push({ id: m.id, title, tools });
+        if (hasText) {
+          // 复用现有 assistant_text view-kind —— AssistantBubble 已经会渲染 markdown + footer
+          out.push({
+            kind: 'assistant_text',
+            id: `${m.id}_text`,
+            text: m.text,
+            sentAt: m.sentAt,
+            // thinking 不带 —— 已在上方独立行渲染了
+          });
+        }
+        // text/thinking 全已 flush 完独立显示，sub-cluster title 直接走工具汇总。
+        // syntheticTitle=true：单 sub-cluster 时 UI 省略 title 行（跟外层 "Ran N" 重复）
+        pendingCluster.push({
+          id: m.id,
+          title: summarizeTools(tools),
+          tools,
+          syntheticTitle: true,
+        });
         i = j - 1; // 跳过 consumed tool_calls (for loop ++ 再 +1 到 j)
       } else {
         flushCluster();
@@ -159,8 +166,13 @@ function groupTools(messages: ConversationMessage[]): ViewMessage[] {
 
     if (m.kind === 'tool_call') {
       // 没前置 assistant_text 的 tool (罕见，首轮 thinking 直接出工具)：
-      // 单独成一个 sub-cluster，标题用 tool 汇总。
-      pendingCluster.push({ id: m.id, title: summarizeTools([m]), tools: [m] });
+      // 单独成一个 sub-cluster，标题用 tool 汇总（syntheticTitle=true）。
+      pendingCluster.push({
+        id: m.id,
+        title: summarizeTools([m]),
+        tools: [m],
+        syntheticTitle: true,
+      });
     }
   }
   flushCluster();
@@ -646,9 +658,16 @@ function ToolCluster({
   const label =
     cluster.totalTools === 1 ? 'Ran 1 command' : `Ran ${cluster.totalTools} commands`;
   const runningHint = running ? ` · running ${running.toolName}…` : '';
-  // 多 sub-cluster 时才显示 step 标签；单 sub-cluster 时标签往往跟外层 label
-  // 信息重复（或就是上方 ThinkingBlock 的首句），省掉减少噪音。
-  const showStepLabels = cluster.subClusters.length > 1;
+  // step 标签是否展示：
+  //   - syntheticTitle=true ("1 read" 这种 summarizeTools 兜底) 且单 sub-cluster
+  //     时省略 —— 跟外层 "Ran 1 command" 信息重复
+  //   - syntheticTitle=false (assistant 真说了话作为前导) 时**必须**显示，
+  //     否则 assistant 真实回复内容会从对话流消失（v0.1.4 回归 bug 修复）
+  const showStepLabel = (sc: SubCluster): boolean => {
+    if (!sc.syntheticTitle) return true;
+    if (cluster.subClusters.length > 1) return true; // 多 sub-cluster 时仍需区分边界
+    return false;
+  };
 
   return (
     <div className="text-xs">
@@ -669,11 +688,11 @@ function ToolCluster({
             const subRunning = sc.tools.find((t) => t.status === 'running');
             return (
               <div key={sc.id} className="space-y-1.5">
-                {showStepLabels && (
-                  <div className="flex items-start gap-1.5 dark:text-zinc-400 text-zinc-600">
-                    <span className="truncate">{sc.title}</span>
+                {showStepLabel(sc) && (
+                  <div className="flex items-start gap-1.5 dark:text-zinc-300 text-zinc-700">
+                    <span className="whitespace-pre-wrap break-words">{sc.title}</span>
                     {subRunning && (
-                      <span className="text-amber-500 text-[10px] flex-shrink-0">
+                      <span className="text-amber-500 text-[10px] flex-shrink-0 mt-px">
                         · {subRunning.toolName}…
                       </span>
                     )}
