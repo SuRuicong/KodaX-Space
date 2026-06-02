@@ -625,17 +625,20 @@ interface ToolClusterProps {
 }
 
 /**
- * 两层折叠 cluster：
- *   外层 "Ran 6 commands · 12s ⌄" → 展开后看到 6 个 sub-cluster
- *   每个 sub-cluster "▸ List workspaces and docs" → 展开后看到具体 ToolCallCard
- * 状态全用 expanded Set<id> 管：外层 id 是 cluster.id，内层 id 是 sub.id。
+ * 单层折叠 cluster（v0.1.4 简化）：
+ *   外层 "Ran 6 commands · 12s ⌄" → 展开后直接看到所有 ToolCallCard
+ *   原来的内层 sub-cluster ▸/⌄ 移除，sub-cluster 标题降级为不可点击的上方一行文字标签
+ *   （保留"这一步 LLM 在做什么"的上下文，但不再要求第二次点击才能看到 tools）
+ * 状态用 expanded Set<id> 管：只有外层 id（cluster.id）。
+ *
+ * 历史：v0.1.0 起两层折叠（外+内），灵感来自 Claude Desktop 的 "Ran N commands ⌄ →
+ * sub-cluster → tool cards" 形态。用户 2026-06-02 反馈两层不直观（"展开2次才能看到具体跑了什么命令"），
+ * 降回单层。如果未来 cluster 巨大（>20 tools）再考虑加回 sub-cluster 折叠。
  */
 function ToolCluster({
   cluster,
   expanded,
   onToggle,
-  expandedSubs,
-  toggleSub,
 }: ToolClusterProps): JSX.Element {
   const allTools = cluster.subClusters.flatMap((sc) => sc.tools);
   const allDone = allTools.every((t) => t.status === 'done');
@@ -643,6 +646,9 @@ function ToolCluster({
   const label =
     cluster.totalTools === 1 ? 'Ran 1 command' : `Ran ${cluster.totalTools} commands`;
   const runningHint = running ? ` · running ${running.toolName}…` : '';
+  // 多 sub-cluster 时才显示 step 标签；单 sub-cluster 时标签往往跟外层 label
+  // 信息重复（或就是上方 ThinkingBlock 的首句），省掉减少噪音。
+  const showStepLabels = cluster.subClusters.length > 1;
 
   return (
     <div className="text-xs">
@@ -658,38 +664,26 @@ function ToolCluster({
         {!allDone && <span className="text-amber-500">{runningHint}</span>}
       </button>
       {expanded && (
-        <div className="mt-1.5 ml-3 space-y-1.5 border-l dark:border-zinc-800 border-zinc-200 pl-3">
+        <div className="mt-1.5 ml-3 space-y-2 border-l dark:border-zinc-800 border-zinc-200 pl-3">
           {cluster.subClusters.map((sc) => {
-            const subOpen = expandedSubs.has(sc.id);
-            const subAllDone = sc.tools.every((t) => t.status === 'done');
             const subRunning = sc.tools.find((t) => t.status === 'running');
             return (
-              <div key={sc.id}>
-                <button
-                  type="button"
-                  onClick={() => toggleSub(sc.id)}
-                  className="w-full text-left flex items-start gap-1.5 dark:text-zinc-300 dark:hover:text-zinc-100 text-zinc-700 hover:text-zinc-900"
-                >
-                  <span
-                    aria-hidden
-                    className="dark:text-zinc-600 text-zinc-400 flex-shrink-0 mt-px"
-                  >
-                    {subOpen ? '⌄' : '›'}
-                  </span>
-                  <span className="truncate">{sc.title}</span>
-                  {!subAllDone && subRunning && (
-                    <span className="text-amber-500 text-[10px] flex-shrink-0">
-                      · {subRunning.toolName}…
-                    </span>
-                  )}
-                </button>
-                {subOpen && (
-                  <div className="mt-1 ml-3 space-y-2">
-                    {sc.tools.map((t) => (
-                      <ToolCallCard key={t.id} {...t} />
-                    ))}
+              <div key={sc.id} className="space-y-1.5">
+                {showStepLabels && (
+                  <div className="flex items-start gap-1.5 dark:text-zinc-400 text-zinc-600">
+                    <span className="truncate">{sc.title}</span>
+                    {subRunning && (
+                      <span className="text-amber-500 text-[10px] flex-shrink-0">
+                        · {subRunning.toolName}…
+                      </span>
+                    )}
                   </div>
                 )}
+                <div className="space-y-2">
+                  {sc.tools.map((t) => (
+                    <ToolCallCard key={t.id} {...t} />
+                  ))}
+                </div>
               </div>
             );
           })}
