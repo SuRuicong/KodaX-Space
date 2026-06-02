@@ -27,6 +27,7 @@ import { PermissionModal } from './features/permission/PermissionModal.js';
 import { AskUserModal } from './features/ask-user/AskUserModal.js';
 import { ProviderSettings } from './features/provider/ProviderSettings.js';
 import { QuickAskPopover } from './features/quick-ask/QuickAskPopover.js';
+import { useSessionCompleteNotification } from './features/notifications/useSessionCompleteNotification.js';
 import { FilePanel } from './features/code/FilePanel.js';
 import { Shell } from './shell/Shell.js';
 
@@ -203,6 +204,20 @@ export default function App(): JSX.Element {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // F020 long-task complete OS notification — 在前台时不通知，>60s 任务才通知
+  useSessionCompleteNotification();
+
+  // F020 notification click → main 推 'notification.clicked' 带 sessionId；
+  // 这里订阅 push 通道，切到对应 session 让用户回到正在跑的对话
+  const setCurrentSessionForNotif = useAppStore((s) => s.setCurrentSession);
+  useEffect(() => {
+    if (!window.kodaxSpace) return;
+    const unsub = window.kodaxSpace.on('notification.clicked', (payload) => {
+      if (payload.sessionId) setCurrentSessionForNotif(payload.sessionId);
+    });
+    return () => unsub();
+  }, [setCurrentSessionForNotif]);
 
   const configuredCount = providers.filter((p) => p.configured).length;
   const defaultProvider = providers.find((p) => p.id === defaultProviderId);

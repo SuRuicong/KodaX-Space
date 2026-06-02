@@ -176,6 +176,11 @@ export {
 } from './channels/settings.js';
 
 export {
+  notificationShowChannel,
+  notificationClickedChannel,
+} from './channels/notification.js';
+
+export {
   INVOKE_CHANNEL_NAMES,
   PUSH_CHANNEL_NAMES,
   getInvokeChannel,

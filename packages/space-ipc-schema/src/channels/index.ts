@@ -87,6 +87,7 @@ import {
 import { filesTreeChannel, filesReadChannel, filesDiffChannel } from './files.js';
 import { titlebarSetOverlayChannel } from './titlebar.js';
 import { settingsGetChannel, settingsSetDefaultWorkspaceChannel } from './settings.js';
+import { notificationShowChannel, notificationClickedChannel } from './notification.js';
 
 export const invokeChannels = {
   [versionChannel.name]: versionChannel,
@@ -147,6 +148,7 @@ export const invokeChannels = {
   [titlebarSetOverlayChannel.name]: titlebarSetOverlayChannel,
   [settingsGetChannel.name]: settingsGetChannel,
   [settingsSetDefaultWorkspaceChannel.name]: settingsSetDefaultWorkspaceChannel,
+  [notificationShowChannel.name]: notificationShowChannel,
 } as const;
 
 export const pushChannels = {
@@ -156,6 +158,7 @@ export const pushChannels = {
   [askUserRequestChannel.name]: askUserRequestChannel,
   [askUserCancelledChannel.name]: askUserCancelledChannel,
   [kodaxQueueChangedChannel.name]: kodaxQueueChangedChannel,
+  [notificationClickedChannel.name]: notificationClickedChannel,
 } as const;
 
 export type InvokeChannels = typeof invokeChannels;
