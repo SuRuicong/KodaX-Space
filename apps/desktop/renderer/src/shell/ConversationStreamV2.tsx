@@ -51,7 +51,22 @@ type ToolClusterMessage = {
   totalTools: number;
 };
 
-type ViewMessage = Exclude<ConversationMessage, { kind: 'tool_call' }> | ToolClusterMessage;
+/**
+ * Thinking-only 视图节点 —— 对齐 VSCode Claude Code 的 "Thought for Xs" 折叠行。
+ * 之前 thinking 跟 text 被绑在同一个 assistant_text 上，groupTools 把后跟 tools 的整条
+ * 消息吸进 sub-cluster header 只剩 title，thinking 内容丢失。现在 groupTools 把
+ * thinking 拆出来在 cluster 前单独出一条折叠记录。
+ */
+type ThinkingMessage = {
+  kind: 'thinking';
+  id: string;
+  thinking: string;
+};
+
+type ViewMessage =
+  | Exclude<ConversationMessage, { kind: 'tool_call' }>
+  | ToolClusterMessage
+  | ThinkingMessage;
 
 /**
  * 从一段文本里取首句作为 sub-cluster 标题。
@@ -117,6 +132,13 @@ function groupTools(messages: ConversationMessage[]): ViewMessage[] {
         j++;
       }
       if (tools.length > 0) {
+        // v0.1.4 修复：thinking 之前跟 text 一起被 sub-cluster 吸收只剩 title，
+        // 内容彻底丢失。现在把 thinking 拆出来 flush 在 cluster 前 —— 单独一条
+        // 可折叠记录（对齐 VSCode Claude Code "Thought for Xs" 行）。
+        if (m.thinking && m.thinking.length > 0) {
+          flushCluster();
+          out.push({ kind: 'thinking', id: `${m.id}_thinking`, thinking: m.thinking });
+        }
         const title =
           firstSentence(m.text) ??
           firstSentence(m.thinking) ??
@@ -382,7 +404,7 @@ export function ConversationStreamV2(): JSX.Element {
             ? 'ring-1 ring-amber-500/40 rounded-md'
             : '';
           let inner: JSX.Element;
-          let markerTone: 'user' | 'assistant' | 'system' | 'tool' = 'assistant';
+          let markerTone: MarkerTone = 'assistant';
           switch (m.kind) {
             case 'user':
               inner = <UserBubble content={m.content} sentAt={m.sentAt} />;
@@ -407,6 +429,16 @@ export function ConversationStreamV2(): JSX.Element {
                 />
               );
               markerTone = 'tool';
+              break;
+            case 'thinking':
+              inner = (
+                <ThinkingBlock
+                  thinking={m.thinking}
+                  expanded={expanded.has(m.id)}
+                  onToggle={() => toggleGroup(m.id)}
+                />
+              );
+              markerTone = 'thinking';
               break;
           }
           return (
@@ -494,14 +526,15 @@ export function ConversationStreamV2(): JSX.Element {
 }
 
 // Timeline rail marker —— absolute 定位到时间线竖线上，配色按消息 kind 区分
-// 让用户一眼能扫出"哪些是我说的 / 模型说的 / 系统通知 / 工具调用"。
+// 让用户一眼能扫出"哪些是我说的 / 模型说的 / 系统通知 / 工具调用 / 思考"。
 // 直径 9px，与 rail (1px wide @ left:7px) 居中对齐 = marker.left = 3px。
-type MarkerTone = 'user' | 'assistant' | 'system' | 'tool';
+type MarkerTone = 'user' | 'assistant' | 'system' | 'tool' | 'thinking';
 const MARKER_TONE_CLASS: Record<MarkerTone, string> = {
   user: 'bg-sky-500 dark:bg-sky-400',
   assistant: 'bg-emerald-500 dark:bg-emerald-400',
   system: 'bg-amber-500 dark:bg-amber-400',
   tool: 'bg-zinc-400 dark:bg-zinc-500',
+  thinking: 'bg-purple-500 dark:bg-purple-400',
 };
 function TimelineMarker({ tone }: { tone: MarkerTone }): JSX.Element {
   return (
@@ -509,6 +542,53 @@ function TimelineMarker({ tone }: { tone: MarkerTone }): JSX.Element {
       aria-hidden
       className={`absolute left-[-22px] top-[10px] w-[9px] h-[9px] rounded-full ring-2 ring-surface ${MARKER_TONE_CLASS[tone]}`}
     />
+  );
+}
+
+/**
+ * ThinkingBlock — 对齐 VSCode Claude Code "Thought for Xs" 折叠行。
+ * 折叠态 = 紫色一行 `▸ Thinking · ~N tokens`，展开态 = 多行 pre-wrap 文本。
+ * approxTokens 复用 bubbles.tsx 的算法（4 chars ≈ 1 token），但这里 inline 实现避免循环依赖。
+ */
+function ThinkingBlock({
+  thinking,
+  expanded,
+  onToggle,
+}: {
+  thinking: string;
+  expanded: boolean;
+  onToggle: () => void;
+}): JSX.Element {
+  const tokens = Math.max(1, Math.round(thinking.length / 4));
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onToggle}
+        className={[
+          'text-[11px] font-mono flex items-center gap-1.5',
+          'dark:text-purple-400 dark:hover:text-purple-300',
+          'text-purple-700 hover:text-purple-900',
+        ].join(' ')}
+        aria-expanded={expanded}
+      >
+        <span aria-hidden className="dark:text-zinc-600 text-zinc-400">
+          {expanded ? '⌄' : '›'}
+        </span>
+        <span>Thinking · ~{tokens} tokens</span>
+      </button>
+      {expanded && (
+        <div
+          className={[
+            'mt-1.5 ml-3 pl-2 border-l text-xs whitespace-pre-wrap',
+            'dark:border-purple-900/60 dark:text-purple-300/80',
+            'border-purple-200 text-purple-800',
+          ].join(' ')}
+        >
+          {thinking}
+        </div>
+      )}
+    </div>
   );
 }
 
