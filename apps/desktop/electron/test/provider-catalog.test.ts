@@ -46,13 +46,13 @@ test('catalog includes expected anchor providers (anthropic, openai, zhipu-codin
   assert.ok(ids.has('zhipu-coding'));
 });
 
-test('catalog has fallback data for all 13 anchor providers (disaster recovery)', () => {
+test('catalog has fallback data for all 14 anchor providers (disaster recovery)', () => {
   // 这个验证不直接调 buildFallbackProviders（未导出），但通过 BUILTIN_PROVIDERS
   // 间接保证：每个 builtin 都有 apiKeyEnv + defaultModel，无论数据来自 JSON 还是 fallback。
   // 等同于"如果 JSON 缺失走 fallback，依然有完整数据"的 invariant 保护。
   const REQUIRED_IDS = [
     'anthropic', 'openai', 'deepseek', 'kimi', 'kimi-code', 'qwen',
-    'zhipu', 'zhipu-coding', 'minimax-coding', 'mimo-coding', 'ark-coding',
+    'zhipu', 'zhipu-coding', 'minimax-coding', 'mimo-coding', 'mimo', 'ark-coding',
     'gemini-cli', 'codex-cli',
   ];
   const ids = new Set(BUILTIN_PROVIDERS.map((p) => p.id));
@@ -75,6 +75,7 @@ test('apiKeyEnv values match KodaX upstream catalog (env var naming convention)'
     'kimi-code': 'KIMI_CODE_API_KEY',
     'minimax-coding': 'MINIMAX_CODING_API_KEY',
     'mimo-coding': 'MIMO_CODING_API_KEY',
+    mimo: 'MIMO_API_KEY',
     'ark-coding': 'ARK_CODING_API_KEY',
   };
   for (const [id, env] of Object.entries(expected)) {

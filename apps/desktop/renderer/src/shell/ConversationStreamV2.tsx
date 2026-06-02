@@ -349,12 +349,11 @@ export function ConversationStreamV2(): JSX.Element {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className={`h-full overflow-auto px-6 sm:px-10 lg:px-14 py-5 ${fontClass}`}
+        className={`h-full overflow-auto px-8 py-5 ${fontClass}`}
       >
-        {/* 中心收窄读宽 (max-w-3xl) + 左侧时间线 rail —— 对齐 Claude Desktop / VSCode Claude 扩展。
-            rail = 绝对定位的垂直细线 + 每条 message 圆点 marker；用 dark:bg-zinc-800/60 让 light/dark
-            主题各有对比度。`pl-6` 给 marker 让位，`relative` 让 marker absolute 定位锚到 message 块。*/}
-        <div ref={contentRef} className="relative max-w-3xl mx-auto pl-6">
+        {/* 左右只留几个字符的 padding，不限宽 —— 用户反馈 max-w-3xl 在宽屏留太多空白。
+            左侧时间线 rail = 绝对定位竖线 + 每条消息圆点 marker；`pl-6` 给 marker 让位。*/}
+        <div ref={contentRef} className="relative pl-6">
           {/* timeline 竖线 —— 仅 viewMessages 长度 > 0 时画，避免空状态出现孤立竖线 */}
           {viewMessages.length > 0 && (
             <div

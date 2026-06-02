@@ -125,10 +125,20 @@ const SPACE_OVERRIDES: Record<string, SpaceOverride> = {
     fallbackDefaultModel: 'MiniMax-M2.7',
   },
   'mimo-coding': {
-    displayName: 'MiMo (Xiaomi)',
+    displayName: 'MiMo Coding (Xiaomi)',
     protocol: 'anthropic',
     testEndpoint: 'https://api.xiaomi.com/mimo/anthropic/v1/messages',
     fallbackApiKeyEnv: 'MIMO_CODING_API_KEY',
+    fallbackDefaultModel: 'mimo-v2.5-pro',
+  },
+  // 小米 MiMo 直连版（SDK 2026-05-25 新增，与订阅版 mimo-coding 并列）。
+  // mimo 继承 KodaXAnthropicCompatProvider → protocol=anthropic（不是兜底的 openai）。
+  // testEndpoint 留空：直连版 anthropic-compat 端点 URL 待 MiMo 文档确认；
+  // 留空 → 测连接对 mimo 跳过 HTTP probe（不报错），不影响 mimo 走 SDK 的实际调用。
+  mimo: {
+    displayName: 'MiMo (Xiaomi)',
+    protocol: 'anthropic',
+    fallbackApiKeyEnv: 'MIMO_API_KEY',
     fallbackDefaultModel: 'mimo-v2.5-pro',
   },
   'ark-coding': {
