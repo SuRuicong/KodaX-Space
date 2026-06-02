@@ -21,6 +21,7 @@ import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { McpServerMeta } from '@kodax-space/space-ipc-schema';
+import { readRegistry as readMcpbRegistry } from '../mcpb/registry.js';
 
 type SdkReplModule = typeof import('@kodax-ai/kodax/repl');
 type SdkMcpServersConfig = ReturnType<SdkReplModule['listMcpServers']>;
@@ -143,11 +144,37 @@ export async function discoverMcpServers(opts: DiscoverOptions): Promise<Discove
       ? [] // 罕见但防御：projectRoot 恰好等于 globalDir
       : await readServersFromFile(projectPath, 'project', errors);
 
+  // F021 mcpb 安装的 extension 也是 MCP server —— 投影成同样的 meta 形态
+  const mcpbServers = await readMcpbServers(errors);
+
   const byName = new Map<string, McpServerMeta>();
-  for (const s of globalServers) byName.set(s.name, s);
-  for (const s of projectServers) byName.set(s.name, s); // project 覆盖 global
+  for (const s of mcpbServers) byName.set(s.name, s);
+  for (const s of globalServers) byName.set(s.name, s); // global 覆盖 mcpb
+  for (const s of projectServers) byName.set(s.name, s); // project 覆盖 all
 
   return { servers: [...byName.values()], errors };
+}
+
+async function readMcpbServers(
+  errors: Array<{ path: string; error: string }>,
+): Promise<McpServerMeta[]> {
+  try {
+    const reg = await readMcpbRegistry();
+    return reg.extensions.map((ext) => ({
+      name: ext.name,
+      transport: 'stdio' as const,
+      command: ext.server.command,
+      ...(ext.server.args ? { args: ext.server.args } : {}),
+      envCount: ext.server.env ? Object.keys(ext.server.env).length : 0,
+      source: 'global' as const,
+    }));
+  } catch (err) {
+    errors.push({
+      path: '~/.kodax-space/mcpb-extensions.json',
+      error: `mcpb registry read failed: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    return [];
+  }
 }
 
 /**

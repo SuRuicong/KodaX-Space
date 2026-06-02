@@ -188,6 +188,14 @@ export {
 } from './channels/updater.js';
 
 export {
+  mcpbInstallChannel,
+  mcpbUninstallChannel,
+  mcpbListChannel,
+  mcpbChangedChannel,
+  type McpbExtensionT,
+} from './channels/mcpb.js';
+
+export {
   INVOKE_CHANNEL_NAMES,
   PUSH_CHANNEL_NAMES,
   getInvokeChannel,

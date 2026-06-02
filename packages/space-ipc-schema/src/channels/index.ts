@@ -93,6 +93,12 @@ import {
   updaterInstallChannel,
   updaterStatusChannel,
 } from './updater.js';
+import {
+  mcpbInstallChannel,
+  mcpbUninstallChannel,
+  mcpbListChannel,
+  mcpbChangedChannel,
+} from './mcpb.js';
 
 export const invokeChannels = {
   [versionChannel.name]: versionChannel,
@@ -156,6 +162,9 @@ export const invokeChannels = {
   [notificationShowChannel.name]: notificationShowChannel,
   [updaterCheckChannel.name]: updaterCheckChannel,
   [updaterInstallChannel.name]: updaterInstallChannel,
+  [mcpbInstallChannel.name]: mcpbInstallChannel,
+  [mcpbUninstallChannel.name]: mcpbUninstallChannel,
+  [mcpbListChannel.name]: mcpbListChannel,
 } as const;
 
 export const pushChannels = {
@@ -167,6 +176,7 @@ export const pushChannels = {
   [kodaxQueueChangedChannel.name]: kodaxQueueChangedChannel,
   [notificationClickedChannel.name]: notificationClickedChannel,
   [updaterStatusChannel.name]: updaterStatusChannel,
+  [mcpbChangedChannel.name]: mcpbChangedChannel,
 } as const;
 
 export type InvokeChannels = typeof invokeChannels;

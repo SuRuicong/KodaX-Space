@@ -57,7 +57,7 @@ const sharedOptions = {
   // 动态 `await import('@kodax-ai/kodax/coding')` —— 动态 import 走 ESM 解析规则，
   // 即使在 CJS 上下文也能命中 `"import"` 条件。static `import` 只能用类型 (typeof import())。
   // 详见 apps/desktop/electron/kodax/{user-config,mcp/config-reader}.ts 的 lazy 模式。
-  external: ['electron', 'keytar', '@kodax-ai/kodax', '@kodax-ai/kodax/coding', '@kodax-ai/kodax/skills', '@kodax-ai/kodax/repl', '@kodax-ai/kodax/session', '@kodax-ai/kodax/mcp', '@kodax-ai/kodax/llm', '@kodax-ai/kodax/agent'],
+  external: ['electron', 'keytar', '@kodax-ai/kodax', '@kodax-ai/kodax/coding', '@kodax-ai/kodax/skills', '@kodax-ai/kodax/repl', '@kodax-ai/kodax/session', '@kodax-ai/kodax/mcp', '@kodax-ai/kodax/llm', '@kodax-ai/kodax/agent', 'electron-updater'],
   logLevel: 'info',
 };
 

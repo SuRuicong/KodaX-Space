@@ -16,8 +16,10 @@ import type {
   McpServerMeta,
   McpServerStatusT,
   McpRuntimeStatusT,
+  McpbExtensionT,
 } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
+import { pushToast } from '../../store/toastStore.js';
 
 const STATUS_COLOR: Record<McpRuntimeStatusT, string> = {
   idle: 'text-zinc-500',
@@ -49,6 +51,9 @@ export function McpPanel(): JSX.Element {
   const [topErr, setTopErr] = useState<string | null>(null);
   // 操作中的 serverId (start/stop 期间禁按钮)
   const [busyServer, setBusyServer] = useState<string | null>(null);
+  // F021 .mcpb 已安装 extensions
+  const [extensions, setExtensions] = useState<readonly McpbExtensionT[]>([]);
+  const [installing, setInstalling] = useState(false);
   // 哪些 server 当前展开 tools 列表 (Map<serverId, ToolItem[] | 'loading'>)
   const [expandedTools, setExpandedTools] = useState<Record<string, ToolItem[] | 'loading' | 'error'>>({});
 
@@ -87,6 +92,46 @@ export function McpPanel(): JSX.Element {
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProjectPath]);
+
+  // F021 拉一次 mcpb extensions + 订阅 changed push
+  useEffect(() => {
+    if (!window.kodaxSpace) return;
+    void window.kodaxSpace.invoke('mcpb.list', {}).then((r) => {
+      if (r.ok) setExtensions(r.data.extensions);
+    });
+    const unsub = window.kodaxSpace.on('mcpb.changed', (payload) => {
+      setExtensions(payload.extensions);
+    });
+    return () => unsub();
+  }, []);
+
+  async function installExtension(): Promise<void> {
+    if (!window.kodaxSpace) return;
+    setInstalling(true);
+    try {
+      const r = await window.kodaxSpace.invoke('mcpb.install', {});
+      if (!r.ok) {
+        pushToast(`Install failed: ${r.error?.message ?? 'unknown'}`, 'error');
+        return;
+      }
+      if ('cancelled' in r.data && r.data.cancelled) return;
+      if ('extension' in r.data) {
+        pushToast(`Installed ${r.data.extension.displayName} v${r.data.extension.version}`, 'success');
+      }
+    } finally {
+      setInstalling(false);
+    }
+  }
+
+  async function uninstallExtension(extensionId: string, name: string): Promise<void> {
+    if (!window.kodaxSpace) return;
+    const r = await window.kodaxSpace.invoke('mcpb.uninstall', { extensionId });
+    if (r.ok && r.data.ok) {
+      pushToast(`Uninstalled ${name}`, 'info');
+    } else {
+      pushToast(`Uninstall failed`, 'error');
+    }
+  }
 
   async function startServer(serverId: string): Promise<void> {
     if (!window.kodaxSpace) return;
@@ -199,6 +244,15 @@ export function McpPanel(): JSX.Element {
             title="Reload config + reconstruct manager (call after editing ~/.kodax/config.json)"
           >
             ⟲ Reload config
+          </button>
+          <button
+            type="button"
+            onClick={() => void installExtension()}
+            disabled={installing}
+            className="px-2 py-0.5 text-[10px] rounded bg-emerald-600/40 text-emerald-200 hover:bg-emerald-600/60 disabled:opacity-50"
+            title="Install a .mcpb / .dxt bundle"
+          >
+            {installing ? '…' : '+ Install ext'}
           </button>
         </div>
       </header>
@@ -321,6 +375,47 @@ export function McpPanel(): JSX.Element {
             </div>
           );
         })}
+
+        {extensions.length > 0 && (
+          <div className="mt-3">
+            <div className="text-[10px] uppercase tracking-wider text-zinc-400 mb-1.5">
+              Installed extensions ({extensions.length})
+            </div>
+            <ul className="space-y-1">
+              {extensions.map((ext) => (
+                <li
+                  key={ext.extensionId}
+                  className="border border-zinc-800/60 rounded bg-zinc-900/30 px-2 py-1.5"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-zinc-200 truncate flex-1">
+                      {ext.displayName}{' '}
+                      <span className="text-zinc-500">v{ext.version}</span>
+                    </span>
+                    {ext.toolCount > 0 && (
+                      <span className="text-[10px] text-zinc-500 font-mono">
+                        {ext.toolCount} tools
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void uninstallExtension(ext.extensionId, ext.displayName)}
+                      className="px-1.5 py-0.5 text-[10px] rounded text-zinc-400 hover:text-red-300 hover:bg-zinc-800"
+                      title="Uninstall"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  {ext.description && (
+                    <div className="mt-0.5 text-[10px] text-zinc-500 truncate" title={ext.description}>
+                      {ext.description}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {discoverErrors.length > 0 && (
           <div className="mt-3">
