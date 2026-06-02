@@ -35,6 +35,7 @@ import { ThemeToggle } from './ThemeToggle.js';
 import { RightSidebar } from './RightSidebar.js';
 import { HelpOverlayController } from './HelpOverlay.js';
 import { ToastContainer } from './ToastContainer.js';
+import { UpdateBanner } from '../features/updater/UpdateBanner.js';
 import { useAppStore } from '../store/appStore.js';
 
 export type Mode = 'coder' | 'partner';
@@ -236,6 +237,7 @@ export function Shell(): JSX.Element {
         <HelpOverlayController />
       </div>
       <ToastContainer />
+      <UpdateBanner />
     </div>
   );
 }

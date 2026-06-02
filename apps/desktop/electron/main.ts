@@ -31,6 +31,7 @@ import { registerFilesChannels } from './ipc/files.js';
 import { registerTitlebarChannels } from './ipc/titlebar.js';
 import { registerSettingsChannels } from './ipc/settings.js';
 import { registerNotificationChannels, setNotificationWindowGetter } from './ipc/notification.js';
+import { registerUpdaterChannels, initAutoUpdater } from './ipc/updater.js';
 import { settingsStore } from './settings/store.js';
 import { setRendererTarget } from './ipc/push.js';
 import { kodaxHost } from './kodax/host.js';
@@ -270,6 +271,10 @@ app.whenReady().then(async () => {
   // F020 native OS notification — renderer 调 notification.show 弹 OS 原生通知
   registerNotificationChannels();
   setNotificationWindowGetter(() => mainWindow && !mainWindow.isDestroyed() ? mainWindow : null);
+  // F022 auto-updater — packaged 模式下走 GitHub Releases feed；dev 模式 idle
+  // initAutoUpdater 内部判断 app.isPackaged + 异步触发首次 check，不阻塞窗口创建
+  registerUpdaterChannels();
+  void initAutoUpdater();
   // 启动期保证默认 workspace 目录存在 (~/kodax_workspace 或用户改过的路径)。
   // 不阻塞窗口创建——mkdir 失败 (磁盘满 / 权限) 不致命，UI 仍能用 + 用户可走 Open folder.
   void settingsStore.ensureWorkspaceExists();

@@ -6,6 +6,10 @@
   "type": "module",
   "license": "Apache-2.0",
   "author": "icetomoyo <icetomoyo@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/icetomoyo/KodaX-Space.git"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"

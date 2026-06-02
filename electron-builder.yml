@@ -89,5 +89,15 @@ linux:
 extraMetadata:
   main: dist-electron/main.js
 
+# 自动更新 channel —— F022 (v0.1.3)
+# 走 GitHub Releases，latest.yml / latest-mac.yml / latest-linux.yml
+# 由 electron-builder 在 publish 时自动生成 + 上传。
+# electron-updater 在 main 进程通过本配置定位 release feed。
+publish:
+  - provider: github
+    owner: icetomoyo
+    repo: KodaX-Space
+    releaseType: release
+
 # 不内嵌 KodaX-private 任何代码（见 HLD §18）
 # KodaX SDK 通过 node_modules 引入 (FEATURE_003)

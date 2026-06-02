@@ -181,6 +181,13 @@ export {
 } from './channels/notification.js';
 
 export {
+  updaterCheckChannel,
+  updaterInstallChannel,
+  updaterStatusChannel,
+  type UpdaterStateT,
+} from './channels/updater.js';
+
+export {
   INVOKE_CHANNEL_NAMES,
   PUSH_CHANNEL_NAMES,
   getInvokeChannel,
