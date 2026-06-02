@@ -26,6 +26,7 @@ import {
   UserBubble,
 } from '../features/session/messages/bubbles.js';
 import { WelcomeDashboard } from './WelcomeDashboard.js';
+import { ActivitySpinner, useIsStreaming } from './ActivitySpinner.js';
 
 // 聚合后的 view-only message kind —— 两层折叠对齐 Claude Desktop "Ran 6 commands ⌄":
 //
@@ -452,6 +453,10 @@ export function ConversationStreamV2(): JSX.Element {
             </div>
           );
         })}
+        {/* 流式 spinner —— v0.1.4：从 BottomBar 搬到这里，对齐 VSCode Claude Code
+            把"正在做什么"放在对话流末尾的位置感（更自然，能跟时间线 rail 衔接）。
+            ActivitySpinner 自己 return null 时本块也不渲染 marker。 */}
+          <StreamingSpinnerRow />
           </div>
         </div>
       </div>
@@ -546,6 +551,21 @@ function TimelineMarker({ tone }: { tone: MarkerTone }): JSX.Element {
       aria-hidden
       className={`absolute left-[-22px] top-[10px] w-[9px] h-[9px] rounded-full ring-2 ring-surface ${MARKER_TONE_CLASS[tone]}`}
     />
+  );
+}
+
+/**
+ * 流式 spinner 行 —— 对话流末尾的"正在做什么"指示。
+ * 跟其它消息一样在时间线 rail 上挂一个 marker；不在 streaming 时整行返 null。
+ */
+function StreamingSpinnerRow(): JSX.Element | null {
+  const isStreaming = useIsStreaming();
+  if (!isStreaming) return null;
+  return (
+    <div className="relative">
+      <TimelineMarker tone="assistant" />
+      <ActivitySpinner />
+    </div>
   );
 }
 

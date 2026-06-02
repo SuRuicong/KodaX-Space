@@ -20,7 +20,7 @@ import { AgentPicker } from './AgentPicker.js';
 import { AtPathPopover } from './AtPathPopover.js';
 import { SlashCommandPopover, type SlashPickerItem } from './SlashCommandPopover.js';
 import { resolveSessionCreateInputs } from './createSession.js';
-import { ActivitySpinner, useIsStreaming } from './ActivitySpinner.js';
+import { useIsStreaming } from './ActivitySpinner.js';
 import { AgentModeSelector } from './AgentModeSelector.js';
 import { AmaWorkStrip } from './AmaWorkStrip.js';
 import { BackgroundTaskBar } from './BackgroundTaskBar.js';
@@ -823,8 +823,9 @@ export function BottomBar(): JSX.Element {
       {/* REPL BackgroundTaskBar 等价: 多 subagent 并发时按 workerId 聚合显示 chip 条 */}
       <BackgroundTaskBar />
 
-      {/* 流式响应时显示 spinner + 实时 status / iter / tokens */}
-      <ActivitySpinner />
+      {/* v0.1.4：流式 spinner 搬去了 ConversationStreamV2 末尾 —— 对齐 VSCode
+          Claude Code "正在做什么"放在历史下方紧邻输入框上的位置感。
+          这里只保留 useIsStreaming hook 的 import（Send/Stop 按钮还在用）。*/}
 
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 px-3 pt-2 pb-2 space-y-1.5 shadow-sm focus-within:border-zinc-700 transition-colors">
         <ChipBar />
