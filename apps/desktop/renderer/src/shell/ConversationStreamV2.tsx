@@ -349,9 +349,20 @@ export function ConversationStreamV2(): JSX.Element {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className={`h-full overflow-auto px-4 py-3 ${fontClass}`}
+        className={`h-full overflow-auto px-6 sm:px-10 lg:px-14 py-5 ${fontClass}`}
       >
-        <div ref={contentRef} className="space-y-3">
+        {/* 中心收窄读宽 (max-w-3xl) + 左侧时间线 rail —— 对齐 Claude Desktop / VSCode Claude 扩展。
+            rail = 绝对定位的垂直细线 + 每条 message 圆点 marker；用 dark:bg-zinc-800/60 让 light/dark
+            主题各有对比度。`pl-6` 给 marker 让位，`relative` 让 marker absolute 定位锚到 message 块。*/}
+        <div ref={contentRef} className="relative max-w-3xl mx-auto pl-6">
+          {/* timeline 竖线 —— 仅 viewMessages 长度 > 0 时画，避免空状态出现孤立竖线 */}
+          {viewMessages.length > 0 && (
+            <div
+              className="absolute left-[7px] top-2 bottom-2 w-px bg-border-default/70 dark:bg-zinc-800"
+              aria-hidden
+            />
+          )}
+          <div className="space-y-4">
         {viewMessages.length === 0 && (
           currentSessionMsgCount > 0 ? (
             // 有 SDK summary msgCount 但 buffer 空 → history IPC 正在 flight,显示骨架
@@ -372,15 +383,19 @@ export function ConversationStreamV2(): JSX.Element {
             ? 'ring-1 ring-amber-500/40 rounded-md'
             : '';
           let inner: JSX.Element;
+          let markerTone: 'user' | 'assistant' | 'system' | 'tool' = 'assistant';
           switch (m.kind) {
             case 'user':
               inner = <UserBubble content={m.content} sentAt={m.sentAt} />;
+              markerTone = 'user';
               break;
             case 'assistant_text':
               inner = <AssistantBubble text={m.text} thinking={m.thinking} sentAt={m.sentAt} />;
+              markerTone = 'assistant';
               break;
             case 'system_notice':
               inner = <SystemNotice {...m} />;
+              markerTone = 'system';
               break;
             case 'tool_cluster':
               inner = (
@@ -392,14 +407,17 @@ export function ConversationStreamV2(): JSX.Element {
                   toggleSub={toggleGroup}
                 />
               );
+              markerTone = 'tool';
               break;
           }
           return (
-            <div key={m.id} data-msg-id={m.id} className={ringClass}>
+            <div key={m.id} data-msg-id={m.id} className={`relative ${ringClass}`}>
+              <TimelineMarker tone={markerTone} />
               {inner}
             </div>
           );
         })}
+          </div>
         </div>
       </div>
 
@@ -473,6 +491,25 @@ export function ConversationStreamV2(): JSX.Element {
         </button>
       )}
     </div>
+  );
+}
+
+// Timeline rail marker —— absolute 定位到时间线竖线上，配色按消息 kind 区分
+// 让用户一眼能扫出"哪些是我说的 / 模型说的 / 系统通知 / 工具调用"。
+// 直径 9px，与 rail (1px wide @ left:7px) 居中对齐 = marker.left = 3px。
+type MarkerTone = 'user' | 'assistant' | 'system' | 'tool';
+const MARKER_TONE_CLASS: Record<MarkerTone, string> = {
+  user: 'bg-sky-500 dark:bg-sky-400',
+  assistant: 'bg-emerald-500 dark:bg-emerald-400',
+  system: 'bg-amber-500 dark:bg-amber-400',
+  tool: 'bg-zinc-400 dark:bg-zinc-500',
+};
+function TimelineMarker({ tone }: { tone: MarkerTone }): JSX.Element {
+  return (
+    <span
+      aria-hidden
+      className={`absolute left-[-22px] top-[10px] w-[9px] h-[9px] rounded-full ring-2 ring-surface ${MARKER_TONE_CLASS[tone]}`}
+    />
   );
 }
 
