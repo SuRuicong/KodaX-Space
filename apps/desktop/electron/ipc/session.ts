@@ -119,8 +119,13 @@ export function registerSessionChannels(): void {
     // ensureTitle 已经在 host 里做"title === undefined 才填"的判断，重复调用安全。
     kodaxHost.ensureTitle(input.sessionId, input.prompt);
     // send 是 fire-and-forget——立刻 ACK，事件流通过 push 推
-    await session.send(input.prompt);
-    return { accepted: true } as const;
+    // v0.1.4 B1: send() 返回 {queued, queueId?} —— "正在跑时" Real adapter 会推 SDK queue
+    // 而非 throw。把 queue 信息回带给 renderer，让 UI 标 "queued" pill 而不是显示 HANDLER_ERROR。
+    const result = await session.send(input.prompt);
+    return {
+      accepted: true as const,
+      ...(result.queued ? { queued: true, queueId: result.queueId } : {}),
+    };
   });
 
   // session.cancel

@@ -51,6 +51,16 @@ export type SessionCreateOptions = {
   readonly requestPermission: PermissionRequestFn;
 };
 
+/**
+ * send() 的返回值 —— v0.1.4 起带 queue 路径信息。
+ *   - { queued: false }                  立即起 run，走原来的事件流
+ *   - { queued: true, queueId: '...' }   推到 KodaX SDK MessageQueue，下一轮 mid-turn drain 时消费
+ */
+export interface SendResult {
+  readonly queued: boolean;
+  readonly queueId?: string;
+}
+
 export interface ManagedSession {
   readonly sessionId: string;
   readonly projectRoot: string;
@@ -121,12 +131,13 @@ export interface ManagedSession {
    *
    * 并发约束：同一 session 在 send 进行中（即上一次 send 启动的事件流还没 emit
    * session_complete / session_error）不允许再 send——策略由实现选：
-   *   - 排队  ：把后续 prompt 缓存，前一个流结束再启
-   *   - 拒绝  ：throw，让 IPC handler 走 HANDLER_ERROR envelope（F003 Mock 用这个）
+   *   - 排队  ：v0.1.4 起 Real adapter 把后续 prompt enqueue 到 SDK MessageQueue，
+   *             返回 `{queued:true, queueId}`；KodaX mid-turn drain 会消费
+   *   - 拒绝  ：throw，让 IPC handler 走 HANDLER_ERROR envelope（Mock 用这个）
    *
-   * @throws 同步抛 / Promise reject：session 已 disposed、或并发拒绝
+   * @throws 同步抛 / Promise reject：session 已 disposed、或拒绝并发
    */
-  send(prompt: string): Promise<void>;
+  send(prompt: string): Promise<SendResult>;
 
   /**
    * 中断当前正在跑的 send。

@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ConversationMessage } from '../composeMessages.js';
 import { Markdown } from './Markdown.js';
+import { ToolDiffView } from './ToolDiffView.js';
 
 // ---- P4c: tool result 收窄渲染 ----
 
@@ -333,7 +334,11 @@ export function ToolCallCard({
 
       {expanded && (
         <div className="border-t border-zinc-800 px-3 py-2 space-y-2">
-          {inputCollapse && inputPretty !== null && (
+          {/* v0.1.4 C3: Edit / Write / MultiEdit 用 ToolDiffView 渲染 Monaco split diff
+              （懒挂载，collapsed 时不烧资源）。其他工具仍 fallback 到 JSON.stringify(input)。*/}
+          {(toolName === 'edit' || toolName === 'multi_edit' || toolName === 'write') ? (
+            <ToolEditInputView toolName={toolName} input={input} />
+          ) : inputCollapse && inputPretty !== null && (
             <section>
               <div className="text-[10px] text-zinc-500 uppercase mb-0.5 flex justify-between items-center">
                 <span>input</span>
@@ -501,5 +506,97 @@ export function SystemNotice({
         </button>
       )}
     </div>
+  );
+}
+
+// ---- v0.1.4 C3: Edit / Write / MultiEdit 的 input 视图 ----
+// 把工具的 input shape 投影到 ToolDiffView 所需的 before/after/path。
+//
+//   edit       : { file_path, old_string, new_string }       → 1 个 diff
+//   multi_edit : { file_path, edits: [{old_string, new_string}, ...] }
+//                                                           → N 个 diff（每个 edit 一段）
+//   write      : { file_path, content }                       → 1 个 diff (before='')
+//
+// SDK 工具 input 是 unknown record — 这里防御式 narrow，shape 不对就 fallback 到
+// raw JSON section（用 console.warn 提示，不抛）。
+
+interface ToolEditInputViewProps {
+  toolName: string;
+  input: Record<string, unknown> | undefined;
+}
+
+function pickString(o: Record<string, unknown> | undefined, key: string): string | null {
+  if (!o) return null;
+  const v = o[key];
+  return typeof v === 'string' ? v : null;
+}
+
+function ToolEditInputView({ toolName, input }: ToolEditInputViewProps): JSX.Element | null {
+  const path = pickString(input, 'file_path') ?? pickString(input, 'path') ?? '';
+
+  if (toolName === 'write') {
+    const content = pickString(input, 'content');
+    if (content === null) return <RawJsonInput input={input} />;
+    return (
+      <section className="space-y-1">
+        <div className="text-[10px] text-zinc-500 uppercase">write</div>
+        <ToolDiffView path={path} before="" after={content} defaultExpanded={false} />
+      </section>
+    );
+  }
+
+  if (toolName === 'edit') {
+    const oldS = pickString(input, 'old_string');
+    const newS = pickString(input, 'new_string');
+    if (oldS === null || newS === null) return <RawJsonInput input={input} />;
+    return (
+      <section className="space-y-1">
+        <div className="text-[10px] text-zinc-500 uppercase">edit</div>
+        <ToolDiffView path={path} before={oldS} after={newS} defaultExpanded={false} />
+      </section>
+    );
+  }
+
+  if (toolName === 'multi_edit') {
+    const edits = input?.edits;
+    if (!Array.isArray(edits) || edits.length === 0) return <RawJsonInput input={input} />;
+    return (
+      <section className="space-y-1.5">
+        <div className="text-[10px] text-zinc-500 uppercase">
+          multi_edit · {edits.length} edit{edits.length === 1 ? '' : 's'}
+        </div>
+        {edits.map((e, i) => {
+          const item = e as Record<string, unknown> | undefined;
+          const oldS = pickString(item, 'old_string');
+          const newS = pickString(item, 'new_string');
+          if (oldS === null || newS === null) return null;
+          return (
+            <ToolDiffView
+              key={i}
+              path={path}
+              before={oldS}
+              after={newS}
+              defaultExpanded={false}
+            />
+          );
+        })}
+      </section>
+    );
+  }
+
+  return <RawJsonInput input={input} />;
+}
+
+/** Fallback：shape 不认识时回退到原 JSON 渲染 */
+function RawJsonInput({ input }: { input: Record<string, unknown> | undefined }): JSX.Element | null {
+  if (!input || Object.keys(input).length === 0) return null;
+  const pretty = JSON.stringify(input, null, 2);
+  return (
+    <section>
+      <div className="text-[10px] text-zinc-500 uppercase mb-0.5">input (raw)</div>
+      <pre className="text-[11px] text-zinc-300 whitespace-pre-wrap break-all max-h-96 overflow-auto">
+        {pretty}
+      </pre>
+    </section>
   );
 }

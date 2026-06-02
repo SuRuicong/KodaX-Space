@@ -11,6 +11,7 @@ import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import type {
   ManagedSession,
   PermissionRequestFn,
+  SendResult,
   SessionCreateOptions,
 } from './session-adapter.js';
 import { sanitizeForDisplay } from '../permission/sanitize.js';
@@ -117,9 +118,11 @@ export class MockKodaXSession implements ManagedSession {
     return this.currentAbort !== null;
   }
 
-  async send(prompt: string): Promise<void> {
+  async send(prompt: string): Promise<SendResult> {
     if (this.disposed) throw new Error(`[mock-session ${this.sessionId}] already disposed`);
     if (this.currentAbort) {
+      // Mock 没有真正的 KodaX SDK MessageQueue 可用，仍走 throw → HANDLER_ERROR
+      // （production 走 real-session 时才有 queue 路径 B1）
       throw new Error(`[mock-session ${this.sessionId}] previous send still in-flight`);
     }
 
@@ -131,6 +134,7 @@ export class MockKodaXSession implements ManagedSession {
     void this.runMockStream(prompt, abort.signal).finally(() => {
       if (this.currentAbort === abort) this.currentAbort = null;
     });
+    return { queued: false };
   }
 
   async cancel(): Promise<void> {

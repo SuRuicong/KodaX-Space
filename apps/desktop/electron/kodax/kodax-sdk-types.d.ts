@@ -282,6 +282,16 @@ declare module '@kodax-ai/kodax/coding' {
 
   export function runKodaX(options: KodaXOptions, prompt: string): Promise<KodaXResult>;
 
+  /**
+   * agentMode-aware 分派入口（task-engine.ts dispatchManagedTask）。
+   *   - agentMode='sa'         → 直路（内部调 runKodaX + task-family promptOverlay）
+   *   - agentMode='ama'(默认)  → 托管 Scout/Worker 链 + Sidecar Verifier（拦 intent-vs-action 早停）
+   * 关键：`runKodaX` 是 SA-only 入口，**不读 options.agentMode**——直接调它会让
+   * AMA/SA 选择器变成空接开关（每个 turn 都跑 SA、无 verifier）。要让选择器真正生效
+   * 必须走这个入口。签名与 runKodaX 一致，options 字段完全复用。
+   */
+  export function runManagedTask(options: KodaXOptions, prompt: string): Promise<KodaXResult>;
+
   // ============= FEATURE_030 AutoModeToolGuardrail surface =============
   // Minimal subset of @kodax-ai/coding 暴露的 guardrail / agents-loader 类型，
   // 供 Space main 端 wire FEATURE_030 时用。完整 surface 见 KodaX
@@ -549,6 +559,14 @@ declare module '@kodax-ai/kodax/agent' {
 
   export type QueueEventListener = (event: QueueEvent) => void;
 
+  /** v0.1.4 B1: 把"流式中又敲的 user prompt"推进 SDK queue 时用的 input shape */
+  export interface EnqueueInput {
+    readonly priority: MessagePriority;
+    readonly mode: MessageMode;
+    readonly content: string;
+    readonly agentId?: string;
+  }
+
   /** Process-global MessageQueue instance (lazy created)。Subscribe 不为 null。*/
   export interface MessageQueueInstance {
     subscribe(listener: QueueEventListener): () => void;
@@ -557,6 +575,8 @@ declare module '@kodax-ai/kodax/agent' {
     peek(filter: DequeueFilter): QueuedMessage[];
     /** 整体长度 (跨 priority/agent),Space 用作 badge 数字 */
     size(): number;
+    /** v0.1.4 B1: 推消息进 queue，返回 SDK 分配的 id。SDK 内部 mid-turn drain 消费。 */
+    enqueue(input: EnqueueInput): string;
     count(filter: DequeueFilter): number;
     has(filter: DequeueFilter): boolean;
   }

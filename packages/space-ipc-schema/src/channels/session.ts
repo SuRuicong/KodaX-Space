@@ -171,6 +171,11 @@ export const sessionSendChannel = {
   output: z.object({
     // 只是 ACK"已排进 session 队列"——真正结果走 session.event push
     accepted: z.literal(true),
+    /** v0.1.4 B1：session 仍在跑时，main 把 prompt 推进 KodaX SDK MessageQueue 而非
+     *  立刻起新 run；queued=true 表示走 queue 路径，queueId 是 SDK 分配的消息 id。
+     *  queued=false（缺省）= 立即触发 run，行为跟 v0.1.3 一致。*/
+    queued: z.boolean().optional(),
+    queueId: z.string().min(1).max(128).optional(),
   }),
 } as const;
 

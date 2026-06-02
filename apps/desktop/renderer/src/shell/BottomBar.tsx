@@ -630,6 +630,8 @@ export function BottomBar(): JSX.Element {
     if (!sendResult.ok) {
       setPendingSend(sessionId, false);
       setErr(`${sendResult.error?.code ?? 'ERR_UNKNOWN'}: ${sendResult.error?.message ?? 'unknown error'}`);
+    } else if (sendResult.data.queued) {
+      pushToast('Queued — will run after the current turn finishes', 'info');
     }
   }
 
@@ -690,6 +692,10 @@ export function BottomBar(): JSX.Element {
       if (!result.ok) {
         setPendingSend(sid, false);
         setErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`);
+      } else if (result.data.queued) {
+        // v0.1.4 B1: session 正在跑，prompt 进了 KodaX SDK MessageQueue。spinner 已经亮
+        // （上一轮在跑），不动 pendingSend。toast 提示用户消息已排队，不必再追着发。
+        pushToast('Queued — will run after the current turn finishes', 'info');
       }
     } finally {
       setBusy(false);

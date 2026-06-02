@@ -20,6 +20,29 @@ async function loadAgent(): Promise<AgentModule> {
   return agentModuleCache;
 }
 
+/**
+ * v0.1.4 B1：把"流式中用户又敲了一个 prompt"推到 SDK queue。
+ *
+ * - priority='user': KodaX mid-turn drain 把 user 排在 background 前
+ * - mode='prompt': 当成新一轮用户输入处理（vs task-notification / system-reminder）
+ * - agentId=undefined: 主线程 session 消费（不路由给具体 subagent）
+ *
+ * 返回 SDK 分配的消息 id；renderer 用它跟 user message 做 correlation
+ * （目前还只做"标 queued"，未来如要做"dequeued → 清 pill"再用）。
+ *
+ * 失败抛 —— caller 决定怎么 envelope。生产里 SDK chunk 应当一直在 cache，
+ * 第一次冷启动时 main 已经在多处 prewarm 过。
+ */
+export async function enqueueUserPrompt(content: string): Promise<string> {
+  const agent = await loadAgent();
+  const q = agent.getMessageQueue();
+  return q.enqueue({
+    priority: 'user',
+    mode: 'prompt',
+    content,
+  });
+}
+
 /** SDK QueuedMessage → IPC schema 形态 (zod 已经在 schema 出口校验,这里只做 plain object 投影)。*/
 function projectMessage(m: import('@kodax-ai/kodax/agent').QueuedMessage): QueuedMessageT {
   const proj: QueuedMessageT = {

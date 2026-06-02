@@ -85,8 +85,10 @@ import { wrapSdkError } from './sdk-errors.js';
 import type {
   ManagedSession,
   PermissionRequestFn,
+  SendResult,
   SessionCreateOptions,
 } from './session-adapter.js';
+import { enqueueUserPrompt } from '../ipc/queue.js';
 
 type SpaceReasoning = 'off' | 'auto' | 'quick' | 'balanced' | 'deep';
 
@@ -145,12 +147,17 @@ export class RealKodaXSession implements ManagedSession {
     return this.currentAbort !== null;
   }
 
-  async send(prompt: string): Promise<void> {
+  async send(prompt: string): Promise<SendResult> {
     if (this.disposed) {
       throw new Error(`[real-session ${this.sessionId}] already disposed`);
     }
+    // v0.1.4 B1：之前 currentAbort != null 直接 throw，造成"流式中再发"用户面前永远是
+    // HANDLER_ERROR。现在改成走 KodaX SDK MessageQueue —— mid-turn drain 把 user-priority
+    // 消息排在下一个 LLM call 前消费，等同于"上轮跑完再起一轮"。
     if (this.currentAbort) {
-      throw new Error(`[real-session ${this.sessionId}] previous send still in-flight`);
+      const queueId = await enqueueUserPrompt(prompt);
+      this.lastActivityAt = Date.now();
+      return { queued: true, queueId };
     }
 
     const abort = new AbortController();
@@ -160,6 +167,7 @@ export class RealKodaXSession implements ManagedSession {
     void this.runRealStream(prompt, abort.signal).finally(() => {
       if (this.currentAbort === abort) this.currentAbort = null;
     });
+    return { queued: false };
   }
 
   async cancel(): Promise<void> {
@@ -649,7 +657,12 @@ export class RealKodaXSession implements ManagedSession {
     };
 
     try {
-      await sdk.runKodaX(options, prompt);
+      // runManagedTask（不是 runKodaX）：这是 agentMode-aware 分派器——
+      // agentMode='sa' 走直路，'ama'(默认) 走 Scout/Worker 链 + Sidecar Verifier。
+      // runKodaX 是 SA-only 入口、静默忽略 options.agentMode；直接调它会让 AMA/SA
+      // 选择器空接（每个 turn 都跑 SA、无 verifier → "只报计划就停" 没人拦截）。
+      // 见 task-engine.ts dispatchManagedTask / runner-driven.ts(verifier 挂载点)。
+      await sdk.runManagedTask(options, prompt);
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         this.emit({ kind: 'session_error', sessionId: sid, error: 'cancelled', category: 'cancelled', retriable: true });
