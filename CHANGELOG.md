@@ -4,6 +4,38 @@ All notable changes to KodaX-Space will be documented in this file.
 
 KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.com/icetomoyo/KodaX) — Claude Desktop-style interactive surface, GUI alternative to the `kodax` REPL.
 
+## [Unreleased]
+
+### Added
+
+- **`mimo` provider (Xiaomi direct-connect)** — built-in catalog now lists `mimo` alongside the existing `mimo-coding` subscription variant. `mimo` uses the Anthropic-compatible protocol with `MIMO_API_KEY` (test endpoint URL pending Xiaomi docs — UI skips connect-test until then). Fallback count bumped 13 → 14. Bundled into the UI padding commit ([59bb068](https://github.com/icetomoyo/KodaX-Space/commit/59bb068)) by accident — `git add -A` swept user's pending working-tree changes, recorded here so git-log searches by feature still find it.
+
+### Changed
+
+- **Conversation stream layout** ([53ab954](https://github.com/icetomoyo/KodaX-Space/commit/53ab954), tightened in [59bb068](https://github.com/icetomoyo/KodaX-Space/commit/59bb068)) — horizontal padding `px-8` (~4 char each side) + left timeline rail (vertical guide line with color-coded dot markers per message: user=sky, assistant=emerald, system=amber, tool=zinc). First pass over-constrained with `max-w-3xl`; trimmed after user feedback that wide screens lost 1/4 width to whitespace.
+
+### Fixed
+
+- **`release.yml` no longer hardcodes `prerelease: true`** ([1a5f886](https://github.com/icetomoyo/KodaX-Space/commit/1a5f886)) — tag-push releases default to non-prerelease, so:
+  - GitHub repo home shows "Latest release" again
+  - F022 auto-updater (`releaseType: release`) can finally find the feed and notify users of new versions (previous configuration silently broke auto-update). Existing v0.1.0~v0.1.3 also flipped to non-prerelease via `gh release edit`.
+  - `workflow_dispatch` input remains for rare rc/beta tags (default `false` now).
+
+### Security (pending release as v0.1.4 patch)
+
+Post-release review of v0.1.3 (4 parallel reviewer agents) surfaced 2 CRITICAL + 4 HIGH issues in F021 `.mcpb` installer + 2 HIGH in F019/F020. All fixes are on `main` ([998748d](https://github.com/icetomoyo/KodaX-Space/commit/998748d)):
+
+- **F021 SEC C-1 — manifest command injection** → runtime allowlist (`node` / `python` / `python3` / `uv` / `uvx` / `npx` / `deno` / `bun`); `bash` / `sh` / `curl` etc. now refused at parse.
+- **F021 SEC C-2 — zip bomb** → per-entry compression-ratio guard (≤100:1) using yauzl's `compressedSize` / `uncompressedSize` headers; concurrent extract budget race fixed.
+- **F021 SEC H-1 — TOCTOU** → copy `.mcpb` file to `~/.kodax-space/tmp/` before parsing; all subsequent ops use a single open fd via `yauzl.fromFd`.
+- **F021 SEC H-2 — uninstall guard substring bypass** → replaced `installDir.includes('.kodax-space')` with `isInsideExtractBase` (path.resolve + startsWith).
+- **F021 SEC H-3 — symlink escape** → reject `S_IFLNK` entries + post-extract `lstat` sanity check.
+- **F021 FUNC H-1 — silent file corruption** → rewrote `extractAll` to sequential; yauzl docs forbid concurrent `openReadStream` on the same handle.
+- **F021 FUNC M-3 — upgrade disk leak** → `addOrReplace` returns displaced `installDir`, caller rms old version directory.
+- **F021 SEC M-2 — registry tamper** → `readRegistry` Zod-validates every entry + verifies `installDir` is inside `EXTRACT_BASE`; bad entries dropped with `console.warn`.
+- **F020 H-2 — stale-session click crash** → `notification.clicked` checks `sessionId` still exists in store before `setCurrentSession`.
+- **F019 H-3 — theme FOUC** → theme class applied synchronously in `main.tsx` before React renders; eliminates "one frame of dark mode" flash for light/system users.
+
 ## [0.1.2] - 2026-06-01
 
 ### Theme
