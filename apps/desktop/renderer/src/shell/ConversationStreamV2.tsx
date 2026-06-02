@@ -135,13 +135,17 @@ function groupTools(messages: ConversationMessage[]): ViewMessage[] {
         // v0.1.4 修复：thinking 之前跟 text 一起被 sub-cluster 吸收只剩 title，
         // 内容彻底丢失。现在把 thinking 拆出来 flush 在 cluster 前 —— 单独一条
         // 可折叠记录（对齐 VSCode Claude Code "Thought for Xs" 行）。
-        if (m.thinking && m.thinking.length > 0) {
+        const hasThinking = Boolean(m.thinking && m.thinking.length > 0);
+        if (hasThinking) {
           flushCluster();
-          out.push({ kind: 'thinking', id: `${m.id}_thinking`, thinking: m.thinking });
+          out.push({ kind: 'thinking', id: `${m.id}_thinking`, thinking: m.thinking! });
         }
+        // 标题 fallback 链：thinking 已经拆成独立行了，就**不再**回退到 thinking
+        // firstSentence，否则同一段 thinking 内容会在"Thinking ~N tokens"和
+        // sub-cluster 标题里各出现一次（用户报告的"Thinking 在 Run 中也有一份"bug）。
         const title =
           firstSentence(m.text) ??
-          firstSentence(m.thinking) ??
+          (hasThinking ? null : firstSentence(m.thinking)) ??
           summarizeTools(tools);
         pendingCluster.push({ id: m.id, title, tools });
         i = j - 1; // 跳过 consumed tool_calls (for loop ++ 再 +1 到 j)
