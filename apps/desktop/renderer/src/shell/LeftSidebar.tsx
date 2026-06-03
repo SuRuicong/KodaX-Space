@@ -21,7 +21,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Mode } from './Shell.js';
 import { useAppStore } from '../store/appStore.js';
 import type { SessionMeta, RunningSessionInfoT } from '@kodax-space/space-ipc-schema';
-import { resolveSessionCreateInputs } from './createSession.js';
 import { SessionContextMenu } from './SessionContextMenu.js';
 import { RecentsFilterMenu } from './RecentsFilterMenu.js';
 
@@ -51,18 +50,7 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
   const sessions = useAppStore((s) => s.sessions);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const setCurrentSession = useAppStore((s) => s.setCurrentSession);
-  const upsertSession = useAppStore((s) => s.upsertSession);
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
-  const providers = useAppStore((s) => s.providers);
-  const defaultProviderId = useAppStore((s) => s.defaultProviderId);
-  const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
-  const pendingProviderId = useAppStore((s) => s.pendingProviderId);
-  const pendingReasoningMode = useAppStore((s) => s.pendingReasoningMode);
-  const pendingPermissionMode = useAppStore((s) => s.pendingPermissionMode);
-  const pendingAgentMode = useAppStore((s) => s.pendingAgentMode);
-  const setPendingProviderId = useAppStore((s) => s.setPendingProviderId);
-  const [creating, setCreating] = useState(false);
-  const [createErr, setCreateErr] = useState<string | null>(null);
 
   // 启动期拉一次 session list（暂时这里做，后续 Shell 顶层 useEffect 统一管理）
   useEffect(() => {
@@ -74,65 +62,14 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
   }, [currentProjectPath]);
 
   /**
-   * + New session：创建新 session。
-   * Provider/effort 解析委托给 createSession helper（pending → Space default → KodaX default → ...）。
-   * 创建成功后清掉 pending（pending 概念是"无 session 时的下一次预设"，session 既成事实就消费掉）。
+   * + New session：统一首页与新建。不再急建空 session（那会跳进零消息空白对话页，
+   * 还往 RECENTS 塞一条 Untitled 空壳）；改为回到"无 session"落地态 —— WelcomeDashboard
+   * + composer。真正的 session 由 BottomBar.ensureSession 在首次发送时懒建，用同一个
+   * resolveSessionCreateInputs（pending → Space default → KodaX default）解析 provider/mode，
+   * 所以 provider / 模式选择一点不丢（见 createSession.ts 头注释：两处调用已统一到该 helper）。
    */
-  async function handleNewSession(): Promise<void> {
-    const bridge = window.kodaxSpace;
-    if (!bridge) return;
-    if (!currentProjectPath) {
-      setCreateErr('Open a folder first.');
-      return;
-    }
-    setCreating(true);
-    setCreateErr(null);
-    try {
-      const { provider, reasoningMode, permissionMode, agentMode } = resolveSessionCreateInputs({
-        projectRoot: currentProjectPath,
-        providers,
-        defaultProviderId,
-        kodaxDefaults,
-        pendingProviderId,
-        pendingReasoningMode,
-        pendingPermissionMode,
-        pendingAgentMode,
-      });
-
-      const result = await bridge.invoke('session.create', {
-        projectRoot: currentProjectPath,
-        provider,
-        reasoningMode,
-        permissionMode,
-        agentMode,
-      });
-      if (!result.ok) {
-        setCreateErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'create failed'}`);
-        return;
-      }
-      const stub: SessionMeta = {
-        sessionId: result.data.sessionId,
-        projectRoot: currentProjectPath,
-        provider,
-        reasoningMode,
-        permissionMode,
-        autoModeEngine: 'llm',
-        agentMode,
-        title: undefined,
-        createdAt: result.data.createdAt,
-        lastActivityAt: result.data.createdAt,
-      };
-      upsertSession(stub);
-      setCurrentSession(stub.sessionId);
-      // 创建成功 → 仅消费 provider 的 pending（provider 有独立 defaultProviderId 兜底）
-      // mode 类 pending（permission / reasoning / agent）现在等同"用户首选"，持久化到 LS 留作下次默认
-      setPendingProviderId(null);
-      // 刷新权威列表
-      const listResult = await bridge.invoke('session.list', { projectRoot: currentProjectPath });
-      if (listResult.ok) useAppStore.getState().setSessions(listResult.data.sessions);
-    } finally {
-      setCreating(false);
-    }
+  function handleNewSession(): void {
+    setCurrentSession(null);
   }
 
   // open/setOpen 由 Shell 顶层 breadcrumb 行的 SidebarToggleButton 直接管理；
@@ -166,17 +103,14 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
       <div className="p-2 space-y-0.5">
         <button
           type="button"
-          onClick={() => void handleNewSession()}
-          disabled={creating || !currentProjectPath}
+          onClick={handleNewSession}
+          disabled={!currentProjectPath}
           className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-zinc-800 text-zinc-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-          title={!currentProjectPath ? 'Open a folder first' : 'Create new session'}
+          title={!currentProjectPath ? 'Open a folder first' : 'New session'}
         >
           <span aria-hidden>＋</span>
-          {creating ? 'Creating…' : 'New session'}
+          New session
         </button>
-        {createErr && (
-          <div className="text-[10px] text-red-400 px-2 py-1 font-mono">{createErr}</div>
-        )}
         <DisabledMenuItem icon="⏰" label="Scheduled" hint="v0.1.x" />
         <DisabledMenuItem icon="💼" label="Customize" hint="v0.1.x" />
         <DisabledMenuItem icon="▾" label="More" hint="" />

@@ -48,7 +48,7 @@ export function Breadcrumb(): JSX.Element {
       <span className="text-zinc-500">/</span>
       <div className="relative flex items-center min-w-0">
         <span className="px-1.5 py-0.5 truncate text-zinc-400" title={session?.sessionId}>
-          {session?.title ?? (session ? 'Untitled session' : 'No session')}
+          {session?.title ?? (session ? 'Untitled session' : 'New session')}
         </span>
         {session && (
           <>
