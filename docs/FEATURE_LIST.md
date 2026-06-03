@@ -1,6 +1,6 @@
 # KodaX Space Feature List
 
-> Last Updated: 2026-05-29 (opencode 对标批次 OC-01~50 + KX-I-01~09；前: v0.1.1 TUI 对齐 + v0.1.6 持久化 + 0.7.42)
+> Last Updated: 2026-06-03 (F040 多项目 session 侧栏 + per-session 状态点，对标 codex；前: opencode 对标批次 OC-01~50 + KX-I-01~09 + v0.1.6 持久化)
 >
 > **2026-05-18 form-factor reset**：alpha.0 的 UI 形态偏 IDE，alpha.1 按 [ADR-004](ADR/ADR-004-panel-model.md) 重构对齐 Claude Desktop 中的 Claude Code。F006/F008/F009 标记重做（main 端保留）；新增 F011-revised / F012-revised。详见下面 "v0.1.0-alpha.1 重构 plan" 区段。
 >
@@ -56,6 +56,7 @@
 | 037 | Subagent tree 视图 | New | High | v0.1.1 | Completed | [v0.1.1.md#037](features/v0.1.1.md#feature_037-subagent-tree-视图-refine-原-feature_012) |
 | 038 | F033 Sessions 持久化升级（SDK ≥ 0.7.42） | Refactor | High | v0.1.6 | Completed | [v0.1.6.md#038](features/v0.1.6.md#feature_038-f033-sessions-持久化升级接-kodax-sdk--0742) |
 | 039 | F036 MCP 管理完整版（start/stop/log/tool catalog；接 KodaX SDK MCP manager） | Refactor | High | v0.1.7 | Planned | [v0.1.7.md#039](features/v0.1.7.md#feature_039-f036-mcp-管理完整版) |
+| 040 | 多项目可折叠 session 侧栏 + per-session 状态指示 | Enhancement | High | v0.1.4 | Planned | [v0.1.4.md#040](features/v0.1.4.md#feature_040-多项目可折叠-session-侧栏--per-session-状态指示) |
 
 ## v0.1.0-alpha.1 重构 plan（2026-05-18）
 
@@ -167,16 +168,16 @@ v0.1.7 (MCP 完整版):        1 feature (F039 — 等 SDK MCP manager)
   Note: SDK 0.7.42 /session subpath；in-flight 仍 in-memory，historical 走 SDK 持久化
 
 === SUMMARY ===
-Total: 39 | Planned: 15 | InProgress: 0 | Completed: 21
-By Priority: Critical: 13 (✅12/13), High: 17 (✅8/17), Medium: 8, Low: 1
-By Category:  New: 31, Enhancement: 3, Refactor: 4, Internal: 2
+Total: 40 | Planned: 16 | InProgress: 0 | Completed: 21
+By Priority: Critical: 13 (✅12/13), High: 18 (✅8/18), Medium: 8, Low: 1
+By Category:  New: 31, Enhancement: 4, Refactor: 4, Internal: 2
 
 --- REMAINING PLANNED ---
 
 v0.1.1 originals (2): F011 terminal popout, F014 napi tokenizer
 v0.1.2 生态打通 (4): F015 Repointel, F016 lineage 图, F017 CLI teleport, F018 Quick Ask
 v0.1.3 UX polish (4): 主题 / 通知 / .mcpb / 自动更新
-v0.1.4 power (4): 多 tab 终端 / 富预览 / NAPI native-diff + fuzzy
+v0.1.4 power (5): 多 tab 终端 / 富预览 / NAPI native-diff + fuzzy / F040 多项目 session 侧栏 + 状态点
 v0.1.5 release (2): 签名 + notarize / 文档
 v0.1.7 (1): F039 MCP 完整版 (等 SDK MCP manager runtime API)
 
