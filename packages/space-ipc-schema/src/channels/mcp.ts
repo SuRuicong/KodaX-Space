@@ -25,8 +25,17 @@ const mcpServerMetaSchema = z.object({
   url: z.string().max(2048).optional(),
   /** Env var 个数 (不暴露 key/value，只计数，让用户知道这个 server 用了多少 env) */
   envCount: z.number().int().nonnegative().max(1024),
-  /** 配置来源：global ~/.kodax/config.json 或 project ${projectRoot}/.kodax/config.json */
-  source: z.enum(['global', 'project']),
+  /**
+   * 配置来源：
+   *   - 'global'  ~/.kodax/config.json（KodaX CLI / 用户手配）
+   *   - 'project' ${projectRoot}/.kodax/config.json（per-project 覆盖）
+   *   - 'mcpb'    v0.1.4：通过 mcpb.install 装的 .mcpb / .dxt 扩展包
+   *               （registry 在 ~/.kodax-space/mcpb-extensions.json）
+   *
+   * UI badge 据此显示来源（"Global" / "Project" / "Extension"），让用户能区分
+   * "我手配的 global server" vs "Space 装的 extension"。
+   */
+  source: z.enum(['global', 'project', 'mcpb']),
 });
 
 // ---- Invoke: mcp.discover ----

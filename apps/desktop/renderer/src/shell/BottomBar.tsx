@@ -81,6 +81,7 @@ export function BottomBar(): JSX.Element {
   const pendingAgentMode = useAppStore((s) => s.pendingAgentMode);
   const setPendingProviderId = useAppStore((s) => s.setPendingProviderId);
   const appendUserMessage = useAppStore((s) => s.appendUserMessage);
+  const rollbackLastUserMessage = useAppStore((s) => s.rollbackLastUserMessage);
   const resetSessionMessages = useAppStore((s) => s.resetSessionMessages);
   const upsertSession = useAppStore((s) => s.upsertSession);
   const setCurrentSession = useAppStore((s) => s.setCurrentSession);
@@ -620,7 +621,8 @@ export function BottomBar(): JSX.Element {
       return;
     }
     // 把 "/skill args" 当一条 user message 显示
-    appendUserMessage(sessionId, `/${name} ${args.join(' ')}`.trim());
+    const skillEcho = `/${name} ${args.join(' ')}`.trim();
+    appendUserMessage(sessionId, skillEcho);
     // P0a: 标记 pending，让 spinner 在 IPC 期间就亮起来
     setPendingSend(sessionId, true);
     const sendResult = await window.kodaxSpace.invoke('session.send', {
@@ -629,6 +631,8 @@ export function BottomBar(): JSX.Element {
     });
     if (!sendResult.ok) {
       setPendingSend(sessionId, false);
+      // v0.1.4 B3: 失败 → 回滚刚 echo 的 user message，避免对话流挂着孤气泡
+      rollbackLastUserMessage(sessionId, skillEcho);
       setErr(`${sendResult.error?.code ?? 'ERR_UNKNOWN'}: ${sendResult.error?.message ?? 'unknown error'}`);
     } else if (sendResult.data.queued) {
       pushToast('Queued — will run after the current turn finishes', 'info');
@@ -691,6 +695,9 @@ export function BottomBar(): JSX.Element {
       });
       if (!result.ok) {
         setPendingSend(sid, false);
+        // v0.1.4 B3: 失败 → 把刚 optimistic append 的 user message 回滚掉，避免一条孤
+        // 零零气泡留在对话流。setErr 仍然显示，让用户看到错误原因。
+        rollbackLastUserMessage(sid, promptForAI);
         setErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`);
       } else if (result.data.queued) {
         // v0.1.4 B1: session 正在跑，prompt 进了 KodaX SDK MessageQueue。spinner 已经亮

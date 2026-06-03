@@ -93,7 +93,12 @@ export function McpPanel(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProjectPath]);
 
-  // F021 拉一次 mcpb extensions + 订阅 changed push
+  // F021 拉一次 mcpb extensions + 订阅 changed push。
+  //
+  // 故意空 dep（不跟着 currentProjectPath 变）：mcpb extensions 是**全局** registry
+  // (~/.kodax-space/mcpb-extensions.json)，不分项目；切项目时列表不变。如果未来要
+  // 引入 per-project mcpb 安装位置，需要把 currentProjectPath 加进 dep 并改后端
+  // mcpb.list 接受 projectRoot 参数 —— v0.1.4 不做。
   useEffect(() => {
     if (!window.kodaxSpace) return;
     void window.kodaxSpace.invoke('mcpb.list', {}).then((r) => {

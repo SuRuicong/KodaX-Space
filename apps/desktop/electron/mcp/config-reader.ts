@@ -166,7 +166,9 @@ async function readMcpbServers(
       command: ext.server.command,
       ...(ext.server.args ? { args: ext.server.args } : {}),
       envCount: ext.server.env ? Object.keys(ext.server.env).length : 0,
-      source: 'global' as const,
+      // v0.1.4 修复：mcpb 装的 server 之前 source='global' 混在 KodaX CLI 配的里头，
+      // UI 没法区分。schema 现在有专门的 'mcpb' kind。
+      source: 'mcpb' as const,
     }));
   } catch (err) {
     errors.push({

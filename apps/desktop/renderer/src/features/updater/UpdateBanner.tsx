@@ -18,6 +18,9 @@ import type { UpdaterStateT } from '@kodax-space/space-ipc-schema';
 export function UpdateBanner(): JSX.Element | null {
   const [state, setState] = useState<UpdaterStateT>({ state: 'idle' });
   const [dismissed, setDismissed] = useState(false);
+  // v0.1.4 review LOW-4: renderer 侧也加一道 disable，跟 main 端 installing flag 一起防双击。
+  // 第一次点完按钮立刻禁用，避免按钮闪烁期间用户连点造成双 install 请求。
+  const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
     const bridge = window.kodaxSpace;
@@ -32,7 +35,11 @@ export function UpdateBanner(): JSX.Element | null {
   const install = useCallback(async () => {
     const bridge = window.kodaxSpace;
     if (!bridge) return;
+    setInstalling(true);
     await bridge.invoke('updater.install', {}).catch(() => null);
+    // 不 reset installing —— 成功调到 main 端 setTimeout 后 100ms 内进程就 quit 了。
+    // 失败时 main push 一条 error state → useEffect 重新 setDismissed(false) 把 banner 转 error 态，
+    // 不会留在 ready 态有"灰按钮无反应"问题。
   }, []);
 
   if (dismissed) return null;
@@ -82,9 +89,10 @@ export function UpdateBanner(): JSX.Element | null {
       <button
         type="button"
         onClick={install}
-        className="ml-2 px-2 py-0.5 text-[11px] rounded bg-emerald-700/90 text-white hover:bg-emerald-700 border border-emerald-600"
+        disabled={installing}
+        className="ml-2 px-2 py-0.5 text-[11px] rounded bg-emerald-700/90 text-white hover:bg-emerald-700 border border-emerald-600 disabled:opacity-60 disabled:cursor-not-allowed"
       >
-        Restart &amp; install
+        {installing ? 'Installing…' : 'Restart & install'}
       </button>
     </BannerShell>
   );

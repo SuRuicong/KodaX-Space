@@ -287,6 +287,13 @@ interface AppState {
   ): void;
   /** sentAt 可选——缺省 Date.now()；history restore 时传 session.createdAt 让旧消息显示真实时间。 */
   appendUserMessage(sessionId: string, content: string, sentAt?: number): void;
+  /**
+   * v0.1.4 B3: BottomBar optimistic appendUserMessage 后若 IPC session.send 失败
+   * （session disposed / 主进程错 / 等非 queue 路径），调本 action 把刚 push 的
+   * "幽灵 user message" 回滚掉。否则用户会看到一条自己说过但什么响应都没有的孤零零气泡。
+   * 仅删除"最新一条"，且 content 必须匹配（防御并发场景下误删别人）。
+   */
+  rollbackLastUserMessage(sessionId: string, content: string): void;
   upsertSession(meta: SessionMeta): void;
   removeSession(sessionId: string): void;
   enqueuePermission(req: PermissionRequestPayload): void;
@@ -497,6 +504,23 @@ export const useAppStore = create<AppState>((set) => ({
         userMessagesBySession: {
           ...state.userMessagesBySession,
           [sessionId]: [...bucket, msg],
+        },
+      };
+    }),
+
+  rollbackLastUserMessage: (sessionId, content) =>
+    set((state) => {
+      const bucket = state.userMessagesBySession[sessionId];
+      if (!bucket || bucket.length === 0) return state;
+      const last = bucket[bucket.length - 1];
+      // content 匹配兜底防御：如果 last 的 content 不是我们刚 append 的那条
+      // （理论上不可能 —— BottomBar busy 状态 + IPC await 期间不会有别的 user
+      // message 进来；但磁盘 history restore 等罕见时序仍可能命中），就 noop。
+      if (last.content !== content) return state;
+      return {
+        userMessagesBySession: {
+          ...state.userMessagesBySession,
+          [sessionId]: bucket.slice(0, -1),
         },
       };
     }),
