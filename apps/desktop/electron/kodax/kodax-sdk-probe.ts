@@ -5,11 +5,12 @@
 // 把它们删/改了，TypeScript 不会报（ambient 覆盖了真实推导）。startup probe 拦住这种漂移。
 //
 // 已覆盖的 surface:
-//   @kodax-ai/kodax/coding       runKodaX / createAutoModeToolGuardrail / loadAutoRules /
+//   @kodax-ai/kodax/coding       runKodaX / runManagedTask / createAutoModeToolGuardrail / loadAutoRules /
 //                                formatAgentsForPrompt / getKodaxGlobalDir /
 //                                getRegisteredToolDefinition / getBuiltinRegisteredToolDefinition /
 //                                resolveProvider
 //   @kodax-ai/kodax/skills       SkillRegistry (skill/registry.ts 自己也 probe，这里重复防御)
+//   @kodax-ai/kodax/llm          verifyProviderCredential (FEATURE_216 — 测连接)
 //
 // **静态 import 改 dynamic**：SDK subpath exports 只声明 "import" 条件（ESM），CJS-built
 // main 进程的静态 require 会撞 ERR_PACKAGE_PATH_NOT_EXPORTED。dynamic import 走 ESM 解析
@@ -26,6 +27,7 @@ export async function probeKodaxSdk(): Promise<void> {
   const codingModule = await import('@kodax-ai/kodax/coding');
   const codingChecks: ReadonlyArray<readonly [string, 'function' | 'class', unknown]> = [
     ['runKodaX', 'function', codingModule.runKodaX],
+    ['runManagedTask', 'function', codingModule.runManagedTask],
     ['createAutoModeToolGuardrail', 'function', codingModule.createAutoModeToolGuardrail],
     ['formatAgentsForPrompt', 'function', codingModule.formatAgentsForPrompt],
     ['getBuiltinRegisteredToolDefinition', 'function', codingModule.getBuiltinRegisteredToolDefinition],
@@ -46,6 +48,14 @@ export async function probeKodaxSdk(): Promise<void> {
   if (typeof skillsModule.SkillRegistry !== 'function') {
     failures.push(
       `@kodax-ai/kodax/skills SkillRegistry: expected class, got ${typeof skillsModule.SkillRegistry}`,
+    );
+  }
+
+  // /llm：测连接走 verifyProviderCredential（FEATURE_216 / SDK 0.7.45）；提前 probe 防 SDK 漂移。
+  const llmModule = await import('@kodax-ai/kodax/llm');
+  if (typeof llmModule.verifyProviderCredential !== 'function') {
+    failures.push(
+      `@kodax-ai/kodax/llm verifyProviderCredential: expected function, got ${typeof llmModule.verifyProviderCredential}`,
     );
   }
 

@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateBaseUrl, buildProbeUrl } from '../providers/url-guard.js';
+import { validateBaseUrl } from '../providers/url-guard.js';
 
 // --- 接受合法 URL ---
 
@@ -128,26 +128,3 @@ test('rejects garbage', () => {
   assert.equal(r.ok, false);
 });
 
-// --- buildProbeUrl ---
-
-test('buildProbeUrl openai appends /models', () => {
-  const r = buildProbeUrl('https://api.example.com/v1', 'openai');
-  assert.equal(r.ok, true);
-  if (r.ok) assert.equal(r.url, 'https://api.example.com/v1/models');
-});
-
-test('buildProbeUrl anthropic appends /messages', () => {
-  const r = buildProbeUrl('https://api.example.com/v1', 'anthropic');
-  assert.equal(r.ok, true);
-  if (r.ok) assert.equal(r.url, 'https://api.example.com/v1/messages');
-});
-
-test('buildProbeUrl rejects CLI bridges', () => {
-  const r = buildProbeUrl('https://api.example.com/v1', 'gemini-cli');
-  assert.equal(r.ok, false);
-});
-
-test('buildProbeUrl propagates baseUrl rejection (private IP)', () => {
-  const r = buildProbeUrl('https://10.0.0.1/v1', 'openai');
-  assert.equal(r.ok, false);
-});

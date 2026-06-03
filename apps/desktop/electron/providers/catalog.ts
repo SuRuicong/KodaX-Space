@@ -6,9 +6,10 @@
 //     拉 apiKeyEnv / defaultModel / models[]，不再手 copy 一份 snapshot 到 Space 里。
 //     之前 (v0.7.40 snapshot) 手 copy 导致 KodaX 改了 env 名 Space 不知道，必须人工 sync；
 //     现在 KodaX 改 → Space 自动跟上。
-//   • Space override (本文件 SPACE_OVERRIDES)：displayName / testEndpoint / protocol —— 纯 UI / 测连接元数据
-//     SDK 不关心这些（KodaX 用 `capabilityProfile` 表达更丰富的能力，Space 暂时只用一个
-//     四值 protocol 标识"测连接走啥协议"）。
+//   • Space override (本文件 SPACE_OVERRIDES)：displayName / protocol —— 纯 UI 元数据
+//     SDK 不关心这些（KodaX 用 `capabilityProfile` 表达更丰富的能力）。protocol 现仅用于
+//     UI 显示与 custom provider 表单；测连接已改走 SDK verifyProviderCredential（FEATURE_216），
+//     不再需要 Space 手维护 testEndpoint。
 //
 // 为什么不 dynamic-import @kodax-ai/kodax 读 KODAX_PROVIDER_SNAPSHOTS：
 //   1. JSON 直读是 SYNC 的，catalog 可以保持模块顶层 const 不需要 init step。
@@ -28,8 +29,6 @@ export interface BuiltinProvider {
   readonly displayName: string;
   readonly apiKeyEnv: string;
   readonly protocol: ProviderProtocol;
-  /** Test connection 用的 GET endpoint（包含完整 URL）；undefined → 跳过 HTTP probe。*/
-  readonly testEndpoint?: string;
   readonly defaultModel: string;
   readonly models?: readonly string[];
 }
@@ -38,13 +37,12 @@ export interface BuiltinProvider {
  * Space-only override：SDK 不提供的 UI / 测连接元数据。
  * id 必须与 SDK provider-capabilities.json key 一致。
  *
- * SDK 增加新 provider 时本表没条目 → 自动用兜底 displayName=id + protocol='openai' +
- * 无 testEndpoint，并打 warn 提醒补 override（让 UI 显示更友好）。
+ * SDK 增加新 provider 时本表没条目 → 自动用兜底 displayName=id + protocol='openai'，
+ * 并打 warn 提醒补 override（让 UI 显示更友好）。
  */
 interface SpaceOverride {
   readonly displayName: string;
   readonly protocol: ProviderProtocol;
-  readonly testEndpoint?: string;
   /**
    * JSON 没 model 字段时的兜底（CLI bridge provider 用 —— KodaX SDK runtime 调
    * `getCodexCliDefaultModel()` 等动态填，JSON 里是空的）。
@@ -63,78 +61,65 @@ const SPACE_OVERRIDES: Record<string, SpaceOverride> = {
   anthropic: {
     displayName: 'Anthropic',
     protocol: 'anthropic',
-    testEndpoint: 'https://api.anthropic.com/v1/models',
     fallbackApiKeyEnv: 'ANTHROPIC_API_KEY',
     fallbackDefaultModel: 'claude-sonnet-4-6',
   },
   openai: {
     displayName: 'OpenAI',
     protocol: 'openai',
-    testEndpoint: 'https://api.openai.com/v1/models',
     fallbackApiKeyEnv: 'OPENAI_API_KEY',
     fallbackDefaultModel: 'gpt-5.3-codex',
   },
   deepseek: {
     displayName: 'DeepSeek',
     protocol: 'openai',
-    testEndpoint: 'https://api.deepseek.com/v1/models',
     fallbackApiKeyEnv: 'DEEPSEEK_API_KEY',
     fallbackDefaultModel: 'deepseek-v4-flash',
   },
   kimi: {
     displayName: 'Kimi (Moonshot)',
     protocol: 'openai',
-    testEndpoint: 'https://api.moonshot.cn/v1/models',
     fallbackApiKeyEnv: 'KIMI_API_KEY',
     fallbackDefaultModel: 'kimi-k2.6',
   },
   'kimi-code': {
     displayName: 'Kimi for Coding',
     protocol: 'anthropic',
-    // Anthropic-compat 端点；test-connection.ts 走 POST minimal completion 不依赖 GET /v1/models
-    testEndpoint: 'https://api.moonshot.cn/anthropic/v1/messages',
     fallbackApiKeyEnv: 'KIMI_CODE_API_KEY',
     fallbackDefaultModel: 'kimi-for-coding',
   },
   qwen: {
     displayName: 'Qwen (Alibaba)',
     protocol: 'openai',
-    testEndpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/models',
     fallbackApiKeyEnv: 'QWEN_API_KEY',
     fallbackDefaultModel: 'qwen3.5-plus',
   },
   zhipu: {
     displayName: 'Zhipu (BigModel)',
     protocol: 'openai',
-    testEndpoint: 'https://open.bigmodel.cn/api/paas/v4/models',
     fallbackApiKeyEnv: 'ZHIPU_API_KEY',
     fallbackDefaultModel: 'glm-5',
   },
   'zhipu-coding': {
     displayName: 'Zhipu Coding Plan',
     protocol: 'anthropic',
-    testEndpoint: 'https://open.bigmodel.cn/api/anthropic/v1/messages',
     fallbackApiKeyEnv: 'ZHIPU_CODING_API_KEY',
     fallbackDefaultModel: 'glm-5',
   },
   'minimax-coding': {
     displayName: 'MiniMax Coding',
     protocol: 'anthropic',
-    testEndpoint: 'https://api.minimax.chat/v1/messages',
     fallbackApiKeyEnv: 'MINIMAX_CODING_API_KEY',
     fallbackDefaultModel: 'MiniMax-M2.7',
   },
   'mimo-coding': {
     displayName: 'MiMo Coding (Xiaomi)',
     protocol: 'anthropic',
-    testEndpoint: 'https://api.xiaomi.com/mimo/anthropic/v1/messages',
     fallbackApiKeyEnv: 'MIMO_CODING_API_KEY',
     fallbackDefaultModel: 'mimo-v2.5-pro',
   },
   // 小米 MiMo 直连版（SDK 2026-05-25 新增，与订阅版 mimo-coding 并列）。
   // mimo 继承 KodaXAnthropicCompatProvider → protocol=anthropic（不是兜底的 openai）。
-  // testEndpoint 留空：直连版 anthropic-compat 端点 URL 待 MiMo 文档确认；
-  // 留空 → 测连接对 mimo 跳过 HTTP probe（不报错），不影响 mimo 走 SDK 的实际调用。
   mimo: {
     displayName: 'MiMo (Xiaomi)',
     protocol: 'anthropic',
@@ -144,7 +129,6 @@ const SPACE_OVERRIDES: Record<string, SpaceOverride> = {
   'ark-coding': {
     displayName: 'Volcengine Ark Coding',
     protocol: 'anthropic',
-    testEndpoint: 'https://ark.cn-beijing.volces.com/api/v3/messages',
     fallbackApiKeyEnv: 'ARK_CODING_API_KEY',
     fallbackDefaultModel: 'glm-5.1',
   },
@@ -234,7 +218,6 @@ function loadProvidersFromJson(): readonly BuiltinProvider[] {
       displayName: ov?.displayName ?? id,
       apiKeyEnv: entry.apiKeyEnv,
       protocol: ov?.protocol ?? 'openai',
-      testEndpoint: ov?.testEndpoint,
       defaultModel,
       models,
     });
@@ -259,7 +242,6 @@ function buildFallbackProviders(): readonly BuiltinProvider[] {
       displayName: ov.displayName,
       apiKeyEnv: ov.fallbackApiKeyEnv,
       protocol: ov.protocol,
-      testEndpoint: ov.testEndpoint,
       defaultModel: ov.fallbackDefaultModel,
       // fallback 不提供 model variant 列表 —— UI 显示单条 default 即可
       models: [ov.fallbackDefaultModel],

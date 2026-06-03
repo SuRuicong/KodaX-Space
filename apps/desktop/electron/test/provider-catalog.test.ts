@@ -3,7 +3,7 @@
 // catalog 是 SDK 薄适配层 —— 模块顶层一次性从 KodaX 的
 // provider-capabilities.json (`@kodax-ai/kodax/dist/provider-capabilities.json`)
 // 读 apiKeyEnv / defaultModel / models[]，Space 自己只 override displayName /
-// protocol / testEndpoint。SDK 升级 → Space 自动跟上不再需要手 sync。
+// protocol。SDK 升级 → Space 自动跟上不再需要手 sync。
 //
 // 验收：
 //   - SDK 已知的 provider 全部出现在 catalog (数量 >= 13，SDK 后续加 provider 自动跟上)
@@ -93,11 +93,4 @@ test('isBuiltinId true for known, false for unknown / custom_ prefix', () => {
   assert.equal(isBuiltinId('anthropic'), true);
   assert.equal(isBuiltinId('made-up'), false);
   assert.equal(isBuiltinId('custom_abc12345'), false);
-});
-
-test('CLI-bridge providers have no testEndpoint (skip HTTP probe)', () => {
-  const geminiCli = getBuiltin('gemini-cli');
-  const codexCli = getBuiltin('codex-cli');
-  assert.equal(geminiCli?.testEndpoint, undefined);
-  assert.equal(codexCli?.testEndpoint, undefined);
 });

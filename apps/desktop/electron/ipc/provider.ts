@@ -148,6 +148,9 @@ export async function injectAllKeysToEnv(): Promise<void> {
 
 /** 注入单条 key 的辅助：setKey 之后实时调用让 env 同步。*/
 async function injectSingleKey(providerId: string): Promise<void> {
+  // 先 load —— setKey handler 不保证调过 load()，custom provider 的 customCache 可能还是 null，
+  // 那样 resolveProviderInfo 会 no-op 导致 env 不同步（重构后 SDK 纯靠 env 读 key）。
+  await providerConfigStore.load();
   const info = resolveProviderInfo(providerId);
   if (!info) return;
   const value = await getKey(providerId);
@@ -255,12 +258,14 @@ export function registerProviderChannels(): void {
     if (!probe) {
       return { ok: false, error: 'unknown provider' };
     }
-    const apiKey = await getKey(input.providerId);
-    if (!apiKey) {
-      return { ok: false, error: 'no key configured' };
+    // 轻量 sync 预检：仅对 builtin —— builtin 的 apiKeyEnv 规范唯一，env 没 key 直接给即时反馈。
+    // custom provider 的 apiKeyEnv 可能复用 builtin env 名（如自建 Anthropic 网关用
+    // ANTHROPIC_API_KEY），预检会因别的 provider 设了同名 env 而误判通过 → 不预检，交给 SDK 的
+    // verifyProviderCredential 按 provider 真实凭证返 'unconfigured'，更准确。
+    if (isBuiltinId(input.providerId) && !process.env[probe.apiKeyEnv]) {
+      return { ok: false, error: 'no API key configured' };
     }
-    const result = await testProvider(probe, apiKey);
-    return result;
+    return testProvider(probe, { timeoutMs: 8000 });
   });
 
   // provider.setDefault

@@ -18,9 +18,8 @@
 //   - 这是 defense-in-depth，不是绝对安全。攻击者控制公网域名 + 反向解析到内网是另一层威胁
 //     （SSRF via DNS rebinding），需要在 fetch 时再校验解析后的 IP——本期不做（fetch 用 keep-alive，
 //     重新 resolve 涉及 socket-level 拦截，超出 alpha 范围）
-//   - 这个 guard 在以下地方调用：
-//       - addCustom IPC handler（持久化前）
-//       - test-connection（运行前再 double-check，防 config.json 被外部写入）
+//   - 这个 guard 的调用点：addCustom IPC handler（持久化前校验用户填的 baseUrl）。
+//     （测连接已改走 SDK verifyProviderCredential，不再在 Space 侧拼 probe URL。）
 
 const ALLOWED_PORTS = new Set([443, 8443]);
 
@@ -110,31 +109,4 @@ export function validateBaseUrl(input: string): UrlValidation {
   // normalize：去掉 trailing slash 但保留路径
   const normalizedUrl = parsed.toString().replace(/\/$/, '');
   return { ok: true, normalizedUrl };
-}
-
-/**
- * 为给定 protocol（openai / anthropic）拼出 standard endpoint path。
- * 在 baseUrl 已经过 validateBaseUrl 之后调用。
- *
- * - openai-compat: `/models`（GET）
- * - anthropic-compat: `/messages`（POST minimal）
- *
- * 用户 baseUrl 末尾通常含 `/v1`（`https://api.example.com/v1`）—— 直接拼。
- * 不含 `/v1` 时给一个 warn——大多数 OpenAI-compat server 都需要 `/v1/`，但有些
- * 第三方网关用别的版本字段（`/v2`、`/api/v3`）—— 不强行追加，由用户填全。
- */
-export function buildProbeUrl(
-  baseUrl: string,
-  protocol: 'openai' | 'anthropic' | 'gemini-cli' | 'codex-cli',
-): { ok: true; url: string } | { ok: false; error: string } {
-  if (protocol === 'gemini-cli' || protocol === 'codex-cli') {
-    return { ok: false, error: 'CLI bridge providers do not support HTTP probe' };
-  }
-  const validation = validateBaseUrl(baseUrl);
-  if (!validation.ok || !validation.normalizedUrl) {
-    return { ok: false, error: validation.error ?? 'invalid baseUrl' };
-  }
-  const base = validation.normalizedUrl;
-  if (protocol === 'openai') return { ok: true, url: `${base}/models` };
-  return { ok: true, url: `${base}/messages` };
 }
