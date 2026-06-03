@@ -700,24 +700,33 @@ export const useAppStore = create<AppState>((set) => ({
           };
         }
       } else if (event.kind === 'auto_engine_change') {
-        // FEATURE_029: auto-mode engine 切换（user manual / denial threshold / circuit breaker）。
-        // 更新 session.autoModeEngine 让 ModeSelector 立即反映；本地 store 不持久化，
-        // 重启后 main 端 list 重新拉权威值。
+        // FEATURE_029: auto-mode engine 切换（user manual / denial threshold / circuit breaker
+        // / bootstrap_failed）。更新 session.autoModeEngine 让 ModeSelector 立即反映；
+        // 本地 store 不持久化，重启后 main 端 list 重新拉权威值。
         next.sessions = state.sessions.map((s) =>
           s.sessionId === event.sessionId ? { ...s, autoModeEngine: event.engine } : s,
         );
-        // Non-manual fallback (denial_threshold / circuit_breaker) → 推一条持久通知。
-        // 用户的"manual /auto-engine X"切换不弹 (那是用户主动操作,无需提示)。
+        // Non-manual fallback (denial_threshold / circuit_breaker / bootstrap_failed)
+        // → 推一条持久通知。"manual" 是用户主动切换不弹。
         if (event.reason && event.reason !== 'manual') {
-          const reasonLabel = event.reason === 'denial_threshold'
-            ? 'denial threshold'
-            : 'circuit breaker';
+          // v0.1.4：bootstrap_failed 带 details 的话用 details 全文（含失败原因 + 排查指引）；
+          // denial_threshold / circuit_breaker 沿用 reason→label 模板。
+          let text: string;
+          if (event.reason === 'bootstrap_failed') {
+            text = event.details
+              ?? `Auto-mode bootstrap failed; engine fell back to ${event.engine}.`;
+          } else {
+            const reasonLabel = event.reason === 'denial_threshold'
+              ? 'denial threshold'
+              : 'circuit breaker';
+            text = `Auto-mode engine fell back to ${event.engine} (${reasonLabel}).`;
+          }
           // 用 next.notifications ?? state.notifications 作输入: 防止未来其他分支也写
           // next.notifications 时本分支误覆盖。当前只有这一处写,fragile-defense (审查 L1)。
           next.notifications = pushNotificationLocal(next.notifications ?? state.notifications, {
             id: `auto-fallback:${event.sessionId}:${event.reason}`,
-            severity: 'warning',
-            text: `Auto-mode engine fell back to ${event.engine} (${reasonLabel}).`,
+            severity: event.reason === 'bootstrap_failed' ? 'error' : 'warning',
+            text,
             sessionId: event.sessionId,
             createdAt: Date.now(),
           });

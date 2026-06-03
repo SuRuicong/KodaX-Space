@@ -593,26 +593,29 @@ export class RealKodaXSession implements ManagedSession {
         console.warn(`[real-session ${sid}] auto-mode bootstrap failed: ${message}`);
         // F030 review HIGH#2: 失败 fallback 不是 fail-open——broker (F029) 把 auto 当
         // accept-edits 处理，bash/dangerous 仍弹窗。但用户以为"Auto"全自动跑，应当显著
-        // 告知 guardrail 失效。多重信号：
-        //   1. session_error 进入 conversation stream（持久化、不会闪走）
-        //   2. 强制 engine 降到 'rules' 让 status bar 立即显示 "Auto · rules"（视觉提示）
-        //   3. 文案明确告知失败原因 + 当前回退行为，让用户知道"是 accept-edits 不是 llm guardrail"
+        // 告知 guardrail 失效。
+        //
+        // v0.1.4 修复：之前 emit 一条 session_error 携带说明文字想当"通知"用，但
+        // session_error 是"session 结束"语义 —— ActivitySpinner 倒扫看到立刻把
+        // streaming=false，spinner 消失（实际 SDK 还在跑）。换成 auto_engine_change
+        // 带 reason='bootstrap_failed' + details：renderer 端 NotificationsSurface
+        // 已经监听 non-manual reason 自动弹持久内联通知，且不污染 streaming 状态。
+        //
+        // 强制 engine 降到 'rules' 让 status bar 立即显示 "Auto · rules" 也维持
+        // (用户视觉上能看到当前不是 llm guardrail 在跑)。
+        if (this.autoModeEngine !== 'rules') {
+          this.autoModeEngine = 'rules';
+        }
         this.emit({
-          kind: 'session_error',
+          kind: 'auto_engine_change',
           sessionId: sid,
-          error:
+          engine: 'rules',
+          reason: 'bootstrap_failed',
+          details:
             `Auto mode guardrail failed to initialize: ${message}. ` +
             `Session continues with accept-edits behavior (no LLM/rules classifier). ` +
             `Check ~/.kodax/auto-rules.jsonc syntax or pick a different mode.`,
         });
-        if (this.autoModeEngine !== 'rules') {
-          this.autoModeEngine = 'rules';
-          this.emit({
-            kind: 'auto_engine_change',
-            sessionId: sid,
-            engine: 'rules',
-          });
-        }
       }
     }
 

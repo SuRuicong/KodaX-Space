@@ -762,11 +762,18 @@ export const sessionEventChannel = {
     //   - user 手动 setAutoModeEngine（reason='manual'）
     //   - guardrail 触发 denial threshold（reason='denial_threshold'）
     //   - guardrail 触发 circuit breaker（reason='circuit_breaker'）
+    //   - v0.1.4: bootstrapAutoMode 失败 fallback 到 accept-edits（reason='bootstrap_failed'）
+    //     这条之前是 emit 一条 session_error 当通知，但 session_error 是"session 结束"
+    //     语义，ActivitySpinner 误判 streaming=false 让 spinner 消失（用户报告"改 mode
+    //     后 spinner 动画消失了"同一类 bug）。换走 auto_engine_change 复用现有
+    //     NotificationsSurface 弹持久内联通知。
     z.object({
       kind: z.literal('auto_engine_change'),
       sessionId: z.string().min(1),
       engine: autoModeEngineSchema,
-      reason: z.enum(['manual', 'denial_threshold', 'circuit_breaker']).optional(),
+      reason: z.enum(['manual', 'denial_threshold', 'circuit_breaker', 'bootstrap_failed']).optional(),
+      /** bootstrap_failed 时携带的失败原因文案（其他 reason 缺省）。展示在 NotificationsSurface。 */
+      details: z.string().max(512).optional(),
     }),
     // ---- FEATURE_008 legacy work_budget / harness_profile ----
     //
