@@ -104,6 +104,19 @@ export function ModelEffortSelector(): JSX.Element {
     if (busy) return;
     setBusy(true);
     try {
+      // provider 选择持久化到 ~/.kodax/space/provider-config.json（defaultProviderId 是
+      // default provider 的权威持久层）——让下次启动沿用上次选择。pendingProviderId 是
+      // 一次性临时层（session 创建后被 BottomBar/LeftSidebar 清空），不做持久层。
+      // 仅在真的换了 provider 时写（避免重复 IPC + main 侧 injectAllKeysToEnv）；失败不静默吞，
+      // 至少 log 让"重启没沿用"可诊断。
+      if (window.kodaxSpace && providerId !== defaultProviderId) {
+        try {
+          const r = await window.kodaxSpace.invoke('provider.setDefault', { providerId });
+          if (!r.ok) console.warn('[picker] provider.setDefault failed:', r.error);
+        } catch (err) {
+          console.warn('[picker] provider.setDefault threw:', err);
+        }
+      }
       if (session && window.kodaxSpace) {
         // 切 provider
         if (providerId !== session.provider) {
