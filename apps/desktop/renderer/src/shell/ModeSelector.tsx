@@ -20,6 +20,8 @@
 import { useEffect, useState } from 'react';
 import type { AutoModeEngine, PermissionMode } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
+import { pushToast } from '../store/toastStore.js';
+import { useIsStreaming } from './ActivitySpinner.js';
 
 const MODE_LABELS: Record<PermissionMode, string> = {
   plan: 'Plan',
@@ -55,6 +57,9 @@ export function ModeSelector(): JSX.Element {
 
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  // v0.1.4：spinner 修复 —— "切 auto 时 session 还在跑"的提示从 main 端 push
+  // session_error 改成 renderer 端 pushToast，避免 ActivitySpinner 误判 session 已结束
+  const isStreaming = useIsStreaming();
 
   // 有 session 走 session.permissionMode；无 session 走 pendingPermissionMode；fallback 'accept-edits'
   const current: PermissionMode =
@@ -108,6 +113,16 @@ export function ModeSelector(): JSX.Element {
         });
         if (!r.ok) {
           upsertSession({ ...session, permissionMode: current });
+        } else if (mode === 'auto' && current !== 'auto' && isStreaming) {
+          // v0.1.4 修复：原来 main 端在这种场景 push 一条 session_error event 来提示
+          // "guardrail 下一轮才生效"，但 session_error 会被 ActivitySpinner 当成
+          // session 结束信号，导致 spinner 立刻消失（实际 SDK 还在跑）。
+          // 改成 renderer 端 toast，不污染 event 流。
+          pushToast(
+            'Auto mode guardrail will activate on the NEXT send. Current run continues with non-guardrail permission flow.',
+            'info',
+            6000,
+          );
         }
       }
     } finally {
