@@ -234,7 +234,7 @@ test('rewind: cancels in-flight send and awaits cancel before returning', async 
 
 // ---- Reviewer batch HIGH-3 ----
 
-test('setPermissionMode→auto mid-run emits session_error informational notice', async () => {
+test('setPermissionMode→auto mid-run does NOT emit session_error (spinner-kill regression guard)', async () => {
   // 用本地 captured 数组，beforeEach 已经清掉之前的内容
   const captured: Array<{ channel: string; payload: unknown }> = [];
   setRendererTarget(() => ({
@@ -258,14 +258,16 @@ test('setPermissionMode→auto mid-run emits session_error informational notice'
   await kodaxHost.get(sessionId)!.send('do something');
   // mid-run 切到 auto
   kodaxHost.setPermissionMode(sessionId, 'auto');
-  // 应当 emit 一条 session_error 提示
-  const notices = captured.filter(
+  // 87412cb 修复：原来这里 push 一条 session_error informational notice，但 session_error 是
+  // "session 以错误结束"信号，被 ActivitySpinner 反向扫描命中 → 误杀 streaming spinner。
+  // 修复后 host.ts 只赋值 permissionMode 字段、不 emit event（提示改 renderer toast）。
+  // 本测试守住该回归：mid-run 切 auto 不得再 emit session_error。
+  const sessionErrors = captured.filter(
     (c) =>
       c.channel === 'session.event'
-      && (c.payload as { kind: string }).kind === 'session_error'
-      && ((c.payload as { error: string }).error.includes('mode→auto')),
+      && (c.payload as { kind: string }).kind === 'session_error',
   );
-  assert.ok(notices.length >= 1, 'expected mid-run mode→auto notice');
+  assert.equal(sessionErrors.length, 0, 'mid-run mode→auto must NOT emit session_error (would kill spinner)');
   // cleanup: cancel in-flight 让测试快速收尾
   await kodaxHost.cancel(sessionId);
 });

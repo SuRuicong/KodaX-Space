@@ -6,7 +6,7 @@
 // - 出参也 zod parse（防 main 端"协议漂移"——返回的 shape 与 schema 不符也立即暴露）
 // - main 永远不向 renderer throw
 
-import { ipcMain } from 'electron';
+import { createRequire } from 'node:module';
 import {
   invokeChannels,
   fail,
@@ -17,6 +17,22 @@ import {
   type ChannelInput,
   type ChannelOutput,
 } from '@kodax-space/space-ipc-schema';
+
+// 惰性拿 ipcMain —— **不**在 top-level `import { ipcMain } from 'electron'`。
+// 否则任何 import 本模块的代码（含测试经 slash.ts / ipc handler 的依赖链）在 tsx/esm
+// 测试环境（无 electron runtime）的 import 期就撞 "electron has no export 'ipcMain'"。
+// 改惰性：仅生产 main 调 registerChannel 时才求值 electron；测试 import 但不注册 channel → 不触发。
+// require/createRequire 双轨同 catalog.ts：main build 输出 CJS 走 require，tsx/esm 走 createRequire。
+let ipcMainCache: typeof import('electron').ipcMain | null = null;
+function getIpcMain(): typeof import('electron').ipcMain {
+  if (ipcMainCache !== null) return ipcMainCache;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const meta = typeof require !== 'undefined' ? null : (import.meta as any);
+  const req = meta ? createRequire(meta.url) : require;
+  const m = req('electron').ipcMain as typeof import('electron').ipcMain;
+  ipcMainCache = m;
+  return m;
+}
 
 type Handler<C extends InvokeChannelName> = (
   input: ChannelInput<C>,
@@ -31,7 +47,7 @@ export function registerChannel<C extends InvokeChannelName>(name: C, handler: H
   const def = invokeChannels[name];
   registeredChannels.add(name);
 
-  ipcMain.handle(name, async (_event, rawInput): Promise<IpcResult<ChannelOutput<C>>> => {
+  getIpcMain().handle(name, async (_event, rawInput): Promise<IpcResult<ChannelOutput<C>>> => {
     const parsedInput = def.input.safeParse(rawInput);
     if (!parsedInput.success) {
       // OC-09 安全：用 truncateZodError 替代 .flatten() —— flatten() 会把所有
