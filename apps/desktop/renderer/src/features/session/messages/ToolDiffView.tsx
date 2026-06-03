@@ -86,7 +86,13 @@ export function ToolDiffView(props: ToolDiffViewProps): JSX.Element {
         {summary.minus > 0 && (
           <span className="text-red-400 font-semibold">−{summary.minus}</span>
         )}
-        {summary.plus === 0 && summary.minus === 0 && (
+        {/* review C3-HIGH-2: 多集合 diff 算出 0/0 但 before !== after 是"行只是被
+            重排了" —— 说 "no change" 会误导用户（Monaco 展开后会显示真实 diff）。
+            用 ~reordered 跟"真没改"区分。 */}
+        {summary.plus === 0 && summary.minus === 0 && props.before !== props.after && (
+          <span className="dark:text-zinc-500 text-zinc-400">~reordered</span>
+        )}
+        {summary.plus === 0 && summary.minus === 0 && props.before === props.after && (
           <span className="dark:text-zinc-500 text-zinc-400">no change</span>
         )}
       </button>

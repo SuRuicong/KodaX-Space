@@ -698,6 +698,11 @@ export function BottomBar(): JSX.Element {
         // v0.1.4 B3: 失败 → 把刚 optimistic append 的 user message 回滚掉，避免一条孤
         // 零零气泡留在对话流。setErr 仍然显示，让用户看到错误原因。
         rollbackLastUserMessage(sid, promptForAI);
+        // review event-channel LOW-2: handleSend 之前已经 setPrompt(''); IPC 失败后
+        // 用户的 prompt 文本本来会丢，只能 ↑ 历史 recall。这里恢复 textarea 内容 +
+        // 鼠标 focus 让用户能立即重发/编辑。draftRef 之前也清成 '' 了，一并恢复。
+        setPrompt(promptForAI);
+        draftRef.current = promptForAI;
         setErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`);
       } else if (result.data.queued) {
         // v0.1.4 B1: session 正在跑，prompt 进了 KodaX SDK MessageQueue。spinner 已经亮

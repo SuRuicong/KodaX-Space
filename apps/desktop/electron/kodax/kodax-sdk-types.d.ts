@@ -577,6 +577,12 @@ declare module '@kodax-ai/kodax/agent' {
     size(): number;
     /** v0.1.4 B1: 推消息进 queue，返回 SDK 分配的 id。SDK 内部 mid-turn drain 消费。 */
     enqueue(input: EnqueueInput): string;
+    /**
+     * v0.1.4 B1 review MED-2/3: filter-aware drain。Space cancel / dispose 时调用
+     * agentId 过滤的 dequeue 把本 session 残留的 queued 消息全清掉，
+     * 不影响别的 session 的 queue 项。返回的数组消费了就是消费了（被移出 queue）。
+     */
+    dequeue(filter: DequeueFilter): QueuedMessage[];
     count(filter: DequeueFilter): number;
     has(filter: DequeueFilter): boolean;
   }

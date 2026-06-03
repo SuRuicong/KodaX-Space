@@ -2,10 +2,18 @@
 //
 // 左 before / 右 after。Read-only。语言从 path 推断（两侧同 language——同一文件的版本对比）。
 
-import { useEffect } from 'react';
 import { DiffEditor, type Monaco } from '@monaco-editor/react';
 import { initMonacoOnce } from './monaco-setup.js';
 import { languageFromPath } from './language-detect.js';
+
+// v0.1.4 review C3-HIGH-1: 必须在 @monaco-editor/react 的 loader 启动之前完成
+// loader.config({monaco})，否则会回退到默认 CDN 加载（CSP 禁止）。挪到 module
+// top-level 同步执行 —— React.lazy 解析这个 chunk 时已经 import 求值过了，
+// 比 useEffect 在第一帧 paint 之后才跑要早，能确保和 DiffEditor 的 beforeMount
+// 之间不会出现"DiffEditor 已经 mount 但 loader 还没 config"的窗口。
+//
+// initMonacoOnce 自带 idempotent 守护，多 import / HMR 重复调没副作用。
+initMonacoOnce();
 
 interface MonacoDiffViewerProps {
   path: string;
@@ -14,9 +22,6 @@ interface MonacoDiffViewerProps {
 }
 
 export function MonacoDiffViewer({ path, before, after }: MonacoDiffViewerProps): JSX.Element {
-  useEffect(() => {
-    initMonacoOnce();
-  }, []);
 
   const handleBeforeMount = (monaco: Monaco): void => {
     monaco.editor.defineTheme('kodax-space-dark', {

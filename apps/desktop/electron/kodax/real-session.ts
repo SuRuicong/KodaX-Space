@@ -67,6 +67,21 @@ async function extractRetryAfterMs(err: unknown): Promise<number | undefined> {
     return undefined;
   }
 }
+
+/**
+ * v0.1.4 review MED-1：sanitize auto-mode bootstrap 失败的错误文本再放进
+ * auto_engine_change.details（最终展示在 NotificationsSurface）。
+ * - strip 绝对路径段：Windows 盘符（大/小写）/ UNC / POSIX
+ * - 截到 240 字符给 details 的 wrapper 文案留余地（schema 上限 512）
+ * 复用 updater.ts 同款 union regex；rawMessage 仍进 console.warn。
+ */
+function sanitizeAutoModeErrorMessage(msg: string): string {
+  return msg
+    .replace(/([A-Za-z]:[\\/][^\s]+|\\\\[^\s]+|\/[A-Za-z][^\s]+)/g, '<path>')
+    .slice(0, 240)
+    .trim() || 'unknown error';
+}
+
 import type {
   AutoModeAskUser,
   AutoModeAskUserVerdict,
@@ -88,7 +103,7 @@ import type {
   SendResult,
   SessionCreateOptions,
 } from './session-adapter.js';
-import { enqueueUserPrompt } from '../ipc/queue.js';
+import { enqueueUserPrompt, drainQueueForSession } from '../ipc/queue.js';
 
 type SpaceReasoning = 'off' | 'auto' | 'quick' | 'balanced' | 'deep';
 
@@ -154,8 +169,12 @@ export class RealKodaXSession implements ManagedSession {
     // v0.1.4 B1：之前 currentAbort != null 直接 throw，造成"流式中再发"用户面前永远是
     // HANDLER_ERROR。现在改成走 KodaX SDK MessageQueue —— mid-turn drain 把 user-priority
     // 消息排在下一个 LLM call 前消费，等同于"上轮跑完再起一轮"。
+    //
+    // review HIGH-1: 必须传 agentId=this.sessionId，否则 process-global queue 上
+    // 多 in-flight session 时 A 的 prompt 可能被 B 先 drain 跑掉（跨 session 路由）。
+    // review HIGH-2: enqueueUserPrompt 内部 MAX_QUEUE_DEPTH guard 防 OOM。
     if (this.currentAbort) {
-      const queueId = await enqueueUserPrompt(prompt);
+      const queueId = await enqueueUserPrompt(this.sessionId, prompt);
       this.lastActivityAt = Date.now();
       return { queued: true, queueId };
     }
@@ -174,11 +193,25 @@ export class RealKodaXSession implements ManagedSession {
     if (this.currentAbort) {
       this.currentAbort.abort();
     }
+    // v0.1.4 B1 review MED-2: 不清 queue 的话 Stop 完下一帧 SDK mid-turn drain
+    // 就把残留 prompt 拉起新 run，违反 Stop 语义。filter 按 agentId=sessionId 只清本 session。
+    // 失败不抛 —— cancel 是 best-effort，丢失 drain 失败不该阻塞 abort 流程。
+    await drainQueueForSession(this.sessionId).catch((err) => {
+      console.warn(`[real-session ${this.sessionId}] queue drain on cancel failed:`,
+        err instanceof Error ? err.message : err);
+    });
   }
 
   async dispose(): Promise<void> {
     this.disposed = true;
     if (this.currentAbort) this.currentAbort.abort();
+    // v0.1.4 B1 review MED-3: dispose 后 host map 移除本 session，若 queue 里还有
+    // agentId=this.sessionId 的项，SDK drain 行为未定义（可能 error / 静默丢 / 路由
+    // 到别的 session）。显式清掉。
+    await drainQueueForSession(this.sessionId).catch((err) => {
+      console.warn(`[real-session ${this.sessionId}] queue drain on dispose failed:`,
+        err instanceof Error ? err.message : err);
+    });
   }
 
   /**
@@ -589,8 +622,8 @@ export class RealKodaXSession implements ManagedSession {
           `errors=${bootstrap.rulesLoadResult.errors.length}`,
         );
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.warn(`[real-session ${sid}] auto-mode bootstrap failed: ${message}`);
+        const rawMessage = err instanceof Error ? err.message : String(err);
+        console.warn(`[real-session ${sid}] auto-mode bootstrap failed: ${rawMessage}`);
         // F030 review HIGH#2: 失败 fallback 不是 fail-open——broker (F029) 把 auto 当
         // accept-edits 处理，bash/dangerous 仍弹窗。但用户以为"Auto"全自动跑，应当显著
         // 告知 guardrail 失效。
@@ -601,8 +634,11 @@ export class RealKodaXSession implements ManagedSession {
         // 带 reason='bootstrap_failed' + details：renderer 端 NotificationsSurface
         // 已经监听 non-manual reason 自动弹持久内联通知，且不污染 streaming 状态。
         //
-        // 强制 engine 降到 'rules' 让 status bar 立即显示 "Auto · rules" 也维持
-        // (用户视觉上能看到当前不是 llm guardrail 在跑)。
+        // review event-channel MED-1: rawMessage 可能含 SDK error 里嵌的绝对路径
+        // (EACCES: /home/user/.secret/...) 或上游 provider 响应里的 auth 报错细节。
+        // sanitize 后再塞 details 字段 —— 跟 updater.ts 的 path strip 同套路。
+        // 完整 rawMessage 还是会进 console.warn 给开发者排查。
+        const sanitizedMessage = sanitizeAutoModeErrorMessage(rawMessage);
         if (this.autoModeEngine !== 'rules') {
           this.autoModeEngine = 'rules';
         }
@@ -612,7 +648,7 @@ export class RealKodaXSession implements ManagedSession {
           engine: 'rules',
           reason: 'bootstrap_failed',
           details:
-            `Auto mode guardrail failed to initialize: ${message}. ` +
+            `Auto mode guardrail failed to initialize: ${sanitizedMessage}. ` +
             `Session continues with accept-edits behavior (no LLM/rules classifier). ` +
             `Check ~/.kodax/auto-rules.jsonc syntax or pick a different mode.`,
         });
