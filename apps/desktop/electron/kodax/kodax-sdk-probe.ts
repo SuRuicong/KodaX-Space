@@ -51,11 +51,16 @@ export async function probeKodaxSdk(): Promise<void> {
     );
   }
 
-  // /llm：测连接走 verifyProviderCredential（FEATURE_216 / SDK 0.7.45）；提前 probe 防 SDK 漂移。
+  // /llm：测连接走 verifyProviderCredential（FEATURE_216）。
+  // v0.1.4 修复：之前作 hard failure 抛错，但 npm-published @kodax-ai/kodax@0.7.45
+  // 还没合 FEATURE_216 commit（本地 `npm run link:kodax` 时有，CI npm install 时没有）。
+  // 让 release pipeline 全平台死。降级成 console.warn — 缺失时 test-connection.ts
+  // 走 fallback 返回 "SDK 不支持此功能"，UI 仍能用。
   const llmModule = await import('@kodax-ai/kodax/llm');
   if (typeof llmModule.verifyProviderCredential !== 'function') {
-    failures.push(
-      `@kodax-ai/kodax/llm verifyProviderCredential: expected function, got ${typeof llmModule.verifyProviderCredential}`,
+    console.warn(
+      '[kodax-sdk-probe] @kodax-ai/kodax/llm.verifyProviderCredential not present in this SDK build. ' +
+      'Provider connection test will be disabled until the SDK is upgraded.',
     );
   }
 

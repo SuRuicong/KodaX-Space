@@ -131,5 +131,10 @@ export async function testProvider(
     return toResult(await instance.verifyCredential(verifyOpts));
   }
 
+  // v0.1.4：probe 把 verifyProviderCredential 缺失降级成 warn 后，运行时再用一道
+  // 短路防御：SDK 没有此函数时直接返 graceful error，让 UI 显示"不支持"而不是 crash。
+  if (typeof sdk.verifyProviderCredential !== 'function') {
+    return { ok: false, error: 'Provider connection test requires SDK with verifyProviderCredential (FEATURE_216). Upgrade @kodax-ai/kodax.' };
+  }
   return toResult(await sdk.verifyProviderCredential(provider.id, verifyOpts));
 }
