@@ -17,12 +17,13 @@
 //
 // ADR-004 v2 决策：M0 就显示 Coder/Partner tab；Partner 灰 + "Coming"。
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Mode } from './Shell.js';
 import { useAppStore } from '../store/appStore.js';
 import type { SessionMeta, RunningSessionInfoT } from '@kodax-space/space-ipc-schema';
 import { SessionContextMenu } from './SessionContextMenu.js';
 import { RecentsFilterMenu } from './RecentsFilterMenu.js';
+import { useSessionStatusMap, type SessionStatus } from '../features/session/useSessionStatus.js';
 
 // Hover-prefetch: 用户鼠标悬停在 Recents 项上时,后台触发 session.history IPC
 // 让 main 端 5-LRU cache (session-store.ts) 提前 warm 起来。等用户真正点击时,handler 命中
@@ -52,11 +53,13 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
   const setCurrentSession = useAppStore((s) => s.setCurrentSession);
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
 
-  // 启动期拉一次 session list（暂时这里做，后续 Shell 顶层 useEffect 统一管理）
+  // F040: 不再按 currentProjectPath 过滤拉 session —— 多项目 sidebar 需要全量。
+  // 启动期拉一次；切项目 / 增删 session 触发的"补拉"未来要走显式 refresh 路径。
+  // refetch 触发器：currentProjectPath 变化（开新项目可能带新 session）+ mount。
   useEffect(() => {
     const bridge = window.kodaxSpace;
-    if (!bridge || !currentProjectPath) return;
-    void bridge.invoke('session.list', { projectRoot: currentProjectPath }).then((r) => {
+    if (!bridge) return;
+    void bridge.invoke('session.list', undefined).then((r) => {
       if (r.ok) useAppStore.getState().setSessions(r.data.sessions);
     });
   }, [currentProjectPath]);
@@ -129,7 +132,9 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
             {currentProjectPath ? 'No sessions yet.' : 'Open a folder to start.'}
           </div>
         )}
-        <SessionTree
+        {/* F040: 多项目可折叠树。currentProjectPath 默认展开 + 高亮；
+            其它项目折叠。状态点驱动来自 useSessionStatusMap。 */}
+        <ProjectTree
           sessions={sessions}
           currentSessionId={currentSessionId}
           onSelect={setCurrentSession}
@@ -146,6 +151,134 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
 }
 
 /**
+ * F040: 多项目可折叠树外层。
+ *
+ * 顶层 = 已打开过的所有项目（store.projects），按 lastUsedAt 倒序。当前项目默认展开
+ * 且高亮；其它项目折叠态。展开状态持久化到 localStorage（store.expandedProjects）。
+ *
+ * 每项目内复用 SessionTree（传 projectRootOverride 强制按本项目 path 过滤，不受
+ * recentsFilter.projectScope 影响）。状态点：useSessionStatusMap 一次拍全部 session
+ * 状态，按需传给每个 SessionTree。
+ *
+ * 折叠项目节点显示运行数计数（🟢N），让用户一眼看到哪个项目里有 agent 在跑。
+ *
+ * 边界：
+ *   - store.projects 为空 → 不渲染（fallback 到上方"Open a folder"提示）
+ *   - 某项目在 store.projects 但没 sessions → 仍渲染节点但展开后空（提示用户）
+ *   - 某 session 的 projectRoot 不在 store.projects → 漏出来不渲染（orphan）；
+ *     这不应发生（projectStore 用 SDK listSessions 来源 + project.recent.add），
+ *     如果真发生说明 SDK 给了脏数据，安全做法是隐藏不暴露
+ */
+function ProjectTree({
+  sessions,
+  currentSessionId,
+  onSelect,
+}: {
+  readonly sessions: readonly SessionMeta[];
+  readonly currentSessionId: string | null;
+  readonly onSelect: (sessionId: string) => void;
+}): JSX.Element | null {
+  const projects = useAppStore((s) => s.projects);
+  const currentProjectPath = useAppStore((s) => s.currentProjectPath);
+  const expandedProjects = useAppStore((s) => s.expandedProjects);
+  const toggleProjectExpanded = useAppStore((s) => s.toggleProjectExpanded);
+
+  // 全 session id 列表 → 一次拿状态 map（reducer 内部按 id 切片，比每个 SessionRow 单独 hook 省 N 次 store subscribe）
+  const allSessionIds = useMemo(() => sessions.map((s) => s.sessionId), [sessions]);
+  const statusMap = useSessionStatusMap(allSessionIds);
+
+  // 项目按 lastUsedAt 倒序；currentProjectPath 总是排第一（即便 lastUsedAt 不是最新，
+  // 当前项目应该最显眼，避免用户切到老项目后视觉跳动）
+  const ordered = useMemo(() => {
+    const curCanon = currentProjectPath ? canonProjectRootBrowser(currentProjectPath) : null;
+    const sorted = [...projects].sort((a, b) => b.lastUsedAt - a.lastUsedAt);
+    if (!curCanon) return sorted;
+    const curIdx = sorted.findIndex((p) => canonProjectRootBrowser(p.path) === curCanon);
+    if (curIdx <= 0) return sorted;
+    const current = sorted[curIdx];
+    return [current, ...sorted.slice(0, curIdx), ...sorted.slice(curIdx + 1)];
+  }, [projects, currentProjectPath]);
+
+  if (ordered.length === 0) return null;
+
+  // 按 projectRoot 把 sessions 分组（用 canonProjectRoot 比较，避免 windows 大小写 / trailing
+  // slash / 分隔符差异）。reviewer MED-2: 用不可变 spread 而非 push 原地改，遵循项目 immutability 规则。
+  const sessionsByProject = useMemo(() => {
+    const map = new Map<string, readonly SessionMeta[]>();
+    for (const s of sessions) {
+      const k = canonProjectRootBrowser(s.projectRoot);
+      map.set(k, [...(map.get(k) ?? []), s]);
+    }
+    return map;
+  }, [sessions]);
+
+  // statusFor 闭包：从 statusMap 取，O(1)。给每个 SessionTree 共享同一个 closure。
+  // reviewer MED-1: useCallback 让 reference 稳定跟 statusMap 走，避免 statusMap 没变时
+  // 每次 ProjectTree 渲染都新建函数让下游 SessionTree 误重渲染。
+  const statusFor = useCallback(
+    (sid: string): SessionStatus => statusMap[sid] ?? 'idle',
+    [statusMap],
+  );
+
+  return (
+    <>
+      {ordered.map((proj) => {
+        const projCanon = canonProjectRootBrowser(proj.path);
+        const isCurrent = currentProjectPath ? projCanon === canonProjectRootBrowser(currentProjectPath) : false;
+        // 默认展开规则：current project 总展开（即便 expandedProjects 里没记录）；其它看 map
+        const isExpanded = isCurrent || Boolean(expandedProjects[proj.path]);
+        const projSessions = sessionsByProject.get(projCanon) ?? [];
+        // 项目级运行计数：聚合本项目下 running session 数。awaiting / error 一起算"需关注"？
+        // 暂时只计 running —— awaiting / error 是临时态，long-running 用 running 计数更稳定
+        const runningCount = projSessions.reduce(
+          (acc, s) => (statusMap[s.sessionId] === 'running' ? acc + 1 : acc),
+          0,
+        );
+        return (
+          <div key={proj.path} className="mb-1">
+            <button
+              type="button"
+              onClick={() => toggleProjectExpanded(proj.path)}
+              className={`w-full text-left text-xs px-2 py-1 rounded flex items-center gap-1.5 ${
+                isCurrent ? 'text-fg-primary font-semibold' : 'text-fg-secondary hover:bg-hover-bg hover:text-fg-primary'
+              }`}
+              title={proj.path}
+            >
+              <span className="text-zinc-500 w-3 flex-shrink-0" aria-hidden>{isExpanded ? '▾' : '▸'}</span>
+              <span className="truncate flex-1">{proj.name}</span>
+              {runningCount > 0 && (
+                <span
+                  className="text-emerald-400 text-[10px] flex-shrink-0 font-mono"
+                  aria-label={`${runningCount} running`}
+                  title={`${runningCount} session${runningCount === 1 ? '' : 's'} running`}
+                >
+                  ●{runningCount}
+                </span>
+              )}
+            </button>
+            {isExpanded && (
+              <div className="ml-1">
+                {projSessions.length === 0 ? (
+                  <div className="text-[10px] text-zinc-500 italic px-3 py-1">No sessions in this project.</div>
+                ) : (
+                  <SessionTree
+                    sessions={sessions}
+                    currentSessionId={currentSessionId}
+                    onSelect={onSelect}
+                    projectRootOverride={proj.path}
+                    statusFor={statusFor}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+/**
  * FEATURE_033: 按 parentSessionId 把 sessions 排成 root → children 树。
  * 渲染顺序：每个 root 紧跟其 descendants（DFS pre-order）；fork child 缩进 + 用 ⑂ 图标。
  *
@@ -157,6 +290,11 @@ interface SessionTreeProps {
   readonly sessions: readonly SessionMeta[];
   readonly currentSessionId: string | null;
   readonly onSelect: (sessionId: string) => void;
+  /** F040: 多项目模式时由 ProjectTree 传该项目路径，覆盖 filter.projectScope 行为，
+   *  让每个 SessionTree 严格只渲染自己项目的 session。缺省走原来的 projectScope filter。 */
+  readonly projectRootOverride?: string;
+  /** F040: 每行末尾的状态点。idle 不渲染（避免噪音）；缺省整个 sidebar 都不显示状态。 */
+  readonly statusFor?: (sessionId: string) => SessionStatus;
 }
 
 /**
@@ -173,12 +311,20 @@ function canonProjectRootBrowser(p: string): string {
   return IS_WIN ? n.toLowerCase() : n;
 }
 
-function SessionTree({ sessions, currentSessionId, onSelect }: SessionTreeProps): JSX.Element {
+function SessionTree({
+  sessions,
+  currentSessionId,
+  onSelect,
+  projectRootOverride,
+  statusFor,
+}: SessionTreeProps): JSX.Element {
   const sessionFlags = useAppStore((s) => s.sessionFlags);
   const filter = useAppStore((s) => s.recentsFilter);
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
 
   // 应用 filter：status / lastActivity / projectScope
+  // F040：projectRootOverride 设了的话 projectScope filter 被替换为强等于该路径，
+  //       让 ProjectTree 多项目模式下每个 SessionTree 严格只渲染自己项目的 session。
   const visible = useMemo(() => {
     const now = Date.now();
     const cutoff =
@@ -186,16 +332,21 @@ function SessionTree({ sessions, currentSessionId, onSelect }: SessionTreeProps)
       filter.lastActivity === '7d' ? now - 7 * 24 * 3600 * 1000 :
       filter.lastActivity === '30d' ? now - 30 * 24 * 3600 * 1000 :
       0;
+    const overrideCanon = projectRootOverride ? canonProjectRootBrowser(projectRootOverride) : null;
     const curCanon = currentProjectPath ? canonProjectRootBrowser(currentProjectPath) : null;
     return sessions.filter((s) => {
       const f = sessionFlags[s.sessionId];
       if (filter.status === 'active' && f?.archived) return false;
       if (filter.status === 'archived' && !f?.archived) return false;
-      if (filter.projectScope === 'current' && curCanon && canonProjectRootBrowser(s.projectRoot) !== curCanon) return false;
+      if (overrideCanon !== null) {
+        if (canonProjectRootBrowser(s.projectRoot) !== overrideCanon) return false;
+      } else if (filter.projectScope === 'current' && curCanon) {
+        if (canonProjectRootBrowser(s.projectRoot) !== curCanon) return false;
+      }
       if (cutoff > 0 && s.lastActivityAt < cutoff) return false;
       return true;
     });
-  }, [sessions, sessionFlags, filter, currentProjectPath]);
+  }, [sessions, sessionFlags, filter, currentProjectPath, projectRootOverride]);
 
   // 排序：pinned 顶部 + sortBy 选项决定二级排序
   const rendered = useMemo(() => {
@@ -226,6 +377,7 @@ function SessionTree({ sessions, currentSessionId, onSelect }: SessionTreeProps)
           isSelected={session.sessionId === currentSessionId}
           flags={sessionFlags[session.sessionId]}
           isRenaming={renamingSessionId === session.sessionId}
+          status={statusFor?.(session.sessionId)}
           onSelect={onSelect}
           onContextMenu={(x, y) => setCtxMenu({ session, x, y })}
           onStartRename={() => setRenamingSessionId(session.sessionId)}
@@ -299,6 +451,7 @@ function SessionRow({
   isSelected,
   flags,
   isRenaming,
+  status,
   onSelect,
   onContextMenu,
   onStartRename,
@@ -309,6 +462,8 @@ function SessionRow({
   isSelected: boolean;
   flags: { pinned?: boolean; archived?: boolean; unread?: boolean } | undefined;
   isRenaming: boolean;
+  /** F040: per-session 状态点。'idle' 不渲染。 */
+  status?: SessionStatus;
   onSelect: (id: string) => void;
   onContextMenu: (x: number, y: number) => void;
   onStartRename: () => void;
@@ -367,6 +522,20 @@ function SessionRow({
       {flags?.pinned && <span className="text-amber-400 text-[10px]" aria-hidden title="Pinned">📌</span>}
       <span className="truncate flex-1">{session.title ?? 'Untitled session'}</span>
       {flags?.unread && <span className="text-emerald-400 text-[10px]" aria-hidden title="Unread">●</span>}
+      {/* F040 状态点：idle 不渲染（最常态、避免视觉噪音）。awaiting/error/running 都用单色圆点。 */}
+      {status && status !== 'idle' && (
+        <span
+          className={`text-[10px] flex-shrink-0 ${
+            status === 'awaiting' ? 'text-amber-400' :
+            status === 'error' ? 'text-red-400' :
+            'text-emerald-400' /* running */
+          }`}
+          aria-hidden
+          title={status === 'awaiting' ? 'Awaiting confirmation' : status === 'error' ? 'Errored' : 'Running'}
+        >
+          ●
+        </span>
+      )}
     </button>
   );
 }

@@ -76,6 +76,10 @@ interface AppState {
   // ----- 数据 -----
   projects: readonly Project[];
   currentProjectPath: string | null;
+  /** F040: 每个项目在 LeftSidebar.ProjectTree 中的展开状态。
+   *  localStorage 持久化（key 'kodax-space.expandedProjects'）。
+   *  键 = project path；值 = true 表示展开。current project 默认展开（即便 map 里没记录）。*/
+  expandedProjects: Readonly<Record<string, true>>;
   sessions: readonly SessionMeta[];
   currentSessionId: string | null;
   /** 每个 sessionId 一桶事件；append-only。Map 用 plain object 避免 zustand referential 问题。*/
@@ -256,6 +260,8 @@ interface AppState {
 
   // ----- actions -----
   setProjects(projects: readonly Project[]): void;
+  /** F040: 切某项目展开状态 — 同步写 localStorage 持久化。 */
+  toggleProjectExpanded(projectPath: string): void;
   setCurrentProject(path: string | null): void;
   setSessions(sessions: readonly SessionMeta[]): void;
   setCurrentSession(sessionId: string | null): void;
@@ -365,6 +371,8 @@ let userMessageCounter = 0;
  * 这里 keep simple：只保 projectPath，sessionId 重启清掉，user 走 Recents 重新点。
  */
 const LS_KEY_PROJECT = 'kodax-space.currentProjectPath';
+/** F040: ProjectTree 展开状态。值是 JSON.stringify(Record<projectPath, true>) */
+const LS_KEY_EXPANDED_PROJECTS = 'kodax-space.expandedProjects';
 const LS_KEY_PENDING_PERMISSION = 'kodax-space.pendingPermissionMode';
 const LS_KEY_PENDING_REASONING = 'kodax-space.pendingReasoningMode';
 const LS_KEY_PENDING_AGENT = 'kodax-space.pendingAgentMode';
@@ -401,6 +409,24 @@ function readPersistedModel(): string | null {
   if (v === null) return null;
   if (v.length === 0 || v.length > PENDING_MODEL_MAX_LEN) return null;
   return v;
+}
+
+/** F040: 从 localStorage 读 expanded projects map。坏值（非 object / 非 boolean） 一律返空。 */
+function readPersistedExpandedProjects(): Record<string, true> {
+  const raw = lsGet(LS_KEY_EXPANDED_PROJECTS);
+  if (raw === null) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out: Record<string, true> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      // 仅接 true 值；防 LS 被改成奇怪 shape
+      if (v === true && typeof k === 'string' && k.length > 0 && k.length < 4096) out[k] = true;
+    }
+    return out;
+  } catch {
+    return {};
+  }
 }
 
 // pushNotification 的 set-callback 版本: dedupe id + 上限 50 截断,返回新 array。
@@ -446,6 +472,7 @@ function lsSet(key: string, value: string | null): void {
 export const useAppStore = create<AppState>((set) => ({
   projects: [],
   currentProjectPath: lsGet(LS_KEY_PROJECT),
+  expandedProjects: readPersistedExpandedProjects(),
   sessions: [],
   currentSessionId: null,
   eventsBySession: {},
@@ -487,6 +514,25 @@ export const useAppStore = create<AppState>((set) => ({
   leftSidebarOpen: lsGet('kodax-space.leftSidebarOpen') !== '0', // 默认开，"0" 表示用户主动关过
 
   setProjects: (projects) => set({ projects }),
+
+  toggleProjectExpanded: (projectPath) =>
+    set((state) => {
+      const next = { ...state.expandedProjects };
+      if (next[projectPath]) {
+        delete next[projectPath];
+      } else {
+        next[projectPath] = true;
+      }
+      // 持久化 —— map 长度上限 256 防 LS 涨太大（不应到这种规模，纯防御）
+      const keys = Object.keys(next);
+      if (keys.length > 256) {
+        // 留最后 256 条 —— 简单 LRU 没意义因为我们没记 touch time
+        const drop = keys.slice(0, keys.length - 256);
+        for (const k of drop) delete next[k];
+      }
+      lsSet(LS_KEY_EXPANDED_PROJECTS, JSON.stringify(next));
+      return { expandedProjects: next };
+    }),
   setCurrentProject: (path) => {
     lsSet(LS_KEY_PROJECT, path);
     set({ currentProjectPath: path });
