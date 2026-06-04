@@ -32,7 +32,7 @@ import { registerTitlebarChannels } from './ipc/titlebar.js';
 import { registerSettingsChannels } from './ipc/settings.js';
 import { registerNotificationChannels, setNotificationWindowGetter } from './ipc/notification.js';
 import { registerUpdaterChannels, initAutoUpdater } from './ipc/updater.js';
-import { registerMcpbChannels } from './ipc/mcpb.js';
+import { registerMcpbChannels, installMcpbFromOsHandoff } from './ipc/mcpb.js';
 import { settingsStore } from './settings/store.js';
 import { setRendererTarget } from './ipc/push.js';
 import { kodaxHost } from './kodax/host.js';
@@ -193,14 +193,51 @@ const gotInstanceLock = app.requestSingleInstanceLock();
 if (!gotInstanceLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
       mainWindow.focus();
     }
+    // F021 v0.1.5：Windows / Linux 上"双击 .mcpb"会以 second-instance 启动并把 path
+    // 塞进 argv。第一个进程在这里挑出 mcpb-like 路径转给 installer。
+    // argv 第 0 项是 electron / Space binary 自身，1 之后才是用户传入。
+    const mcpbPath = pickMcpbPathFromArgv(argv);
+    if (mcpbPath !== null) {
+      void installMcpbFromOsHandoff(mcpbPath);
+    }
   });
 }
+
+/**
+ * F021 v0.1.5：从 process.argv / second-instance argv 里挑 .mcpb / .dxt 后缀路径。
+ * 跳过非 path 前缀 (--switch=value)；只接受第一个匹配（再多视为用户误操作）。
+ * security review MED-1：必须 abs path —— 相对路径可能被 cwd 攻击者误指（启动 Space 时
+ * cwd 由 OS 决定，但 second-instance 触发时 cwd = 调用方进程当前目录，可能不可信）。
+ */
+function pickMcpbPathFromArgv(argv: readonly string[]): string | null {
+  for (const arg of argv.slice(1)) {
+    if (arg.startsWith('-')) continue; // 跳过 electron flags
+    const lower = arg.toLowerCase();
+    if (!lower.endsWith('.mcpb') && !lower.endsWith('.dxt')) continue;
+    if (!path.isAbsolute(arg)) continue; // 拒绝 ../evil.mcpb 等相对路径
+    return arg;
+  }
+  return null;
+}
+
+/**
+ * F021 v0.1.5：macOS 文件关联 / open-file 事件。
+ * 必须在 app.whenReady() 之前注册才能接到冷启动 open-file（用户双击 .mcpb 启动 Space 时，
+ * open-file 在 ready 前就发出，错过 listener 就丢）。
+ * 已运行时再 open-file 一并接到这里。
+ */
+app.on('open-file', (event, filePath) => {
+  event.preventDefault();
+  // app 还没 ready 时（冷启动场景）也合法 — installMcpbFromOsHandoff 内部 await Notification
+  // 的 Electron API 会在 ready 后才生效；我们用 whenReady() 等一下再调
+  void app.whenReady().then(() => installMcpbFromOsHandoff(filePath));
+});
 
 app.whenReady().then(async () => {
   // Minimal application menu — 仅 View / Window，保留 DevTools / Reload / Zoom /
@@ -278,6 +315,13 @@ app.whenReady().then(async () => {
   void initAutoUpdater();
   // F021 .mcpb / .dxt bundle install — IPC handlers，UI 点 "Install extension..." 走
   registerMcpbChannels();
+  // F021 v0.1.5 冷启动 file association：用户双击 .mcpb 启动 Space 时，path 在 process.argv 里。
+  // mainWindow 还没创建，但 installMcpbFromOsHandoff 内部会拉 BrowserWindow.getAllWindows()[0]
+  // ——等 createMainWindow() 跑完才有 window。fire-and-forget，让 window 先建好。
+  const initialMcpb = pickMcpbPathFromArgv(process.argv);
+  if (initialMcpb !== null) {
+    void installMcpbFromOsHandoff(initialMcpb);
+  }
   // 启动期保证默认 workspace 目录存在 (~/kodax_workspace 或用户改过的路径)。
   // 不阻塞窗口创建——mkdir 失败 (磁盘满 / 权限) 不致命，UI 仍能用 + 用户可走 Open folder.
   void settingsStore.ensureWorkspaceExists();

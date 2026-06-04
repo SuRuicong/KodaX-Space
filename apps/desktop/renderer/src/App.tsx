@@ -228,6 +228,37 @@ export default function App(): JSX.Element {
     return () => unsub();
   }, [setCurrentSessionForNotif]);
 
+  // F021 v0.1.5 drag-drop install：把 .mcpb / .dxt 文件拖进 Space 主窗口即触发安装。
+  // 走跟 "Install ext" 按钮同一条 IPC（mcpb.install + filePath）。
+  // 不属于 mcpb 类的文件 → preventDefault 把浏览器默认 navigate-to-file 行为挡住，但不调 IPC。
+  useEffect(() => {
+    if (!window.kodaxSpace) return;
+    const onDragOver = (e: DragEvent): void => {
+      // 必须 preventDefault 才会触发 drop 事件
+      e.preventDefault();
+    };
+    const onDrop = (e: DragEvent): void => {
+      e.preventDefault();
+      const files = e.dataTransfer?.files;
+      if (!files || files.length === 0) return;
+      for (const f of Array.from(files)) {
+        const name = f.name.toLowerCase();
+        if (!name.endsWith('.mcpb') && !name.endsWith('.dxt')) continue;
+        // Electron renderer 在 dropped File 上额外暴露 .path 字段（非标准 Web API）
+        const filePath = (f as File & { path?: string }).path;
+        if (typeof filePath !== 'string' || filePath.length === 0) continue;
+        // fire-and-forget；main 端会用 native notification 给用户成功 / 失败反馈
+        void window.kodaxSpace!.invoke('mcpb.install', { filePath });
+      }
+    };
+    window.addEventListener('dragover', onDragOver);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, []);
+
   const configuredCount = providers.filter((p) => p.configured).length;
   const defaultProvider = providers.find((p) => p.id === defaultProviderId);
 
