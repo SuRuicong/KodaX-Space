@@ -2,9 +2,11 @@
 //
 // 左 before / 右 after。Read-only。语言从 path 推断（两侧同 language——同一文件的版本对比）。
 
+import { useEffect, useState } from 'react';
 import { DiffEditor, type Monaco } from '@monaco-editor/react';
 import { initMonacoOnce } from './monaco-setup.js';
 import { languageFromPath } from './language-detect.js';
+import { useAppStore } from '../../store/appStore.js';
 
 // v0.1.4 review C3-HIGH-1: 必须在 @monaco-editor/react 的 loader 启动之前完成
 // loader.config({monaco})，否则会回退到默认 CDN 加载（CSP 禁止）。挪到 module
@@ -21,7 +23,31 @@ interface MonacoDiffViewerProps {
   after: string;
 }
 
+/**
+ * v0.1.4 review C3-MED 修复：根据 app 主题（store.theme + system fallback）切 light/dark。
+ * 'system' 走 prefers-color-scheme media query，跟主题变化实时联动。
+ */
+function useEffectiveDark(): boolean {
+  const theme = useAppStore((s) => s.theme);
+  const [systemDark, setSystemDark] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia
+      ? window.matchMedia('(prefers-color-scheme: dark)').matches
+      : true,
+  );
+  useEffect(() => {
+    if (theme !== 'system' || !window.matchMedia) return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const listener = (): void => setSystemDark(mq.matches);
+    mq.addEventListener('change', listener);
+    return () => mq.removeEventListener('change', listener);
+  }, [theme]);
+  if (theme === 'dark') return true;
+  if (theme === 'light') return false;
+  return systemDark;
+}
+
 export function MonacoDiffViewer({ path, before, after }: MonacoDiffViewerProps): JSX.Element {
+  const isDark = useEffectiveDark();
 
   const handleBeforeMount = (monaco: Monaco): void => {
     monaco.editor.defineTheme('kodax-space-dark', {
@@ -38,6 +64,21 @@ export function MonacoDiffViewer({ path, before, after }: MonacoDiffViewerProps)
         'diffEditor.removedTextBackground': '#dc262630', // red-600 30% alpha
       },
     });
+    // v0.1.4 review C3-MED: 定义对称的 light 主题，避免 light 用户看 dark 编辑器跟周围 UI 撞色
+    monaco.editor.defineTheme('kodax-space-light', {
+      base: 'vs',
+      inherit: true,
+      rules: [],
+      colors: {
+        'editor.background': '#ffffff',
+        'editor.foreground': '#18181b',
+        'editorLineNumber.foreground': '#a1a1aa',
+        'editorLineNumber.activeForeground': '#52525b',
+        'editor.lineHighlightBackground': '#f4f4f5',
+        'diffEditor.insertedTextBackground': '#22c55e33', // green-500 20% alpha
+        'diffEditor.removedTextBackground': '#ef444433', // red-500 20% alpha
+      },
+    });
   };
 
   return (
@@ -48,7 +89,7 @@ export function MonacoDiffViewer({ path, before, after }: MonacoDiffViewerProps)
       modified={after}
       originalLanguage={languageFromPath(path)}
       modifiedLanguage={languageFromPath(path)}
-      theme="kodax-space-dark"
+      theme={isDark ? 'kodax-space-dark' : 'kodax-space-light'}
       beforeMount={handleBeforeMount}
       options={{
         readOnly: true,

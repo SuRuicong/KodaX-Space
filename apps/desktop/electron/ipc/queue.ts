@@ -47,6 +47,14 @@ const MAX_QUEUE_DEPTH = 10;
  *
  * 返回 SDK 分配的消息 id；renderer 用它跟 user message 做 correlation
  * （目前还只做"标 queued"，未来如要做"dequeued → 清 pill"再用）。
+ *
+ * **已知限制（B1 review MED-1，pending SDK 协助）**：queued prompt drain 时用
+ * **当前** session.permissionMode，不是 enqueue 时的 mode。用户在 accept-edits 下
+ * 敲新 prompt（→ queue）然后切到 plan → drain 跑在 plan 下。SDK EnqueueInput 没
+ * 暴露 metadata 字段让 Space stash 入队时模式；当 SDK 加 enqueue() metadata 或
+ * onMidTurnDrain hook 后 Space 这边接成 `Map<queueId, mode>` 用上再清。
+ * 现状不是 privilege escalation（plan 严格更收，accept-edits→auto 也是用户主动选
+ * 升级）；只是"行为略意外"。已发需求给 KodaX 团队。
  */
 export async function enqueueUserPrompt(sessionId: string, content: string): Promise<string> {
   const agent = await loadAgent();

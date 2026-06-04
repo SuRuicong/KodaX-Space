@@ -533,6 +533,9 @@ function pickString(o: Record<string, unknown> | undefined, key: string): string
 
 function ToolEditInputView({ toolName, input }: ToolEditInputViewProps): JSX.Element | null {
   const path = pickString(input, 'file_path') ?? pickString(input, 'path') ?? '';
+  // review HIGH 修复：hooks 必须 top-level 调用。multi_edit 分支用到 showAllEdits，
+  // 其它分支也调（无副作用），跟 rules-of-hooks 一致。
+  const [showAllEdits, setShowAllEdits] = useState(false);
 
   if (toolName === 'write') {
     const content = pickString(input, 'content');
@@ -560,16 +563,34 @@ function ToolEditInputView({ toolName, input }: ToolEditInputViewProps): JSX.Ele
   if (toolName === 'multi_edit') {
     const edits = input?.edits;
     if (!Array.isArray(edits) || edits.length === 0) return <RawJsonInput input={input} />;
+    // v0.1.4 C3 review MED 修复 1：cap 同屏 Monaco 实例数。一次 multi_edit 可能含
+    // 几十个 edit；如果用户把它们全展开会同时挂载 N 个 DiffEditor，每个一份 web-worker
+    // + ~3MB JS。前 MAX_VISIBLE 直接渲染（按需展开），剩余折叠成 "+N more" 按钮。
+    // showAllEdits / setShowAllEdits 已在 component top-level useState 出来。
+    const MAX_VISIBLE = 5;
+    const visible = showAllEdits ? edits : edits.slice(0, MAX_VISIBLE);
+    const overflow = edits.length - MAX_VISIBLE;
+    // v0.1.4 C3 review MED 修复 2：以前 shape 不对的 edit 静默 return null 让
+    // count label 跟实际渲染数量对不上。改成渲染 placeholder + console.warn。
     return (
       <section className="space-y-1.5">
         <div className="text-[10px] text-zinc-500 uppercase">
           multi_edit · {edits.length} edit{edits.length === 1 ? '' : 's'}
         </div>
-        {edits.map((e, i) => {
+        {visible.map((e, i) => {
           const item = e as Record<string, unknown> | undefined;
           const oldS = pickString(item, 'old_string');
           const newS = pickString(item, 'new_string');
-          if (oldS === null || newS === null) return null;
+          if (oldS === null || newS === null) {
+            return (
+              <div
+                key={i}
+                className="text-[10px] text-zinc-500 italic px-2 py-1 border border-dashed border-zinc-700/40 rounded"
+              >
+                Edit #{i + 1}: missing old_string / new_string fields
+              </div>
+            );
+          }
           return (
             <ToolDiffView
               key={i}
@@ -580,6 +601,15 @@ function ToolEditInputView({ toolName, input }: ToolEditInputViewProps): JSX.Ele
             />
           );
         })}
+        {!showAllEdits && overflow > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowAllEdits(true)}
+            className="text-[10px] text-blue-400 hover:text-blue-300 px-2 py-0.5"
+          >
+            + {overflow} more edit{overflow === 1 ? '' : 's'}
+          </button>
+        )}
       </section>
     );
   }
