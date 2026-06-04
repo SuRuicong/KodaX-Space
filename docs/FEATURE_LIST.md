@@ -39,10 +39,10 @@
 | 020 | 桌面通知 | Enhancement | Medium | v0.1.3 | Planned | [v0.1.3.md#020](features/v0.1.3.md#feature_020-桌面通知) |
 | 021 | `.mcpb` 一键安装 | New | Medium | v0.1.3 | Planned | [v0.1.3.md#021](features/v0.1.3.md#feature_021-mcpb-一键安装) |
 | 022 | 自动更新（Squirrel） | New | Medium | v0.1.3 | Planned | [v0.1.3.md#022](features/v0.1.3.md#feature_022-自动更新squirrel) |
-| 023 | 内置终端多 tab | Enhancement | Medium | v0.1.4 | Planned | [v0.1.4.md#023](features/v0.1.4.md#feature_023-内置终端多-tab) |
-| 024 | 文件富预览（PDF / docx / xlsx） | Enhancement | Medium | v0.1.4 | Planned | [v0.1.4.md#024](features/v0.1.4.md#feature_024-文件富预览pdf--docx--xlsx) |
-| 025 | NAPI native-diff | Refactor | Medium | v0.1.4 | Planned | [v0.1.4.md#025](features/v0.1.4.md#feature_025-napi-native-diff) |
-| 026 | NAPI native-fuzzy | New | Medium | v0.1.4 | Planned | [v0.1.4.md#026](features/v0.1.4.md#feature_026-napi-native-fuzzy) |
+| 023 | 内置终端多 tab | Enhancement | Medium | v0.1.5+ | Planned | [v0.1.4.md#023](features/v0.1.4.md#feature_023-内置终端多-tab) |
+| 024 | 文件富预览（PDF / docx / xlsx） | Enhancement | Medium | v0.1.5+ | Planned | [v0.1.4.md#024](features/v0.1.4.md#feature_024-文件富预览pdf--docx--xlsx) |
+| 025 | NAPI native-diff | Refactor | Medium | v0.1.5+ | Planned | [v0.1.4.md#025](features/v0.1.4.md#feature_025-napi-native-diff) |
+| 026 | NAPI native-fuzzy | New | Medium | v0.1.5+ | Planned | [v0.1.4.md#026](features/v0.1.4.md#feature_026-napi-native-fuzzy) |
 | 027 | 代码签名 + notarize | Internal | Medium | v0.1.5 | Planned | [v0.1.5.md#027](features/v0.1.5.md#feature_027-代码签名--notarize) |
 | 028 | 隐私政策 + 文档站 | Internal | Low | v0.1.5 | Planned | [v0.1.5.md#028](features/v0.1.5.md#feature_028-隐私政策--文档站) |
 | 029 | Permission Mode canonical 3 + Auto engine 子档 | Refactor | Critical | v0.1.0-alpha.1 | Completed | [v0.1.0.md#029](features/v0.1.0.md#feature_029-permission-mode-canonical-3--auto-engine-子档) |
@@ -55,9 +55,9 @@
 | 036 | MCP 管理 UI (read-only listing；F039 出 SDK manager 后升级) | New | High | v0.1.1 | Completed | [v0.1.1.md#036](features/v0.1.1.md#feature_036-mcp-管理-ui-替换原-feature_013-计划) |
 | 037 | Subagent tree 视图 | New | High | v0.1.1 | Completed | [v0.1.1.md#037](features/v0.1.1.md#feature_037-subagent-tree-视图-refine-原-feature_012) |
 | 038 | F033 Sessions 持久化升级（SDK ≥ 0.7.42） | Refactor | High | v0.1.6 | Completed | [v0.1.6.md#038](features/v0.1.6.md#feature_038-f033-sessions-持久化升级接-kodax-sdk--0742) |
-| 039 | F036 MCP 管理完整版（start/stop/diag/tool catalog；接 KodaX SDK MCP manager） | Refactor | High | v0.1.4 | Completed | [v0.1.7.md#039](features/v0.1.7.md#feature_039-f036-mcp-管理完整版) |
-| 040 | 多项目可折叠 session 侧栏 + per-session 状态指示 | Enhancement | High | v0.1.4 | Completed | [v0.1.4.md#040](features/v0.1.4.md#feature_040-多项目可折叠-session-侧栏--per-session-状态指示) |
-| 041 | 右侧栏改造为任务态 mission control（Plan/Workers/Changes）+ 退役 StashNotice | Enhancement | High | v0.1.4 | Completed | [v0.1.4.md#041](features/v0.1.4.md#feature_041-右侧栏改造为任务态-mission-controlplan--workers--changes-退役-stashnotice) |
+| 039 | F036 MCP 管理完整版（start/stop/diag/tool catalog；接 KodaX SDK MCP manager） | Refactor | High | v0.1.5 | Completed | [v0.1.7.md#039](features/v0.1.7.md#feature_039-f036-mcp-管理完整版) |
+| 040 | 多项目可折叠 session 侧栏 + per-session 状态指示 | Enhancement | High | v0.1.5 | Completed | [v0.1.4.md#040](features/v0.1.4.md#feature_040-多项目可折叠-session-侧栏--per-session-状态指示) |
+| 041 | 右侧栏改造为任务态 mission control（Plan/Workers/Changes）+ 退役 StashNotice | Enhancement | High | v0.1.5 | Completed | [v0.1.4.md#041](features/v0.1.4.md#feature_041-右侧栏改造为任务态-mission-controlplan--workers--changes-退役-stashnotice) |
 
 ## v0.1.0-alpha.1 重构 plan（2026-05-18）
 
