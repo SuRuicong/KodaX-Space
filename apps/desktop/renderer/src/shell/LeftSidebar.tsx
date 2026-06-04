@@ -225,8 +225,13 @@ function ProjectTree({
       {ordered.map((proj) => {
         const projCanon = canonProjectRootBrowser(proj.path);
         const isCurrent = currentProjectPath ? projCanon === canonProjectRootBrowser(currentProjectPath) : false;
-        // 默认展开规则：current project 总展开（即便 expandedProjects 里没记录）；其它看 map
-        const isExpanded = isCurrent || Boolean(expandedProjects[proj.path]);
+        // 展开计算（review LOW-6 修复）：
+        //   default = current project=展开 / 其它=折叠
+        //   显式 expandedProjects[path] = true/false → 覆盖 default
+        // 之前 `isCurrent || map[path]` 让 current project 永远展开，用户点 chevron 视觉无反应。
+        const defaultExpanded = isCurrent;
+        const explicit = proj.path in expandedProjects ? expandedProjects[proj.path] : undefined;
+        const isExpanded = explicit !== undefined ? explicit : defaultExpanded;
         const projSessions = sessionsByProject.get(projCanon) ?? [];
         // 项目级运行计数：聚合本项目下 running session 数。awaiting / error 一起算"需关注"？
         // 暂时只计 running —— awaiting / error 是临时态，long-running 用 running 计数更稳定
@@ -238,7 +243,7 @@ function ProjectTree({
           <div key={proj.path} className="mb-1">
             <button
               type="button"
-              onClick={() => toggleProjectExpanded(proj.path)}
+              onClick={() => toggleProjectExpanded(proj.path, defaultExpanded)}
               className={`w-full text-left text-xs px-2 py-1 rounded flex items-center gap-1.5 ${
                 isCurrent ? 'text-fg-primary font-semibold' : 'text-fg-secondary hover:bg-hover-bg hover:text-fg-primary'
               }`}

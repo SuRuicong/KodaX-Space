@@ -78,8 +78,10 @@ interface AppState {
   currentProjectPath: string | null;
   /** F040: 每个项目在 LeftSidebar.ProjectTree 中的展开状态。
    *  localStorage 持久化（key 'kodax-space.expandedProjects'）。
-   *  键 = project path；值 = true 表示展开。current project 默认展开（即便 map 里没记录）。*/
-  expandedProjects: Readonly<Record<string, true>>;
+   *  键 = project path；值 = true=用户希望展开 / false=用户希望折叠。
+   *  缺省（map 里没有该键）= 走默认（当前项目展开、其它折叠）。
+   *  存在显式值时**覆盖**默认 — 避免用户点 chevron 视觉无反应（review LOW-6）。*/
+  expandedProjects: Readonly<Record<string, boolean>>;
   sessions: readonly SessionMeta[];
   currentSessionId: string | null;
   /** 每个 sessionId 一桶事件；append-only。Map 用 plain object 避免 zustand referential 问题。*/
@@ -260,8 +262,12 @@ interface AppState {
 
   // ----- actions -----
   setProjects(projects: readonly Project[]): void;
-  /** F040: 切某项目展开状态 — 同步写 localStorage 持久化。 */
-  toggleProjectExpanded(projectPath: string): void;
+  /**
+   * F040: 切某项目展开状态 — 同步写 localStorage 持久化。
+   * `currentDefault` 是当前计算出的"如无显式覆盖时应该展开吗"（current project=true、others=false），
+   * caller (ProjectTree) 传进来让 reducer 知道下一次"显式选择"应当指向相反方向。
+   */
+  toggleProjectExpanded(projectPath: string, currentDefault: boolean): void;
   setCurrentProject(path: string | null): void;
   setSessions(sessions: readonly SessionMeta[]): void;
   setCurrentSession(sessionId: string | null): void;
@@ -413,17 +419,21 @@ function readPersistedModel(): string | null {
   return v;
 }
 
-/** F040: 从 localStorage 读 expanded projects map。坏值（非 object / 非 boolean） 一律返空。 */
-function readPersistedExpandedProjects(): Record<string, true> {
+/** F040: 从 localStorage 读 expanded projects map。坏值（非 object / 非 boolean） 一律返空。
+ *  v0.1.5：接受 true/false 两种用户显式选择；缺省值（map 里没有）= 走默认。
+ *  v0.1.4 旧 LS 数据只有 true 值仍然 forward-compatible（true=展开，跟原语义一致）。 */
+function readPersistedExpandedProjects(): Record<string, boolean> {
   const raw = lsGet(LS_KEY_EXPANDED_PROJECTS);
   if (raw === null) return {};
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    const out: Record<string, true> = {};
+    const out: Record<string, boolean> = {};
     for (const [k, v] of Object.entries(parsed)) {
-      // 仅接 true 值；防 LS 被改成奇怪 shape
-      if (v === true && typeof k === 'string' && k.length > 0 && k.length < 4096) out[k] = true;
+      // 接 true / false；防 LS 被改成奇怪 shape
+      if (typeof v !== 'boolean') continue;
+      if (typeof k !== 'string' || k.length === 0 || k.length >= 4096) continue;
+      out[k] = v;
     }
     return out;
   } catch {
@@ -517,18 +527,21 @@ export const useAppStore = create<AppState>((set) => ({
 
   setProjects: (projects) => set({ projects }),
 
-  toggleProjectExpanded: (projectPath) =>
+  toggleProjectExpanded: (projectPath, currentDefault) =>
     set((state) => {
       const next = { ...state.expandedProjects };
-      if (next[projectPath]) {
+      // 当前生效值 = 显式值（若有） else default。新值 = 反过来。
+      const effective = projectPath in next ? next[projectPath] : currentDefault;
+      const desired = !effective;
+      // 优化：新值等于 default → 清掉显式记录，map 占地少 + 后续 default 变化时跟着走
+      if (desired === currentDefault) {
         delete next[projectPath];
       } else {
-        next[projectPath] = true;
+        next[projectPath] = desired;
       }
       // 持久化 —— map 长度上限 256 防 LS 涨太大（不应到这种规模，纯防御）
       const keys = Object.keys(next);
       if (keys.length > 256) {
-        // 留最后 256 条 —— 简单 LRU 没意义因为我们没记 touch time
         const drop = keys.slice(0, keys.length - 256);
         for (const k of drop) delete next[k];
       }
