@@ -326,6 +326,11 @@ export function registerProjectChannels(): void {
         if (arrow >= 0) restPath = restPath.slice(arrow + 4);
       }
       if (restPath.length === 0 || restPath.length > MAX_PATH) continue;
+      // F041 security review MED-2: defense-in-depth —— 恶意 git 输出（如 post-index-change
+      // hook）可能塞 'R real.txt ->  ../../etc/passwd' 让 ..-prefix 路径流到 renderer。
+      // files.diff 的 isPathInside 已挡实际读，但在 parse 处一并 reject 更干净，且省一次
+      // IPC round-trip 才发现的体验。NUL 字节同套思路：合法 git 路径绝不应含 \x00。
+      if (restPath.startsWith('..') || restPath.includes('\x00')) continue;
 
       let statusChar: 'M' | 'A' | 'D' | 'R' | 'U';
       let staged: boolean;
