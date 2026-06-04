@@ -20,7 +20,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Mode } from './Shell.js';
 import { useAppStore } from '../store/appStore.js';
-import type { SessionMeta, RunningSessionInfoT } from '@kodax-space/space-ipc-schema';
+import { canonProjectRoot, type SessionMeta, type RunningSessionInfoT } from '@kodax-space/space-ipc-schema';
 import { SessionContextMenu } from './SessionContextMenu.js';
 import { RecentsFilterMenu } from './RecentsFilterMenu.js';
 import { useSessionStatusMap, type SessionStatus } from '../features/session/useSessionStatus.js';
@@ -302,18 +302,11 @@ interface SessionTreeProps {
   readonly statusFor?: (sessionId: string) => SessionStatus;
 }
 
-/**
- * Renderer 侧 path 比较器 —— main IPC handler 的 canonProjectRoot 的 browser 等价物。
- * 用于 sessions.filter(projectScope='current')：避免 SDK 持久化的 `C:/Works/...`
- * 跟 store 里 `C:\Works\...\` 因大小写 / 分隔符 / trailing slash 而 raw `!==` 误丢。
- */
+// v0.1.5: canonProjectRootBrowser 替换为 schema 包共享 util（F040/F041 review MED-3）。
+// 旧实现跟 main 侧 normalize 算法略有差异 (Windows UNC / 多重分隔符) → 现在两边走同一函数。
 const IS_WIN = typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent);
 function canonProjectRootBrowser(p: string): string {
-  // 统一分隔符到 OS native：Windows 全转 backslash，POSIX 全转 forward
-  let n = IS_WIN ? p.replace(/\//g, '\\') : p.replace(/\\/g, '/');
-  // 去末尾分隔符
-  while (n.length > 3 && (n.endsWith('\\') || n.endsWith('/'))) n = n.slice(0, -1);
-  return IS_WIN ? n.toLowerCase() : n;
+  return canonProjectRoot(p, IS_WIN);
 }
 
 function SessionTree({

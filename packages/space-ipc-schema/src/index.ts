@@ -23,6 +23,8 @@ export {
   type SafeZodErrorDetails,
 } from './utils.js';
 
+export { canonProjectRoot } from './path-canon.js';
+
 export { invokeChannels, pushChannels } from './channels/index.js';
 export type { InvokeChannels, PushChannels } from './channels/index.js';
 

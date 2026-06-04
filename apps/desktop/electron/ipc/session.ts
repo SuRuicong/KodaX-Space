@@ -3,27 +3,17 @@
 // 5 个 invoke channel 全部委托给 kodaxHost 单例处理。
 // 所有 handler 在 registerChannel 内被 zod 包装（入参/出参/异常三路 envelope）。
 
-import path from 'node:path';
 import { registerChannel } from './register.js';
 import { validateProjectRoot } from './validate.js';
 import { kodaxHost } from '../kodax/host.js';
 
-/**
- * Windows-aware project root comparator. `path.normalize` 只统一分隔符——不折盘符
- * 大小写、不去 trailing slash。session.list 历史 bug 根因：SDK 把 gitRoot 存为
- * `C:/Works/...`（正斜杠），Space 内部 cwd 路径可能是 `c:\Works\...\` （小写盘符 +
- * trailing slash），两边 normalize 完仍不等。统一处理：
- *   1. normalize（统一分隔符 + 解析 `..`）
- *   2. 去 trailing slash / backslash
- *   3. Windows 下 lower-case（NTFS path 大小写不敏感）
- */
+// v0.1.5: canonProjectRoot 抽到 schema 包共享 util（renderer + main 同一实现），
+// 修 F040/F041 review MED-3 的 normalize 不一致。
+// IS_WIN 在 main 侧用 process.platform；renderer 同名函数用 navigator.userAgent。
+import { canonProjectRoot as canonProjectRootShared } from '@kodax-space/space-ipc-schema';
+const IS_WIN_MAIN = process.platform === 'win32';
 function canonProjectRoot(p: string): string {
-  let n = path.normalize(p);
-  // 去尾部 `\` 或 `/`，保留根 `C:\` / `/` 之类的最短形式
-  while (n.length > 3 && (n.endsWith('\\') || n.endsWith('/'))) {
-    n = n.slice(0, -1);
-  }
-  return process.platform === 'win32' ? n.toLowerCase() : n;
+  return canonProjectRootShared(p, IS_WIN_MAIN);
 }
 import { loadAgentsMd, type AgentsFile } from '../kodax/agents-md-loader.js';
 import { getKodaxDir } from '../kodax/data-paths.js';
