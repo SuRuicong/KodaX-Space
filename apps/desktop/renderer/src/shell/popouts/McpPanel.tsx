@@ -42,6 +42,13 @@ interface ToolItem {
   readonly description?: string;
 }
 
+interface DiagSnapshot {
+  readonly connect: string;
+  readonly status: string;
+  readonly lastError?: string;
+  readonly cachedAt?: string;
+}
+
 export function McpPanel(): JSX.Element {
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const [statusList, setStatusList] = useState<readonly McpServerStatusT[]>([]);
@@ -56,6 +63,11 @@ export function McpPanel(): JSX.Element {
   const [installing, setInstalling] = useState(false);
   // 哪些 server 当前展开 tools 列表 (Map<serverId, ToolItem[] | 'loading'>)
   const [expandedTools, setExpandedTools] = useState<Record<string, ToolItem[] | 'loading' | 'error'>>({});
+  // F039 v0.1.7：每个 server 的 diagnostic snapshot（mcp.logs IPC）展开态。
+  // 'loading' = IPC in-flight；object = 实际 diag；'error' = IPC 失败。
+  // SDK 当前 surface 比较保守（status + lastError + cachedAt + connect mode），
+  // 比 stdout/stderr 滚动简单 —— 等 SDK 暴露日志流后再升级成滚动 tab。
+  const [diagState, setDiagState] = useState<Record<string, DiagSnapshot | 'loading' | 'error'>>({});
 
   async function refresh(): Promise<void> {
     if (!window.kodaxSpace) return;
@@ -213,6 +225,38 @@ export function McpPanel(): JSX.Element {
     });
   }
 
+  /**
+   * F039：拉 mcp.logs diagnostic envelope。toggle 语义跟 toggleTools 对称：
+   * 折叠 → loading → 拉 IPC → fill object / error。再点折叠。
+   */
+  async function toggleDiag(serverId: string): Promise<void> {
+    if (!window.kodaxSpace) return;
+    const current = diagState[serverId];
+    if (current === 'loading') return; // in-flight 不重复触发
+    if (current !== undefined) {
+      // 已展开 → 折叠
+      setDiagState((cur) => {
+        const next = { ...cur };
+        delete next[serverId];
+        return next;
+      });
+      return;
+    }
+    setDiagState((cur) => ({ ...cur, [serverId]: 'loading' }));
+    const r = await window.kodaxSpace.invoke('mcp.logs', { serverId });
+    setDiagState((cur) => {
+      if (cur[serverId] !== 'loading') return cur; // 中间用户切其它 server / unmount
+      if (!r.ok) return { ...cur, [serverId]: 'error' };
+      const snap: DiagSnapshot = {
+        connect: r.data.connect,
+        status: r.data.status,
+        ...(r.data.lastError !== undefined ? { lastError: r.data.lastError } : {}),
+        ...(r.data.cachedAt !== undefined ? { cachedAt: r.data.cachedAt } : {}),
+      };
+      return { ...cur, [serverId]: snap };
+    });
+  }
+
   // 合并 statusList + meta(discover) 成统一视图:status 优先,meta 仅给"command/url"补展示
   const metaById = new Map(meta.map((m) => [m.name, m]));
   const allServerIds = new Set<string>();
@@ -349,6 +393,15 @@ export function McpPanel(): JSX.Element {
                       {toolsState ? '▾ Tools' : '▸ Tools'}
                     </button>
                   )}
+                  {/* F039：Diag 按钮拉 mcp.logs，展示 connect mode / status / lastError / cachedAt。
+                      所有 server (含 idle / disabled) 都允许 ——是诊断窗口，不依赖正在跑。 */}
+                  <button
+                    type="button"
+                    onClick={() => void toggleDiag(row.serverId)}
+                    className="px-2 py-0.5 text-[10px] rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+                  >
+                    {diagState[row.serverId] ? '▾ Diag' : '▸ Diag'}
+                  </button>
                 </div>
               </div>
               {Array.isArray(toolsState) && (
@@ -377,6 +430,45 @@ export function McpPanel(): JSX.Element {
                   Failed to load tools.
                 </div>
               )}
+              {/* F039 Diag panel —— mcp.logs IPC 拿到的 diagnostic envelope。
+                  字段都是 string，列表式渲染足够。lastError 是关键 debug 信息，单独大段显示。 */}
+              {diagState[row.serverId] === 'loading' && (
+                <div className="border-t border-zinc-800 px-2 py-1 text-zinc-500 italic text-[10px]">
+                  Loading diagnostics…
+                </div>
+              )}
+              {diagState[row.serverId] === 'error' && (
+                <div className="border-t border-zinc-800 px-2 py-1 text-red-400/80 text-[10px]">
+                  Failed to load diagnostics.
+                </div>
+              )}
+              {typeof diagState[row.serverId] === 'object' && diagState[row.serverId] !== null && (() => {
+                const diag = diagState[row.serverId] as DiagSnapshot;
+                return (
+                  <div className="border-t border-zinc-800 px-2 py-1.5 space-y-1 text-[10px]">
+                    <div className="grid grid-cols-[80px_1fr] gap-x-2 gap-y-0.5">
+                      <span className="text-zinc-500">connect</span>
+                      <span className="font-mono text-zinc-300">{diag.connect}</span>
+                      <span className="text-zinc-500">status</span>
+                      <span className="font-mono text-zinc-300">{diag.status}</span>
+                      {diag.cachedAt && (
+                        <>
+                          <span className="text-zinc-500">cachedAt</span>
+                          <span className="font-mono text-zinc-400">{diag.cachedAt}</span>
+                        </>
+                      )}
+                    </div>
+                    {diag.lastError && (
+                      <div>
+                        <div className="text-zinc-500 uppercase tracking-wider mt-1">last error</div>
+                        <pre className="mt-0.5 text-red-400/80 whitespace-pre-wrap break-words font-mono">
+                          {diag.lastError}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           );
         })}

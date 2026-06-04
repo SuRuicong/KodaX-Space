@@ -55,7 +55,7 @@
 | 036 | MCP 管理 UI (read-only listing；F039 出 SDK manager 后升级) | New | High | v0.1.1 | Completed | [v0.1.1.md#036](features/v0.1.1.md#feature_036-mcp-管理-ui-替换原-feature_013-计划) |
 | 037 | Subagent tree 视图 | New | High | v0.1.1 | Completed | [v0.1.1.md#037](features/v0.1.1.md#feature_037-subagent-tree-视图-refine-原-feature_012) |
 | 038 | F033 Sessions 持久化升级（SDK ≥ 0.7.42） | Refactor | High | v0.1.6 | Completed | [v0.1.6.md#038](features/v0.1.6.md#feature_038-f033-sessions-持久化升级接-kodax-sdk--0742) |
-| 039 | F036 MCP 管理完整版（start/stop/log/tool catalog；接 KodaX SDK MCP manager） | Refactor | High | v0.1.7 | Planned | [v0.1.7.md#039](features/v0.1.7.md#feature_039-f036-mcp-管理完整版) |
+| 039 | F036 MCP 管理完整版（start/stop/diag/tool catalog；接 KodaX SDK MCP manager） | Refactor | High | v0.1.4 | Completed | [v0.1.7.md#039](features/v0.1.7.md#feature_039-f036-mcp-管理完整版) |
 | 040 | 多项目可折叠 session 侧栏 + per-session 状态指示 | Enhancement | High | v0.1.4 | Planned | [v0.1.4.md#040](features/v0.1.4.md#feature_040-多项目可折叠-session-侧栏--per-session-状态指示) |
 | 041 | 右侧栏改造为任务态 mission control（Plan/Workers/Changes）+ 退役 StashNotice | Enhancement | High | v0.1.4 | Planned | [v0.1.4.md#041](features/v0.1.4.md#feature_041-右侧栏改造为任务态-mission-controlplan--workers--changes-退役-stashnotice) |
 
