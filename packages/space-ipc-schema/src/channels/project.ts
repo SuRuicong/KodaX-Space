@@ -200,3 +200,42 @@ export const projectGitStatusChannel = {
     behind: z.number().int().nonnegative().optional(),
   }),
 } as const;
+
+// project.gitChanges — F041 v0.1.4 新增 (右侧栏 Changes 节用)
+//
+// 返回**带路径**的变动文件列表，区别于 project.gitStatus（只回计数）。
+//
+// 安全：
+//   - 200 文件上限 + truncated 标志：超出 N 条仍能用、UI 弹 "+N more"；防 zip-bomb 类几万文件 DoS UI
+//   - path max 2048：单条路径上限；rare 极长路径 (zsh ./super/long/...) 不撑爆 IPC
+//   - 复用 validateProjectRoot + runGit + 5s TTL cache（同 gitStatus）
+//   - 只回 path/status/staged 三个最小字段；不回 mtime / size 等可能 leak 文件元数据
+//   - status enum 严格：M/A/D/R/U；其它 git 状态字 (C/?/!) 上层归一化为最近邻
+export const projectGitChangesChannel = {
+  name: 'project.gitChanges',
+  direction: 'invoke',
+  input: z.object({
+    projectRoot: z.string().min(1).max(4096),
+  }),
+  output: z.object({
+    /** false = 非 git repo / git 不可用 / projectRoot 不存在等。 */
+    isGitRepo: z.boolean(),
+    /** 当前分支名 (detached HEAD 时返回 'HEAD' 或短 SHA)。 */
+    branch: z.string().max(256).nullable(),
+    /** 变动文件列表，上限 200 条。staged + worktree + untracked 合并；同 path 多变（如 staged M + worktree M）合并显示。 */
+    files: z
+      .array(
+        z.object({
+          /** 相对 projectRoot 的 posix 路径。 */
+          path: z.string().min(1).max(2048),
+          /** M=modified, A=added, D=deleted, R=renamed, U=untracked。 */
+          status: z.enum(['M', 'A', 'D', 'R', 'U']),
+          /** 该 path 至少有一部分 staged (X != ' ')。worktree-only 改动 staged=false。 */
+          staged: z.boolean(),
+        }),
+      )
+      .max(200),
+    /** true = 文件总数超 200，files 被截断；UI 显示 "+N more"。 */
+    truncated: z.boolean(),
+  }),
+} as const;

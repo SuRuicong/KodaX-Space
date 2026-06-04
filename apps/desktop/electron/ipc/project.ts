@@ -258,6 +258,105 @@ export function registerProjectChannels(): void {
     return result;
   });
 
+  // project.gitChanges — F041 v0.1.4 右侧栏 Changes 节用
+  //
+  // 同 project.gitStatus 跑 `git status --porcelain=v1 -b`，但**带路径**返回。
+  // 200 上限 + truncated 标志；复用 validateProjectRoot + runGit + 5s TTL cache。
+  registerChannel('project.gitChanges', async (input) => {
+    const projectRoot = validateProjectRoot(input.projectRoot);
+    const cached = readGitChangesCache(projectRoot);
+    if (cached) return cached;
+
+    const isRepo = await runGit(projectRoot, ['rev-parse', '--git-dir']);
+    if (!isRepo.ok) {
+      const fallback: GitChangesOutput = {
+        isGitRepo: false,
+        branch: null,
+        files: [],
+        truncated: false,
+      };
+      writeGitChangesCache(projectRoot, fallback);
+      return fallback;
+    }
+
+    const status = await runGit(projectRoot, ['status', '--porcelain=v1', '-b']);
+    if (!status.ok) {
+      const fallback: GitChangesOutput = {
+        isGitRepo: true,
+        branch: null,
+        files: [],
+        truncated: false,
+      };
+      writeGitChangesCache(projectRoot, fallback);
+      return fallback;
+    }
+
+    type FileEntry = { path: string; status: 'M' | 'A' | 'D' | 'R' | 'U'; staged: boolean };
+    const files: FileEntry[] = [];
+    let branch: string | null = null;
+    let truncated = false;
+    const MAX_FILES = 200;
+    const MAX_PATH = 2048;
+
+    const lines = status.stdout.split('\n');
+    for (const rawLine of lines) {
+      if (!rawLine) continue;
+      if (rawLine.startsWith('## ')) {
+        const body = rawLine.slice(3);
+        const dotsIdx = body.indexOf('...');
+        const bracketIdx = body.indexOf(' [');
+        const branchEnd = dotsIdx >= 0 ? dotsIdx : bracketIdx >= 0 ? bracketIdx : body.length;
+        const rawBranch = body.slice(0, branchEnd).trim();
+        branch = rawBranch.length > 0 ? rawBranch.slice(0, 256) : 'HEAD';
+        continue;
+      }
+      if (files.length >= MAX_FILES) {
+        truncated = true;
+        break;
+      }
+      // porcelain v1: 'XY <path>' (或 'XY orig -> new' for renames)
+      // XY = 2 chars status, separator = ' ', 后面是 path
+      if (rawLine.length < 4) continue;
+      const x = rawLine.charAt(0);
+      const y = rawLine.charAt(1);
+      let restPath = rawLine.slice(3);
+      // rename: 'R  orig -> new' —— 显示 new 路径
+      if (x === 'R' || y === 'R') {
+        const arrow = restPath.indexOf(' -> ');
+        if (arrow >= 0) restPath = restPath.slice(arrow + 4);
+      }
+      if (restPath.length === 0 || restPath.length > MAX_PATH) continue;
+
+      let statusChar: 'M' | 'A' | 'D' | 'R' | 'U';
+      let staged: boolean;
+      if (rawLine.startsWith('??')) {
+        statusChar = 'U';
+        staged = false;
+      } else if (x === 'A' || y === 'A') {
+        statusChar = 'A';
+        staged = x === 'A';
+      } else if (x === 'D' || y === 'D') {
+        statusChar = 'D';
+        staged = x === 'D';
+      } else if (x === 'R' || y === 'R') {
+        statusChar = 'R';
+        staged = x === 'R';
+      } else if (x === 'M' || y === 'M') {
+        statusChar = 'M';
+        staged = x === 'M';
+      } else {
+        // 其它 (C/?/!/ ) —— 归一化为 M (modified) 兜底，避免遗漏
+        statusChar = 'M';
+        staged = x !== ' ' && x !== '?';
+      }
+      files.push({ path: restPath, status: statusChar, staged });
+    }
+
+    const result = { isGitRepo: true, branch, files, truncated };
+    writeGitChangesCache(projectRoot, result);
+    return result;
+  });
+
   // project.gitDiff — /review slash 命令拿当前工作区改动
   //
   // `git diff HEAD` 包含 staged + 未 staged 改动 (相对最近一次 commit)。 untracked 文件不含,
@@ -429,6 +528,32 @@ function writeGitStatusCache(projectRoot: string, data: GitStatusOutput): void {
   if (gitStatusCache.size > 32) {
     const firstKey = gitStatusCache.keys().next().value;
     if (firstKey !== undefined) gitStatusCache.delete(firstKey);
+  }
+}
+
+// F041 gitChanges cache —— 5s TTL，同 gitStatus 模式独立 map（两者 schema 不同）
+type GitChangesOutput = {
+  isGitRepo: boolean;
+  branch: string | null;
+  files: Array<{ path: string; status: 'M' | 'A' | 'D' | 'R' | 'U'; staged: boolean }>;
+  truncated: boolean;
+};
+const GIT_CHANGES_TTL_MS = 5_000;
+const gitChangesCache = new Map<string, { ts: number; data: GitChangesOutput }>();
+function readGitChangesCache(projectRoot: string): GitChangesOutput | null {
+  const entry = gitChangesCache.get(projectRoot);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > GIT_CHANGES_TTL_MS) {
+    gitChangesCache.delete(projectRoot);
+    return null;
+  }
+  return entry.data;
+}
+function writeGitChangesCache(projectRoot: string, data: GitChangesOutput): void {
+  gitChangesCache.set(projectRoot, { ts: Date.now(), data });
+  if (gitChangesCache.size > 32) {
+    const firstKey = gitChangesCache.keys().next().value;
+    if (firstKey !== undefined) gitChangesCache.delete(firstKey);
   }
 }
 

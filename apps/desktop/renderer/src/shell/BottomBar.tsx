@@ -24,7 +24,7 @@ import { useIsStreaming } from './ActivitySpinner.js';
 import { AgentModeSelector } from './AgentModeSelector.js';
 import { AmaWorkStrip } from './AmaWorkStrip.js';
 import { BackgroundTaskBar } from './BackgroundTaskBar.js';
-import { StashNotice } from './StashNotice.js';
+// F041 v0.1.4 retire：StashNotice 横幅退役，其职责由 RightSidebar.ChangesSection 文件列表上位替代
 import { RetryBanner } from './RetryBanner.js';
 import { NotificationsSurface } from './NotificationsSurface.js';
 import { pushToast } from '../store/toastStore.js';
@@ -829,8 +829,8 @@ export function BottomBar(): JSX.Element {
       {/* 持久内联通知 (REPL NotificationsSurface 等价) — auto-engine fallback 等 */}
       <NotificationsSurface />
 
-      {/* Git working tree dirty 提示 (REPL StashNotice 等价)。非 git repo / clean 时返回 null */}
-      <StashNotice />
+      {/* F041 v0.1.4: 原 StashNotice 横幅退役 — 文件级变动列表见 RightSidebar.ChangesSection。
+          BottomBar 不再挂载 git working-tree 横幅，让对话主区干净。 */}
 
       {/* Provider retry / recovery / rate-limit 实时提示 (REPL StatusNoticesSurface 等价) */}
       <RetryBanner />

@@ -16,12 +16,13 @@ interface CommandToolbarProps {
   onToggle: (kind: PopoutKind | null) => void;
 }
 
+// F041 v0.1.4: 移除 'tasks' / 'plan'（避免与 RightSidebar.Workers/Plan section 的 ⤢ 按钮双入口）。
+// 触发 PlanPanel / TasksPanel 现在只能从 RightSidebar 标题的 ⤢ 走 requestPopout。
+// 保留 PopoutKind 联合的 'tasks' / 'plan' 以兼容 requestPopout 字符串值，但下拉里看不到。
 const POPOUTS: ReadonlyArray<{ kind: PopoutKind; label: string; icon: string; shortcut: string }> = [
   { kind: 'preview', label: 'Preview', icon: '▷', shortcut: '⇧Ctrl P' },
   { kind: 'diff', label: 'Diff', icon: '⫷', shortcut: '⇧Ctrl D' },
   { kind: 'terminal', label: 'Terminal', icon: '>_', shortcut: 'Ctrl `' },
-  { kind: 'tasks', label: 'Tasks', icon: '✓', shortcut: '' },
-  { kind: 'plan', label: 'Plan', icon: '☰', shortcut: '' },
   { kind: 'agents', label: 'Agents', icon: '⌬', shortcut: '' },
   { kind: 'mcp', label: 'MCP', icon: '⌗', shortcut: '' },
 ];

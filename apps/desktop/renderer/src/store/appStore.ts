@@ -346,6 +346,8 @@ interface AppState {
   rewindSessionBuffers(sessionId: string, rewindPastTurnIdx: number): void;
   /** F009: FilePanel 读完 lastDiffPath 后清掉，避免反复 jump。*/
   clearLastDiffPath(): void;
+  /** F041: RightSidebar Changes 节点击文件行 → 设此 path 让 DiffPanel popout 接住。 */
+  setLastDiffPath(path: string): void;
   /** P0: 标记某 session 已 invoke session.send 但还没有事件回流；spinner 据此显示 "Sending…"。*/
   setPendingSend(sessionId: string, pending: boolean): void;
   /** P0: 推一条 prompt 进 input history（用户提交时调），上限 200 条。 */
@@ -972,6 +974,7 @@ export const useAppStore = create<AppState>((set) => ({
     }),
 
   clearLastDiffPath: () => set({ lastDiffPath: null }),
+  setLastDiffPath: (path) => set({ lastDiffPath: path }),
 
   resetSessionView: () =>
     set({

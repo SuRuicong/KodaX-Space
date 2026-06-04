@@ -65,6 +65,7 @@ export {
   projectRecentRemoveChannel,
   projectGitStatsChannel,
   projectGitStatusChannel,
+  projectGitChangesChannel,
   projectFileSearchChannel,
   projectGitDiffChannel,
   type Project,
