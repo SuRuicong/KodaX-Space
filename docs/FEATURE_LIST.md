@@ -1,6 +1,6 @@
 # KodaX Space Feature List
 
-> Last Updated: 2026-06-03 (F040 多项目 session 侧栏 + per-session 状态点，对标 codex；前: opencode 对标批次 OC-01~50 + KX-I-01~09 + v0.1.6 持久化)
+> Last Updated: 2026-06-04 (F041 右侧栏任务态 mission control：Plan/Workers/Changes 三节 + 退役 StashNotice 横幅；前: F040 多项目 session 侧栏 + per-session 状态点，对标 codex)
 >
 > **2026-05-18 form-factor reset**：alpha.0 的 UI 形态偏 IDE，alpha.1 按 [ADR-004](ADR/ADR-004-panel-model.md) 重构对齐 Claude Desktop 中的 Claude Code。F006/F008/F009 标记重做（main 端保留）；新增 F011-revised / F012-revised。详见下面 "v0.1.0-alpha.1 重构 plan" 区段。
 >
@@ -57,6 +57,7 @@
 | 038 | F033 Sessions 持久化升级（SDK ≥ 0.7.42） | Refactor | High | v0.1.6 | Completed | [v0.1.6.md#038](features/v0.1.6.md#feature_038-f033-sessions-持久化升级接-kodax-sdk--0742) |
 | 039 | F036 MCP 管理完整版（start/stop/log/tool catalog；接 KodaX SDK MCP manager） | Refactor | High | v0.1.7 | Planned | [v0.1.7.md#039](features/v0.1.7.md#feature_039-f036-mcp-管理完整版) |
 | 040 | 多项目可折叠 session 侧栏 + per-session 状态指示 | Enhancement | High | v0.1.4 | Planned | [v0.1.4.md#040](features/v0.1.4.md#feature_040-多项目可折叠-session-侧栏--per-session-状态指示) |
+| 041 | 右侧栏改造为任务态 mission control（Plan/Workers/Changes）+ 退役 StashNotice | Enhancement | High | v0.1.4 | Planned | [v0.1.4.md#041](features/v0.1.4.md#feature_041-右侧栏改造为任务态-mission-controlplan--workers--changes-退役-stashnotice) |
 
 ## v0.1.0-alpha.1 重构 plan（2026-05-18）
 
