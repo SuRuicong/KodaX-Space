@@ -37,7 +37,7 @@
 | 018 | Quick Ask popover | New | High | v0.1.2 | Planned | [v0.1.2.md#018](features/v0.1.2.md#feature_018-quick-ask-popover) |
 | 019 | 主题（明/暗/系统跟随） | Enhancement | Medium | v0.1.3 | Planned | [v0.1.3.md#019](features/v0.1.3.md#feature_019-主题明暗系统跟随) |
 | 020 | 桌面通知 | Enhancement | Medium | v0.1.3 | Planned | [v0.1.3.md#020](features/v0.1.3.md#feature_020-桌面通知) |
-| 021 | `.mcpb` 一键安装 | New | Medium | v0.1.3 | Planned | [v0.1.3.md#021](features/v0.1.3.md#feature_021-mcpb-一键安装) |
+| 021 | `.mcpb` 一键安装（button + file association + drag-drop） | New | Medium | v0.1.5 | Completed | [v0.1.3.md#021](features/v0.1.3.md#feature_021-mcpb-一键安装) |
 | 022 | 自动更新（Squirrel） | New | Medium | v0.1.3 | Planned | [v0.1.3.md#022](features/v0.1.3.md#feature_022-自动更新squirrel) |
 | 023 | 内置终端多 tab | Enhancement | Medium | v0.1.5+ | Planned | [v0.1.4.md#023](features/v0.1.4.md#feature_023-内置终端多-tab) |
 | 024 | 文件富预览（PDF / docx / xlsx） | Enhancement | Medium | v0.1.5+ | Planned | [v0.1.4.md#024](features/v0.1.4.md#feature_024-文件富预览pdf--docx--xlsx) |
