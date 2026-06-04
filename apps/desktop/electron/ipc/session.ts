@@ -6,6 +6,7 @@
 import { registerChannel } from './register.js';
 import { validateProjectRoot } from './validate.js';
 import { kodaxHost } from '../kodax/host.js';
+import { projectStore } from '../projects/store.js';
 
 // v0.1.5: canonProjectRoot 抽到 schema 包共享 util（renderer + main 同一实现），
 // 修 F040/F041 review MED-3 的 normalize 不一致。
@@ -137,9 +138,10 @@ export function registerSessionChannels(): void {
     // reviewer MEDIUM-3: projectFilter 必须在传给 listMerged 前 normalize，
     // 让 SDK 层和 IPC 层比较同一形态（避免 Windows 路径 / 大小写 / trailing
     // slash 不一致让 persisted session 静默丢失）。
+    // F005 v0.1.5：filter 必须是 allowlist 项目；保留 unfiltered（全部 session）路径。
     let projectFilter: string | undefined;
     if (input?.projectRoot !== undefined) {
-      projectFilter = canonProjectRoot(validateProjectRoot(input.projectRoot));
+      projectFilter = canonProjectRoot(await projectStore.assertAllowed(input.projectRoot));
     }
     // FEATURE_038: 合并视图 — in-flight (in-memory) ∪ SDK persisted
     // 传给 host.listMerged 的 projectRoot 是 canonical 形态（SDK listSessions 内部

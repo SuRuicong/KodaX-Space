@@ -9,8 +9,11 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { validateProjectRoot } from '../ipc/validate.js';
+import { canonProjectRoot } from '@kodax-space/space-ipc-schema';
+import { validateProjectRoot, truncateForError } from '../ipc/validate.js';
 import { getSpaceDataDir } from '../kodax/data-paths.js';
+
+const IS_WIN = process.platform === 'win32';
 
 // 注：与 KodaX CLI 共享 ~/.kodax 根，但 Space 自己的目录是 ~/.kodax/space/。
 // 与 KodaX session JSONL 完全隔离，避免一方误删另一方文件。
@@ -80,6 +83,41 @@ export class ProjectStore {
       this.cached = [];
     }
     return [...this.cached];
+  }
+
+  /**
+   * F005 v0.1.5：**allowlist 版**的 projectRoot 校验 — 用户必须显式打开过该路径才放行。
+   *
+   * 流程：
+   *   1. validateProjectRoot 做 shape 检查（绝对路径 / no '..' / no NUL）
+   *   2. 规范化后跟 store 里每条项目做 canonProjectRoot 比较（Windows 大小写 + 分隔符兼容）
+   *   3. 找不到 → throw，让 registerChannel 转 HANDLER_ERROR envelope
+   *
+   * 用于所有"基于 projectRoot 起 child_process / 读文件 / 列目录"的 IPC handler：
+   *   - project.gitStats / gitStatus / gitChanges / gitDiff （spawn git）
+   *   - project.fileSearch（递归 readdir）
+   *   - files.tree / files.read（目录 + 文件读取）
+   *   - session.list 的 projectRoot filter
+   *
+   * 不用：project.recent.add / remove 这种"操作 allowlist 自身"的 handler。
+   *
+   * 跟 validateProjectRoot 的边界差异：renderer 即便发了合法绝对路径（如 /etc），
+   * 没在 allowlist 里就是拒绝 — 阻断 renderer compromise / dev-console 滥用面。
+   *
+   * @returns normalized 安全路径
+   * @throws Error 含原文 truncate 的 prefix（不带完整 path，免日志泄露）
+   */
+  async assertAllowed(input: string): Promise<string> {
+    const normalized = validateProjectRoot(input);
+    const targetCanon = canonProjectRoot(normalized, IS_WIN);
+    const projects = await this.list();
+    const isAllowed = projects.some((p) => canonProjectRoot(p.path, IS_WIN) === targetCanon);
+    if (!isAllowed) {
+      throw new Error(
+        `projectRoot not in recent projects allowlist: ${truncateForError(input)}`,
+      );
+    }
+    return normalized;
   }
 
   /**

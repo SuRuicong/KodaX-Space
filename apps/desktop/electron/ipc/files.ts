@@ -6,7 +6,7 @@
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { registerChannel } from './register.js';
-import { validateProjectRoot } from './validate.js';
+import { projectStore } from '../projects/store.js';
 import {
   resolveInsideProject,
   walkTree,
@@ -25,7 +25,8 @@ export const recordDiff = recordDiffCore;
 export function registerFilesChannels(): void {
   // files.tree
   registerChannel('files.tree', async (input) => {
-    const validatedRoot = validateProjectRoot(input.projectRoot);
+    // F005 v0.1.5：必须是 allowlist 项目（用户显式打开过）
+    const validatedRoot = await projectStore.assertAllowed(input.projectRoot);
     const realRoot = await fs.realpath(validatedRoot);
     const startDir = input.subPath
       ? await resolveInsideProject(realRoot, input.subPath)
@@ -41,6 +42,8 @@ export function registerFilesChannels(): void {
 
   // files.read
   registerChannel('files.read', async (input) => {
+    // F005 v0.1.5：必须是 allowlist 项目（用户显式打开过）
+    await projectStore.assertAllowed(input.projectRoot);
     const absPath = await resolveInsideProject(input.projectRoot, input.path);
     try {
       return await readFileWithGuards(absPath);
@@ -55,7 +58,8 @@ export function registerFilesChannels(): void {
 
   // files.diff
   registerChannel('files.diff', async (input) => {
-    const validatedRoot = validateProjectRoot(input.projectRoot);
+    // F005 v0.1.5：必须是 allowlist 项目（用户显式打开过）
+    const validatedRoot = await projectStore.assertAllowed(input.projectRoot);
     const realRoot = await fs.realpath(validatedRoot);
     const trimmed = input.path.replace(/^[\\/]+/, '').replace(/[\\/]+$/, '');
     // 不要求文件真实存在——cache 可能保留 write 前不存在的"new file" diff

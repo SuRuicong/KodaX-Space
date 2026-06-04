@@ -56,14 +56,15 @@ export function registerProjectChannels(): void {
   // simple-git 依赖（避免 +30MB deps；renderer 不直接调，main 边界做参数校验更严）。
   //
   // 安全：
-  //   - projectRoot 走 validateProjectRoot（abs path / no NUL / no ..）
+  //   - projectRoot 走 projectStore.assertAllowed（F005 v0.1.5 allowlist）—— 必须是
+  //     用户显式打开过的项目，renderer 即便发了 /etc 这类合法 abs path 也拒绝
   //   - git args 全部是固定常量 + 数字时间戳 — 没有 shell expansion 风险
   //   - 用 spawn (不是 exec)，arg array 直传，绕过 shell 解析
   //   - 5s 超时；非 git repo / git binary 缺失 / 命令失败 → 返回 isGitRepo:false + 全 0
   //
   // 缓存：mtime-based on .git/HEAD。本进程 module-level Map，5s 也够 dashboard 频繁切 range 用。
   registerChannel('project.gitStats', async (input) => {
-    const projectRoot = validateProjectRoot(input.projectRoot);
+    const projectRoot = await projectStore.assertAllowed(input.projectRoot);
     const sinceDays = input.sinceDays;
 
     const cached = readGitStatsCache(projectRoot, sinceDays);
@@ -172,7 +173,7 @@ export function registerProjectChannels(): void {
   //
   // 缓存: module-level + 5s TTL, 同 gitStats; 用 projectRoot 作 key。
   registerChannel('project.gitStatus', async (input) => {
-    const projectRoot = validateProjectRoot(input.projectRoot);
+    const projectRoot = await projectStore.assertAllowed(input.projectRoot);
     const cached = readGitStatusCache(projectRoot);
     if (cached) return cached;
 
@@ -261,9 +262,9 @@ export function registerProjectChannels(): void {
   // project.gitChanges — F041 v0.1.4 右侧栏 Changes 节用
   //
   // 同 project.gitStatus 跑 `git status --porcelain=v1 -b`，但**带路径**返回。
-  // 200 上限 + truncated 标志；复用 validateProjectRoot + runGit + 5s TTL cache。
+  // 200 上限 + truncated 标志；走 projectStore.assertAllowed allowlist + runGit + 5s TTL cache。
   registerChannel('project.gitChanges', async (input) => {
-    const projectRoot = validateProjectRoot(input.projectRoot);
+    const projectRoot = await projectStore.assertAllowed(input.projectRoot);
     const cached = readGitChangesCache(projectRoot);
     if (cached) return cached;
 
@@ -368,7 +369,7 @@ export function registerProjectChannels(): void {
   // 如果想纳入 untracked 还得 git diff --no-index /dev/null <file>,先省略,只关心已 tracked 的改动。
   // 64KB 上限: 超出 runGit 的 stdout cap 在 maxBuffer 处自动截断,这里再 truncate 一次填 schema。
   registerChannel('project.gitDiff', async (input) => {
-    const projectRoot = validateProjectRoot(input.projectRoot);
+    const projectRoot = await projectStore.assertAllowed(input.projectRoot);
     const isRepo = await runGit(projectRoot, ['rev-parse', '--git-dir']);
     if (!isRepo.ok) {
       return { isGitRepo: false, diff: '', truncated: false, error: null };
@@ -407,7 +408,7 @@ export function registerProjectChannels(): void {
   //
   // 性能: 50k 文件的子串扫 ~5-15ms, popover 体感秒级以下。
   registerChannel('project.fileSearch', async (input) => {
-    const projectRoot = validateProjectRoot(input.projectRoot);
+    const projectRoot = await projectStore.assertAllowed(input.projectRoot);
     const limit = input.limit ?? 30;
     const query = input.query.trim().toLowerCase();
 
