@@ -1,6 +1,6 @@
 # KodaX Space Feature List
 
-> Last Updated: 2026-06-05 (post-v0.1.5：F026 拆 UI/native，F026 = @-mention + ⌘K 命令面板 [JS fuzzy MVP]，新 F042 = NAPI native-helpers 合并 F025 + F026b 推后；F023/F024 留作 v0.1.7 主线)
+> Last Updated: 2026-06-05 (post-F011：真 PTY 终端 6844f1f 上线，F023 多 tab 前置就绪；F026 ⌘K 已发；v0.1.6 = F011 + F026 + F038)
 >
 > **2026-05-18 form-factor reset**：alpha.0 的 UI 形态偏 IDE，alpha.1 按 [ADR-004](ADR/ADR-004-panel-model.md) 重构对齐 Claude Desktop 中的 Claude Code。F006/F008/F009 标记重做（main 端保留）；新增 F011-revised / F012-revised。详见下面 "v0.1.0-alpha.1 重构 plan" 区段。
 >
@@ -27,7 +27,7 @@
 | 008 | Work 进度 + reasoning mode 切换 | New | High | v0.1.0 | Completed | [v0.1.0.md#008](features/v0.1.0.md#feature_008-work-进度--reasoning-mode-切换) |
 | 009 | 文件面板（Monaco read-only + diff） | New | High | v0.1.0 | Completed | [v0.1.0.md#009](features/v0.1.0.md#feature_009-文件面板monaco-read-only--diff) |
 | 010 | 跨平台安装包（unsigned dev） | New | Critical | v0.1.0 | Completed | [v0.1.0.md#010](features/v0.1.0.md#feature_010-跨平台安装包unsigned-dev) |
-| 011 | 内置终端（xterm.js + node-pty 单 tab） | New | High | v0.1.1 | Planned | [v0.1.1.md#011](features/v0.1.1.md#feature_011-内置终端xtermjs--node-pty-单-tab) |
+| 011 | 内置终端（xterm.js + node-pty 单 tab） | New | High | v0.1.6 | Completed | [v0.1.1.md#011](features/v0.1.1.md#feature_011-内置终端xtermjs--node-pty-单-tab) |
 | 012 | Subagent tree 视图 | New | High | v0.1.1 | Planned | [v0.1.1.md#012](features/v0.1.1.md#feature_012-subagent-tree-视图) |
 | 013 | MCP 管理 v1（列表 + 启停） | New | High | v0.1.1 | Planned | [v0.1.1.md#013](features/v0.1.1.md#feature_013-mcp-管理-v1列表--启停) |
 | 014 | NAPI native-tokenizer | Refactor | High | v0.1.1 | Planned | [v0.1.1.md#014](features/v0.1.1.md#feature_014-napi-native-tokenizer) |
