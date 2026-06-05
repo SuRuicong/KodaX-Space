@@ -18,6 +18,11 @@ export default defineConfig({
     sourcemap: true,
     target: 'es2022',
   },
+  // F011: xterm.js 是 CJS-only 包 (no module field)。预声明让 vite 首次启动就预优化，
+  // 避免运行时检测到 new deps 再 reload 触发 cycle（白屏 root cause）。
+  optimizeDeps: {
+    include: ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links'],
+  },
   server: {
     port: 5173,
     strictPort: true,

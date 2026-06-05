@@ -5,12 +5,17 @@
 // 形态：右侧 panel slide-in（440px 宽），覆盖主区右侧；半透明遮罩可关闭。
 // 不全屏覆盖——保留主对话流可见，让用户能在 popout 操作时仍看到对话上下文。
 
+import { Suspense, lazy } from 'react';
 import type { PopoutKind } from '../CommandToolbar.js';
 import { PreviewPanel } from './PreviewPanel.js';
 import { DiffPanel } from './DiffPanel.js';
 // F011 v0.1.6: Terminal popout 改成真 PTY (xterm.js + node-pty)；原 TerminalPanel
 // (KodaX bash 工具历史 viewer) 退役 — bash 调用已经在对话流里渲染。
-import { Terminal as TerminalPanel } from '../../features/terminal/Terminal.js';
+// Lazy 加载：xterm + 2 个 addon + CSS 只在用户首次开 Terminal popout 时拉，
+// 避免 startup bundle 体积膨胀 + 把任何 xterm 模块加载错误隔离到 popout 内（不白屏整 app）。
+const TerminalPanel = lazy(() =>
+  import('../../features/terminal/Terminal.js').then((m) => ({ default: m.Terminal })),
+);
 import { TasksPanel } from './TasksPanel.js';
 import { PlanPanel } from './PlanPanel.js';
 import { AgentsMdPanel } from './AgentsMdPanel.js';
@@ -44,7 +49,11 @@ export function PopoutOverlay({ kind, onClose }: PopoutOverlayProps): JSX.Elemen
         <div className="flex-1 min-h-0 overflow-hidden">
           {kind === 'preview' && <PreviewPanel />}
           {kind === 'diff' && <DiffPanel />}
-          {kind === 'terminal' && <TerminalPanel />}
+          {kind === 'terminal' && (
+            <Suspense fallback={<div className="p-3 text-xs text-zinc-500">Loading terminal…</div>}>
+              <TerminalPanel />
+            </Suspense>
+          )}
           {kind === 'tasks' && <TasksPanel />}
           {kind === 'plan' && <PlanPanel />}
           {kind === 'agents' && <AgentsMdPanel />}
