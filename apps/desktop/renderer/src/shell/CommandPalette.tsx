@@ -1,0 +1,307 @@
+// CommandPalette — F026 ⌘K 全局命令面板
+//
+// 触发: ⌘K (macOS) / Ctrl+K (Win/Linux) 全局快捷键 (CommandPaletteController 注册)
+// 关闭: Esc / 点 backdrop / Enter 选中后 / blur 外面 input
+//
+// 4 个分组 (action / session / file / slash); 在单一 input 中模糊搜，结果
+// 跨组归一排序 (kind 不影响主排序，只在 hint 旁标个角标)。
+//
+// 焦点管理:
+//   - 唤出时记录 document.activeElement 作为 previousFocus
+//   - input.autoFocus
+//   - 关闭时 previousFocus?.focus() 回还原焦点 (BottomBar textarea 等)
+//
+// 性能:
+//   - 唤出时 gatherCommands 一次性拉全候选 (file 200 项 + session 30 项 + slash 全部 + 动态 action)
+//   - 之后纯 renderer 端 fuzzy filter，无 IPC 往返
+//   - 5k 文件时 fuzzy P99 < 50ms (fuzzy.ts benchmark 已验证)
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useAppStore } from '../store/appStore.js';
+import { createMatcher, type FuzzyMatcher } from '../lib/fuzzy.js';
+import { requestInsert } from './inputBridge.js';
+import { pushToast } from '../store/toastStore.js';
+import {
+  gatherCommands,
+  type CommandItem,
+  type CommandKind,
+  type CommandContext,
+} from './commandSources.js';
+
+/**
+ * Route picked text to BottomBar via module-private registry (inputBridge.ts).
+ * Replaces an earlier `window` CustomEvent design that was ambient — any
+ * renderer JS could fire it.
+ */
+function emitInsert(text: string): void {
+  const ok = requestInsert(text);
+  if (!ok) {
+    pushToast('Could not insert — input not ready', 'warning', 2000);
+  }
+}
+
+const KIND_BADGE: Record<CommandKind, { label: string; cls: string }> = {
+  action: { label: 'Action', cls: 'text-amber-400 bg-amber-500/10' },
+  session: { label: 'Session', cls: 'text-sky-400 bg-sky-500/10' },
+  file: { label: 'File', cls: 'text-emerald-400 bg-emerald-500/10' },
+  slash: { label: 'Slash', cls: 'text-violet-400 bg-violet-500/10' },
+};
+
+const GROUP_ORDER: readonly CommandKind[] = ['action', 'session', 'file', 'slash'];
+
+interface CommandPaletteProps {
+  readonly open: boolean;
+  readonly onClose: () => void;
+}
+
+function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Element | null {
+  const currentProjectPath = useAppStore((s) => s.currentProjectPath);
+  const currentSessionId = useAppStore((s) => s.currentSessionId);
+  const [query, setQuery] = useState('');
+  const [items, setItems] = useState<readonly CommandItem[]>([]);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const listRef = useRef<HTMLUListElement | null>(null);
+  const matcherRef = useRef<FuzzyMatcher | null>(null);
+  if (matcherRef.current === null) matcherRef.current = createMatcher();
+  /** Guards the queueMicrotask focus restore — set true when palette re-opens
+   *  before the microtask runs, so we don't steal focus from the just-opened input. */
+  const focusRestoreCancelledRef = useRef(false);
+
+  // 唤出时记录焦点 + 重置 query
+  useEffect(() => {
+    if (!open) return;
+    // 新一轮 open: 取消上一轮还没跑的焦点还原 microtask
+    focusRestoreCancelledRef.current = true;
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    setQuery('');
+    setActiveIdx(0);
+    return () => {
+      // 关闭：把 cancelled 翻回 false（默认还原），然后排个 microtask
+      focusRestoreCancelledRef.current = false;
+      const target = previousFocusRef.current;
+      if (!target) return;
+      queueMicrotask(() => {
+        // 如果在 microtask 跑之前下一轮 open 又把 cancelled 设回 true，跳过还原
+        if (focusRestoreCancelledRef.current) return;
+        target.focus({ preventScroll: false });
+      });
+    };
+  }, [open]);
+
+  // 唤出时拉候选
+  useEffect(() => {
+    if (!open) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    const ctx: CommandContext = {
+      projectPath: currentProjectPath,
+      sessionId: currentSessionId,
+      close: onClose,
+      insertToInput: emitInsert,
+    };
+    void gatherCommands(ctx).then((next) => {
+      if (cancelled) return;
+      setItems(next);
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, currentProjectPath, currentSessionId, onClose]);
+
+  // Fuzzy filter — items 或 query 变化时重算
+  const filtered = useMemo((): readonly { item: CommandItem; score: number }[] => {
+    const matcher = matcherRef.current;
+    if (matcher === null) return [];
+    matcher.setCandidates(items.map((i) => i.searchText));
+    if (query.trim().length === 0) {
+      // 空 query: 用 items 原始顺序，按 kind 分组（已 const action 在前）
+      return items.map((item) => ({ item, score: 0 }));
+    }
+    const results = matcher.search(query, 50);
+    // searchText 反查 — 用 FIFO 队列处理多个 CommandItem 共享同一 searchText
+    // 的情况（HIGH-2: e.g. 两个 user 自定义 slash 同名同描述 → findIndex 只命中
+    // 首个，后续永远被遮蔽）。这里按 items 原始顺序把每个 searchText 推进队列，
+    // 一次消费一个，保证 N 个同 searchText 的 item 各自落到 N 个独立 result。
+    const buckets = new Map<string, CommandItem[]>();
+    for (const item of items) {
+      const arr = buckets.get(item.searchText);
+      if (arr === undefined) buckets.set(item.searchText, [item]);
+      else arr.push(item);
+    }
+    const out: { item: CommandItem; score: number }[] = [];
+    for (const r of results) {
+      const arr = buckets.get(r.item);
+      if (!arr || arr.length === 0) continue;
+      const item = arr.shift();
+      if (item) out.push({ item, score: r.score });
+    }
+    return out;
+  }, [items, query]);
+
+  // query 变化重置 activeIdx
+  useEffect(() => {
+    setActiveIdx(0);
+  }, [query]);
+
+  // 滚动 active 项到可见区域
+  useEffect(() => {
+    if (!open) return;
+    const list = listRef.current;
+    if (!list) return;
+    const child = list.querySelector<HTMLElement>(`[data-idx="${activeIdx}"]`);
+    if (child) child.scrollIntoView({ block: 'nearest' });
+  }, [open, activeIdx]);
+
+  if (!open) return null;
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      onClose();
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIdx((i) => Math.min(i + 1, Math.max(filtered.length - 1, 0)));
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIdx((i) => Math.max(i - 1, 0));
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const picked = filtered[activeIdx];
+      if (picked) {
+        void picked.item.onPick();
+      }
+      return;
+    }
+  };
+
+  // 分组渲染：保持 GROUP_ORDER 顺序内的"组内已按 fuzzy score 排"的项
+  const grouped = new Map<CommandKind, { item: CommandItem; score: number; flatIdx: number }[]>();
+  filtered.forEach((entry, flatIdx) => {
+    const arr = grouped.get(entry.item.kind) ?? [];
+    arr.push({ ...entry, flatIdx });
+    grouped.set(entry.item.kind, arr);
+  });
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-start justify-center pt-24 bg-black/40 backdrop-blur-sm"
+      onClick={onClose}
+      onKeyDown={onKeyDown}
+      role="dialog"
+      aria-label="Command palette"
+    >
+      <div
+        className="bg-zinc-950 border border-zinc-800 rounded-lg shadow-2xl w-[640px] max-w-[90vw] max-h-[70vh] flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="border-b border-zinc-800 px-3 py-2">
+          <input
+            ref={inputRef}
+            autoFocus
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Type a command, file, session, or /slash…"
+            className="w-full bg-transparent text-zinc-100 placeholder:text-zinc-600 outline-none text-sm"
+            aria-label="Command query"
+          />
+        </div>
+        <ul ref={listRef} className="overflow-y-auto flex-1 text-[13px]">
+          {loading && filtered.length === 0 && (
+            <li className="px-3 py-4 text-zinc-500 text-center">Loading…</li>
+          )}
+          {!loading && filtered.length === 0 && (
+            <li className="px-3 py-4 text-zinc-500 text-center">No matches</li>
+          )}
+          {GROUP_ORDER.flatMap((kind) => {
+            const arr = grouped.get(kind);
+            if (!arr || arr.length === 0) return [];
+            return [
+              <li
+                key={`group:${kind}`}
+                className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-zinc-500"
+              >
+                {KIND_BADGE[kind].label}
+              </li>,
+              ...arr.map(({ item, flatIdx }) => {
+                const isActive = flatIdx === activeIdx;
+                return (
+                  <li key={item.id} data-idx={flatIdx}>
+                    <button
+                      type="button"
+                      onMouseEnter={() => setActiveIdx(flatIdx)}
+                      onClick={() => void item.onPick()}
+                      className={`w-full text-left px-3 py-1.5 flex items-center gap-2 ${
+                        isActive
+                          ? 'bg-zinc-800 text-zinc-100'
+                          : 'text-zinc-300 hover:bg-zinc-800/60'
+                      }`}
+                    >
+                      <span
+                        className={`text-[9px] px-1 py-0.5 rounded uppercase tracking-wider ${KIND_BADGE[kind].cls}`}
+                      >
+                        {KIND_BADGE[kind].label}
+                      </span>
+                      <span className="truncate flex-1">{item.label}</span>
+                      {item.hint && (
+                        <span className="text-[11px] text-zinc-500 truncate max-w-[40%]" title={item.hint}>
+                          {item.hint}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              }),
+            ];
+          })}
+        </ul>
+        <div className="border-t border-zinc-800 px-3 py-1.5 text-[10px] text-zinc-500 flex gap-3">
+          <span>↑↓ navigate</span>
+          <span>Enter to select</span>
+          <span>Esc to close</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Controller — 注册全局 ⌘K / Ctrl+K listener，挂载 CommandPalette。
+ * 模仿 HelpOverlayController 的形态，让 Shell.tsx 直接 `<CommandPaletteController />`。
+ */
+export function CommandPaletteController(): JSX.Element | null {
+  const [open, setOpen] = useState(false);
+  // Stable ref — feeding inline `() => setOpen(false)` would change every
+  // parent render and re-trigger CommandPalette's IPC effect, occasionally
+  // resetting candidates while the user was reading them. (review MEDIUM-1)
+  const handleClose = useCallback(() => setOpen(false), []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const isCmdK = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && !e.shiftKey && !e.altKey;
+      if (isCmdK) {
+        e.preventDefault();
+        setOpen((v) => !v);
+        return;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  return <CommandPalette open={open} onClose={handleClose} />;
+}

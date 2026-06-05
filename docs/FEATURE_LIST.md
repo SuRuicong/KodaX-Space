@@ -1,6 +1,6 @@
 # KodaX Space Feature List
 
-> Last Updated: 2026-06-04 (F041 右侧栏任务态 mission control：Plan/Workers/Changes 三节 + 退役 StashNotice 横幅；前: F040 多项目 session 侧栏 + per-session 状态点，对标 codex)
+> Last Updated: 2026-06-05 (post-v0.1.5：F026 拆 UI/native，F026 = @-mention + ⌘K 命令面板 [JS fuzzy MVP]，新 F042 = NAPI native-helpers 合并 F025 + F026b 推后；F023/F024 留作 v0.1.7 主线)
 >
 > **2026-05-18 form-factor reset**：alpha.0 的 UI 形态偏 IDE，alpha.1 按 [ADR-004](ADR/ADR-004-panel-model.md) 重构对齐 Claude Desktop 中的 Claude Code。F006/F008/F009 标记重做（main 端保留）；新增 F011-revised / F012-revised。详见下面 "v0.1.0-alpha.1 重构 plan" 区段。
 >
@@ -39,10 +39,11 @@
 | 020 | 桌面通知 | Enhancement | Medium | v0.1.3 | Planned | [v0.1.3.md#020](features/v0.1.3.md#feature_020-桌面通知) |
 | 021 | `.mcpb` 一键安装（button + file association + drag-drop） | New | Medium | v0.1.5 | Completed | [v0.1.3.md#021](features/v0.1.3.md#feature_021-mcpb-一键安装) |
 | 022 | 自动更新（Squirrel） | New | Medium | v0.1.3 | Planned | [v0.1.3.md#022](features/v0.1.3.md#feature_022-自动更新squirrel) |
-| 023 | 内置终端多 tab | Enhancement | Medium | v0.1.5+ | Planned | [v0.1.4.md#023](features/v0.1.4.md#feature_023-内置终端多-tab) |
-| 024 | 文件富预览（PDF / docx / xlsx） | Enhancement | Medium | v0.1.5+ | Planned | [v0.1.4.md#024](features/v0.1.4.md#feature_024-文件富预览pdf--docx--xlsx) |
-| 025 | NAPI native-diff | Refactor | Medium | v0.1.5+ | Planned | [v0.1.4.md#025](features/v0.1.4.md#feature_025-napi-native-diff) |
-| 026 | NAPI native-fuzzy | New | Medium | v0.1.5+ | Planned | [v0.1.4.md#026](features/v0.1.4.md#feature_026-napi-native-fuzzy) |
+| 023 | 内置终端多 tab（需先做 F011 单 tab 真 PTY） | Enhancement | Medium | v0.1.7 | Planned | [v0.1.4.md#023](features/v0.1.4.md#feature_023-内置终端多-tab) |
+| 024 | 文件富预览（PDF / docx / xlsx） | Enhancement | Medium | v0.1.7 | Planned | [v0.1.4.md#024](features/v0.1.4.md#feature_024-文件富预览pdf--docx--xlsx) |
+| ~~025~~ | ~~NAPI native-diff~~ — 2026-06-05 合并入 [F042](features/v0.1.4.md#feature_042-napi-native-helpers合并版) | ~~Refactor~~ | — | — | Merged | — |
+| 026 | @-mention + ⌘K 命令面板（JS fuzzy MVP） | New | High | v0.1.6 | Planned | [v0.1.4.md#026](features/v0.1.4.md#feature_026--mention---k-命令面板js-fuzzy-mvp) |
+| 042 | NAPI native-helpers（合并 F025 diff + F026b fuzzy） | Refactor | Low | v0.1.x+ | Deferred | [v0.1.4.md#042](features/v0.1.4.md#feature_042-napi-native-helpers合并版) |
 | ~~027~~ | ~~代码签名 + notarize~~ — 2026-06-05 移除，KodaX Space 不走"陌生人公开 Beta"路径 | ~~Internal~~ | — | — | Dropped | — |
 | ~~028~~ | ~~隐私政策 + 文档站~~ — 同上 | ~~Internal~~ | — | — | Dropped | — |
 | 029 | Permission Mode canonical 3 + Auto engine 子档 | Refactor | Critical | v0.1.0-alpha.1 | Completed | [v0.1.0.md#029](features/v0.1.0.md#feature_029-permission-mode-canonical-3--auto-engine-子档) |
@@ -197,10 +198,11 @@ OC-01~50 (50) + KX-I-01~09 (9) — 见下方「opencode 对标批次」段；穿
 | **v0.1.1** | Productivity baseline | 内置终端 + Subagent 可视化 + MCP 管理 + 第一个 Rust 加速器 | 2026-Q2 末 |
 | **v0.1.2** | KodaX 生态打通 | Repointel + session lineage + CLI ↔ Space teleport + Quick Ask | 2026-Q3 中 |
 | **v0.1.3** | UX polish | 主题 + 通知 + `.mcpb` 安装 + 自动更新 | 2026-Q3 末 |
-| **v0.1.4** | Power features | 多 tab 终端 + 富文件预览 + 更多 Rust 加速器 | 2026-Q4 初 |
-| **v0.1.5** | Release-ready | 签名 + notarize + 文档站；准备 v0.2.0 公开 Beta | 2026-Q4 |
-| **v0.1.6** | Persistence follow-up | F033 sessions tree/fork/rewind 升 KodaX SDK 持久化 API（in-memory → 磁盘） | 与 KodaX SDK ≥ 0.7.42 同步 |
-| **v0.1.7** | MCP management follow-up | F036 MCP popout 升级（read-only → start/stop/log/tool catalog） | 与 KodaX SDK MCP manager 公开 API 同步 |
+| **v0.1.4** | Power features | 多 tab 终端 + 富文件预览 + 更多 Rust 加速器（已整顿到 v0.1.7） | 2026-Q4 初 |
+| **v0.1.5** | Sidebar overhaul + review closeout | ✅ F021 mcpb 一键安装 + F039/F040/F041 + F005 + B1/C3 review long-tail | 2026-Q4 |
+| **v0.1.6** | Persistence + power input | F038 sessions 持久化（done）+ F026 @-mention + ⌘K 命令面板（JS fuzzy MVP）| Q4 |
+| **v0.1.7** | Terminal + preview | F011 真 PTY 单 tab → F023 多 tab + F024 文件富预览 + F039 MCP 完整版（done） | Q4 末 |
+| **v0.1.x+** | NAPI native-helpers | F042（F025 + F026b）— 等 F026 上线后用数据决定启动 | TBD |
 | **v0.1.8** | 工具渲染 + 事件架构 + 智能（opencode 批次） | ToolRegistry + 全局 session bus + 智能权限批处理 + Quick Ask 智能升级 | 2026-Q4 |
 | **v0.1.9** | Provider/Model 智能 + i18n + UI 基建（opencode 批次） | 任务感知 model 路由 + 中/英 i18n + 命令面板 + 设置弹窗 | 2026-Q4 末 |
 
@@ -300,7 +302,13 @@ F001 ─► F002 ─► F003 ─► F005 ─► F006 ─► F007
                         F015, F016, F017, F018
                                   │
                                   ▼
-                        F019..F022 → F023..F026 → (sidebar overhaul: F039/F040/F041, F005, F021 收尾)
+                        F019..F022 → (sidebar overhaul: F039/F040/F041, F005, F021 收尾)
+                                                ▼
+                                       F026 (@-mention + ⌘K, JS fuzzy)
+                                                ▼
+                                       F011 (PTY) → F023 (multi-tab)  ║  F024 (rich preview)
+                                                                       ▼
+                                                              F042 (NAPI native-helpers, 数据驱动启动)
 ```
 
 每层完成是下一层的前置。同层 feature 大致可并行。

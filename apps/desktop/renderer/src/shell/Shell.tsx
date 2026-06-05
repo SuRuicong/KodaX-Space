@@ -34,6 +34,7 @@ import { AskUserModal } from '../features/ask-user/AskUserModal.js';
 import { ThemeToggle } from './ThemeToggle.js';
 import { RightSidebar } from './RightSidebar.js';
 import { HelpOverlayController } from './HelpOverlay.js';
+import { CommandPaletteController } from './CommandPalette.js';
 import { ToastContainer } from './ToastContainer.js';
 import { UpdateBanner } from '../features/updater/UpdateBanner.js';
 import { useAppStore } from '../store/appStore.js';
@@ -235,6 +236,7 @@ export function Shell(): JSX.Element {
         <PermissionModal />
         <AskUserModal />
         <HelpOverlayController />
+        <CommandPaletteController />
       </div>
       <ToastContainer />
       <UpdateBanner />

@@ -19,6 +19,7 @@ import { AttachMenu } from './AttachMenu.js';
 import { AgentPicker } from './AgentPicker.js';
 import { AtPathPopover } from './AtPathPopover.js';
 import { SlashCommandPopover, type SlashPickerItem } from './SlashCommandPopover.js';
+import { registerInsertReceiver } from './inputBridge.js';
 import { resolveSessionCreateInputs } from './createSession.js';
 import { useIsStreaming } from './ActivitySpinner.js';
 import { AgentModeSelector } from './AgentModeSelector.js';
@@ -105,21 +106,27 @@ export function BottomBar(): JSX.Element {
   /** AtPathPopover 注册的 keydown 拦截器; 优先消费 Tab/Enter/↑↓/Esc 用于选项 */
   const atPathKeyHandlerRef = useRef<((e: KeyboardEvent) => boolean) | null>(null);
 
-  /** AgentPicker 用: 将 text 插入 textarea 当前 caret 位置 (替换 selection 区间)。 */
+  /** AgentPicker / CommandPalette 用: 将 text 插入 textarea 当前 caret 位置 (替换 selection 区间)。
+   *  用 setPrompt 的 functional updater 形式 — closure 不再依赖 `prompt`，可被注册到
+   *  长寿命 receiver（inputBridge）而不需要每键击重订阅。caret start/end 从 DOM 读取，
+   *  与 React state 无关，永远是当前值。*/
   function insertAtCaret(text: string): void {
     const ta = textareaRef.current;
     if (!ta) {
       setPrompt((p) => p + text);
       return;
     }
-    const start = ta.selectionStart ?? prompt.length;
-    const end = ta.selectionEnd ?? prompt.length;
-    const next = prompt.slice(0, start) + text + prompt.slice(end);
-    setPrompt(next);
+    const start = ta.selectionStart ?? -1;
+    const end = ta.selectionEnd ?? -1;
+    setPrompt((current) => {
+      const s = start >= 0 ? start : current.length;
+      const e = end >= 0 ? end : current.length;
+      return current.slice(0, s) + text + current.slice(e);
+    });
     // 还原焦点 + 把 caret 移到插入位置之后 (下一帧 textarea 已经反映新值)。
     // rAF 期间组件可能 unmount/remount (路由切换等),旧 `ta` 变 detached node。
     // 重新读 ref 拿当前真实节点 (审查 M4)。
-    const newPos = start + text.length;
+    const newPos = (start >= 0 ? start : ta.value.length) + text.length;
     requestAnimationFrame(() => {
       const live = textareaRef.current;
       if (!live) return;
@@ -169,6 +176,18 @@ export function BottomBar(): JSX.Element {
     const onFocus = (): void => textareaRef.current?.focus();
     window.addEventListener('kodax-space.focus-textarea', onFocus);
     return () => window.removeEventListener('kodax-space.focus-textarea', onFocus);
+  }, []);
+
+  // F026 ⌘K 命令面板桥：CommandPalette 选 file / slash 项时把 `@path` / `/cmd `
+  // 通过 inputBridge 模块私有 registry 路由到这里 → 插当前 caret。
+  // 不用 window CustomEvent（避免任意 renderer JS 都能向输入框注入文本的 ambient cap）。
+  // insertAtCaret 用 functional setPrompt 不闭包当前 prompt — 安全注册一次即可，无需重订阅。
+  useEffect(() => {
+    return registerInsertReceiver((text) => {
+      // 长度兜底：避免上游异常超长字符串塞入 textarea 拖死渲染
+      const safe = text.length > 4096 ? text.slice(0, 4096) : text;
+      insertAtCaret(safe);
+    });
   }, []);
 
   /**
