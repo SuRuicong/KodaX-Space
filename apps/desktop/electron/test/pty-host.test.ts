@@ -1,0 +1,131 @@
+// Unit tests for PtyHost — F011.
+//
+// These tests spawn real PTY processes (cmd.exe on Windows, bash on POSIX) and
+// drive write/resize/kill against them. The spawn shell echo is OS-dependent;
+// we keep assertions to lifecycle invariants and id management, not output content.
+//
+// Skipped on CI runners that have neither cmd.exe nor /bin/sh — guard via
+// `process.env.SKIP_PTY_TESTS === '1'` or platform feature check.
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { PtyHost } from '../terminal/ptyHost.js';
+
+const SKIP = process.env.SKIP_PTY_TESTS === '1';
+const ifAvailable = SKIP ? test.skip.bind(test) : test;
+
+ifAvailable('PtyHost: create returns a unique uuid + non-zero pid', async () => {
+  const host = new PtyHost();
+  const a = host.create({ cwd: process.cwd(), cols: 80, rows: 24 });
+  const b = host.create({ cwd: process.cwd(), cols: 80, rows: 24 });
+  try {
+    assert.notEqual(a.terminalId, b.terminalId, 'ids should be unique');
+    assert.match(a.terminalId, /^[0-9a-f-]{36}$/i, 'terminalId is a uuid');
+    assert.ok(a.pid > 0, 'pid > 0');
+    assert.ok(b.pid > 0, 'pid > 0');
+    assert.equal(host.count(), 2);
+  } finally {
+    host.disposeAll();
+  }
+});
+
+ifAvailable('PtyHost: create rejects relative cwd', () => {
+  const host = new PtyHost();
+  try {
+    assert.throws(
+      () => host.create({ cwd: './relative', cols: 80, rows: 24 }),
+      /absolute/
+    );
+  } finally {
+    host.disposeAll();
+  }
+});
+
+ifAvailable('PtyHost: write to unknown id returns false', () => {
+  const host = new PtyHost();
+  try {
+    const ok = host.write('00000000-0000-4000-8000-000000000000', 'hi\n');
+    assert.equal(ok, false);
+  } finally {
+    host.disposeAll();
+  }
+});
+
+ifAvailable('PtyHost: resize to unknown id returns false', () => {
+  const host = new PtyHost();
+  try {
+    const ok = host.resize('00000000-0000-4000-8000-000000000000', 80, 24);
+    assert.equal(ok, false);
+  } finally {
+    host.disposeAll();
+  }
+});
+
+ifAvailable('PtyHost: kill is idempotent and returns true for unknown id', () => {
+  const host = new PtyHost();
+  try {
+    const ok1 = host.kill('00000000-0000-4000-8000-000000000000');
+    assert.equal(ok1, true, 'unknown id kill returns true (idempotent)');
+    const created = host.create({ cwd: process.cwd(), cols: 80, rows: 24 });
+    const ok2 = host.kill(created.terminalId);
+    assert.equal(ok2, true);
+    // 第二次 kill 同一个 id 还是 true（已 killed=true, 不再走 SIGKILL path）
+    const ok3 = host.kill(created.terminalId);
+    assert.equal(ok3, true);
+  } finally {
+    host.disposeAll();
+  }
+});
+
+ifAvailable('PtyHost: onOutput fires with terminalId + non-empty data', async () => {
+  const host = new PtyHost();
+  let receivedId: string | null = null;
+  let receivedData = '';
+  host.setListeners({
+    onOutput: (ev) => {
+      receivedId = ev.terminalId;
+      receivedData += ev.data;
+    },
+    onExit: () => {},
+  });
+  const created = host.create({ cwd: process.cwd(), cols: 80, rows: 24 });
+  // Wait for shell prompt — node-pty pushes initial PS1 within ~100-300ms
+  await new Promise<void>((resolve) => setTimeout(resolve, 800));
+  try {
+    assert.equal(receivedId, created.terminalId, 'output is tagged with terminalId');
+    assert.ok(receivedData.length > 0, 'shell emitted at least one byte of prompt');
+  } finally {
+    host.disposeAll();
+  }
+});
+
+ifAvailable('PtyHost: onExit fires after kill', async () => {
+  const host = new PtyHost();
+  let exitCalled = false;
+  let exitId: string | null = null;
+  host.setListeners({
+    onOutput: () => {},
+    onExit: (ev) => {
+      exitCalled = true;
+      exitId = ev.terminalId;
+    },
+  });
+  const created = host.create({ cwd: process.cwd(), cols: 80, rows: 24 });
+  host.kill(created.terminalId);
+  // Give the kernel a moment to deliver the SIGTERM + node-pty to emit exit
+  await new Promise<void>((resolve) => setTimeout(resolve, 1500));
+  assert.equal(exitCalled, true, 'onExit should fire after kill');
+  assert.equal(exitId, created.terminalId, 'exit event carries the same id');
+  assert.equal(host.has(created.terminalId), false, 'entry purged on exit');
+  host.disposeAll();
+});
+
+ifAvailable('PtyHost: disposeAll clears count', () => {
+  const host = new PtyHost();
+  host.setListeners({ onOutput: () => {}, onExit: () => {} });
+  host.create({ cwd: process.cwd(), cols: 80, rows: 24 });
+  host.create({ cwd: process.cwd(), cols: 80, rows: 24 });
+  assert.equal(host.count(), 2);
+  host.disposeAll();
+  assert.equal(host.count(), 0);
+});

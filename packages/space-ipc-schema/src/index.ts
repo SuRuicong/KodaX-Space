@@ -199,6 +199,19 @@ export {
 } from './channels/mcpb.js';
 
 export {
+  terminalCreateChannel,
+  terminalWriteChannel,
+  terminalResizeChannel,
+  terminalKillChannel,
+  terminalOutputChannel,
+  terminalExitChannel,
+  type TerminalCreateInput,
+  type TerminalCreateOutput,
+  type TerminalOutputPayload,
+  type TerminalExitPayload,
+} from './channels/terminal.js';
+
+export {
   INVOKE_CHANNEL_NAMES,
   PUSH_CHANNEL_NAMES,
   getInvokeChannel,

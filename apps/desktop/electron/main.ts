@@ -33,6 +33,8 @@ import { registerSettingsChannels } from './ipc/settings.js';
 import { registerNotificationChannels, setNotificationWindowGetter } from './ipc/notification.js';
 import { registerUpdaterChannels, initAutoUpdater } from './ipc/updater.js';
 import { registerMcpbChannels, installMcpbFromOsHandoff } from './ipc/mcpb.js';
+import { registerTerminalChannels } from './ipc/terminal.js';
+import { getPtyHost } from './terminal/ptyHost.js';
 import { settingsStore } from './settings/store.js';
 import { setRendererTarget } from './ipc/push.js';
 import { kodaxHost } from './kodax/host.js';
@@ -315,6 +317,8 @@ app.whenReady().then(async () => {
   void initAutoUpdater();
   // F021 .mcpb / .dxt bundle install — IPC handlers，UI 点 "Install extension..." 走
   registerMcpbChannels();
+  // F011 内置终端 (xterm.js + node-pty) — terminal.create/write/resize/kill + output/exit push
+  registerTerminalChannels();
   // F021 v0.1.5 冷启动 file association：用户双击 .mcpb 启动 Space 时，path 在 process.argv 里。
   // mainWindow 还没创建，但 installMcpbFromOsHandoff 内部会拉 BrowserWindow.getAllWindows()[0]
   // ——等 createMainWindow() 跑完才有 window。fire-and-forget，让 window 先建好。
@@ -397,6 +401,13 @@ async function startFileTracingIfEnabled(): Promise<void> {
 app.on('before-quit', (event) => {
   permissionBroker.cancelAll('shutdown');
   askUserBroker.cancelAll('shutdown');
+  // F011: kill all PTYs before exit so shells don't outlive Electron as zombies.
+  // disposeAll is synchronous + idempotent, never throws.
+  try {
+    getPtyHost().disposeAll();
+  } catch (err) {
+    console.warn('[main] ptyHost dispose:', err instanceof Error ? err.message : err);
+  }
   // FileTracingProcessor.shutdown() 必须在退出前调,刷 pending write 到磁盘。
   // 即便没 in-flight session 也得 flush — 单独 fire-and-forget,quit 不等它。
   if (_fileTracingShutdown !== null) {

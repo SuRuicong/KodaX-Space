@@ -100,6 +100,14 @@ import {
   mcpbListChannel,
   mcpbChangedChannel,
 } from './mcpb.js';
+import {
+  terminalCreateChannel,
+  terminalWriteChannel,
+  terminalResizeChannel,
+  terminalKillChannel,
+  terminalOutputChannel,
+  terminalExitChannel,
+} from './terminal.js';
 
 export const invokeChannels = {
   [versionChannel.name]: versionChannel,
@@ -167,6 +175,10 @@ export const invokeChannels = {
   [mcpbInstallChannel.name]: mcpbInstallChannel,
   [mcpbUninstallChannel.name]: mcpbUninstallChannel,
   [mcpbListChannel.name]: mcpbListChannel,
+  [terminalCreateChannel.name]: terminalCreateChannel,
+  [terminalWriteChannel.name]: terminalWriteChannel,
+  [terminalResizeChannel.name]: terminalResizeChannel,
+  [terminalKillChannel.name]: terminalKillChannel,
 } as const;
 
 export const pushChannels = {
@@ -179,6 +191,8 @@ export const pushChannels = {
   [notificationClickedChannel.name]: notificationClickedChannel,
   [updaterStatusChannel.name]: updaterStatusChannel,
   [mcpbChangedChannel.name]: mcpbChangedChannel,
+  [terminalOutputChannel.name]: terminalOutputChannel,
+  [terminalExitChannel.name]: terminalExitChannel,
 } as const;
 
 export type InvokeChannels = typeof invokeChannels;

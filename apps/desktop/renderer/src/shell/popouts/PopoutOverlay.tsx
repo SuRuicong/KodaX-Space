@@ -8,7 +8,9 @@
 import type { PopoutKind } from '../CommandToolbar.js';
 import { PreviewPanel } from './PreviewPanel.js';
 import { DiffPanel } from './DiffPanel.js';
-import { TerminalPanel } from './TerminalPanel.js';
+// F011 v0.1.6: Terminal popout 改成真 PTY (xterm.js + node-pty)；原 TerminalPanel
+// (KodaX bash 工具历史 viewer) 退役 — bash 调用已经在对话流里渲染。
+import { Terminal as TerminalPanel } from '../../features/terminal/Terminal.js';
 import { TasksPanel } from './TasksPanel.js';
 import { PlanPanel } from './PlanPanel.js';
 import { AgentsMdPanel } from './AgentsMdPanel.js';
