@@ -97,6 +97,7 @@ import { askUserBroker } from '../permission/ask-user-broker.js';
 import { bootstrapAutoMode } from './auto-mode-bootstrap.js';
 import { getSessionStorageHandle } from './session-store.js';
 import { wrapSdkError } from './sdk-errors.js';
+import { buildSkillsPrompt } from './skills-prompt.js';
 import type {
   ManagedSession,
   PermissionRequestFn,
@@ -660,6 +661,14 @@ export class RealKodaXSession implements ManagedSession {
     // 走 SDK 的 no-storage 路径，不影响 LLM 流，warn 在 session-store 里已 log。
     const sessionStorage = await getSessionStorageHandle();
 
+    // FEATURE_038: 自然语言自动触发 skill。
+    // buildSkillsPrompt 内部 ensure SDK 全局 SkillRegistry 已 initialize（同一个
+    // singleton 给 coding 包的 skill tool 看），返回 getSystemPromptSnippet() 的
+    // 列表文本。空串时下面 spread `...(p ? {skillsPrompt: p} : {})` 不会注入
+    // 字段——KodaX prompt builder 同样会跳过 skills-addendum section。
+    // 失败完全静默（buildSkillsPrompt 内部 catch 并返空串），不阻塞主对话回路。
+    const skillsPrompt = await buildSkillsPrompt(this.projectRoot);
+
     const options: KodaXOptions = {
       provider: this.provider,
       reasoningMode: this.reasoningMode,
@@ -680,6 +689,8 @@ export class RealKodaXSession implements ManagedSession {
         gitRoot: this.projectRoot,
         executionCwd: this.projectRoot,
         planModeBlockCheck,
+        // skillsPrompt 仅在非空时挂——避免在 SDK 视角注入空字符串字段。
+        ...(skillsPrompt ? { skillsPrompt } : {}),
         // /compact 标记: 把 currentTokens 顶到 999B,SDK needsCompaction 立即触发
         // 完事后 finally 清掉 flag (不管成功还是失败)
         ...(this.compactRequested

@@ -255,6 +255,20 @@ declare module '@kodax-ai/kodax/coding' {
      * Closes over live mode state so mid-run toggles propagate.
      */
     planModeBlockCheck?: (tool: string, input: Record<string, unknown>) => string | null;
+    /**
+     * Discovered-skills addendum. When non-empty after trim, the SDK prompt
+     * builder injects a `skills-addendum` section (see KodaX
+     * `capability-sections.ts` skills-addendum branch). Lets the model
+     * pick a skill from natural language WITHOUT requiring an explicit
+     * `/skill-name` slash command from the user.
+     *
+     * Host SHOULD source this from `getSkillRegistry(projectRoot)
+     * .getSystemPromptSnippet()` after `initializeSkillRegistry(projectRoot)`
+     * — same global registry that the `coding` skill tool reads at
+     * invocation time, so what the model SEES (this prompt) and what
+     * the model CAN INVOKE (the tool's registry view) stay in lock-step.
+     */
+    skillsPrompt?: string;
     /** cwd alias for backward compat with prior Space code. */
     cwd?: string;
   }
@@ -800,5 +814,41 @@ declare module '@kodax-ai/kodax/skills' {
       context: VariableContext,
     ): Promise<SkillInvokeResult>;
     reload(): Promise<void>;
+    /**
+     * KodaX-author/KodaX `agent/src/capabilities/skills/skill-registry.ts`
+     * — returns a system-prompt addendum listing currently-discovered,
+     * user-invocable skills (name + description + argumentHint). Empty
+     * string when no skills are discovered. Pass into
+     * `KodaXContextOptions.skillsPrompt` so the prompt builder injects
+     * it as the `skills-addendum` section.
+     */
+    getSystemPromptSnippet(): string;
   }
+
+  /**
+   * Process-global SkillRegistry getter — same singleton the
+   * `@kodax-ai/kodax/coding` skill tool reads at tool-invoke time.
+   * Calling with a different `projectRoot` resets the previous instance
+   * (see KodaX `agent/src/capabilities/skills/skill-registry.ts`).
+   * Host code that owns multiple concurrent projects must serialize.
+   */
+  export function getSkillRegistry(
+    projectRoot?: string,
+    customPaths?: DiscoverSkillsOptions,
+  ): SkillRegistry;
+
+  /**
+   * Get-or-create the global SkillRegistry for `projectRoot` AND run
+   * `discover()`. Fire this once at session-start (host side); after
+   * resolution, both `getSystemPromptSnippet()` (prompt addendum) and
+   * the coding skill tool (`skill list` / `skill invoke`) see the
+   * populated registry.
+   */
+  export function initializeSkillRegistry(
+    projectRoot?: string,
+    customPaths?: DiscoverSkillsOptions,
+  ): Promise<SkillRegistry>;
+
+  /** Drop the global instance — useful for tests and hot reload. */
+  export function resetSkillRegistry(): void;
 }
