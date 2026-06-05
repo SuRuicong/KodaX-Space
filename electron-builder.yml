@@ -1,5 +1,6 @@
-# electron-builder configuration — F010 unsigned dev installer
-# 签名与 notarize 留 FEATURE_027 (v0.1.5)
+# electron-builder configuration — unsigned installer（自家工具，不走"陌生用户公开 Beta"）
+# 原 FEATURE_027 签名 + notarize 计划已于 2026-06-05 移除，KodaX Space 定位为
+# 自家与可信用户使用，OS 首启的 Gatekeeper / SmartScreen 警告由用户手动 Open 接受。
 #
 # 产物（F010）：
 #   - Windows:  out/KodaX-Space-Setup-${version}.exe       (NSIS, x64)
@@ -44,7 +45,7 @@ mac:
       arch:
         - x64
         - arm64
-  # 签名留 FEATURE_027
+  # 不签名（FEATURE_027 已 drop）
   identity: null
   hardenedRuntime: false
   icon: resources/icon.png  # electron-builder 自动从 PNG 生成 icns
@@ -55,7 +56,7 @@ win:
     - target: nsis
       arch:
         - x64
-  # 签名留 FEATURE_027
+  # 不签名（FEATURE_027 已 drop）
   signAndEditExecutable: false
   icon: resources/icon.png  # electron-builder 自动从 PNG 生成 ico（256x256+）
   artifactName: '${productName}-Setup-${version}.${ext}'

@@ -43,8 +43,8 @@
 | 024 | 文件富预览（PDF / docx / xlsx） | Enhancement | Medium | v0.1.5+ | Planned | [v0.1.4.md#024](features/v0.1.4.md#feature_024-文件富预览pdf--docx--xlsx) |
 | 025 | NAPI native-diff | Refactor | Medium | v0.1.5+ | Planned | [v0.1.4.md#025](features/v0.1.4.md#feature_025-napi-native-diff) |
 | 026 | NAPI native-fuzzy | New | Medium | v0.1.5+ | Planned | [v0.1.4.md#026](features/v0.1.4.md#feature_026-napi-native-fuzzy) |
-| 027 | 代码签名 + notarize | Internal | Medium | v0.1.5 | Planned | [v0.1.5.md#027](features/v0.1.5.md#feature_027-代码签名--notarize) |
-| 028 | 隐私政策 + 文档站 | Internal | Low | v0.1.5 | Planned | [v0.1.5.md#028](features/v0.1.5.md#feature_028-隐私政策--文档站) |
+| ~~027~~ | ~~代码签名 + notarize~~ — 2026-06-05 移除，KodaX Space 不走"陌生人公开 Beta"路径 | ~~Internal~~ | — | — | Dropped | — |
+| ~~028~~ | ~~隐私政策 + 文档站~~ — 同上 | ~~Internal~~ | — | — | Dropped | — |
 | 029 | Permission Mode canonical 3 + Auto engine 子档 | Refactor | Critical | v0.1.0-alpha.1 | Completed | [v0.1.0.md#029](features/v0.1.0.md#feature_029-permission-mode-canonical-3--auto-engine-子档) |
 | 030 | AutoModeToolGuardrail bootstrap | New | Critical | v0.1.1 | Completed | [v0.1.1.md#030](features/v0.1.1.md#feature_030-automodetoolguardrail-bootstrap) |
 | 031 | Slash command runtime + 第一批命令 | New | Critical | v0.1.1 | Completed | [v0.1.1.md#031](features/v0.1.1.md#feature_031-slash-command-runtime--第一批命令) |
@@ -116,9 +116,10 @@ v0.1.1 originals:           3 features (F011 terminal, F012 subagent tree (refin
 v0.1.2 (生态打通):          4 features (F015-F018)
 v0.1.3 (UX polish):         4 features (F019-F022)
 v0.1.4 (release-ready):     4 features (F023-F026)
-v0.1.5 (release polish):    2 features (F027-F028)
+v0.1.5 (sidebar + closeout): ✅ F021完工 + F039/F040/F041 + F005 + review closeout
+                            (原 F027/F028 已移除 — 不走公开 Beta 路径)
 v0.1.6 (持久化):           ✅ 1/1 完成 (F038)
-v0.1.7 (MCP 完整版):        1 feature (F039 — 等 SDK MCP manager)
+v0.1.7 (MCP 完整版):        ✅ 1/1 完成 (F039 — SDK MCP manager 已齐)
 
 --- IN PROGRESS (0) ---
 
@@ -299,7 +300,7 @@ F001 ─► F002 ─► F003 ─► F005 ─► F006 ─► F007
                         F015, F016, F017, F018
                                   │
                                   ▼
-                        F019..F022 → F023..F026 → F027..F028
+                        F019..F022 → F023..F026 → (sidebar overhaul: F039/F040/F041, F005, F021 收尾)
 ```
 
 每层完成是下一层的前置。同层 feature 大致可并行。

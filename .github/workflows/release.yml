@@ -143,7 +143,7 @@ jobs:
             - macOS: Gatekeeper → right-click → Open → confirm
             - Linux: `chmod +x *.AppImage` then run; or `sudo dpkg -i *.deb`
 
-            Code signing + notarization land in v0.1.5 (FEATURE_027).
+            KodaX Space 是自家 / 可信用户工具，installer 保持 unsigned。
 
             ### Verify checksum
             See SHA256 in `latest*.yml` (electron-updater manifest).
