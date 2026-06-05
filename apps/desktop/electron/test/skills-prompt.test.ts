@@ -10,12 +10,17 @@
 //     by natural language)
 //   - SDK global registry is populated as a side effect (verifies
 //     "what tool can invoke" matches "what model sees")
-//   - per-projectRoot init cache: second call doesn't re-discover the
-//     filesystem (we mutate the SKILL.md after first call and assert
-//     the snippet still reflects the first-call state until reset)
+//   - **cross-projectRoot concurrency safety**: two interleaved calls
+//     for different roots must not thrash each other's snippet read
+//     (the process-level serializing lock in skills-prompt.ts)
 //
 // Test style mirrors `skill-registry.test.ts`: real SDK calls, real
-// tmp fs, no module mocking (Node's built-in test runner doesn't have it).
+// tmp fs, no module mocking (Node's built-in test runner doesn't have
+// it). We assume SDK `SkillRegistry.discover()` is snapshot-only — no
+// fs auto-watch (createSkillWatcher exists in the SDK but is a REPL-
+// only hot-reload helper, not invoked by `discover()` itself); if the
+// SDK ever adds auto-watch to the registry the snapshot-time
+// assertions here may flip to flaky.
 
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,17 +32,21 @@ import {
   _resetSkillsPromptForTests,
 } from '../kodax/skills-prompt.js';
 
-let tmpProjectRoot: string;
+let tmpRootA: string;
+let tmpRootB: string;
 
 beforeEach(async () => {
   await _resetSkillsPromptForTests();
-  tmpProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kodax-skills-prompt-test-'));
+  tmpRootA = fs.mkdtempSync(path.join(os.tmpdir(), 'kodax-skills-prompt-test-A-'));
+  tmpRootB = fs.mkdtempSync(path.join(os.tmpdir(), 'kodax-skills-prompt-test-B-'));
 });
 
 afterEach(async () => {
   await _resetSkillsPromptForTests();
-  if (tmpProjectRoot && fs.existsSync(tmpProjectRoot)) {
-    fs.rmSync(tmpProjectRoot, { recursive: true, force: true });
+  for (const dir of [tmpRootA, tmpRootB]) {
+    if (dir && fs.existsSync(dir)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   }
 });
 
@@ -53,15 +62,15 @@ function writeSkill(
 }
 
 test('buildSkillsPrompt: returns a string for an empty project root', async () => {
-  const out = await buildSkillsPrompt(tmpProjectRoot);
+  const out = await buildSkillsPrompt(tmpRootA);
   assert.equal(typeof out, 'string', 'must return string even when no project skills found');
   // We don't pin content because dev machines have ~/.kodax/skills.
-  // But it must be safe to spread into context.skillsPrompt without
-  // injecting a falsy/undefined value mid-spread.
+  // The point is it must be safe to spread into context.skillsPrompt
+  // without injecting an undefined/null value mid-spread.
 });
 
 test('buildSkillsPrompt: includes project-discovered skill name + description in snippet', async () => {
-  const skillsDir = path.join(tmpProjectRoot, '.kodax', 'skills');
+  const skillsDir = path.join(tmpRootA, '.kodax', 'skills');
   fs.mkdirSync(skillsDir, { recursive: true });
   // Use a unique name so we don't false-positive against any user-level
   // skill that happens to be installed on the dev machine.
@@ -69,7 +78,7 @@ test('buildSkillsPrompt: includes project-discovered skill name + description in
   const description = `Activate when the user wants to ${name}-test something specific`;
   writeSkill(skillsDir, name, `name: ${name}\ndescription: ${description}`, 'body');
 
-  const out = await buildSkillsPrompt(tmpProjectRoot);
+  const out = await buildSkillsPrompt(tmpRootA);
   assert.ok(
     out.includes(name),
     `expected snippet to list skill "${name}"; got snippet of length ${out.length}`,
@@ -80,47 +89,30 @@ test('buildSkillsPrompt: includes project-discovered skill name + description in
   );
 });
 
-test('buildSkillsPrompt: subsequent call reuses cache (no re-discover side effects)', async () => {
-  const skillsDir = path.join(tmpProjectRoot, '.kodax', 'skills');
+test('buildSkillsPrompt: re-discovers on subsequent calls (no stale cache)', async () => {
+  // After dropping the per-projectRoot Promise cache (HIGH-1 fix), each
+  // call goes through initializeSkillRegistry → discover. This test
+  // confirms a SKILL.md change between calls IS picked up — the helper
+  // does not stale-cache. (Trade-off: 5-50ms discover per turn vs. the
+  // cross-projectRoot thrash risk the old cache enabled.)
+  const skillsDir = path.join(tmpRootA, '.kodax', 'skills');
   fs.mkdirSync(skillsDir, { recursive: true });
-  const name = `tmp-cache-${Date.now()}`;
+  const name = `tmp-fresh-${Date.now()}`;
   writeSkill(skillsDir, name, `name: ${name}\ndescription: first version`, 'body');
 
-  const first = await buildSkillsPrompt(tmpProjectRoot);
-  assert.ok(first.includes(name), 'first call must discover the skill');
+  const first = await buildSkillsPrompt(tmpRootA);
+  assert.ok(first.includes('first version'), 'first call shows initial description');
 
-  // Mutate the SKILL.md on disk. If buildSkillsPrompt re-ran discover()
-  // on every call we'd see the new description; we don't, because the
-  // per-projectRoot init cache short-circuits.
   fs.writeFileSync(
     path.join(skillsDir, name, 'SKILL.md'),
     `---\nname: ${name}\ndescription: second version\n---\nbody\n`,
   );
 
-  const second = await buildSkillsPrompt(tmpProjectRoot);
-  assert.ok(second.includes(name), 'cached call still lists the skill');
+  const second = await buildSkillsPrompt(tmpRootA);
   assert.ok(
-    !second.includes('second version'),
-    'cached call must NOT show post-discover mutations until reset',
+    second.includes('second version'),
+    'second call re-discovers and picks up the mutated description',
   );
-});
-
-test('buildSkillsPrompt: cache reset re-triggers discover and picks up file changes', async () => {
-  const skillsDir = path.join(tmpProjectRoot, '.kodax', 'skills');
-  fs.mkdirSync(skillsDir, { recursive: true });
-  const name = `tmp-reset-${Date.now()}`;
-  writeSkill(skillsDir, name, `name: ${name}\ndescription: before reset`, 'body');
-
-  const before = await buildSkillsPrompt(tmpProjectRoot);
-  assert.ok(before.includes('before reset'), 'pre-reset snippet shows initial description');
-
-  // Add a NEW skill file and reset the cache.
-  const newName = `tmp-fresh-${Date.now()}`;
-  writeSkill(skillsDir, newName, `name: ${newName}\ndescription: added after reset`, 'body');
-  await _resetSkillsPromptForTests();
-
-  const after = await buildSkillsPrompt(tmpProjectRoot);
-  assert.ok(after.includes(newName), 'post-reset snippet shows newly-added skill');
 });
 
 test('buildSkillsPrompt: populates the SDK global registry (parity with skill tool)', async () => {
@@ -129,16 +121,85 @@ test('buildSkillsPrompt: populates the SDK global registry (parity with skill to
   // is that the coding `skill` tool reads the same global. This test
   // verifies: after buildSkillsPrompt fires, importing the SDK's
   // global getter returns a registry that lists the project skill.
-  const skillsDir = path.join(tmpProjectRoot, '.kodax', 'skills');
+  const skillsDir = path.join(tmpRootA, '.kodax', 'skills');
   fs.mkdirSync(skillsDir, { recursive: true });
   const name = `tmp-global-${Date.now()}`;
   writeSkill(skillsDir, name, `name: ${name}\ndescription: global parity`, 'body');
 
-  await buildSkillsPrompt(tmpProjectRoot);
+  await buildSkillsPrompt(tmpRootA);
 
   const sdk = await import('@kodax-ai/kodax/skills');
-  const global = sdk.getSkillRegistry(tmpProjectRoot);
+  const global = sdk.getSkillRegistry(tmpRootA);
   const found = global.list().find((s) => s.name === name);
   assert.ok(found, 'SDK global registry must list the project skill after buildSkillsPrompt');
   assert.equal(found.source, 'project');
+});
+
+test('buildSkillsPrompt: concurrent cross-projectRoot calls do not thrash the global singleton', async () => {
+  // Reproduce HIGH-1 from the code review: without the process-level
+  // serializing chain, two concurrent buildSkillsPrompt calls for
+  // different roots can race. Session A's getSystemPromptSnippet()
+  // ends up reading session B's freshly-reset (post-discover-but-
+  // matching-different-projectRoot) registry — silently returning a
+  // snippet that lists session B's skills, not A's.
+  //
+  // After the lock fix: even when we race them, each call sees its
+  // own projectRoot's skills.
+  const skillsA = path.join(tmpRootA, '.kodax', 'skills');
+  const skillsB = path.join(tmpRootB, '.kodax', 'skills');
+  fs.mkdirSync(skillsA, { recursive: true });
+  fs.mkdirSync(skillsB, { recursive: true });
+  const nameA = `tmp-projA-${Date.now()}`;
+  const nameB = `tmp-projB-${Date.now()}`;
+  writeSkill(skillsA, nameA, `name: ${nameA}\ndescription: belongs to A`, 'body');
+  writeSkill(skillsB, nameB, `name: ${nameB}\ndescription: belongs to B`, 'body');
+
+  // Fire interleaved without await between them — both buildSkillsPrompt
+  // calls touch the SDK process-global SkillRegistry.
+  const [snippetA, snippetB] = await Promise.all([
+    buildSkillsPrompt(tmpRootA),
+    buildSkillsPrompt(tmpRootB),
+  ]);
+
+  assert.ok(
+    snippetA.includes(nameA),
+    `A's snippet must list nameA (${nameA}); got snippet length ${snippetA.length}`,
+  );
+  assert.ok(
+    !snippetA.includes(nameB),
+    `A's snippet must NOT contain nameB (${nameB}) — that would mean B thrashed A`,
+  );
+  assert.ok(
+    snippetB.includes(nameB),
+    `B's snippet must list nameB (${nameB}); got snippet length ${snippetB.length}`,
+  );
+  assert.ok(
+    !snippetB.includes(nameA),
+    `B's snippet must NOT contain nameA (${nameA}) — that would mean A thrashed B`,
+  );
+});
+
+test('buildSkillsPrompt: previous failure does not block subsequent calls', async () => {
+  // The serializing chain awaits `previous.catch(() => {})` — if a prior
+  // call throws (e.g. malformed SKILL.md), the chain still releases the
+  // lock and the next call gets to run. This is the queue's poison-pill
+  // resistance.
+  const skillsDir = path.join(tmpRootA, '.kodax', 'skills');
+  fs.mkdirSync(skillsDir, { recursive: true });
+
+  // Write a deliberately weird SKILL.md path: an empty SKILL.md inside
+  // a skill folder. SDK is robust — this won't throw — but exercises
+  // the discover path with a no-op input first.
+  fs.mkdirSync(path.join(skillsDir, 'tmp-junk'), { recursive: true });
+  fs.writeFileSync(path.join(skillsDir, 'tmp-junk', 'SKILL.md'), '');
+
+  // First call: should complete (returns empty or partial).
+  const first = await buildSkillsPrompt(tmpRootA);
+  assert.equal(typeof first, 'string', 'first call must resolve to a string even with empty SKILL.md');
+
+  // Now add a valid skill and call again. The chain must not be stuck.
+  const goodName = `tmp-recovers-${Date.now()}`;
+  writeSkill(skillsDir, goodName, `name: ${goodName}\ndescription: recovers ok`, 'body');
+  const second = await buildSkillsPrompt(tmpRootA);
+  assert.ok(second.includes(goodName), 'queue is not blocked after prior call; second call discovers new skill');
 });

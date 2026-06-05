@@ -780,6 +780,22 @@ declare module '@kodax-ai/kodax/skills' {
     readonly builtinPaths?: readonly string[];
   }
 
+  /**
+   * Real SDK skill-paths config (mirrors `@kodax-ai/kodax/skills` →
+   * `SkillPathsConfig`). The legacy `DiscoverSkillsOptions` above was a
+   * Space-side approximation that omits `pluginPaths` and uses plural
+   * `builtinPaths` where the SDK has singular `builtinPath`. New
+   * declarations that accept the SDK's actual `customPaths` parameter
+   * should use `SkillPathsConfig`. Legacy callers still use
+   * `DiscoverSkillsOptions` until a coordinated migration.
+   */
+  export interface SkillPathsConfig {
+    projectPaths: string[];
+    userPaths: string[];
+    pluginPaths: string[];
+    builtinPath: string;
+  }
+
   export function discoverSkills(
     projectRoot: string,
     options?: DiscoverSkillsOptions,
@@ -834,7 +850,7 @@ declare module '@kodax-ai/kodax/skills' {
    */
   export function getSkillRegistry(
     projectRoot?: string,
-    customPaths?: DiscoverSkillsOptions,
+    customPaths?: Partial<SkillPathsConfig>,
   ): SkillRegistry;
 
   /**
@@ -846,7 +862,7 @@ declare module '@kodax-ai/kodax/skills' {
    */
   export function initializeSkillRegistry(
     projectRoot?: string,
-    customPaths?: DiscoverSkillsOptions,
+    customPaths?: Partial<SkillPathsConfig>,
   ): Promise<SkillRegistry>;
 
   /** Drop the global instance — useful for tests and hot reload. */

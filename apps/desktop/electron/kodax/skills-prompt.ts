@@ -29,6 +29,23 @@
 //   global SDK getter we keep "what the model sees" and "what the tool can
 //   invoke" in lock-step.
 //
+// Concurrency model: SDK global SkillRegistry holds ONE `_instance` per
+// process and resets it whenever `getSkillRegistry` is called with a
+// different `projectRoot` (KodaX `agent/src/capabilities/skills/skill-
+// registry.ts:247`). Space supports multiple sessions for different project
+// roots in the same Electron main process. Without serialization, two
+// concurrent `buildSkillsPrompt` calls for different roots can thrash the
+// singleton mid-flight — session A's `getSystemPromptSnippet()` ends up
+// reading session B's freshly-reset (and not-yet-discovered) registry,
+// silently emitting an empty addendum.
+//
+// We fix this with a single process-level serializing chain (`inFlight`).
+// Every `buildSkillsPrompt` call atomically performs init + snippet-read
+// under the lock, so the global state cannot be reset by another session
+// between our init and our read. Lock cost is bounded by discover() — a
+// few ms for cached `_instance`, tens of ms cold. Acceptable for the
+// per-turn user-facing path.
+//
 // Failure policy: any failure (SDK subpath unreachable, discover throws on
 // a broken SKILL.md, etc.) degrades to an empty prompt — the session still
 // works, the model just doesn't get the skills addendum. We log to stderr
@@ -56,42 +73,12 @@ function loadSdkSkills(): Promise<SdkSkillsModule | null> {
   return sdkModuleCache;
 }
 
-// Per-projectRoot init cache. `initializeSkillRegistry(projectRoot)` calls
-// `discover()` which walks `~/.kodax/skills/` + `${projectRoot}/.kodax/skills/` +
-// any bundled-builtin paths. We do this exactly once per projectRoot per
-// process: subsequent prompt fetches reuse the global registry that was
-// populated by that single discover() call.
-//
-// Storing the Promise (not the resolved value) is intentional — concurrent
-// `runManagedTask` calls (e.g. UI fires two prompts back-to-back) all await
-// the same in-flight init rather than starting parallel discovers.
-const initOncePerProjectRoot = new Map<string, Promise<void>>();
-
-async function ensureGlobalRegistryInitialized(projectRoot: string): Promise<void> {
-  const cached = initOncePerProjectRoot.get(projectRoot);
-  if (cached !== undefined) {
-    return cached;
-  }
-  const promise = (async () => {
-    const sdk = await loadSdkSkills();
-    if (sdk === null) return;
-    try {
-      await sdk.initializeSkillRegistry(projectRoot);
-    } catch (err) {
-      console.warn(
-        `[skills-prompt] initializeSkillRegistry(${projectRoot}) failed: ` +
-          `${err instanceof Error ? err.message : String(err)}`,
-      );
-      // Drop the cache so a future call can retry — transient init errors
-      // (file system permission flap, etc.) shouldn't permanently disable
-      // skill activation for the project.
-      initOncePerProjectRoot.delete(projectRoot);
-      throw err;
-    }
-  })();
-  initOncePerProjectRoot.set(projectRoot, promise);
-  return promise;
-}
+// Process-level serializing chain. Each `buildSkillsPrompt` call waits
+// for the previous one to complete before touching the SDK global
+// SkillRegistry. We chain on Promise resolution rather than rejection so
+// a failed call (e.g. SKILL.md syntax error) does NOT permanently block
+// the queue — the next call still gets to retry.
+let inFlight: Promise<unknown> = Promise.resolve();
 
 /**
  * Build the `skills-addendum` system-prompt fragment for the given
@@ -101,36 +88,70 @@ async function ensureGlobalRegistryInitialized(projectRoot: string): Promise<voi
  * builder will skip the section when empty.
  *
  * Side effects:
- *   - First call per `projectRoot` triggers `initializeSkillRegistry`
- *     (file-system discover). Subsequent calls return the live snippet
- *     synchronously from the SDK (no re-discover).
+ *   - Triggers `initializeSkillRegistry(projectRoot)` on every call
+ *     (the SDK short-circuits the singleton lookup when `_instance`
+ *     already matches `projectRoot`, but `discover()` still re-scans).
+ *     Cost is amortized over the LLM round-trip.
  *   - Populates the SDK's process-global SkillRegistry — needed so the
- *     coding `skill` tool can invoke skills the model picks.
+ *     coding `skill` tool can invoke skills the model picks. Runs under
+ *     the process serializing lock so cross-projectRoot concurrent
+ *     callers cannot thrash the singleton mid-read.
  */
 export async function buildSkillsPrompt(projectRoot: string): Promise<string> {
+  const previous = inFlight;
+  let releaseLock!: () => void;
+  const myTurn = new Promise<void>((resolve) => {
+    releaseLock = resolve;
+  });
+  inFlight = myTurn;
+
+  // `await previous.catch(() => {})` — wait for whatever was in flight,
+  // but if it rejected we still want to take our turn. Without the
+  // `.catch`, a single failed predecessor would surface here as a throw
+  // and we'd skip our own init/read entirely.
+  await previous.catch(() => {});
+
   try {
-    await ensureGlobalRegistryInitialized(projectRoot);
     const sdk = await loadSdkSkills();
     if (sdk === null) return '';
-    const registry = sdk.getSkillRegistry(projectRoot);
-    return registry.getSystemPromptSnippet();
-  } catch (err) {
-    console.warn(
-      `[skills-prompt] getSystemPromptSnippet(${projectRoot}) failed: ` +
-        `${err instanceof Error ? err.message : String(err)}`,
-    );
-    return '';
+    let stage: 'init' | 'snapshot' = 'init';
+    try {
+      // initializeSkillRegistry: get-or-create + discover. SDK
+      // `getSkillRegistry(projectRoot)` resets `_instance` if the
+      // previous lock-holder used a different projectRoot — and since
+      // we now own the lock, the reset/init/read sequence is atomic
+      // from the caller's perspective.
+      await sdk.initializeSkillRegistry(projectRoot);
+      stage = 'snapshot';
+      return sdk.getSkillRegistry(projectRoot).getSystemPromptSnippet();
+    } catch (err) {
+      // `stage` is set to 'init' at entry and only flipped after
+      // initializeSkillRegistry resolves successfully; this makes the
+      // failure-source unambiguous in the log without depending on
+      // post-hoc registry-state heuristics.
+      console.warn(
+        `[skills-prompt] ${stage}(${projectRoot}) failed: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+      return '';
+    }
+  } finally {
+    releaseLock();
   }
 }
 
 /**
- * Test helper: drop both the SDK-module cache and the per-projectRoot
- * init cache. Not used in production. The local-cache reset is needed so
- * tests can simulate a fresh process; the SDK-side reset uses
- * `resetSkillRegistry` which is exported from `@kodax-ai/kodax/skills`.
+ * Test helper: drop the SDK-module cache and reset the SDK global
+ * SkillRegistry. Not used in production. Tests need this between
+ * scenarios so a stale singleton from a previous tmp projectRoot does
+ * not leak into the next test's expectations.
+ *
+ * Also clears `inFlight` to defuse any unresolved lock left over from
+ * a test that panicked mid-call — without this a single failed test
+ * would deadlock every subsequent test in the suite.
  */
 export async function _resetSkillsPromptForTests(): Promise<void> {
-  initOncePerProjectRoot.clear();
+  inFlight = Promise.resolve();
   const sdk = await loadSdkSkills();
   sdk?.resetSkillRegistry();
 }
