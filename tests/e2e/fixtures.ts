@@ -28,11 +28,26 @@ export interface SpaceInstance {
   close(): Promise<void>;
 }
 
+export interface LaunchSpaceOptions {
+  /**
+   * Subscribe to renderer console events BEFORE the fixture waits for
+   * domcontentloaded. Required for catching synchronous first-render errors
+   * (e.g. React reconciliation errors fire before any post-launch listener).
+   */
+  readonly onConsole?: (msg: { type: string; text: string }) => void;
+  /** Subscribe to renderer pageerror events; same early-attach guarantee. */
+  readonly onPageError?: (err: Error) => void;
+}
+
 /**
  * Launch a Space process with KODAX_TEST_ONBOARDING set to `testId`.
  * data-paths.ts redirects ~/.kodax to $TMPDIR/kodax-test-<testId>.
+ *
+ * Pass `onConsole` / `onPageError` to capture errors that fire synchronously
+ * during the first render pass — listeners attached after this function
+ * returns would miss them.
  */
-export async function launchSpace(testId: string): Promise<SpaceInstance> {
+export async function launchSpace(testId: string, opts?: LaunchSpaceOptions): Promise<SpaceInstance> {
   const testDataDir = path.join(os.tmpdir(), `kodax-test-${testId}`);
   // 清掉可能上一次跑的同名残留 (testId 来自 spec 名 + timestamp，正常情况不冲突)
   await fs.rm(testDataDir, { recursive: true, force: true }).catch(() => {});
@@ -62,6 +77,17 @@ export async function launchSpace(testId: string): Promise<SpaceInstance> {
   }
 
   const page = await app.firstWindow();
+  // 关键顺序：先挂 spec 传入的 listeners，再等 domcontentloaded。
+  // React #310 等同步 reconcile 错误在首屏 render pass 里就 fire，
+  // domcontentloaded 之后才挂等于错过 v0.1.7 那一类回归的现场。
+  if (opts?.onConsole) {
+    const { onConsole } = opts;
+    page.on('console', (msg) => onConsole({ type: msg.type(), text: msg.text() }));
+  }
+  if (opts?.onPageError) {
+    const { onPageError } = opts;
+    page.on('pageerror', (err) => onPageError(err));
+  }
   if (process.env.E2E_DEBUG === '1') {
     page.on('console', (msg) => console.log(`[renderer:${msg.type()}]`, msg.text()));
     page.on('pageerror', (err) => console.error('[renderer:pageerror]', err.message));

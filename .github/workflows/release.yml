@@ -98,6 +98,21 @@ jobs:
       - name: Smoke check installer
         run: npm run smoke:pack
 
+      # 拦"installer build 通过但 renderer 启动崩"这一类 v0.1.7-shape regression：
+      # 真起 packed Electron + 等 5s + 抓 console.error / pageerror / React 错误码。
+      # 只在 Linux runner 跑一次就够（renderer JS bundle 跨平台一致），用 xvfb 给 X display。
+      - name: Install xvfb for renderer boot smoke (Linux only)
+        if: matrix.os == 'ubuntu-latest'
+        # --no-install-recommends 跳掉非必要 deps，省 ~10s（xvfb 通常已预装在 ubuntu-latest runner 上）
+        run: sudo apt-get install -y --no-install-recommends xvfb
+
+      - name: Renderer boot smoke (last gate before release)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        env:
+          KODAX_FORCE_MOCK: '1'
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" npx playwright test tests/e2e/renderer-boot.spec.ts --reporter=list
+
       - name: Upload installer artifacts (workflow_dispatch path)
         uses: actions/upload-artifact@v4
         with:
