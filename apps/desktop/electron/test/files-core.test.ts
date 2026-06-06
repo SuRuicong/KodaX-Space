@@ -12,6 +12,7 @@ import {
   walkTree,
   looksBinary,
   readFileWithGuards,
+  readFileBinaryWithGuards,
   recordDiff,
   getDiff,
   resetDiffCache,
@@ -259,4 +260,37 @@ test('toPosixRelative: converts native separators to posix', () => {
   const native = path.join('/root', 'a', 'b', 'c.txt');
   const out = toPosixRelative(native, '/root');
   assert.equal(out, 'a/b/c.txt');
+});
+
+// ---- readFileBinaryWithGuards (F024 富预览) ----
+test('readFileBinaryWithGuards: returns base64 + size for under-cap file', async () => {
+  const p = path.join(tmpRoot, 'sample.bin');
+  const raw = Buffer.from([0x01, 0x02, 0x03, 0xff, 0xfe]);
+  await fs.writeFile(p, raw);
+  const out = await readFileBinaryWithGuards(p, 1024);
+  assert.equal(out.size, 5);
+  assert.equal(out.truncated, false);
+  assert.equal(Buffer.from(out.base64, 'base64').toString('hex'), '010203fffe');
+});
+
+test('readFileBinaryWithGuards: truncated when over maxBytes', async () => {
+  const p = path.join(tmpRoot, 'big.bin');
+  await fs.writeFile(p, Buffer.alloc(2048, 0xab));
+  const out = await readFileBinaryWithGuards(p, 1024);
+  assert.equal(out.truncated, true);
+  assert.equal(out.size, 2048);
+  assert.equal(out.base64, '', 'truncated → empty base64 (no partial data exposure)');
+});
+
+test('readFileBinaryWithGuards: rejects directory', async () => {
+  await assert.rejects(
+    () => readFileBinaryWithGuards(tmpRoot, 1024),
+    /not a regular file/,
+  );
+});
+
+test('readFileBinaryWithGuards: rejects missing file with ENOENT', async () => {
+  await assert.rejects(() =>
+    readFileBinaryWithGuards(path.join(tmpRoot, 'nope.bin'), 1024),
+  );
 });

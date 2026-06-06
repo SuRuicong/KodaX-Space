@@ -11,6 +11,7 @@ import {
   resolveInsideProject,
   walkTree,
   readFileWithGuards,
+  readFileBinaryWithGuards,
   getDiff,
   recordDiff as recordDiffCore,
   isPathInside,
@@ -47,6 +48,21 @@ export function registerFilesChannels(): void {
     const absPath = await resolveInsideProject(input.projectRoot, input.path);
     try {
       return await readFileWithGuards(absPath);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'EISDIR') {
+        throw new Error(`file not found or is a directory: ${truncate(input.path)}`);
+      }
+      throw err;
+    }
+  });
+
+  // files.readBinary (F024 富预览：PDF / docx / xlsx)
+  registerChannel('files.readBinary', async (input) => {
+    await projectStore.assertAllowed(input.projectRoot);
+    const absPath = await resolveInsideProject(input.projectRoot, input.path);
+    try {
+      return await readFileBinaryWithGuards(absPath, input.maxBytes);
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === 'ENOENT' || code === 'EISDIR') {

@@ -82,6 +82,42 @@ export const filesReadChannel = {
   }),
 } as const;
 
+// ---- files.readBinary ---- (FEATURE_024 富预览)
+//
+// 读单个二进制文件，返回 base64 编码 + size + truncated。
+// renderer 按文件 ext 路由到 PDF / docx / xlsx 三个 lazy 加载的 viewer。
+//
+// 安全：
+//   - main 端按 maxBytes 兜底（防 renderer 漏过 cap 拉超大文件炸 IPC channel）。
+//     现实上限按文件类型分（PDF 50MB / docx+xlsx 10MB），由 renderer 在 input.maxBytes 指定；
+//     main 自己再 cap 到 HARD_MAX_BINARY_BYTES 防 renderer 漏过 cap 误传 1GB。
+//   - path traversal / projectStore.assertAllowed 同 files.read，handler 端复用相同防御
+//
+// 与 files.read 区别：
+//   - read 返回 utf-8 文本，不超 5MB；超过时 truncated=true + content=''
+//   - readBinary 返回 base64，cap 用户传 + main 兜底 50MB
+// 拆两个 channel 而非合并：file ext 路由在 renderer 自己做，binary 必须显式请求避免
+// 误把巨大 jpg 当文本拉。
+
+const HARD_MAX_BINARY_BYTES = 50 * 1024 * 1024; // 50 MB — PDF 也很少超过
+
+export const filesReadBinaryChannel = {
+  name: 'files.readBinary',
+  direction: 'invoke',
+  input: z.object({
+    projectRoot: safePathSchema,
+    path: safePathSchema,
+    /** renderer 期望上限；main 兜底到 HARD_MAX_BINARY_BYTES */
+    maxBytes: z.number().int().positive().max(HARD_MAX_BINARY_BYTES),
+  }),
+  output: z.object({
+    /** base64 编码内容；truncated=true 时为空字符串 */
+    base64: z.string(),
+    size: z.number().int().nonnegative(),
+    truncated: z.boolean(),
+  }),
+} as const;
+
 // ---- files.diff ----
 //
 // v0.1.0 alpha：beforeRef 暂不接 git——只支持 KodaX tool_call write/edit 完成时

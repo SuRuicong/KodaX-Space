@@ -85,7 +85,7 @@ import {
   providerRemoveCustomChannel,
   providerModelContextWindowChannel,
 } from './provider.js';
-import { filesTreeChannel, filesReadChannel, filesDiffChannel } from './files.js';
+import { filesTreeChannel, filesReadChannel, filesReadBinaryChannel, filesDiffChannel } from './files.js';
 import { titlebarSetOverlayChannel } from './titlebar.js';
 import { settingsGetChannel, settingsSetDefaultWorkspaceChannel } from './settings.js';
 import { notificationShowChannel, notificationClickedChannel } from './notification.js';
@@ -165,6 +165,7 @@ export const invokeChannels = {
   [providerModelContextWindowChannel.name]: providerModelContextWindowChannel,
   [filesTreeChannel.name]: filesTreeChannel,
   [filesReadChannel.name]: filesReadChannel,
+  [filesReadBinaryChannel.name]: filesReadBinaryChannel,
   [filesDiffChannel.name]: filesDiffChannel,
   [titlebarSetOverlayChannel.name]: titlebarSetOverlayChannel,
   [settingsGetChannel.name]: settingsGetChannel,

@@ -173,6 +173,29 @@ export async function readFileWithGuards(absPath: string): Promise<ReadFileResul
   };
 }
 
+export interface ReadFileBinaryResult {
+  readonly base64: string;
+  readonly size: number;
+  readonly truncated: boolean;
+}
+
+/** F024: 读二进制文件，应用 maxBytes 上限（main 端兜底防 renderer 漏 cap）。
+ *  caller 已保证 absPath 在 projectRoot 内。返回 base64 编码内容；超出时 truncated。 */
+export async function readFileBinaryWithGuards(
+  absPath: string,
+  maxBytes: number,
+): Promise<ReadFileBinaryResult> {
+  const st = await fs.stat(absPath);
+  if (!st.isFile()) {
+    throw new Error('not a regular file');
+  }
+  if (st.size > maxBytes) {
+    return { base64: '', size: st.size, truncated: true };
+  }
+  const buf = await fs.readFile(absPath);
+  return { base64: buf.toString('base64'), size: st.size, truncated: false };
+}
+
 // ---- Diff cache (in-memory LRU) ----
 //
 // tool_call write/edit 完成时由 adapter 调 recordDiff；前端 invoke files.diff 时取。

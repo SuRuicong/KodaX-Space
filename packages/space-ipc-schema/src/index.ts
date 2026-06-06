@@ -163,6 +163,7 @@ export {
 export {
   filesTreeChannel,
   filesReadChannel,
+  filesReadBinaryChannel,
   filesDiffChannel,
   fileNodeSchema,
   MAX_FILE_BYTES,
