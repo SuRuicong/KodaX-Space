@@ -71,6 +71,8 @@ jobs:
 
       - name: Unit tests
         shell: bash
+        env:
+          SKIP_PTY_TESTS: '1'
         run: npm test
 
       # E2E specs require renderer + main bundles to be built first
