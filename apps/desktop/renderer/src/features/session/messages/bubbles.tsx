@@ -4,7 +4,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ConversationMessage } from '../composeMessages.js';
 import { Markdown } from './Markdown.js';
-import { ToolDiffView } from './ToolDiffView.js';
+// OC-21: side-effect import 让内置 tool renderers (write/edit/multi_edit) 注册到 registry
+import './toolRenderers.js';
+import { getToolInputRenderer } from './toolRegistry.js';
 
 // ---- P4c: tool result 收窄渲染 ----
 
@@ -298,7 +300,8 @@ export function ToolCallCard({
 }: Extract<ConversationMessage, { kind: 'tool_call' }>): JSX.Element {
   const [expanded, setExpanded] = useState(false);
   const [showFullResult, setShowFullResult] = useState(false);
-  const [showFullInput, setShowFullInput] = useState(false);
+  // showFullInput / inputPretty / inputCollapse 状态已搬进 ToolEditInputView —
+  // OC-21 之后 raw-JSON fallback 由那边统一处理
   const colorClass = TOOL_STATUS_COLOR[status] ?? 'border-zinc-700 bg-zinc-900/50';
   const toolNameColor = TOOL_NAME_COLOR[toolName] ?? 'dark:text-zinc-200 text-zinc-800';
   const argSummary = summarizeInput(input);
@@ -308,16 +311,6 @@ export function ToolCallCard({
     if (result === undefined) return null;
     return collapseLargeText(result);
   }, [result]);
-
-  // P4c: input JSON.stringify 也可能巨长（如 write tool 的 content 字段）— 同样做行折叠
-  const inputPretty = useMemo<string | null>(() => {
-    if (!input || Object.keys(input).length === 0) return null;
-    return JSON.stringify(input, null, 2);
-  }, [input]);
-  const inputCollapse = useMemo<CollapseResult | null>(() => {
-    if (inputPretty === null) return null;
-    return collapseLargeText(inputPretty);
-  }, [inputPretty]);
 
   return (
     <div className={`rounded border ${colorClass} text-xs font-mono`}>
@@ -334,29 +327,11 @@ export function ToolCallCard({
 
       {expanded && (
         <div className="border-t border-zinc-800 px-3 py-2 space-y-2">
-          {/* v0.1.4 C3: Edit / Write / MultiEdit 用 ToolDiffView 渲染 Monaco split diff
-              （懒挂载，collapsed 时不烧资源）。其他工具仍 fallback 到 JSON.stringify(input)。*/}
-          {(toolName === 'edit' || toolName === 'multi_edit' || toolName === 'write') ? (
-            <ToolEditInputView toolName={toolName} input={input} />
-          ) : inputCollapse && inputPretty !== null && (
-            <section>
-              <div className="text-[10px] text-zinc-500 uppercase mb-0.5 flex justify-between items-center">
-                <span>input</span>
-                {inputCollapse.collapsed && (
-                  <button
-                    type="button"
-                    onClick={() => setShowFullInput((v) => !v)}
-                    className="text-[10px] text-blue-400 hover:text-blue-300 normal-case"
-                  >
-                    {showFullInput ? 'Collapse' : `Show full (${inputCollapse.totalLines} lines)`}
-                  </button>
-                )}
-              </div>
-              <pre className="text-[11px] text-zinc-300 whitespace-pre-wrap break-all max-h-96 overflow-auto">
-                {showFullInput ? inputPretty : inputCollapse.body}
-              </pre>
-            </section>
-          )}
+          {/* OC-21 (v0.1.8): tool input 渲染走 toolRegistry 查表分发。任意 toolName 都进
+              ToolEditInputView，registry 找不到 / 返 null 就回退到 raw-JSON collapse 视图。
+              新 tool 加自己的 renderer 只需 registerToolInputRenderer，不再改本文件。 */}
+          <ToolEditInputView toolName={toolName} input={input} />
+
           {progress !== undefined && (
             <section>
               <div className="text-[10px] text-zinc-500 uppercase mb-0.5">progress</div>
@@ -509,124 +484,68 @@ export function SystemNotice({
   );
 }
 
-// ---- v0.1.4 C3: Edit / Write / MultiEdit 的 input 视图 ----
-// 把工具的 input shape 投影到 ToolDiffView 所需的 before/after/path。
+// ---- OC-21 (v0.1.8): tool input 视图 ----
 //
-//   edit       : { file_path, old_string, new_string }       → 1 个 diff
-//   multi_edit : { file_path, edits: [{old_string, new_string}, ...] }
-//                                                           → N 个 diff（每个 edit 一段）
-//   write      : { file_path, content }                       → 1 个 diff (before='')
-//
-// SDK 工具 input 是 unknown record — 这里防御式 narrow，shape 不对就 fallback 到
-// raw JSON section（用 console.warn 提示，不抛）。
+// `ToolEditInputView` 是所有工具 input 渲染的统一入口（不再按 toolName 走 if-chain）。
+// 实际渲染由 toolRegistry 查表分发：
+//   - 内置 write / edit / multi_edit 在 toolRenderers.tsx 注册，渲染 Monaco diff
+//   - 新工具想自定义渲染，调 registerToolInputRenderer，不再要改本文件
+//   - 查不到 / renderer 返 null（shape 不对）→ 回退到 raw-JSON collapse 视图
 
 interface ToolEditInputViewProps {
   toolName: string;
   input: Record<string, unknown> | undefined;
 }
 
-function pickString(o: Record<string, unknown> | undefined, key: string): string | null {
-  if (!o) return null;
-  const v = o[key];
-  return typeof v === 'string' ? v : null;
-}
-
+/**
+ * OC-21 ToolRegistry 入口。
+ * - 从 toolRegistry 查 toolName 对应的 renderer（pure function）
+ * - 没注册 / renderer 返 null（shape 不对）→ 回退到 raw-JSON collapse 视图
+ *   （承接旧 bubbles.tsx else-branch 的 Show full / Collapse UX）
+ * - 内置 write / edit / multi_edit 在 toolRenderers.tsx 里 register
+ *
+ * 新 tool 想自定义渲染：在 toolRenderers.tsx 或自己模块里 `registerToolInputRenderer`，
+ * 不再要改本文件。
+ */
 function ToolEditInputView({ toolName, input }: ToolEditInputViewProps): JSX.Element | null {
-  const path = pickString(input, 'file_path') ?? pickString(input, 'path') ?? '';
-  // review HIGH 修复：hooks 必须 top-level 调用。multi_edit 分支用到 showAllEdits，
-  // 其它分支也调（无副作用），跟 rules-of-hooks 一致。
-  const [showAllEdits, setShowAllEdits] = useState(false);
+  // collapse 状态搬到这里 — 让 fallback 也享有 Show full / Collapse UX
+  const [showFullInput, setShowFullInput] = useState(false);
+  const inputPretty = useMemo<string | null>(() => {
+    if (!input || Object.keys(input).length === 0) return null;
+    return JSON.stringify(input, null, 2);
+  }, [input]);
+  const inputCollapse = useMemo<CollapseResult | null>(() => {
+    if (inputPretty === null) return null;
+    return collapseLargeText(inputPretty);
+  }, [inputPretty]);
 
-  if (toolName === 'write') {
-    const content = pickString(input, 'content');
-    if (content === null) return <RawJsonInput input={input} />;
-    return (
-      <section className="space-y-1">
-        <div className="text-[10px] text-zinc-500 uppercase">write</div>
-        <ToolDiffView path={path} before="" after={content} defaultExpanded={false} />
-      </section>
-    );
+  const renderer = getToolInputRenderer(toolName);
+  if (renderer !== null) {
+    const rendered = renderer({ toolName, input });
+    if (rendered !== null) return rendered;
+    // renderer 返 null = shape 不对，fallback 到 raw-JSON collapse
   }
 
-  if (toolName === 'edit') {
-    const oldS = pickString(input, 'old_string');
-    const newS = pickString(input, 'new_string');
-    if (oldS === null || newS === null) return <RawJsonInput input={input} />;
-    return (
-      <section className="space-y-1">
-        <div className="text-[10px] text-zinc-500 uppercase">edit</div>
-        <ToolDiffView path={path} before={oldS} after={newS} defaultExpanded={false} />
-      </section>
-    );
-  }
-
-  if (toolName === 'multi_edit') {
-    const edits = input?.edits;
-    if (!Array.isArray(edits) || edits.length === 0) return <RawJsonInput input={input} />;
-    // v0.1.4 C3 review MED 修复 1：cap 同屏 Monaco 实例数。一次 multi_edit 可能含
-    // 几十个 edit；如果用户把它们全展开会同时挂载 N 个 DiffEditor，每个一份 web-worker
-    // + ~3MB JS。前 MAX_VISIBLE 直接渲染（按需展开），剩余折叠成 "+N more" 按钮。
-    // showAllEdits / setShowAllEdits 已在 component top-level useState 出来。
-    const MAX_VISIBLE = 5;
-    const visible = showAllEdits ? edits : edits.slice(0, MAX_VISIBLE);
-    const overflow = edits.length - MAX_VISIBLE;
-    // v0.1.4 C3 review MED 修复 2：以前 shape 不对的 edit 静默 return null 让
-    // count label 跟实际渲染数量对不上。改成渲染 placeholder + console.warn。
-    return (
-      <section className="space-y-1.5">
-        <div className="text-[10px] text-zinc-500 uppercase">
-          multi_edit · {edits.length} edit{edits.length === 1 ? '' : 's'}
-        </div>
-        {visible.map((e, i) => {
-          const item = e as Record<string, unknown> | undefined;
-          const oldS = pickString(item, 'old_string');
-          const newS = pickString(item, 'new_string');
-          if (oldS === null || newS === null) {
-            return (
-              <div
-                key={i}
-                className="text-[10px] text-zinc-500 italic px-2 py-1 border border-dashed border-zinc-700/40 rounded"
-              >
-                Edit #{i + 1}: missing old_string / new_string fields
-              </div>
-            );
-          }
-          return (
-            <ToolDiffView
-              key={i}
-              path={path}
-              before={oldS}
-              after={newS}
-              defaultExpanded={false}
-            />
-          );
-        })}
-        {!showAllEdits && overflow > 0 && (
-          <button
-            type="button"
-            onClick={() => setShowAllEdits(true)}
-            className="text-[10px] text-blue-400 hover:text-blue-300 px-2 py-0.5"
-          >
-            + {overflow} more edit{overflow === 1 ? '' : 's'}
-          </button>
-        )}
-      </section>
-    );
-  }
-
-  return <RawJsonInput input={input} />;
-}
-
-/** Fallback：shape 不认识时回退到原 JSON 渲染 */
-function RawJsonInput({ input }: { input: Record<string, unknown> | undefined }): JSX.Element | null {
-  if (!input || Object.keys(input).length === 0) return null;
-  const pretty = JSON.stringify(input, null, 2);
+  // Fallback — raw JSON with collapse / Show full UX
+  if (inputCollapse === null || inputPretty === null) return null;
   return (
     <section>
-      <div className="text-[10px] text-zinc-500 uppercase mb-0.5">input (raw)</div>
+      <div className="text-[10px] text-zinc-500 uppercase mb-0.5 flex justify-between items-center">
+        <span>input</span>
+        {inputCollapse.collapsed && (
+          <button
+            type="button"
+            onClick={() => setShowFullInput((v) => !v)}
+            className="text-[10px] text-blue-400 hover:text-blue-300 normal-case"
+          >
+            {showFullInput ? 'Collapse' : `Show full (${inputCollapse.totalLines} lines)`}
+          </button>
+        )}
+      </div>
       <pre className="text-[11px] text-zinc-300 whitespace-pre-wrap break-all max-h-96 overflow-auto">
-        {pretty}
+        {showFullInput ? inputPretty : inputCollapse.body}
       </pre>
     </section>
   );
 }
+
