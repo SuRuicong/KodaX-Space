@@ -11,9 +11,11 @@ import { z } from 'zod';
 
 const projectSchema = z.object({
   path: z.string().min(1).max(4096), // 路径长度上限——再长八成不是真路径
-  name: z.string().min(1).max(256), // 显示名（默认取 path basename，未来可允许用户改）
+  name: z.string().min(1).max(256), // 显示名（默认 path basename；F043 起用户可改）
   addedAt: z.number().int().nonnegative(),
   lastUsedAt: z.number().int().nonnegative(),
+  /** F043 v0.1.8: 归档项目默认在 LeftSidebar 隐藏；未设字段 = 未归档 */
+  archived: z.boolean().optional(),
 });
 
 export type Project = z.infer<typeof projectSchema>;
@@ -63,6 +65,38 @@ export const projectRecentRemoveChannel = {
   }),
   output: z.object({
     removed: z.boolean(),
+  }),
+} as const;
+
+// ---- project.recent.rename ---- (F043 v0.1.8)
+//
+// 只改 displayName，不改文件夹。renderer 长按 / 右键项目节点 → contextmenu → Rename。
+// 空字符串 / 全空白 → reject；超过 256 字符 schema 拦下。
+export const projectRecentRenameChannel = {
+  name: 'project.recent.rename',
+  direction: 'invoke',
+  input: z.object({
+    path: z.string().min(1).max(4096),
+    name: z.string().min(1).max(256),
+  }),
+  output: z.object({
+    renamed: z.boolean(), // false 表示该 path 不在 allowlist
+  }),
+} as const;
+
+// ---- project.recent.setArchived ---- (F043 v0.1.8)
+//
+// 切归档。归档后 LeftSidebar 默认折叠 + 隐藏，可显式 toggle "Show archived" 显示。
+// 归档不影响 SDK session — 用户切回未归档可继续用。
+export const projectRecentSetArchivedChannel = {
+  name: 'project.recent.setArchived',
+  direction: 'invoke',
+  input: z.object({
+    path: z.string().min(1).max(4096),
+    archived: z.boolean(),
+  }),
+  output: z.object({
+    ok: z.boolean(), // false 表示 path 不在 allowlist
   }),
 } as const;
 

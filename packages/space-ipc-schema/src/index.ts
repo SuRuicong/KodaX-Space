@@ -65,6 +65,8 @@ export {
   projectOpenDialogChannel,
   projectRecentAddChannel,
   projectRecentRemoveChannel,
+  projectRecentRenameChannel,
+  projectRecentSetArchivedChannel,
   projectGitStatsChannel,
   projectGitStatusChannel,
   projectGitChangesChannel,

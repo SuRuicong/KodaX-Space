@@ -29,6 +29,8 @@ const fileSchema = z.object({
       name: z.string(),
       addedAt: z.number().int().nonnegative(),
       lastUsedAt: z.number().int().nonnegative(),
+      /** F043: 归档项目默认在 LeftSidebar 隐藏。omit when false (清洁序列化)。 */
+      archived: z.boolean().optional(),
     }),
   ),
 });
@@ -149,6 +151,36 @@ export class ProjectStore {
       const before = list.length;
       const next = list.filter((p) => p.path !== absPath);
       if (next.length === before) return { list, ret: false };
+      return { list: next, ret: true };
+    });
+  }
+
+  /** F043: 改 displayName (`project.name`)。不影响文件夹。
+   *  返回 false 表示该 path 不在 store（不存在或已被 remove）。*/
+  async rename(absPath: string, name: string): Promise<boolean> {
+    const trimmed = name.trim();
+    if (trimmed.length === 0) return false;
+    return this.mutate((list) => {
+      const idx = list.findIndex((p) => p.path === absPath);
+      if (idx < 0) return { list, ret: false };
+      // 不可变 spread — 项目内 immutability 风格
+      const next = [...list];
+      next[idx] = { ...next[idx]!, name: trimmed };
+      return { list: next, ret: true };
+    });
+  }
+
+  /** F043: 切归档。归档后 LeftSidebar 默认隐藏，仍可显式 toggle 显示。*/
+  async setArchived(absPath: string, archived: boolean): Promise<boolean> {
+    return this.mutate((list) => {
+      const idx = list.findIndex((p) => p.path === absPath);
+      if (idx < 0) return { list, ret: false };
+      const next = [...list];
+      // archived=false 时 omit 字段 (跟"从来没归档过的项目"序列化一致，文件干净)
+      const prev = next[idx]!;
+      next[idx] = archived
+        ? { ...prev, archived: true }
+        : { path: prev.path, name: prev.name, addedAt: prev.addedAt, lastUsedAt: prev.lastUsedAt };
       return { list: next, ret: true };
     });
   }

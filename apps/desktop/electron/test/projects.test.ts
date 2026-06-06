@@ -171,3 +171,83 @@ test('list: filters out entries with NUL byte in path', async () => {
   assert.equal(list.length, 1);
   assert.equal(path.basename(list[0].path), 'ok');
 });
+
+// ---- F043 rename / setArchived ----
+
+test('rename: changes name, preserves other fields', async () => {
+  const store = createProjectStore(storeFile, tmpDir);
+  const p = path.join(tmpDir, 'orig-name');
+  const before = await store.addOrBump(p);
+  const renamed = await store.rename(p, 'My Custom Name');
+  assert.equal(renamed, true);
+  const list = await store.list();
+  assert.equal(list[0].name, 'My Custom Name');
+  assert.equal(list[0].path, before.path);
+  assert.equal(list[0].addedAt, before.addedAt);
+  assert.equal(list[0].lastUsedAt, before.lastUsedAt);
+});
+
+test('rename: trims whitespace from input', async () => {
+  const store = createProjectStore(storeFile, tmpDir);
+  const p = path.join(tmpDir, 'p1');
+  await store.addOrBump(p);
+  await store.rename(p, '   trimmed   ');
+  const list = await store.list();
+  assert.equal(list[0].name, 'trimmed');
+});
+
+test('rename: rejects empty/whitespace-only name', async () => {
+  const store = createProjectStore(storeFile, tmpDir);
+  const p = path.join(tmpDir, 'p2');
+  await store.addOrBump(p);
+  assert.equal(await store.rename(p, ''), false);
+  assert.equal(await store.rename(p, '   '), false);
+  const list = await store.list();
+  assert.equal(list[0].name, 'p2', 'name unchanged');
+});
+
+test('rename: returns false for non-existent path', async () => {
+  const store = createProjectStore(storeFile, tmpDir);
+  const result = await store.rename(path.join(tmpDir, 'never-added'), 'x');
+  assert.equal(result, false);
+});
+
+test('setArchived: sets archived=true', async () => {
+  const store = createProjectStore(storeFile, tmpDir);
+  const p = path.join(tmpDir, 'arch1');
+  await store.addOrBump(p);
+  const ok = await store.setArchived(p, true);
+  assert.equal(ok, true);
+  const list = await store.list();
+  assert.equal(list[0].archived, true);
+});
+
+test('setArchived: unarchive omits the field entirely (clean serialization)', async () => {
+  const store = createProjectStore(storeFile, tmpDir);
+  const p = path.join(tmpDir, 'arch2');
+  await store.addOrBump(p);
+  await store.setArchived(p, true);
+  await store.setArchived(p, false);
+  // re-read from disk to verify the field is not just `archived: false` but absent
+  const raw = JSON.parse(await fs.readFile(storeFile, 'utf-8'));
+  assert.equal('archived' in raw.projects[0], false, 'archived field omitted when false');
+  const list = await store.list();
+  assert.equal(list[0].archived, undefined);
+});
+
+test('setArchived: returns false for non-existent path', async () => {
+  const store = createProjectStore(storeFile, tmpDir);
+  const result = await store.setArchived(path.join(tmpDir, 'never-added'), true);
+  assert.equal(result, false);
+});
+
+test('rename + setArchived: independent fields, no mutual interference', async () => {
+  const store = createProjectStore(storeFile, tmpDir);
+  const p = path.join(tmpDir, 'combo');
+  await store.addOrBump(p);
+  await store.rename(p, 'My Project');
+  await store.setArchived(p, true);
+  const list = await store.list();
+  assert.equal(list[0].name, 'My Project');
+  assert.equal(list[0].archived, true);
+});

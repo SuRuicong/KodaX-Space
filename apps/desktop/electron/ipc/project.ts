@@ -50,6 +50,24 @@ export function registerProjectChannels(): void {
     return { removed };
   });
 
+  // project.recent.rename (F043 v0.1.8) — 改 displayName；不改文件夹。
+  // 用 assertAllowed (跟 gitStats / fileSearch 等一致)：path 必须已在 allowlist 内，
+  // 否则 throw → IPC envelope HANDLER_ERROR；rename/setArchived 本质上是改 allowlist
+  // 内 existing entry 的元数据，对 path 不在 allowlist 的请求 fail loudly 而不是
+  // 静默返 false（review HIGH 收尾：跟 channel family 行为一致 + 阻断 path-probing）。
+  registerChannel('project.recent.rename', async (input) => {
+    const path = await projectStore.assertAllowed(input.path);
+    const renamed = await projectStore.rename(path, input.name);
+    return { renamed };
+  });
+
+  // project.recent.setArchived (F043 v0.1.8) — 同上 assertAllowed
+  registerChannel('project.recent.setArchived', async (input) => {
+    const path = await projectStore.assertAllowed(input.path);
+    const ok = await projectStore.setArchived(path, input.archived);
+    return { ok };
+  });
+
   // project.gitStats
   //
   // 用 child_process spawn git binary 聚合 commit / churn / 每日活跃度。不引入
