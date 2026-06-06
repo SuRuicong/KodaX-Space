@@ -1,6 +1,6 @@
 # KodaX Space Feature List
 
-> Last Updated: 2026-06-06 (F023 多 tab 终端 160fbb3 上线；v0.1.7 主线还剩 F024 富预览。已完成：F011 + F023 + F026 + F038)
+> Last Updated: 2026-06-06 (F024 文件富预览 a570c37 上线；v0.1.7 主线全部完工。已完成：F011 + F023 + F024 + F026 + F038)
 >
 > **2026-05-18 form-factor reset**：alpha.0 的 UI 形态偏 IDE，alpha.1 按 [ADR-004](ADR/ADR-004-panel-model.md) 重构对齐 Claude Desktop 中的 Claude Code。F006/F008/F009 标记重做（main 端保留）；新增 F011-revised / F012-revised。详见下面 "v0.1.0-alpha.1 重构 plan" 区段。
 >
@@ -40,7 +40,7 @@
 | 021 | `.mcpb` 一键安装（button + file association + drag-drop） | New | Medium | v0.1.5 | Completed | [v0.1.3.md#021](features/v0.1.3.md#feature_021-mcpb-一键安装) |
 | 022 | 自动更新（Squirrel） | New | Medium | v0.1.3 | Planned | [v0.1.3.md#022](features/v0.1.3.md#feature_022-自动更新squirrel) |
 | 023 | 内置终端多 tab | Enhancement | Medium | v0.1.7 | Completed | [v0.1.4.md#023](features/v0.1.4.md#feature_023-内置终端多-tab) |
-| 024 | 文件富预览（PDF / docx / xlsx） | Enhancement | Medium | v0.1.7 | Planned | [v0.1.4.md#024](features/v0.1.4.md#feature_024-文件富预览pdf--docx--xlsx) |
+| 024 | 文件富预览（PDF / docx / xlsx） | Enhancement | Medium | v0.1.7 | Completed | [v0.1.4.md#024](features/v0.1.4.md#feature_024-文件富预览pdf--docx--xlsx) |
 | ~~025~~ | ~~NAPI native-diff~~ — 2026-06-05 合并入 [F042](features/v0.1.4.md#feature_042-napi-native-helpers合并版) | ~~Refactor~~ | — | — | Merged | — |
 | 026 | @-mention + ⌘K 命令面板（JS fuzzy MVP） | New | High | v0.1.6 | Planned | [v0.1.4.md#026](features/v0.1.4.md#feature_026--mention---k-命令面板js-fuzzy-mvp) |
 | 042 | NAPI native-helpers（合并 F025 diff + F026b fuzzy） | Refactor | Low | v0.1.x+ | Deferred | [v0.1.4.md#042](features/v0.1.4.md#feature_042-napi-native-helpers合并版) |
