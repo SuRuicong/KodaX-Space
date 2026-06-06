@@ -12,6 +12,10 @@ import { getPtyHost } from '../terminal/ptyHost.js';
 
 let listenersBound = false;
 
+// F023 sec-MEDIUM: 把 renderer 端 MAX_TABS=10 UI cap 升级为 main 端硬上限，
+// 防 renderer bug 或将来多窗口绕过 UI 直调 terminal.create 拉爆 PTY 数量。
+const MAX_CONCURRENT_PTYS = 10;
+
 export function registerTerminalChannels(): void {
   const host = getPtyHost();
 
@@ -35,6 +39,10 @@ export function registerTerminalChannels(): void {
   }
 
   registerChannel('terminal.create', async (input) => {
+    // F023: PTY 数硬上限 — 防资源耗尽
+    if (host.count() >= MAX_CONCURRENT_PTYS) {
+      throw new Error(`PTY limit reached (max ${MAX_CONCURRENT_PTYS} concurrent terminals)`);
+    }
     // cwd 必须是 recent projects allowlist 内的目录 — 与 F005 / files/session 一致。
     // 然后 fs.realpath + 再次 assertAllowed —— 抓 "allowlist 中的项目是 symlink 指向其他位置"
     // 的逃逸（与 files-core.ts resolveInsideProject 对齐，security review HIGH-1）。

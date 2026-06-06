@@ -194,6 +194,10 @@ export function Terminal({ onClose: _onClose }: Props): JSX.Element {
         const fit = fitAddonRef.current;
         const xterm = xtermRef.current;
         if (fit === null || xterm === null) return;
+        // F023 fix: tab 隐藏时 container offsetWidth/Height = 0 → fit() 算出 cols=1/rows=1
+        // → PTY 收到 SIGWINCH(1x1) → shell prompt 折行炸 scrollback。
+        // Skip resize 直到容器再次有真实尺寸。
+        if (container.offsetWidth === 0 || container.offsetHeight === 0) return;
         try {
           fit.fit();
         } catch {

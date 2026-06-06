@@ -9,12 +9,12 @@ import { Suspense, lazy } from 'react';
 import type { PopoutKind } from '../CommandToolbar.js';
 import { PreviewPanel } from './PreviewPanel.js';
 import { DiffPanel } from './DiffPanel.js';
-// F011 v0.1.6: Terminal popout 改成真 PTY (xterm.js + node-pty)；原 TerminalPanel
-// (KodaX bash 工具历史 viewer) 退役 — bash 调用已经在对话流里渲染。
+// F011 v0.1.6 + F023 v0.1.7: Terminal popout 改成真 PTY (xterm.js + node-pty)；
+// F023 引入多 tab 通过 TerminalManager 包装层（每个 tab 自己的 PTY）。
 // Lazy 加载：xterm + 2 个 addon + CSS 只在用户首次开 Terminal popout 时拉，
 // 避免 startup bundle 体积膨胀 + 把任何 xterm 模块加载错误隔离到 popout 内（不白屏整 app）。
 const TerminalPanel = lazy(() =>
-  import('../../features/terminal/Terminal.js').then((m) => ({ default: m.Terminal })),
+  import('../../features/terminal/TerminalManager.js').then((m) => ({ default: m.TerminalManager })),
 );
 import { TasksPanel } from './TasksPanel.js';
 import { PlanPanel } from './PlanPanel.js';
