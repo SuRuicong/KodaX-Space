@@ -66,6 +66,9 @@ const PRELOAD_PATH = path.join(__dirname, 'preload.js');
 // 用 pathToFileURL 拿 href 末尾会带 `/`，再去尾保留作为前缀，能正确匹配子路径。
 const ALLOWED_FILE_PREFIX = pathToFileURL(RENDERER_DIST).href.replace(/\/?$/, '/');
 
+// THEME_BOOTSTRAP_INLINE_HASH 抽到 csp-config.ts 让单测无 electron 依赖也能 import
+import { THEME_BOOTSTRAP_INLINE_HASH } from './csp-config.js';
+
 let mainWindow: BrowserWindow | null = null;
 
 function applyCsp(): void {
@@ -76,6 +79,11 @@ function applyCsp(): void {
     // F009 CSP 扩项：
     //   - worker-src 'self' blob:  → Monaco editor 用 Web Worker（dev 走 module worker；prod 走 blob）
     //   - script-src 加 blob:       → 同上，Monaco esm worker 通过 blob URL 起
+    //   - script-src 加 hash       → apps/desktop/index.html 的 theme-bootstrap inline 脚本（v0.1.7 修：
+    //     dist build 模式下没有 'unsafe-inline'，inline 脚本被 CSP 拦截 → 首帧 light flash。
+    //     hash 跟 inline 脚本字符 1:1 锁定；inline 改了 hash 也要改，否则 csp-hash test 会拦下。
+    //     hash 与单测同源派生：apps/desktop/electron/test/csp-inline-hash.test.ts 启动 read +
+    //     compute 一遍 assert 匹配，未来 inline 漂移 CI 立刻报错）
     const csp = isDev
       ? [
           "default-src 'self'",
@@ -88,7 +96,7 @@ function applyCsp(): void {
         ].join('; ')
       : [
           "default-src 'self'",
-          "script-src 'self' blob:",
+          `script-src 'self' '${THEME_BOOTSTRAP_INLINE_HASH}' blob:`,
           "worker-src 'self' blob:",
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data:",
