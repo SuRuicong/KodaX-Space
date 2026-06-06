@@ -18,9 +18,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   PermissionDecision,
+  PermissionRequestPayload,
   PermissionRisk,
 } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
+import { selectPermissionBatch } from './permissionBatching.js';
 
 // Risk badge 颜色. Dark 模式: 深色实底 + 淡色文字 (经典 badge 风);
 // Light 模式: 淡色实底 + 深色文字 — 视觉等价倒置, 在白底卡片上仍清晰.
@@ -62,7 +64,9 @@ export function PermissionModal(): JSX.Element | null {
   // 当 askUserQueue 也非空时用户看到的是 AskUserModal——本 modal 应当 yield Esc / Enter
   // 给上层 modal 处理，避免一次 Esc 同时 dequeue 两个 modal head。
   const askUserActive = useAppStore((s) => s.askUserQueue.length > 0);
-  const head = queue[0] ?? null;
+  // KX-I-05: queue 头部"同 session + 非 danger"连续 ≥ 2 条时合并成 batch 视图。
+  const selection = useMemo(() => selectPermissionBatch(queue), [queue]);
+  const head = selection.mode === 'single' ? selection.head : selection.items[0]!;
 
   // 每次切换 head（新弹窗）重置本地状态
   const [confirmText, setConfirmText] = useState('');
@@ -127,8 +131,10 @@ export function PermissionModal(): JSX.Element | null {
 
   // Escape = deny；Enter = allow_once（仅非危险时）
   // 当 AskUserModal 同时可见时让出键盘——避免一次 Esc 同时 dequeue 双 modal head
+  // KX-I-05 LOW 修：batch 模式下让 PermissionBatchView 独占键盘，否则 Esc 会同时 fire
+  // 这里的 single answer(head, 'deny') + 那边的 answerAll('deny') 导致 head 双 IPC。
   useEffect(() => {
-    if (!head || askUserActive) return;
+    if (!head || askUserActive || selection.mode === 'batch') return;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
         void answer('deny');
@@ -138,9 +144,20 @@ export function PermissionModal(): JSX.Element | null {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [head, busy, answer, askUserActive]);
+  }, [head, busy, answer, askUserActive, selection.mode]);
 
   if (!head || !style) return null;
+
+  // KX-I-05 batch view 分支：N 个连续同 session 非 danger 请求一次决策
+  if (selection.mode === 'batch') {
+    return (
+      <PermissionBatchView
+        items={selection.items}
+        askUserActive={askUserActive}
+        dequeue={dequeue}
+      />
+    );
+  }
 
   return (
     <div
@@ -242,6 +259,158 @@ export function PermissionModal(): JSX.Element | null {
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             {isDanger ? 'Allow (danger)' : 'Allow once (Enter)'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- KX-I-05 PermissionBatchView ----
+//
+// 同 session 连续 ≥ 2 条非 danger 请求合并显示。提供 batch 顶部操作（Allow all/Deny all）
+// + 每条独立按钮兜底。Esc=Deny all, Enter=Allow all once。danger 永远不入 batch。
+
+interface PermissionBatchViewProps {
+  readonly items: readonly PermissionRequestPayload[];
+  readonly askUserActive: boolean;
+  readonly dequeue: (reqId: string) => void;
+}
+
+function PermissionBatchView({ items, askUserActive, dequeue }: PermissionBatchViewProps): JSX.Element {
+  // 用 items 里 highest risk 决定外层 badge 颜色
+  const maxRisk: PermissionRisk = useMemo(() => {
+    const order: PermissionRisk[] = ['low', 'medium', 'high'];
+    let m: PermissionRisk = 'low';
+    for (const it of items) {
+      if (order.indexOf(it.risk) > order.indexOf(m)) m = it.risk;
+    }
+    return m;
+  }, [items]);
+  const style = RISK_STYLE[maxRisk];
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const answerOne = useCallback(
+    async (reqId: string, decision: PermissionDecision): Promise<void> => {
+      if (!window.kodaxSpace) return;
+      const r = await window.kodaxSpace.invoke('permission.answer', { reqId, decision });
+      if (!r.ok) {
+        setErr(`${r.error?.code ?? 'ERR'}: ${r.error?.message ?? 'unknown'}`);
+        return;
+      }
+      dequeue(reqId);
+    },
+    [dequeue],
+  );
+
+  const answerAll = useCallback(
+    async (decision: PermissionDecision): Promise<void> => {
+      if (busy) return;
+      setBusy(true);
+      setErr(null);
+      // 并发发 N 条 — main 端 broker 各自 resolve，dequeue 各自更新。
+      // review HIGH 修：try/finally 保证 busy 一定回归 false。
+      // 否则 IPC 层 throw（channel closed / preload 缺失）会让 Promise.all reject，
+      // setBusy(false) 永远不跑，整个 batch modal 卡死直到 session 结束。
+      try {
+        const reqIds = items.map((i) => i.reqId);
+        await Promise.all(reqIds.map((id) => answerOne(id, decision)));
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, items, answerOne],
+  );
+
+  // 键盘：Esc=Deny all, Enter=Allow all once
+  useEffect(() => {
+    if (askUserActive) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        void answerAll('deny');
+      } else if (e.key === 'Enter' && !busy) {
+        void answerAll('allow_once');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [busy, answerAll, askUserActive]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="permission-batch-title"
+    >
+      <div
+        className={`w-[620px] max-w-[95vw] max-h-[90vh] flex flex-col bg-zinc-900 border ${style.border} rounded-lg shadow-xl`}
+      >
+        <div className="px-5 py-3 border-b border-zinc-800 flex items-center gap-3 flex-shrink-0">
+          <span className={`px-2 py-0.5 text-[10px] font-mono font-semibold rounded ${style.badge}`}>
+            {style.label}
+          </span>
+          <h2 id="permission-batch-title" className="text-sm font-semibold text-zinc-100">
+            {items.length} tool calls pending — batch decision
+          </h2>
+        </div>
+
+        <div className="px-5 py-3 flex-1 overflow-y-auto space-y-2">
+          {items.map((it) => (
+            <div
+              key={it.reqId}
+              className="flex items-center gap-2 border border-zinc-800 rounded px-3 py-2 hover:bg-zinc-800/40"
+            >
+              <span
+                className={`px-1.5 py-0.5 text-[9px] font-mono font-semibold rounded ${RISK_STYLE[it.risk].badge}`}
+                title={`Risk: ${it.risk}`}
+              >
+                {RISK_STYLE[it.risk].label}
+              </span>
+              <span className="text-xs font-mono text-amber-300 flex-shrink-0">{it.toolCall.toolName}</span>
+              <span className="text-[11px] text-zinc-400 truncate flex-1" title={it.reason}>
+                {truncate(it.reason, 100)}
+              </span>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void answerOne(it.reqId, 'deny')}
+                className="px-2 py-0.5 text-[11px] rounded dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 bg-zinc-200 text-zinc-800 hover:bg-zinc-300 disabled:opacity-50"
+              >
+                Deny
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void answerOne(it.reqId, 'allow_once')}
+                className="px-2 py-0.5 text-[11px] rounded font-medium bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50"
+              >
+                Allow
+              </button>
+            </div>
+          ))}
+          {err && <div className="text-xs text-red-400 font-mono">{err}</div>}
+        </div>
+
+        <div className="px-5 py-3 border-t border-zinc-800 dark:bg-transparent bg-zinc-50 flex items-center justify-end gap-2 flex-shrink-0">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void answerAll('deny')}
+            className="px-3 py-1.5 text-xs rounded dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 bg-zinc-200 text-zinc-800 hover:bg-zinc-300 disabled:opacity-50"
+          >
+            Deny all ({items.length}) <span className="ml-1 text-zinc-500">Esc</span>
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void answerAll('allow_once')}
+            className="px-3 py-1.5 text-xs rounded font-medium bg-emerald-600 text-white hover:bg-emerald-500 dark:bg-emerald-700 dark:hover:bg-emerald-600 disabled:opacity-50"
+          >
+            Allow all once ({items.length}) <span className="ml-1 text-emerald-200/70">Enter</span>
           </button>
         </div>
       </div>
