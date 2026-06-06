@@ -2,8 +2,12 @@
 //
 // `?` 在非 input 上下文时触发，弹一个键盘 + slash 命令 cheat sheet。
 // 对齐 KodaX TUI 的 `?` overlay 行为：列分组的快捷键 + 当前可用 slash 命令。
+//
+// 跨平台快捷键显示：data 里用 `Mod` sentinel 表示"平台主修饰键"；formatKey 在
+// Mac 上翻译成 ⌘，Win/Linux 上是 Ctrl。Alt/Shift/Meta 同理。
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { formatKey, getPlatform } from '../lib/shortcut-format.js';
 
 interface ShortcutGroup {
   readonly title: string;
@@ -25,8 +29,8 @@ const GROUPS: readonly ShortcutGroup[] = [
     title: 'Modes',
     items: [
       { keys: ['Shift', 'Tab'], label: 'Cycle permission mode (Plan / Edits / Auto)' },
-      { keys: ['Ctrl', 'M'], label: 'Open permission mode picker' },
-      { keys: ['Ctrl', 'T'], label: 'Cycle reasoning depth' },
+      { keys: ['Mod', 'M'], label: 'Open permission mode picker' },
+      { keys: ['Mod', 'T'], label: 'Cycle reasoning depth' },
       { keys: ['Alt', 'M'], label: 'Toggle agent mode (AMA / SA)' },
     ],
   },
@@ -42,11 +46,11 @@ const GROUPS: readonly ShortcutGroup[] = [
   {
     title: 'UI',
     items: [
-      { keys: ['Ctrl', 'K'], label: 'Quick Ask (one-shot question, no session)' },
-      { keys: ['Ctrl', 'Shift', 'P'], label: 'Command palette (actions / sessions / files / slash)' },
-      { keys: ['Ctrl', 'Shift', 'T'], label: 'Cycle theme (Dark / Light / System)' },
-      { keys: ['Ctrl', 'F'], label: 'Find in transcript (↑/↓ to nav)' },
-      { keys: ['Ctrl', '\\'], label: 'Toggle focus mode (hide sidebars)' },
+      { keys: ['Mod', 'K'], label: 'Quick Ask (one-shot question, no session)' },
+      { keys: ['Mod', 'Shift', 'P'], label: 'Command palette (actions / sessions / files / slash)' },
+      { keys: ['Mod', 'Shift', 'T'], label: 'Cycle theme (Dark / Light / System)' },
+      { keys: ['Mod', 'F'], label: 'Find in transcript (↑/↓ to nav)' },
+      { keys: ['Mod', '\\'], label: 'Toggle focus mode (hide sidebars)' },
       { keys: ['?'], label: 'Toggle this help overlay' },
     ],
   },
@@ -92,6 +96,9 @@ export function HelpOverlayController(): JSX.Element | null {
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
 
+  // platform 在挂载后稳定，useMemo 单次解析
+  const platform = useMemo(() => getPlatform(), []);
+
   if (!open) return null;
 
   return (
@@ -128,7 +135,7 @@ export function HelpOverlayController(): JSX.Element | null {
                           key={j}
                           className="px-1.5 py-0.5 border border-border-default rounded bg-surface-2 text-fg-primary text-[10px] font-mono"
                         >
-                          {k}
+                          {formatKey(k, platform)}
                         </kbd>
                       ))}
                     </span>
