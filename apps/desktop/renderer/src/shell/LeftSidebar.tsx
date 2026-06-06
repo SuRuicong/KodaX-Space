@@ -199,8 +199,6 @@ function ProjectTree({
     return [current, ...sorted.slice(0, curIdx), ...sorted.slice(curIdx + 1)];
   }, [projects, currentProjectPath]);
 
-  if (ordered.length === 0) return null;
-
   // 按 projectRoot 把 sessions 分组（用 canonProjectRoot 比较，避免 windows 大小写 / trailing
   // slash / 分隔符差异）。reviewer MED-2: 用不可变 spread 而非 push 原地改，遵循项目 immutability 规则。
   const sessionsByProject = useMemo(() => {
@@ -219,6 +217,8 @@ function ProjectTree({
     (sid: string): SessionStatus => statusMap[sid] ?? 'idle',
     [statusMap],
   );
+
+  if (ordered.length === 0) return null;
 
   return (
     <>

@@ -8,6 +8,7 @@
 // raw mode，backspace 显示成 ^H、Ctrl+C 显示成 ^C）。
 
 import { spawn, spawnSync } from 'node:child_process';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import waitOn from 'wait-on';
@@ -16,8 +17,30 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 
 const VITE_URL = 'http://127.0.0.1:5173';
+const VITE_HOST = '127.0.0.1';
+const VITE_PORT = 5173;
 const procs = [];
 let shuttingDown = false;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isPortOpen(host, port) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host, port });
+    socket.setTimeout(500);
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once('error', () => resolve(false));
+  });
+}
 
 function spawnProc(name, cmd, args, env = {}, opts = {}) {
   // ELECTRON_RUN_AS_NODE=1 在外层 shell 出现时，electron 入口会退化成 Node 脚本，
@@ -82,8 +105,17 @@ function shutdown(code = 0) {
 process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
 
+// A stale Vite process on 5173 makes wait-on succeed before this run's Vite has
+// started. Electron then opens against the stale server and the new Vite exits
+// with "Port 5173 is already in use", which presents as a blank window.
+if (await isPortOpen(VITE_HOST, VITE_PORT)) {
+  console.error(`[dev] ${VITE_URL} is already in use. Stop the stale dev server, then run npm run dev again.`);
+  console.error(`[dev] Windows helper: Get-NetTCPConnection -LocalPort ${VITE_PORT} | Select OwningProcess`);
+  process.exit(1);
+}
+
 // 1. Vite dev server
-spawnProc('vite', 'npm', ['run', 'dev', '-w', '@kodax-space/desktop']);
+const viteProc = spawnProc('vite', 'npm', ['run', 'dev', '-w', '@kodax-space/desktop']);
 
 // 2. esbuild watch —— 显式传 NODE_ENV=development，让 build-main 出带 sourcemap 的 dev 产物。
 //    build-main 默认 production，不靠外层 shell；dev 调试体验靠这里显式开启。
@@ -99,6 +131,10 @@ try {
     timeout: 60_000,
     interval: 200,
   });
+  await sleep(500);
+  if (viteProc.exitCode !== null || viteProc.signalCode !== null) {
+    throw new Error('Vite dev server exited before Electron launch');
+  }
   console.log('[dev] both ready, launching electron');
 
   spawnProc(
