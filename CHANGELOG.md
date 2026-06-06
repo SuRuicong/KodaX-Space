@@ -4,37 +4,85 @@ All notable changes to KodaX-Space will be documented in this file.
 
 KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.com/icetomoyo/KodaX) — Claude Desktop-style interactive surface, GUI alternative to the `kodax` REPL.
 
-## [Unreleased]
+> **Historical gap note**: this file 0.1.3 / 0.1.4 / 0.1.5 / 0.1.6 没有正式 section。
+> 期间 ship 的 features (F019/F020/F021/F022 + F005 sidebar overhaul / F011 / F026 / F038 等)
+> 见 `docs/FEATURE_LIST.md` 真理源 + `git log v0.1.2..v0.1.7`。本 v0.1.7 起恢复正常 changelog 流程。
+
+## [0.1.7] - 2026-06-06
+
+### Theme
+
+**Terminal + Preview + Command palette.** 把 v0.1.4 / v0.1.6 plan 里"等 SDK 出 X API 才能做"的
+三条主线（真 PTY 终端、多 tab、富文件预览）一次性带上，并把命令面板顺带做了。同步解决 F018 vs F026
+快捷键冲突 + 大幅 FEATURE_LIST 账本校准。
+
+v0.1.6（F011 + F026 + F038）是内部里程碑，**不单独 tag**，合并进本 release。
 
 ### Added
 
-- **`mimo` provider (Xiaomi direct-connect)** — built-in catalog now lists `mimo` alongside the existing `mimo-coding` subscription variant. `mimo` uses the Anthropic-compatible protocol with `MIMO_API_KEY` (test endpoint URL pending Xiaomi docs — UI skips connect-test until then). Fallback count bumped 13 → 14. Bundled into the UI padding commit ([59bb068](https://github.com/icetomoyo/KodaX-Space/commit/59bb068)) by accident — `git add -A` swept user's pending working-tree changes, recorded here so git-log searches by feature still find it.
+- **F011 真 PTY 单 tab 终端** ([6844f1f](https://github.com/icetomoyo/KodaX-Space/commit/6844f1f)) — Terminal popout 从 "bash 工具历史 viewer" 升级为真 xterm.js + node-pty shell。
+  - 4 IPC channels：`terminal.create` / `.write` / `.resize` / `.kill` + push `.output` / `.exit`
+  - PtyHost 单例 Map<uuid, IPty>；UUID 服务端 mint，renderer 不能伪造
+  - 跨平台 shell：Win cmd.exe / Mac+Linux $SHELL；renderer 不能注 arg
+  - ENV 白名单（PATH/HOME/USER/TERM/LANG/Win 必备）：剥所有 `*_KEY` `*_TOKEN`，secret 不进 PTY
+  - assertAllowed + fs.realpath 双层 cwd symlink-safe
+  - SIGTERM → 3s grace → POSIX SIGKILL；Windows 走 conpty close
+  - before-quit disposeAll 强杀防 zombie
+  - 8 单测 spawn 真 shell 验证生命周期
+  - hotfix [d984719](https://github.com/icetomoyo/KodaX-Space/commit/d984719)：xterm CJS 包让 vite 二次 reload 触发 renderer 白屏；改 lazy import + optimizeDeps.include
+
+- **F023 终端多 tab** ([160fbb3](https://github.com/icetomoyo/KodaX-Space/commit/160fbb3)) — Tab bar + 多 PTY 并存。
+  - 单 useReducer 管 tabs/activeId/counter；pure reducer 抽 `tabsReducer.ts`
+  - 非 active tab 用 `display:none` 隐藏，PTY 保活
+  - Terminal.tsx ResizeObserver 加 0×0 guard，防 hidden tab 收到 1×1 SIGWINCH 炸 scrollback
+  - MAX_TABS=10 UI cap + main 端 IPC 硬上限双层防御
+  - 关闭最后一个 tab 自动开新；关 popout 走顶栏 ×
+  - 12 reducer 单测
+
+- **F024 文件富预览 PDF / docx / xlsx** ([a570c37](https://github.com/icetomoyo/KodaX-Space/commit/a570c37)) — Preview popout 按 ext 路由。
+  - 新 IPC `files.readBinary`：assertAllowed + resolveInsideProject + maxBytes 兜底
+  - 3 个 lazy viewer，main bundle 不变（PDF 335KB / Docx 504KB / Xlsx 368KB chunk）
+  - PdfViewer: pdfjs-dist 4.10 ESM; `isEvalSupported:false` + `disableAutoFetch:true` 硬化；DPI 上限 2
+  - DocxViewer: mammoth → 自写 DOMParser allowlist sanitizer（tag/attr/href scheme 三层）
+  - XlsxViewer: SheetJS CE → sheet_to_json → React 渲染 table，**不**用 sheet_to_html
+  - 大小上限：PDF 50MB / docx 10MB / xlsx 10MB
+  - 11 utils 单测 + 4 binary-read 单测
+
+- **F026 ⌘Shift+P 命令面板** ([85d0bf5](https://github.com/icetomoyo/KodaX-Space/commit/85d0bf5)) — 全局快捷键召出模糊搜索。
+  - 4 group 候选：Actions / Sessions / Files / Slash
+  - JS fzf-lite scorer 抽到 `lib/fuzzy.ts`，FuzzyMatcher 抽象方便未来 F042 NAPI 替换
+  - 多起点 scan + 连续匹配累计 ramp + boundary bonus；11 单测
+  - 模块私有 `inputBridge` registry 替 window CustomEvent（消除 ambient injection cap）
+  - 复用 `session.list` / `project.fileSearch` / `slash.discover` 三个已有 IPC，**0 新 channel**
+
+- **F038 Sessions 持久化升级** ([c98d4ef](https://github.com/icetomoyo/KodaX-Space/commit/c98d4ef) + review fix [1003011](https://github.com/icetomoyo/KodaX-Space/commit/1003011)) — F033 in-memory → 接 KodaX SDK 0.7.42+ 持久化 API（共享 `~/.kodax/sessions/`）。
+  - in-flight session 仍 in-memory，historical session 走 SDK 持久化
+  - 解决 KodaX REPL 与 Space 之间 session 共享
+  - review fix：process-level 锁 + SkillPathsConfig 类型
 
 ### Changed
 
-- **Conversation stream layout** ([53ab954](https://github.com/icetomoyo/KodaX-Space/commit/53ab954), tightened in [59bb068](https://github.com/icetomoyo/KodaX-Space/commit/59bb068)) — horizontal padding `px-8` (~4 char each side) + left timeline rail (vertical guide line with color-coded dot markers per message: user=sky, assistant=emerald, system=amber, tool=zinc). First pass over-constrained with `max-w-3xl`; trimmed after user feedback that wide screens lost 1/4 width to whitespace.
+- **F026 命令面板快捷键 ⌘K → ⌘Shift+P** — F018 Quick Ask 早就占了 ⌘K，两个 modal 抢同键会同时弹。
+  让命令面板换到 ⌘Shift+P（VS Code/GitHub/Cursor 同款 muscle memory），⌘K 留给 Quick Ask（Linear/Slack 语义）。
+  Cross-platform：`e.metaKey || e.ctrlKey` 已处理；HelpOverlay 同步加 2 行 hint。
+
+- **FEATURE_LIST.md 账本校准** — 把"实际 ship 但状态写 Planned 的项"全部纠正：
+  - **Completed (newly correctly labeled)**: F015 chip 部分 / F016 lineage / F019 主题 / F020 通知 / F022 auto-update
+  - **Superseded**: F012 → F037 Subagent tree / F013 → F036+F039 MCP 管理
+  - **Deferred**: F014 NAPI tokenizer → 并入 F042 / F017 CLI teleport 等 SDK
+  - **Partial**: F015 warm API 缺 / F018 PRD 全集留 v0.1.8
 
 ### Fixed
 
-- **`release.yml` no longer hardcodes `prerelease: true`** ([1a5f886](https://github.com/icetomoyo/KodaX-Space/commit/1a5f886)) — tag-push releases default to non-prerelease, so:
-  - GitHub repo home shows "Latest release" again
-  - F022 auto-updater (`releaseType: release`) can finally find the feed and notify users of new versions (previous configuration silently broke auto-update). Existing v0.1.0~v0.1.3 also flipped to non-prerelease via `gh release edit`.
-  - `workflow_dispatch` input remains for rare rc/beta tags (default `false` now).
+- **F018 Quick Ask vs F026 命令面板快捷键冲突** — 两个 listener 都听 ⌘K 同时 fire；通过 F026 改键解决（见 Changed）。
 
-### Security (pending release as v0.1.4 patch)
+### Deps
 
-Post-release review of v0.1.3 (4 parallel reviewer agents) surfaced 2 CRITICAL + 4 HIGH issues in F021 `.mcpb` installer + 2 HIGH in F019/F020. All fixes are on `main` ([998748d](https://github.com/icetomoyo/KodaX-Space/commit/998748d)):
-
-- **F021 SEC C-1 — manifest command injection** → runtime allowlist (`node` / `python` / `python3` / `uv` / `uvx` / `npx` / `deno` / `bun`); `bash` / `sh` / `curl` etc. now refused at parse.
-- **F021 SEC C-2 — zip bomb** → per-entry compression-ratio guard (≤100:1) using yauzl's `compressedSize` / `uncompressedSize` headers; concurrent extract budget race fixed.
-- **F021 SEC H-1 — TOCTOU** → copy `.mcpb` file to `~/.kodax-space/tmp/` before parsing; all subsequent ops use a single open fd via `yauzl.fromFd`.
-- **F021 SEC H-2 — uninstall guard substring bypass** → replaced `installDir.includes('.kodax-space')` with `isInsideExtractBase` (path.resolve + startsWith).
-- **F021 SEC H-3 — symlink escape** → reject `S_IFLNK` entries + post-extract `lstat` sanity check.
-- **F021 FUNC H-1 — silent file corruption** → rewrote `extractAll` to sequential; yauzl docs forbid concurrent `openReadStream` on the same handle.
-- **F021 FUNC M-3 — upgrade disk leak** → `addOrReplace` returns displaced `installDir`, caller rms old version directory.
-- **F021 SEC M-2 — registry tamper** → `readRegistry` Zod-validates every entry + verifies `installDir` is inside `EXTRACT_BASE`; bad entries dropped with `console.warn`.
-- **F020 H-2 — stale-session click crash** → `notification.clicked` checks `sessionId` still exists in store before `setCurrentSession`.
-- **F019 H-3 — theme FOUC** → theme class applied synchronously in `main.tsx` before React renders; eliminates "one frame of dark mode" flash for light/system users.
+- `node-pty` ^1.0 (F011) — Win conpty + POSIX；asarUnpack `**/node_modules/node-pty/**`
+- `@xterm/xterm` / `@xterm/addon-fit` / `@xterm/addon-web-links` ^5.5 / ^0.10 / ^0.11
+- `pdfjs-dist` ^4.10 (F024)
+- `mammoth` ^1.8 (F024)
+- `xlsx` 0.20.3 from `cdn.sheetjs.com` (F024) — SheetJS CE 官方分发渠道；npm `xlsx` 包已 deprecated
 
 ## [0.1.2] - 2026-06-01
 

@@ -104,7 +104,48 @@ SDK 0.7.42 的 `/session` 模块统一管理持久化。KodaX CLI 跑过的 sess
    - `/mode auto` — 走 `auto-rules.jsonc` 自动判
    - `/mode plan` — 只读
 
-## 4. Slash 命令清单 (v0.1.6 builtin)
+## 4. v0.1.7 新功能速览
+
+### 4.1 内置终端（多 tab）
+
+右上 Toolbar 第 3 个图标 → 弹出真 PTY shell（不是工具日志 viewer，是真 `cmd.exe` / `zsh` / `bash`）。
+
+- 顶栏 + 按钮新增 tab，最多 10 个；× 关 tab；点 tab 切换
+- 每个 tab 自己的 shell 进程，切走不丢状态（运行中的 `npm run dev` 持续滚日志）
+- 关闭 popout 不杀 PTY；关掉最后一个 tab 自动开新；要彻底关走 popout 顶栏 ×
+- 跨平台：Win11 cmd.exe / Mac zsh / Linux bash
+- Env 已剥所有 `*_KEY` `*_TOKEN`，shell 里 `echo $ANTHROPIC_API_KEY` 拿不到
+
+### 4.2 ⌘Shift+P 命令面板（Win/Linux: Ctrl+Shift+P）
+
+VS Code 同款 muscle memory，全局快捷键召出模糊搜索框。4 个分组：
+
+| 分组 | 干啥 |
+|--|--|
+| **Actions** | New session / Toggle theme / Clear conversation view |
+| **Sessions** | 当前项目最近 30 个 session（选中切过去） |
+| **Files** | 项目下所有文件（选中在输入框插 `@path`） |
+| **Slash** | 所有 slash 命令（选中插 `/cmd` 待执行） |
+
+输入框模糊匹配，↑↓ 跨组导航，Enter 触发，Esc 关。
+
+**⌘K vs ⌘Shift+P 区分**：
+- **⌘K** = F018 Quick Ask（临时问一句，AI 不留 session 痕迹）
+- **⌘Shift+P** = F026 Command Palette（导航 / 执行 / 插入）
+
+### 4.3 文件富预览（PDF / docx / xlsx）
+
+Preview popout（右上 Toolbar 第 1 个图标）输入文件路径自动按 ext 路由：
+
+- `.pdf` → 单页 canvas 渲染 + 上下翻页（pdfjs-dist；50MB 上限）
+- `.docx` → 简化 HTML（保留标题/段落/表格/链接，安全 sanitize；10MB 上限）
+- `.xlsx` / `.xls` → 多 sheet tab + 单元格 table（50000 cell 上限；10MB 上限）
+- 其它扩展名走原 Monaco 文本 viewer
+- 超限文件给清晰错误提示，不会卡死 renderer
+
+3 个 viewer 都是 **lazy 加载** — 不点开对应文件就不下载依赖；main bundle 不受影响。
+
+## 5. Slash 命令清单 (v0.1.7 builtin)
 
 | 命令 | 作用 |
 |---|---|
@@ -119,15 +160,18 @@ SDK 0.7.42 的 `/session` 模块统一管理持久化。KodaX CLI 跑过的 sess
 
 除此之外 `/` 触发命令搜索 popover — F035 已经把 SDK skills 也合到这个 picker 里，可以同时搜内建命令 + skill。
 
-## 5. 已知限制 (v0.1.6)
+## 6. 已知限制 (v0.1.7)
 
-- **自定义 provider UI 不显示**: KodaX `customProviders[]` 已在 SDK runtime 注册（用 `/provider <name>` 切），但 Providers 面板没列出它们。原因：SDK shape 与 Space schema 不兼容，UI 同步需 schema breaking + 数据迁移 (deferred v0.1.7+)
+- **自定义 provider UI 不显示**: KodaX `customProviders[]` 已在 SDK runtime 注册（用 `/provider <name>` 切），但 Providers 面板没列出它们。原因：SDK shape 与 Space schema 不兼容，UI 同步需 schema breaking + 数据迁移 (deferred)
 - **User commands**: KodaX `~/.kodax/commands/` 暂不在 Space 显示。需要适配 SlashCommandDef ↔ KodaXCommand 两个 shape (deferred)
-- **MCP 启停**: Space MCP popout 是 read-only。启停 / 日志 / tool catalog → F039 (v0.1.7+)
+- **MCP 启停**: v0.1.5 起已支持（F039 完整版），如不工作请检查 KodaX SDK 版本 ≥ 0.7.45
 - **model 默认值不读 KodaX config**: 因为跨 provider 时 model 名通常对不上，session 创建后手动 `/model` 切。后续可能做 provider×model 映射
-- **打包安装**: 还没出签名版；目前只支持源码 `npm run dev` 起
+- **打包安装**: 不签名（KodaX Space 是自家工具不走公开 Beta）；OS 首启 Gatekeeper / SmartScreen 警告需手动 Open 接受
+- **F015 Repointel warm API**: chip 显示 trace OK，但 standalone warm 入口未实现（留 v0.1.8）
+- **F017 CLI ↔ Space teleport**: 没实现（等 KodaX SDK 暴露 session handoff API）
+- **F018 Quick Ask 不完全符合 PRD**: 当前实现走临时 session + plan mode，PRD 期望 sideQuery API（不留任何痕迹）；留 v0.1.8 重做
 
-## 6. 报问题
+## 7. 报问题
 
 - Bug: GitHub Issues
 - 安全相关: 不要走 issue；私下 contact

@@ -1,6 +1,6 @@
 # KodaX Space Feature List
 
-> Last Updated: 2026-06-06 (F024 文件富预览 a570c37 上线；v0.1.7 主线全部完工。已完成：F011 + F023 + F024 + F026 + F038)
+> Last Updated: 2026-06-06 (账本校准：把"实际 ship 但状态写 Planned 的项"全部纠正。v0.1.7 ship = F011+F023+F024+F026+F038（含 F026 ⌘Shift+P 替换 ⌘K 解 F018 冲突）+ 此前 v0.1.3-v0.1.5 期间已发但未及时同步状态的 F015 partial / F016 / F019 / F020 / F022 / F036 / F037 / F039 / F040 / F041。明确 Deferred：F012/F013 被 F037/F036/F039 取代；F014 并入 F042 NAPI 合并版；F017 等 SDK teleport API；F018 Quick Ask 与 F026 冲突解决后保留 Partial（PRD 全集留 v0.1.8）。)
 >
 > **2026-05-18 form-factor reset**：alpha.0 的 UI 形态偏 IDE，alpha.1 按 [ADR-004](ADR/ADR-004-panel-model.md) 重构对齐 Claude Desktop 中的 Claude Code。F006/F008/F009 标记重做（main 端保留）；新增 F011-revised / F012-revised。详见下面 "v0.1.0-alpha.1 重构 plan" 区段。
 >
@@ -27,23 +27,23 @@
 | 008 | Work 进度 + reasoning mode 切换 | New | High | v0.1.0 | Completed | [v0.1.0.md#008](features/v0.1.0.md#feature_008-work-进度--reasoning-mode-切换) |
 | 009 | 文件面板（Monaco read-only + diff） | New | High | v0.1.0 | Completed | [v0.1.0.md#009](features/v0.1.0.md#feature_009-文件面板monaco-read-only--diff) |
 | 010 | 跨平台安装包（unsigned dev） | New | Critical | v0.1.0 | Completed | [v0.1.0.md#010](features/v0.1.0.md#feature_010-跨平台安装包unsigned-dev) |
-| 011 | 内置终端（xterm.js + node-pty 单 tab） | New | High | v0.1.6 | Completed | [v0.1.1.md#011](features/v0.1.1.md#feature_011-内置终端xtermjs--node-pty-单-tab) |
-| 012 | Subagent tree 视图 | New | High | v0.1.1 | Planned | [v0.1.1.md#012](features/v0.1.1.md#feature_012-subagent-tree-视图) |
-| 013 | MCP 管理 v1（列表 + 启停） | New | High | v0.1.1 | Planned | [v0.1.1.md#013](features/v0.1.1.md#feature_013-mcp-管理-v1列表--启停) |
-| 014 | NAPI native-tokenizer | Refactor | High | v0.1.1 | Planned | [v0.1.1.md#014](features/v0.1.1.md#feature_014-napi-native-tokenizer) |
-| 015 | Repointel 状态条 + warm | New | High | v0.1.2 | Planned | [v0.1.2.md#015](features/v0.1.2.md#feature_015-repointel-状态条--warm) |
-| 016 | Session lineage 图 | New | High | v0.1.2 | Planned | [v0.1.2.md#016](features/v0.1.2.md#feature_016-session-lineage-图) |
-| 017 | CLI ↔ Space 文件级 teleport | New | High | v0.1.2 | Planned | [v0.1.2.md#017](features/v0.1.2.md#feature_017-cli--space-文件级-teleport) |
-| 018 | Quick Ask popover | New | High | v0.1.2 | Planned | [v0.1.2.md#018](features/v0.1.2.md#feature_018-quick-ask-popover) |
-| 019 | 主题（明/暗/系统跟随） | Enhancement | Medium | v0.1.3 | Planned | [v0.1.3.md#019](features/v0.1.3.md#feature_019-主题明暗系统跟随) |
-| 020 | 桌面通知 | Enhancement | Medium | v0.1.3 | Planned | [v0.1.3.md#020](features/v0.1.3.md#feature_020-桌面通知) |
+| 011 | 内置终端（xterm.js + node-pty 单 tab） | New | High | v0.1.7 | Completed | [v0.1.1.md#011](features/v0.1.1.md#feature_011-内置终端xtermjs--node-pty-单-tab) |
+| ~~012~~ | ~~Subagent tree 视图~~ — 由 [F037](#) 取代 | ~~New~~ | — | — | Superseded | — |
+| ~~013~~ | ~~MCP 管理 v1~~ — 由 [F036](#)（read-only listing） + [F039](#)（完整版）取代 | ~~New~~ | — | — | Superseded | — |
+| 014 | NAPI native-tokenizer — 与 F025/F026b 合并入 [F042](features/v0.1.4.md#feature_042-napi-native-helpers合并版) | Refactor | Low | v0.1.x+ | Deferred | [v0.1.1.md#014](features/v0.1.1.md#feature_014-napi-native-tokenizer) |
+| 015 | Repointel 状态条 + warm | New | High | v0.1.3 / v0.1.8 | Partial | [v0.1.2.md#015](features/v0.1.2.md#feature_015-repointel-状态条--warm) |
+| 016 | Session lineage 图 | New | High | v0.1.5 | Completed | [v0.1.2.md#016](features/v0.1.2.md#feature_016-session-lineage-图) |
+| 017 | CLI ↔ Space 文件级 teleport | New | High | TBD | Deferred | [v0.1.2.md#017](features/v0.1.2.md#feature_017-cli--space-文件级-teleport) |
+| 018 | Quick Ask popover | New | High | v0.1.3 / v0.1.8 | Partial | [v0.1.2.md#018](features/v0.1.2.md#feature_018-quick-ask-popover) |
+| 019 | 主题（明/暗/系统跟随） | Enhancement | Medium | v0.1.3 | Completed | [v0.1.3.md#019](features/v0.1.3.md#feature_019-主题明暗系统跟随) |
+| 020 | 桌面通知 | Enhancement | Medium | v0.1.3 | Completed | [v0.1.3.md#020](features/v0.1.3.md#feature_020-桌面通知) |
 | 021 | `.mcpb` 一键安装（button + file association + drag-drop） | New | Medium | v0.1.5 | Completed | [v0.1.3.md#021](features/v0.1.3.md#feature_021-mcpb-一键安装) |
-| 022 | 自动更新（Squirrel） | New | Medium | v0.1.3 | Planned | [v0.1.3.md#022](features/v0.1.3.md#feature_022-自动更新squirrel) |
+| 022 | 自动更新（Squirrel） | New | Medium | v0.1.3 | Completed | [v0.1.3.md#022](features/v0.1.3.md#feature_022-自动更新squirrel) |
 | 023 | 内置终端多 tab | Enhancement | Medium | v0.1.7 | Completed | [v0.1.4.md#023](features/v0.1.4.md#feature_023-内置终端多-tab) |
 | 024 | 文件富预览（PDF / docx / xlsx） | Enhancement | Medium | v0.1.7 | Completed | [v0.1.4.md#024](features/v0.1.4.md#feature_024-文件富预览pdf--docx--xlsx) |
 | ~~025~~ | ~~NAPI native-diff~~ — 2026-06-05 合并入 [F042](features/v0.1.4.md#feature_042-napi-native-helpers合并版) | ~~Refactor~~ | — | — | Merged | — |
-| 026 | @-mention + ⌘K 命令面板（JS fuzzy MVP） | New | High | v0.1.6 | Planned | [v0.1.4.md#026](features/v0.1.4.md#feature_026--mention---k-命令面板js-fuzzy-mvp) |
-| 042 | NAPI native-helpers（合并 F025 diff + F026b fuzzy） | Refactor | Low | v0.1.x+ | Deferred | [v0.1.4.md#042](features/v0.1.4.md#feature_042-napi-native-helpers合并版) |
+| 026 | ⌘Shift+P 命令面板（JS fuzzy MVP） | New | High | v0.1.7 | Completed | [v0.1.4.md#026](features/v0.1.4.md#feature_026-shiftp-命令面板js-fuzzy-mvp) |
+| 042 | NAPI native-helpers（合并 F014 tokenizer + F025 diff + F026b fuzzy） | Refactor | Low | v0.1.x+ | Deferred | [v0.1.4.md#042](features/v0.1.4.md#feature_042-napi-native-helpers合并版) |
 | ~~027~~ | ~~代码签名 + notarize~~ — 2026-06-05 移除，KodaX Space 不走"陌生人公开 Beta"路径 | ~~Internal~~ | — | — | Dropped | — |
 | ~~028~~ | ~~隐私政策 + 文档站~~ — 同上 | ~~Internal~~ | — | — | Dropped | — |
 | 029 | Permission Mode canonical 3 + Auto engine 子档 | Refactor | Critical | v0.1.0-alpha.1 | Completed | [v0.1.0.md#029](features/v0.1.0.md#feature_029-permission-mode-canonical-3--auto-engine-子档) |
@@ -113,14 +113,16 @@ Last Updated: 2026-05-22
 
 v0.1.0 (alpha foundation): ✅ 10/10 完成 — alpha 可发布
 v0.1.0-alpha.1 + v0.1.1:   ✅ 10/10 TUI 对齐 batch 完成 (F029-F037 + F003R)
-v0.1.1 originals:           3 features (F011 terminal, F012 subagent tree (refined via F037), F014 napi)
-v0.1.2 (生态打通):          4 features (F015-F018)
-v0.1.3 (UX polish):         4 features (F019-F022)
-v0.1.4 (release-ready):     4 features (F023-F026)
+v0.1.1 originals:           ⏳ F011 → v0.1.7 | F012 superseded by F037 | F014 → F042 deferred
+v0.1.2 (生态打通):          🟡 F015 partial / F016 ✅(v0.1.5) / F017 deferred / F018 partial
+v0.1.3 (UX polish):         ✅ 4/4 (F019/F020 v0.1.3 + F021 closeout v0.1.5 + F022 v0.1.3)
+v0.1.4 → 实际改名 / 拆出:   F023+F024 → v0.1.7 | F025 → F042 merged | F026 → v0.1.7
 v0.1.5 (sidebar + closeout): ✅ F021完工 + F039/F040/F041 + F005 + review closeout
                             (原 F027/F028 已移除 — 不走公开 Beta 路径)
-v0.1.6 (持久化):           ✅ 1/1 完成 (F038)
-v0.1.7 (MCP 完整版):        ✅ 1/1 完成 (F039 — SDK MCP manager 已齐)
+v0.1.6 (持久化 + power):   ✅ 内部里程碑（F038 + F011 + F026）—— 不单独 tag，并入 v0.1.7
+v0.1.7 (terminal + preview): ✅ 5/5 (F011 PTY + F023 multi-tab + F024 rich preview
+                            + F026 命令面板 ⌘Shift+P + F038 persistence) — 含 F018 vs F026
+                            键冲突解决（命令面板让位）
 
 --- IN PROGRESS (0) ---
 
@@ -170,19 +172,20 @@ v0.1.7 (MCP 完整版):        ✅ 1/1 完成 (F039 — SDK MCP manager 已齐)
 [REFACTOR, HIGH] 038: F033 Sessions 持久化升级 (COMPLETED 2026-05-22)
   Note: SDK 0.7.42 /session subpath；in-flight 仍 in-memory，historical 走 SDK 持久化
 
-=== SUMMARY ===
-Total: 40 | Planned: 16 | InProgress: 0 | Completed: 21
-By Priority: Critical: 13 (✅12/13), High: 18 (✅8/18), Medium: 8, Low: 1
-By Category:  New: 31, Enhancement: 4, Refactor: 4, Internal: 2
+=== SUMMARY (post-2026-06-06 校准) ===
+Completed (含 v0.1.7):  F001-F011, F016, F019-F024, F026, F029-F041 (除 F027/F028 dropped)
+Partial:                F015 (chip ✓, warm API ✗) · F018 (Quick Ask ✓, PRD 全集留 v0.1.8)
+Superseded:             F012 → F037 · F013 → F036+F039
+Deferred:               F014 → F042 · F017 等 SDK teleport API · F025 + F026b → F042
+Dropped:                F027 代码签名 · F028 文档站 (KodaX Space 自家工具,不走公开 Beta)
 
---- REMAINING PLANNED ---
+--- v0.1.7 SHIP CONTENT (this release) ---
 
-v0.1.1 originals (2): F011 terminal popout, F014 napi tokenizer
-v0.1.2 生态打通 (4): F015 Repointel, F016 lineage 图, F017 CLI teleport, F018 Quick Ask
-v0.1.3 UX polish (4): 主题 / 通知 / .mcpb / 自动更新
-v0.1.4 power (5): 多 tab 终端 / 富预览 / NAPI native-diff + fuzzy / F040 多项目 session 侧栏 + 状态点
-v0.1.5 release (2): 签名 + notarize / 文档
-v0.1.7 (1): F039 MCP 完整版 (等 SDK MCP manager runtime API)
+F011 真 PTY 单 tab 终端
+F023 终端多 tab
+F024 PDF/docx/xlsx 富预览
+F026 ⌘Shift+P 命令面板 (含 F018 vs F026 键冲突解决)
+F038 Sessions 持久化升级
 
 --- opencode 对标批次 (2026-05-29) ---
 OC-01~50 (50) + KX-I-01~09 (9) — 见下方「opencode 对标批次」段；穿插进 v0.1.1~v0.1.9 + M2
@@ -198,11 +201,12 @@ OC-01~50 (50) + KX-I-01~09 (9) — 见下方「opencode 对标批次」段；穿
 | **v0.1.1** | Productivity baseline | 内置终端 + Subagent 可视化 + MCP 管理 + 第一个 Rust 加速器 | 2026-Q2 末 |
 | **v0.1.2** | KodaX 生态打通 | Repointel + session lineage + CLI ↔ Space teleport + Quick Ask | 2026-Q3 中 |
 | **v0.1.3** | UX polish | 主题 + 通知 + `.mcpb` 安装 + 自动更新 | 2026-Q3 末 |
-| **v0.1.4** | Power features | 多 tab 终端 + 富文件预览 + 更多 Rust 加速器（已整顿到 v0.1.7） | 2026-Q4 初 |
-| **v0.1.5** | Sidebar overhaul + review closeout | ✅ F021 mcpb 一键安装 + F039/F040/F041 + F005 + B1/C3 review long-tail | 2026-Q4 |
-| **v0.1.6** | Persistence + power input | F038 sessions 持久化（done）+ F026 @-mention + ⌘K 命令面板（JS fuzzy MVP）| Q4 |
-| **v0.1.7** | Terminal + preview | F011 真 PTY 单 tab → F023 多 tab + F024 文件富预览 + F039 MCP 完整版（done） | Q4 末 |
-| **v0.1.x+** | NAPI native-helpers | F042（F025 + F026b）— 等 F026 上线后用数据决定启动 | TBD |
+| **v0.1.4** | Power features | （重组散到 v0.1.7：F023/F024/F026 + F042 deferred） | — |
+| **v0.1.5** | Sidebar overhaul + review closeout | ✅ F021 mcpb + F039/F040/F041 + F005 + B1/C3 review long-tail + F019/F020/F022 closeout | 2026-Q4 |
+| **v0.1.6** | Internal milestone | F011 + F026 + F038 — 合并进 v0.1.7 release，无独立 tag | — |
+| **v0.1.7** | Terminal + preview + palette | ✅ F011 真 PTY + F023 多 tab + F024 富预览 + F026 ⌘Shift+P 命令面板 + F038 持久化 | 2026-06-06 |
+| **v0.1.8+** | F015 warm / F018 Quick Ask 全集 / OC+KX-I 批次 | TBD |
+| **v0.1.x+** | NAPI native-helpers | F042（F014 + F025 + F026b）— 等 F026 上线后用数据决定启动 | TBD |
 | **v0.1.8** | 工具渲染 + 事件架构 + 智能（opencode 批次） | ToolRegistry + 全局 session bus + 智能权限批处理 + Quick Ask 智能升级 | 2026-Q4 |
 | **v0.1.9** | Provider/Model 智能 + i18n + UI 基建（opencode 批次） | 任务感知 model 路由 + 中/英 i18n + 命令面板 + 设置弹窗 | 2026-Q4 末 |
 

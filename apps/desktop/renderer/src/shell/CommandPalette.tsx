@@ -1,7 +1,10 @@
-// CommandPalette — F026 ⌘K 全局命令面板
+// CommandPalette — F026 全局命令面板
 //
-// 触发: ⌘K (macOS) / Ctrl+K (Win/Linux) 全局快捷键 (CommandPaletteController 注册)
+// 触发: ⌘Shift+P (macOS) / Ctrl+Shift+P (Win/Linux) — VS Code 同款 muscle memory
 // 关闭: Esc / 点 backdrop / Enter 选中后 / blur 外面 input
+//
+// (注：原 plan 是 ⌘K，但 F018 Quick Ask 已占该键；让命令面板换到 ⌘Shift+P，
+//  跟 VS Code/GitHub/Cursor 对齐；⌘K 留给 Quick Ask 走 Linear/Slack 语义。)
 //
 // 4 个分组 (action / session / file / slash); 在单一 input 中模糊搜，结果
 // 跨组归一排序 (kind 不影响主排序，只在 hint 旁标个角标)。
@@ -280,7 +283,12 @@ function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Element | n
 }
 
 /**
- * Controller — 注册全局 ⌘K / Ctrl+K listener，挂载 CommandPalette。
+ * Controller — 注册全局 ⌘Shift+P (Mac) / Ctrl+Shift+P (Win/Linux) listener,
+ * 挂载 CommandPalette。
+ *
+ * 选键理由：⌘K 早就被 F018 Quick Ask 占了，两个 modal 抢同一组合键会同时弹。
+ * 改用 ⌘Shift+P —— VS Code / GitHub / Cursor 的命令面板 muscle memory，
+ * 开发者一上手就懂；和 Linear/Slack 的"⌘K=快速问/搜"语义自然分开。
  * 模仿 HelpOverlayController 的形态，让 Shell.tsx 直接 `<CommandPaletteController />`。
  */
 export function CommandPaletteController(): JSX.Element | null {
@@ -292,8 +300,13 @@ export function CommandPaletteController(): JSX.Element | null {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      const isCmdK = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && !e.shiftKey && !e.altKey;
-      if (isCmdK) {
+      // ⌘Shift+P / Ctrl+Shift+P — VS Code-family command palette muscle memory
+      const isCmdShiftP =
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        !e.altKey &&
+        e.key.toLowerCase() === 'p';
+      if (isCmdShiftP) {
         e.preventDefault();
         setOpen((v) => !v);
         return;

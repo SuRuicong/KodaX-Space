@@ -42,6 +42,8 @@ const GROUPS: readonly ShortcutGroup[] = [
   {
     title: 'UI',
     items: [
+      { keys: ['Ctrl', 'K'], label: 'Quick Ask (one-shot question, no session)' },
+      { keys: ['Ctrl', 'Shift', 'P'], label: 'Command palette (actions / sessions / files / slash)' },
       { keys: ['Ctrl', 'Shift', 'T'], label: 'Cycle theme (Dark / Light / System)' },
       { keys: ['Ctrl', 'F'], label: 'Find in transcript (↑/↓ to nav)' },
       { keys: ['Ctrl', '\\'], label: 'Toggle focus mode (hide sidebars)' },
