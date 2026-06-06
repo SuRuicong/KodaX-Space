@@ -22,8 +22,11 @@ import type { Mode } from './Shell.js';
 import { useAppStore } from '../store/appStore.js';
 import { canonProjectRoot, type SessionMeta, type RunningSessionInfoT } from '@kodax-space/space-ipc-schema';
 import { SessionContextMenu } from './SessionContextMenu.js';
+import { ProjectContextMenu } from './ProjectContextMenu.js';
 import { RecentsFilterMenu } from './RecentsFilterMenu.js';
 import { useSessionStatusMap, type SessionStatus } from '../features/session/useSessionStatus.js';
+import { pushToast } from '../store/toastStore.js';
+import type { Project } from '@kodax-space/space-ipc-schema';
 
 // Hover-prefetch: 用户鼠标悬停在 Recents 项上时,后台触发 session.history IPC
 // 让 main 端 5-LRU cache (session-store.ts) 提前 warm 起来。等用户真正点击时,handler 命中
@@ -179,25 +182,51 @@ function ProjectTree({
   readonly onSelect: (sessionId: string) => void;
 }): JSX.Element | null {
   const projects = useAppStore((s) => s.projects);
+  const setProjects = useAppStore((s) => s.setProjects);
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const expandedProjects = useAppStore((s) => s.expandedProjects);
   const toggleProjectExpanded = useAppStore((s) => s.toggleProjectExpanded);
+
+  // F043: 项目级 contextmenu 状态 + inline rename
+  const [projCtxMenu, setProjCtxMenu] = useState<{ project: Project; x: number; y: number } | null>(null);
+  const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  // F043: archived projects 折叠开关（在主列表外另开"Archived (N)"分组）
+  const [showArchived, setShowArchived] = useState(false);
+
+  // refresh local projects from main after IPC mutation
+  const refreshProjects = useCallback(async (): Promise<void> => {
+    if (!window.kodaxSpace) return;
+    const r = await window.kodaxSpace.invoke('project.list', undefined);
+    if (r.ok) {
+      setProjects(r.data.projects);
+    } else {
+      // MED-4 fix：原静默 drop → sidebar 跟 main 端不一致；surface error 让用户重试
+      pushToast('Failed to refresh projects — sidebar may be stale', 'error');
+    }
+  }, [setProjects]);
 
   // 全 session id 列表 → 一次拿状态 map（reducer 内部按 id 切片，比每个 SessionRow 单独 hook 省 N 次 store subscribe）
   const allSessionIds = useMemo(() => sessions.map((s) => s.sessionId), [sessions]);
   const statusMap = useSessionStatusMap(allSessionIds);
 
   // 项目按 lastUsedAt 倒序；currentProjectPath 总是排第一（即便 lastUsedAt 不是最新，
-  // 当前项目应该最显眼，避免用户切到老项目后视觉跳动）
+  // 当前项目应该最显眼，避免用户切到老项目后视觉跳动）。
+  // F043: archived 项目从主列表剔出，单独"Archived (N)"分组展示。
   const ordered = useMemo(() => {
     const curCanon = currentProjectPath ? canonProjectRootBrowser(currentProjectPath) : null;
-    const sorted = [...projects].sort((a, b) => b.lastUsedAt - a.lastUsedAt);
+    const active = projects.filter((p) => p.archived !== true);
+    const sorted = [...active].sort((a, b) => b.lastUsedAt - a.lastUsedAt);
     if (!curCanon) return sorted;
     const curIdx = sorted.findIndex((p) => canonProjectRootBrowser(p.path) === curCanon);
     if (curIdx <= 0) return sorted;
-    const current = sorted[curIdx];
+    const current = sorted[curIdx]!;
     return [current, ...sorted.slice(0, curIdx), ...sorted.slice(curIdx + 1)];
   }, [projects, currentProjectPath]);
+
+  const archived = useMemo(
+    () => projects.filter((p) => p.archived === true).sort((a, b) => b.lastUsedAt - a.lastUsedAt),
+    [projects],
+  );
 
   // 按 projectRoot 把 sessions 分组（用 canonProjectRoot 比较，避免 windows 大小写 / trailing
   // slash / 分隔符差异）。reviewer MED-2: 用不可变 spread 而非 push 原地改，遵循项目 immutability 规则。
@@ -218,67 +247,159 @@ function ProjectTree({
     [statusMap],
   );
 
-  if (ordered.length === 0) return null;
+  if (ordered.length === 0 && archived.length === 0) return null;
+
+  // F043 review HIGH-1 修：blur=cancel, Enter=commit。原 onBlur 也调 submit 会让
+  // Enter → setRenamingPath(null) → input unmount → blur 触发第二次 submit，并发两条 IPC。
+  // 现在 onBlur 直接 setRenamingPath(null) 不动 IPC；只有 Enter 走 commit。
+  const onRenameCommit = useCallback(
+    async (proj: Project, newName: string): Promise<void> => {
+      setRenamingPath(null);
+      const trimmed = newName.trim();
+      if (trimmed.length === 0 || trimmed === proj.name) return; // no-op / unchanged
+      if (!window.kodaxSpace) return;
+      const r = await window.kodaxSpace.invoke('project.recent.rename', {
+        path: proj.path,
+        name: trimmed,
+      });
+      if (!r.ok || !r.data.renamed) {
+        pushToast('Rename failed', 'error');
+        return;
+      }
+      await refreshProjects();
+    },
+    [refreshProjects],
+  );
+
+  const renderProject = (proj: Project, treatAsCurrent: boolean): JSX.Element => {
+    const projCanon = canonProjectRootBrowser(proj.path);
+    const defaultExpanded = treatAsCurrent;
+    const explicit = proj.path in expandedProjects ? expandedProjects[proj.path] : undefined;
+    const isExpanded = explicit !== undefined ? explicit : defaultExpanded;
+    const projSessions = sessionsByProject.get(projCanon) ?? [];
+    const runningCount = projSessions.reduce(
+      (acc, s) => (statusMap[s.sessionId] === 'running' ? acc + 1 : acc),
+      0,
+    );
+    const isRenaming = renamingPath === proj.path;
+
+    return (
+      <div key={proj.path} className="mb-1">
+        <div
+          className={`w-full text-xs px-2 py-1 rounded flex items-center gap-1.5 ${
+            treatAsCurrent ? 'text-fg-primary font-semibold' : 'text-fg-secondary hover:bg-hover-bg hover:text-fg-primary'
+          }`}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setProjCtxMenu({ project: proj, x: e.clientX, y: e.clientY });
+          }}
+          title={proj.path}
+        >
+          <button
+            type="button"
+            onClick={() => toggleProjectExpanded(proj.path, defaultExpanded)}
+            className="text-zinc-500 w-3 flex-shrink-0"
+            aria-label={isExpanded ? 'Collapse project' : 'Expand project'}
+          >
+            {isExpanded ? '▾' : '▸'}
+          </button>
+          {isRenaming ? (
+            <input
+              type="text"
+              defaultValue={proj.name}
+              autoFocus
+              maxLength={256}
+              className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-1 py-0.5 text-xs text-zinc-100 outline-none focus:border-zinc-500"
+              onBlur={() => setRenamingPath(null)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void onRenameCommit(proj, e.currentTarget.value);
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setRenamingPath(null);
+                }
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => toggleProjectExpanded(proj.path, defaultExpanded)}
+              className="flex-1 text-left truncate"
+            >
+              {proj.name}
+            </button>
+          )}
+          {runningCount > 0 && !isRenaming && (
+            <span
+              className="text-emerald-400 text-[10px] flex-shrink-0 font-mono"
+              aria-label={`${runningCount} running`}
+              title={`${runningCount} session${runningCount === 1 ? '' : 's'} running`}
+            >
+              ●{runningCount}
+            </span>
+          )}
+        </div>
+        {isExpanded && (
+          <div className="ml-1">
+            {projSessions.length === 0 ? (
+              <div className="text-[10px] text-zinc-500 italic px-3 py-1">No sessions in this project.</div>
+            ) : (
+              <SessionTree
+                sessions={sessions}
+                currentSessionId={currentSessionId}
+                onSelect={onSelect}
+                projectRootOverride={proj.path}
+                statusFor={statusFor}
+              />
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <>
       {ordered.map((proj) => {
         const projCanon = canonProjectRootBrowser(proj.path);
         const isCurrent = currentProjectPath ? projCanon === canonProjectRootBrowser(currentProjectPath) : false;
-        // 展开计算（review LOW-6 修复）：
-        //   default = current project=展开 / 其它=折叠
-        //   显式 expandedProjects[path] = true/false → 覆盖 default
-        // 之前 `isCurrent || map[path]` 让 current project 永远展开，用户点 chevron 视觉无反应。
-        const defaultExpanded = isCurrent;
-        const explicit = proj.path in expandedProjects ? expandedProjects[proj.path] : undefined;
-        const isExpanded = explicit !== undefined ? explicit : defaultExpanded;
-        const projSessions = sessionsByProject.get(projCanon) ?? [];
-        // 项目级运行计数：聚合本项目下 running session 数。awaiting / error 一起算"需关注"？
-        // 暂时只计 running —— awaiting / error 是临时态，long-running 用 running 计数更稳定
-        const runningCount = projSessions.reduce(
-          (acc, s) => (statusMap[s.sessionId] === 'running' ? acc + 1 : acc),
-          0,
-        );
-        return (
-          <div key={proj.path} className="mb-1">
-            <button
-              type="button"
-              onClick={() => toggleProjectExpanded(proj.path, defaultExpanded)}
-              className={`w-full text-left text-xs px-2 py-1 rounded flex items-center gap-1.5 ${
-                isCurrent ? 'text-fg-primary font-semibold' : 'text-fg-secondary hover:bg-hover-bg hover:text-fg-primary'
-              }`}
-              title={proj.path}
-            >
-              <span className="text-zinc-500 w-3 flex-shrink-0" aria-hidden>{isExpanded ? '▾' : '▸'}</span>
-              <span className="truncate flex-1">{proj.name}</span>
-              {runningCount > 0 && (
-                <span
-                  className="text-emerald-400 text-[10px] flex-shrink-0 font-mono"
-                  aria-label={`${runningCount} running`}
-                  title={`${runningCount} session${runningCount === 1 ? '' : 's'} running`}
-                >
-                  ●{runningCount}
-                </span>
-              )}
-            </button>
-            {isExpanded && (
-              <div className="ml-1">
-                {projSessions.length === 0 ? (
-                  <div className="text-[10px] text-zinc-500 italic px-3 py-1">No sessions in this project.</div>
-                ) : (
-                  <SessionTree
-                    sessions={sessions}
-                    currentSessionId={currentSessionId}
-                    onSelect={onSelect}
-                    projectRootOverride={proj.path}
-                    statusFor={statusFor}
-                  />
-                )}
-              </div>
-            )}
-          </div>
-        );
+        return renderProject(proj, isCurrent);
       })}
+
+      {archived.length > 0 && (
+        <div className="mt-3 pt-2 border-t border-zinc-800/40">
+          <button
+            type="button"
+            onClick={() => setShowArchived((v) => !v)}
+            className="w-full text-left text-[10px] uppercase tracking-wider text-zinc-500 hover:text-zinc-300 px-2 py-1 flex items-center gap-1.5"
+            aria-expanded={showArchived}
+          >
+            <span aria-hidden>{showArchived ? '▾' : '▸'}</span>
+            Archived ({archived.length})
+          </button>
+          {showArchived && (
+            <div className="opacity-60">
+              {archived.map((proj) => renderProject(proj, false))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {projCtxMenu && (
+        <ProjectContextMenu
+          project={projCtxMenu.project}
+          x={projCtxMenu.x}
+          y={projCtxMenu.y}
+          onClose={() => setProjCtxMenu(null)}
+          onStartRename={() => {
+            setRenamingPath(projCtxMenu.project.path);
+            setProjCtxMenu(null);
+          }}
+          onProjectsChanged={refreshProjects}
+        />
+      )}
     </>
   );
 }
