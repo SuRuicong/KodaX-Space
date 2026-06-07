@@ -23,6 +23,7 @@ import { useAppStore } from '../store/appStore.js';
 import { canonProjectRoot, type SessionMeta, type RunningSessionInfoT } from '@kodax-space/space-ipc-schema';
 import { SessionContextMenu } from './SessionContextMenu.js';
 import { ProjectContextMenu } from './ProjectContextMenu.js';
+import { ProjectSessionPicker } from './ProjectSessionPicker.js';
 import { RecentsFilterMenu } from './RecentsFilterMenu.js';
 import { useSessionStatusMap, type SessionStatus } from '../features/session/useSessionStatus.js';
 import { pushToast } from '../store/toastStore.js';
@@ -192,6 +193,8 @@ function ProjectTree({
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   // F043: archived projects 折叠开关（在主列表外另开"Archived (N)"分组）
   const [showArchived, setShowArchived] = useState(false);
+  // v0.1.9: "+N more sessions" picker overlay — 哪个项目正在浏览全量
+  const [pickerProject, setPickerProject] = useState<Project | null>(null);
 
   // refresh local projects from main after IPC mutation
   const refreshProjects = useCallback(async (): Promise<void> => {
@@ -389,6 +392,8 @@ function ProjectTree({
                 onSelect={onSelect}
                 projectRootOverride={proj.path}
                 statusFor={statusFor}
+                maxVisible={SESSIONS_PER_PROJECT_VISIBLE}
+                onShowMore={() => setPickerProject(proj)}
               />
             )}
           </div>
@@ -437,6 +442,22 @@ function ProjectTree({
           onProjectsChanged={refreshProjects}
         />
       )}
+
+      {pickerProject && (
+        <ProjectSessionPicker
+          projectName={pickerProject.name}
+          // 把本项目所有 session 按 lastActivityAt desc 排好传进去
+          sessions={(sessionsByProject.get(canonProjectRootBrowser(pickerProject.path)) ?? [])
+            .slice()
+            .sort((a, b) => b.lastActivityAt - a.lastActivityAt)}
+          currentSessionId={currentSessionId}
+          onSelect={(sid) => {
+            useAppStore.getState().setCurrentProject(pickerProject.path);
+            onSelect(sid);
+          }}
+          onClose={() => setPickerProject(null)}
+        />
+      )}
     </>
   );
 }
@@ -458,6 +479,10 @@ interface SessionTreeProps {
   readonly projectRootOverride?: string;
   /** F040: 每行末尾的状态点。idle 不渲染（避免噪音）；缺省整个 sidebar 都不显示状态。 */
   readonly statusFor?: (sessionId: string) => SessionStatus;
+  /** v0.1.9：默认显示上限。超过 cap 时下方渲染"+N more"按钮；undefined = 不 cap (legacy). */
+  readonly maxVisible?: number;
+  /** v0.1.9：点 "+N more" 按钮的回调，让 ProjectTree 唤出 ProjectSessionPicker overlay。 */
+  readonly onShowMore?: () => void;
 }
 
 // v0.1.5: canonProjectRootBrowser 替换为 schema 包共享 util（F040/F041 review MED-3）。
@@ -467,12 +492,19 @@ function canonProjectRootBrowser(p: string): string {
   return canonProjectRoot(p, IS_WIN);
 }
 
+// v0.1.9：项目下默认显示 N 个最近 session；超过走 ProjectSessionPicker overlay。
+// 实测 KodaX 项目 200+ sessions 全塞 sidebar 会把别的项目挤下面。8 个是 codex
+// 同款上限；想看更多走"+ N more sessions" → 中央 picker 模糊搜 + 选。
+const SESSIONS_PER_PROJECT_VISIBLE = 8;
+
 function SessionTree({
   sessions,
   currentSessionId,
   onSelect,
   projectRootOverride,
   statusFor,
+  maxVisible,
+  onShowMore,
 }: SessionTreeProps): JSX.Element {
   const sessionFlags = useAppStore((s) => s.sessionFlags);
   const filter = useAppStore((s) => s.recentsFilter);
@@ -523,9 +555,26 @@ function SessionTree({
   // 内联 rename：哪个 session 正在编辑（点 Rename / 双击触发）
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
 
+  // v0.1.9：cap visible 行数。规则：
+  //  1. 没设 maxVisible → 全显（legacy）
+  //  2. 设了 maxVisible → 取前 maxVisible 条；如果 currentSessionId 在 rendered 里但
+  //     不在 maxVisible 前缀，**强制把 current 拼进 visible 头部**（用户至少能看到自己
+  //     当前选中的那条，而不是因为它 lastActivity 不够新被吞掉）
+  const cappedRendered = useMemo(() => {
+    if (maxVisible === undefined || rendered.length <= maxVisible) return rendered;
+    const head = rendered.slice(0, maxVisible);
+    if (currentSessionId === null) return head;
+    if (head.some((n) => n.session.sessionId === currentSessionId)) return head;
+    const currentNode = rendered.find((n) => n.session.sessionId === currentSessionId);
+    if (currentNode === undefined) return head;
+    // current 不在前缀里 → 加进头部，再 cap 一次（多保留一条 visual signal）
+    return [currentNode, ...head];
+  }, [rendered, maxVisible, currentSessionId]);
+  const overflowCount = maxVisible !== undefined ? rendered.length - cappedRendered.length : 0;
+
   return (
     <>
-      {rendered.map(({ session, depth }) => (
+      {cappedRendered.map(({ session, depth }) => (
         <SessionRow
           key={session.sessionId}
           session={session}
@@ -540,6 +589,16 @@ function SessionTree({
           onCancelRename={() => setRenamingSessionId(null)}
         />
       ))}
+      {overflowCount > 0 && onShowMore !== undefined && (
+        <button
+          type="button"
+          onClick={onShowMore}
+          className="w-full text-left text-[10px] text-zinc-500 hover:text-zinc-200 italic px-3 py-1"
+          aria-label={`Browse all ${rendered.length} sessions in this project`}
+        >
+          + {overflowCount} more session{overflowCount === 1 ? '' : 's'}…
+        </button>
+      )}
       {ctxMenu && (
         <SessionContextMenu
           session={ctxMenu.session}
