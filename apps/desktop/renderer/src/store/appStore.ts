@@ -224,6 +224,17 @@ interface AppState {
   leftSidebarWidth: number;
   rightSidebarWidth: number;
   /**
+   * KX-I-02 Smart Popout Director — 是否启用"根据 session event 自动展开 plan/diff/tasks
+   * popout"。默认开;用户在 Preferences 里可关。持久化 localStorage。
+   */
+  smartPopoutEnabled: boolean;
+  /**
+   * 该 session 已经被 director auto-promote 过的 popout kind 集合,**或**用户主动开/关
+   * 过的 kind (两条路径都 mark promoted,避免再被自动抢)。
+   * Map<sessionId, Set<SmartPopoutKind>>;不持久化(重启清),会话级临时记忆。
+   */
+  promotedPopoutsBySession: Readonly<Record<string, ReadonlySet<string>>>;
+  /**
    * F009: 最后一次被 tool_call (write/edit) 触及的相对路径——FilePanel 监听这个值切到 diff 视图。
    * 用 "可读完一次就置 null" 的单值 + clearLastDiffPath 模式，避免 useEffect 反复触发。
    */
@@ -370,6 +381,11 @@ interface AppState {
   /** 2026-06: 设左/右侧栏宽度（px），调用方自己 clamp，store 直接 set + 写 localStorage。*/
   setLeftSidebarWidth(px: number): void;
   setRightSidebarWidth(px: number): void;
+
+  /** KX-I-02: 切 smart popout director 总开关。立即写 localStorage。 */
+  setSmartPopoutEnabled(enabled: boolean): void;
+  /** KX-I-02: 标记某 (session, kind) 已被 promote 过(或用户主动开/关过),不再 auto。 */
+  markPopoutPromoted(sessionId: string, kind: string): void;
 }
 
 // 单调 counter 用于生成 stable id——sessionId 内多条 user message 顺序唯一。
@@ -546,6 +562,9 @@ export const useAppStore = create<AppState>((set) => ({
   // 2026-06: 默认对齐 Codex 桌面端 — 左 260, 右 320。坏值（NaN / <100 / >800）退回默认。
   leftSidebarWidth: clampSidebarWidth(parseInt(lsGet('kodax-space.leftSidebarWidth') ?? '', 10), 260),
   rightSidebarWidth: clampSidebarWidth(parseInt(lsGet('kodax-space.rightSidebarWidth') ?? '', 10), 320),
+  // KX-I-02: smart director 默认 on。"0" 表示用户主动关过。
+  smartPopoutEnabled: lsGet('kodax-space.smartPopoutEnabled') !== '0',
+  promotedPopoutsBySession: {},
 
   setProjects: (projects) => set({ projects }),
 
@@ -885,6 +904,9 @@ export const useAppStore = create<AppState>((set) => ({
       const { [sessionId]: _todo, ...restTodos } = state.todoListBySession;
       const { [sessionId]: _mts, ...restMts } = state.managedTaskStatusBySession;
       const { [sessionId]: _tok, ...restTokens } = state.tokensBySession;
+      // KX-I-02 review HIGH-3 — director 的 per-session promoted set 同样跟着 session
+      // 走,session 删了就清掉,避免 long-lived 进程下泄漏。
+      const { [sessionId]: _prom, ...restPromoted } = state.promotedPopoutsBySession;
       return {
         sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
         eventsBySession: restEvents,
@@ -894,6 +916,7 @@ export const useAppStore = create<AppState>((set) => ({
         todoListBySession: restTodos,
         managedTaskStatusBySession: restMts,
         tokensBySession: restTokens,
+        promotedPopoutsBySession: restPromoted,
         permissionQueue: state.permissionQueue.filter((p) => p.sessionId !== sessionId),
         askUserQueue: state.askUserQueue.filter((p) => p.sessionId !== sessionId),
         currentSessionId: state.currentSessionId === sessionId ? null : state.currentSessionId,
@@ -984,6 +1007,26 @@ export const useAppStore = create<AppState>((set) => ({
     lsSet('kodax-space.rightSidebarWidth', String(clamped));
     set({ rightSidebarWidth: clamped });
   },
+
+  setSmartPopoutEnabled: (enabled) => {
+    lsSet('kodax-space.smartPopoutEnabled', enabled ? '1' : '0');
+    set({ smartPopoutEnabled: enabled });
+  },
+
+  markPopoutPromoted: (sessionId, kind) =>
+    set((state) => {
+      const prev = state.promotedPopoutsBySession[sessionId];
+      // 已有同 kind 就 short-circuit,避免无谓 setState 触发 selector re-fire
+      if (prev && prev.has(kind)) return state;
+      const next = new Set(prev ?? []);
+      next.add(kind);
+      return {
+        promotedPopoutsBySession: {
+          ...state.promotedPopoutsBySession,
+          [sessionId]: next,
+        },
+      };
+    }),
 
   appendInputHistory: (sessionId, prompt) =>
     set((state) => {

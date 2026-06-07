@@ -235,9 +235,40 @@ function PreferencesPanel(): JSX.Element {
         </div>
       </section>
 
+      <section className="pt-3 border-t border-zinc-800">
+        <SmartPopoutToggle />
+      </section>
+
       <section className="pt-2 border-t border-zinc-800 text-[11px] text-zinc-500">
         More preferences (theme override, language, telemetry) will land in upcoming versions.
       </section>
+    </div>
+  );
+}
+
+// ---- KX-I-02 Smart Popout Director toggle ----
+
+function SmartPopoutToggle(): JSX.Element {
+  const enabled = useAppStore((s) => s.smartPopoutEnabled);
+  const setEnabled = useAppStore((s) => s.setSmartPopoutEnabled);
+  return (
+    <div>
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+          className="mt-0.5 accent-emerald-500"
+        />
+        <div className="flex-1">
+          <div className="text-xs text-zinc-200">Auto-open Plan / Diff / Tasks popouts</div>
+          <div className="text-[10px] text-zinc-500 mt-0.5">
+            Director opens the right panel the first time a plan is drafted, a file is edited,
+            or workers fan out — once per session per kind. Disable to keep popouts strictly
+            manual.
+          </div>
+        </div>
+      </label>
     </div>
   );
 }

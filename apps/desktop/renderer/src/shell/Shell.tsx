@@ -22,9 +22,10 @@
 //   - popout 业务实现 → 留 popouts/ 子目录
 //   - Permission modal / Settings overlay → 复用旧 App 的实现挂载点
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { LeftSidebar } from './LeftSidebar.js';
 import { ResizeHandle } from './ResizeHandle.js';
+import { useSmartPopoutDirector } from '../features/popout-director/useSmartPopoutDirector.js';
 import { Breadcrumb } from './Breadcrumb.js';
 import { CommandToolbar, type PopoutKind } from './CommandToolbar.js';
 import { BottomBar } from './BottomBar.js';
@@ -141,7 +142,27 @@ export function Shell(): JSX.Element {
     return () => document.body.classList.remove(cls);
   }, []);
   // popout：null 表示无 popout，按右上按钮切换
-  const [activePopout, setActivePopout] = useState<PopoutKind | null>(null);
+  const [activePopout, setActivePopoutRaw] = useState<PopoutKind | null>(null);
+
+  // KX-I-02: 用户手动切 popout (CommandToolbar / RightSidebar ⤢ / slash command) 时,
+  // **顺手**把该 (session, kind) 标 promoted —— 让 director 不会下一秒再"自动"打开同一个
+  // 把用户刚关掉的 popout (尤其当用户 close 了 director 自动开的那个时,promoted 已经在
+  // 了;但用户在 director 之前手动开 plan 时,我们也需要 mark 防止再自动 emit。)
+  const currentSessionIdForPopout = useAppStore((s) => s.currentSessionId);
+  const markPopoutPromoted = useAppStore((s) => s.markPopoutPromoted);
+  const setActivePopout = useCallback(
+    (next: PopoutKind | null) => {
+      if (currentSessionIdForPopout !== null && next !== null) {
+        markPopoutPromoted(currentSessionIdForPopout, next);
+      }
+      setActivePopoutRaw(next);
+    },
+    [currentSessionIdForPopout, markPopoutPromoted],
+  );
+
+  // KX-I-02: director — 监听 events,首次出现 plan/diff/tasks 信号时 auto setActivePopout
+  // (前提:activePopout === null 且该 kind 在本 session 未 promoted 过)。
+  useSmartPopoutDirector({ activePopout, setActivePopout });
 
   // BottomBar 发出的"打开 popout"请求消费 — /memory → 'agents' 等。
   // 拿到 non-null 后立即 setActivePopout + 清回 null,避免被反复消费。

@@ -41,7 +41,7 @@
     "postinstall": "electron-builder install-app-deps || true"
   },
   "dependencies": {
-    "@kodax-ai/kodax": "^0.7.42"
+    "@kodax-ai/kodax": "^0.7.46"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
