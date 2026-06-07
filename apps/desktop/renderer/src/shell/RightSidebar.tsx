@@ -23,9 +23,17 @@ import { buildWorkerTree } from './popouts/worker-tree.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 
-export function RightSidebar(): JSX.Element {
+interface RightSidebarProps {
+  /** 2026-06: 动态宽度（px）。 */
+  readonly width?: number;
+}
+
+export function RightSidebar({ width }: RightSidebarProps = {}): JSX.Element {
   return (
-    <aside className="w-72 border-l border-border-default bg-surface flex flex-col flex-shrink-0 overflow-y-auto">
+    <aside
+      style={width !== undefined ? { width: `${width}px` } : undefined}
+      className="border-l border-border-default bg-surface flex flex-col flex-shrink-0 overflow-y-auto text-[13px]"
+    >
       {/* 三节"任务态" — 常驻摘要，⤢ 按需弹大图 */}
       <PlanSection />
       <WorkersSection />

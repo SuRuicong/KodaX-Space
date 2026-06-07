@@ -218,6 +218,11 @@ interface AppState {
   rightSidebarOpen: boolean;
   /** 左侧栏开/关。与 rightSidebarOpen 对称，独立持久化 — 用户可单独收起任一侧。*/
   leftSidebarOpen: boolean;
+  /** 2026-06: 左/右侧栏宽度（px）。用户拖动 ResizeHandle 时写入，独立持久化。
+   *  默认值对齐 Codex 桌面端视觉(左 260 / 右 320)。
+   *  Min/Max 在 Shell 里 clamp(180-480)，store 这层只存最新值。 */
+  leftSidebarWidth: number;
+  rightSidebarWidth: number;
   /**
    * F009: 最后一次被 tool_call (write/edit) 触及的相对路径——FilePanel 监听这个值切到 diff 视图。
    * 用 "可读完一次就置 null" 的单值 + clearLastDiffPath 模式，避免 useEffect 反复触发。
@@ -362,6 +367,9 @@ interface AppState {
   setRightSidebarOpen(open: boolean): void;
   /** 切左侧栏开/关。立即写 localStorage。*/
   setLeftSidebarOpen(open: boolean): void;
+  /** 2026-06: 设左/右侧栏宽度（px），调用方自己 clamp，store 直接 set + 写 localStorage。*/
+  setLeftSidebarWidth(px: number): void;
+  setRightSidebarWidth(px: number): void;
 }
 
 // 单调 counter 用于生成 stable id——sessionId 内多条 user message 顺序唯一。
@@ -481,6 +489,17 @@ function lsSet(key: string, value: string | null): void {
   }
 }
 
+// 2026-06: sidebar 宽度上下限。下限给用户拖到很窄时还能识别 icon + 一两个字符;
+// 上限避免误拖把主区域挤死。坏值（NaN / 越界）退回 fallback default。
+const SIDEBAR_WIDTH_MIN = 180;
+const SIDEBAR_WIDTH_MAX = 520;
+function clampSidebarWidth(raw: number, fallback: number): number {
+  if (!Number.isFinite(raw) || raw < SIDEBAR_WIDTH_MIN || raw > SIDEBAR_WIDTH_MAX) {
+    return fallback;
+  }
+  return Math.round(raw);
+}
+
 export const useAppStore = create<AppState>((set) => ({
   projects: [],
   currentProjectPath: lsGet(LS_KEY_PROJECT),
@@ -524,6 +543,9 @@ export const useAppStore = create<AppState>((set) => ({
   // 的 useEffect (planLength transition) 自动开。'1' 才视作"用户主动开过"。
   rightSidebarOpen: lsGet('kodax-space.rightSidebarOpen') === '1',
   leftSidebarOpen: lsGet('kodax-space.leftSidebarOpen') !== '0', // 默认开，"0" 表示用户主动关过
+  // 2026-06: 默认对齐 Codex 桌面端 — 左 260, 右 320。坏值（NaN / <100 / >800）退回默认。
+  leftSidebarWidth: clampSidebarWidth(parseInt(lsGet('kodax-space.leftSidebarWidth') ?? '', 10), 260),
+  rightSidebarWidth: clampSidebarWidth(parseInt(lsGet('kodax-space.rightSidebarWidth') ?? '', 10), 320),
 
   setProjects: (projects) => set({ projects }),
 
@@ -949,6 +971,18 @@ export const useAppStore = create<AppState>((set) => ({
   setLeftSidebarOpen: (open) => {
     lsSet('kodax-space.leftSidebarOpen', open ? '1' : '0');
     set({ leftSidebarOpen: open });
+  },
+
+  setLeftSidebarWidth: (px) => {
+    const clamped = clampSidebarWidth(px, 260);
+    lsSet('kodax-space.leftSidebarWidth', String(clamped));
+    set({ leftSidebarWidth: clamped });
+  },
+
+  setRightSidebarWidth: (px) => {
+    const clamped = clampSidebarWidth(px, 320);
+    lsSet('kodax-space.rightSidebarWidth', String(clamped));
+    set({ rightSidebarWidth: clamped });
   },
 
   appendInputHistory: (sessionId, prompt) =>

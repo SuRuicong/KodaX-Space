@@ -48,11 +48,13 @@ function prefetchSessionHistory(sessionId: string, msgCount: number | undefined)
 }
 
 interface LeftSidebarProps {
+  /** 2026-06: 动态宽度（px）。Shell 拖 ResizeHandle 实时改这个值。 */
+  width?: number;
   mode: Mode;
   onModeChange: (m: Mode) => void;
 }
 
-export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Element {
+export function LeftSidebar({ mode, onModeChange, width }: LeftSidebarProps): JSX.Element {
   const sessions = useAppStore((s) => s.sessions);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const setCurrentSession = useAppStore((s) => s.setCurrentSession);
@@ -87,7 +89,10 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
   // open=false 时 Shell 不会渲染本组件（不再保留竖条占位 — 避免无信息密度的 dead zone）
 
   return (
-    <aside className="w-60 flex flex-col border-r border-border-default bg-surface flex-shrink-0">
+    <aside
+      style={width !== undefined ? { width: `${width}px` } : undefined}
+      className="flex flex-col border-r border-border-default bg-surface flex-shrink-0 text-[13px]"
+    >
       {/* Mode tab */}
       <div className="p-2 flex gap-1 border-b border-border-default flex-shrink-0">
         <button

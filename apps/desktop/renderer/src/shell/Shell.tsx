@@ -24,6 +24,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { LeftSidebar } from './LeftSidebar.js';
+import { ResizeHandle } from './ResizeHandle.js';
 import { Breadcrumb } from './Breadcrumb.js';
 import { CommandToolbar, type PopoutKind } from './CommandToolbar.js';
 import { BottomBar } from './BottomBar.js';
@@ -56,6 +57,17 @@ export function Shell(): JSX.Element {
   const rightSidebarOpen = useAppStore((s) => s.rightSidebarOpen);
   const setLeftSidebarOpen = useAppStore((s) => s.setLeftSidebarOpen);
   const setRightSidebarOpen = useAppStore((s) => s.setRightSidebarOpen);
+
+  // 2026-06: 侧栏宽度。store 是 commit-only (release 时一次性写),drag 中间用本地 state
+  // 实时驱动 inline width style 避免 store 抖动 / localStorage 频繁写。
+  const persistedLeftWidth = useAppStore((s) => s.leftSidebarWidth);
+  const persistedRightWidth = useAppStore((s) => s.rightSidebarWidth);
+  const setLeftSidebarWidth = useAppStore((s) => s.setLeftSidebarWidth);
+  const setRightSidebarWidth = useAppStore((s) => s.setRightSidebarWidth);
+  const [leftWidthDraft, setLeftWidthDraft] = useState<number | null>(null);
+  const [rightWidthDraft, setRightWidthDraft] = useState<number | null>(null);
+  const leftWidth = leftWidthDraft ?? persistedLeftWidth;
+  const rightWidth = rightWidthDraft ?? persistedRightWidth;
 
   // 右侧栏跟 KodaX 计划列表（todoListBySession）联动：plan 出现 → 自动展开；
   // plan 清空 → 自动折叠。只在 hasPlan 状态切换的瞬间动一次，中间段用户的手动 toggle 不会被打扰。
@@ -178,7 +190,21 @@ export function Shell(): JSX.Element {
       </div>
 
       <div className="flex flex-1 min-h-0">
-        {!fullscreenRead && leftSidebarOpen && <LeftSidebar mode={mode} onModeChange={setMode} />}
+        {!fullscreenRead && leftSidebarOpen && (
+          <>
+            <LeftSidebar mode={mode} onModeChange={setMode} width={leftWidth} />
+            <ResizeHandle
+              side="left"
+              width={leftWidth}
+              defaultWidth={260}
+              onPreview={setLeftWidthDraft}
+              onCommit={(px) => {
+                setLeftWidthDraft(null);
+                setLeftSidebarWidth(px);
+              }}
+            />
+          </>
+        )}
 
         <div className="flex-1 flex flex-col min-w-0 relative">
           <div className="flex items-center px-3 h-10 border-b border-border-default flex-shrink-0 gap-1">
@@ -231,7 +257,21 @@ export function Shell(): JSX.Element {
           )}
         </div>
 
-        {!fullscreenRead && rightSidebarOpen && <RightSidebar />}
+        {!fullscreenRead && rightSidebarOpen && (
+          <>
+            <ResizeHandle
+              side="right"
+              width={rightWidth}
+              defaultWidth={320}
+              onPreview={setRightWidthDraft}
+              onCommit={(px) => {
+                setRightWidthDraft(null);
+                setRightSidebarWidth(px);
+              }}
+            />
+            <RightSidebar width={rightWidth} />
+          </>
+        )}
 
         <PermissionModal />
         <AskUserModal />
