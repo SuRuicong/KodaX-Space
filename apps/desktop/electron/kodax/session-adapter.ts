@@ -14,7 +14,7 @@
 //   KodaXEvents.onStreamEnd      → emit({ kind:'session_complete', ... })
 //   (catch in agent.run)         → emit({ kind:'session_error',  ... })
 
-import type { AgentMode, AutoModeEngine, PermissionDecision, PermissionMode, SessionEvent } from '@kodax-space/space-ipc-schema';
+import type { AgentMode, AutoModeEngine, InputArtifact, PermissionDecision, PermissionMode, SessionEvent } from '@kodax-space/space-ipc-schema';
 
 /**
  * 工具调用前的权限请求回调。
@@ -137,7 +137,13 @@ export interface ManagedSession {
    *
    * @throws 同步抛 / Promise reject：session 已 disposed、或拒绝并发
    */
-  send(prompt: string): Promise<SendResult>;
+  /**
+   * OC-31 v0.1.9: `artifacts` 携带 user-inline image (clipboard paste / drag-drop).
+   * 实现端把这些通过 KodaXOptions.context.inputArtifacts 传给 SDK；SDK 的
+   * buildPromptMessageContent 会把每张 image 拼成 multimodal content block。
+   * 未传时行为等同于"纯文本 prompt"，跟 v0.1.8 之前一致。
+   */
+  send(prompt: string, artifacts?: readonly InputArtifact[]): Promise<SendResult>;
 
   /**
    * 中断当前正在跑的 send。

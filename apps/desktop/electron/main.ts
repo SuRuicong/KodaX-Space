@@ -34,6 +34,7 @@ import { registerNotificationChannels, setNotificationWindowGetter } from './ipc
 import { registerUpdaterChannels, initAutoUpdater } from './ipc/updater.js';
 import { registerMcpbChannels, installMcpbFromOsHandoff } from './ipc/mcpb.js';
 import { registerTerminalChannels } from './ipc/terminal.js';
+import { registerClipboardChannels } from './ipc/clipboard.js';
 import { getPtyHost } from './terminal/ptyHost.js';
 import { settingsStore } from './settings/store.js';
 import { setRendererTarget } from './ipc/push.js';
@@ -327,6 +328,8 @@ app.whenReady().then(async () => {
   registerMcpbChannels();
   // F011 内置终端 (xterm.js + node-pty) — terminal.create/write/resize/kill + output/exit push
   registerTerminalChannels();
+  // OC-31 v0.1.9 clipboard image paste — renderer 把粘贴板图片落到 app temp dir
+  registerClipboardChannels();
   // F021 v0.1.5 冷启动 file association：用户双击 .mcpb 启动 Space 时，path 在 process.argv 里。
   // mainWindow 还没创建，但 installMcpbFromOsHandoff 内部会拉 BrowserWindow.getAllWindows()[0]
   // ——等 createMainWindow() 跑完才有 window。fire-and-forget，让 window 先建好。

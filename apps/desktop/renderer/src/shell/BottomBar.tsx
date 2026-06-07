@@ -8,7 +8,7 @@
 // 取代旧 EventStream 底部 InputBox 区。
 
 import { useEffect, useRef, useState } from 'react';
-import type { SessionMeta } from '@kodax-space/space-ipc-schema';
+import type { InputArtifact, SessionMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 import { ChipBar } from './ChipBar.js';
 import { ModelEffortSelector } from './ModelEffortSelector.js';
@@ -48,6 +48,46 @@ const EMPTY_INPUT_HISTORY: readonly string[] = [];
  * 不处理 slash 命令开头 — `/help` `/clear` 这类不该被当 session topic。
  */
 const TITLE_MAX_CHARS = 50;
+// OC-31 v0.1.9 — composer 中已粘贴 / 上传但尚未发送的 image 一条。
+// path 是 main 端 clipboard.saveImage 写盘后返回的绝对路径，会被塞进 session.send.artifacts；
+// dataUrl 仅前端缩略图渲染用 — 落盘已经发生，dataUrl 是为了避免再读回文件。
+interface PendingImage {
+  /** main 端写盘后的绝对路径。发送时填进 artifacts[i].path。 */
+  readonly path: string;
+  /** image/png | image/jpeg | image/webp。 */
+  readonly mediaType: 'image/png' | 'image/jpeg' | 'image/webp';
+  /** 文件实际字节数，用于 chip 上显示 "230 KB"。 */
+  readonly bytes: number;
+  /** 渲染缩略图用的 data: URL（base64 编码后挂在 <img src>）。 */
+  readonly dataUrl: string;
+  /** 显示名 — clipboard 来源固定 "Pasted image"，drag-drop 时是原文件名。 */
+  readonly label: string;
+}
+
+// 6 MiB — 与 IPC schema MAX_IMAGE_BYTES 对齐 (Anthropic / OpenAI base64 上限分位)
+const MAX_PASTE_BYTES = 6 * 1024 * 1024;
+const MAX_PENDING_IMAGES = 8;
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/** 把 Blob 转 base64 (去掉 data: 前缀)，FileReader 不需 import 模块。 */
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'));
+    reader.onload = () => {
+      const r = String(reader.result ?? '');
+      const comma = r.indexOf(',');
+      resolve(comma >= 0 ? r.slice(comma + 1) : r);
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+
 function deriveTitle(prompt: string): string | null {
   const trimmed = prompt.trim();
   if (!trimmed) return null;
@@ -95,6 +135,14 @@ export function BottomBar(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [attachOpen, setAttachOpen] = useState(false);
+  /**
+   * OC-31 v0.1.9 — composer 已挂上待发送的 image。每张图都已经落到 main 端 temp 目录,
+   * 这里只缓存渲染所需信息 + path（发送时塞 session.send.artifacts）。
+   * 上限 8 张 / 一次发送，与 IPC schema 对齐（DoS guard + 视觉不爆）。
+   */
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  /** 粘贴 / 上传后的错误（image 太大、IPC fail），独立于全局 err，关掉后不影响发送。*/
+  const [imageErr, setImageErr] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   /** P0c: ↑/↓ 翻历史时的指针：-1 = 未浏览（输入框是用户当前 draft），0..n-1 = 看历史第 i 条。*/
   const [historyIdx, setHistoryIdx] = useState(-1);
@@ -246,6 +294,78 @@ export function BottomBar(): JSX.Element {
     });
     if (listResult.ok) useAppStore.getState().setSessions(listResult.data.sessions);
     return stub.sessionId;
+  }
+
+  /**
+   * OC-31 v0.1.9 — 把一组 File / Blob (来自 clipboard paste 或 drag-drop) 落到 main temp
+   * 目录并挂到 composer。每张都需要：
+   *   1. mediaType 合法 (image/png|jpeg|webp)
+   *   2. 单张 ≤ 6 MiB (与 schema MAX_IMAGE_BYTES 对齐)
+   *   3. 已挂总数 + 新增 ≤ 8 张
+   *   4. 当前已有 sessionId — 否则先建。session.create 失败时不挂图、不消费 prompt 区。
+   */
+  async function attachImages(blobs: readonly File[]): Promise<void> {
+    if (blobs.length === 0) return;
+    if (!window.kodaxSpace) return;
+
+    setImageErr(null);
+
+    // review LOW-4 fix: 先过 mime/size/count 验证，**全部 reject** 才不 ensureSession —
+    // 避免用户粘贴 PDF / .tiff 等不支持文件类型时凭空建出一个空 session。
+    const accepted: File[] = [];
+    for (const b of blobs) {
+      if (!/^image\/(png|jpeg|webp)$/.test(b.type)) {
+        setImageErr(`Unsupported image type: ${b.type || 'unknown'}. PNG / JPEG / WEBP only.`);
+        continue;
+      }
+      if (b.size > MAX_PASTE_BYTES) {
+        setImageErr(`Image too large: ${formatBytes(b.size)}. Max ${formatBytes(MAX_PASTE_BYTES)}.`);
+        continue;
+      }
+      if (pendingImages.length + accepted.length >= MAX_PENDING_IMAGES) {
+        setImageErr(`Max ${MAX_PENDING_IMAGES} images per send.`);
+        break;
+      }
+      accepted.push(b);
+    }
+    if (accepted.length === 0) return;
+
+    // sessionId 是 IPC 路径的一部分（main 端按 sid 分子目录）。没 session 时建一个；
+    // 失败立即返回 — 复用 ensureSession 的 setErr 即可。
+    const sid = await ensureSession();
+    if (!sid) return;
+
+    const saved: PendingImage[] = [];
+    for (const b of accepted) {
+      try {
+        const base64 = await blobToBase64(b);
+        const r = await window.kodaxSpace.invoke('clipboard.saveImage', {
+          sessionId: sid,
+          base64,
+          mediaType: b.type as PendingImage['mediaType'],
+        });
+        if (!r.ok) {
+          setImageErr(`${r.error?.code ?? 'ERR_UNKNOWN'}: ${r.error?.message ?? 'save failed'}`);
+          continue;
+        }
+        saved.push({
+          path: r.data.path,
+          mediaType: b.type as PendingImage['mediaType'],
+          bytes: r.data.bytes,
+          dataUrl: `data:${b.type};base64,${base64}`,
+          label: b.name && b.name !== 'image.png' ? b.name : 'Pasted image',
+        });
+      } catch (e) {
+        setImageErr(e instanceof Error ? e.message : String(e));
+      }
+    }
+    if (saved.length > 0) {
+      setPendingImages((prev) => [...prev, ...saved]);
+    }
+  }
+
+  function removePendingImage(idx: number): void {
+    setPendingImages((prev) => prev.filter((_, i) => i !== idx));
   }
 
   /**
@@ -661,7 +781,11 @@ export function BottomBar(): JSX.Element {
   async function handleSend(): Promise<void> {
     if (!window.kodaxSpace) return;
     const trimmed = prompt.trim();
-    if (trimmed === '') return;
+    // OC-31 v0.1.9 — 允许"只贴图不带文字"。SDK 接受带 image artifact 的空文本 prompt（content
+    // 数组里只有 image block），由 LLM 决定该如何回应。为避免 SDK 端 prompt empty 边界，
+    // 这里补一句占位文本（与 Claude.ai 桌面端"Pasted image" 行为对齐）。
+    const effectivePrompt = trimmed !== '' ? trimmed : pendingImages.length > 0 ? '(image)' : '';
+    if (effectivePrompt === '') return;
     if (trimmed.startsWith('/')) {
       const head = trimmed.slice(1);
       const spaceIdx = head.search(/\s/);
@@ -687,9 +811,23 @@ export function BottomBar(): JSX.Element {
       // 用户输入即"我要开始对话"——不再强制 "Select or create a session first"
       const sid = await ensureSession();
       if (!sid) return;
-      appendUserMessage(sid, trimmed);
-      const promptForAI = trimmed;
+      appendUserMessage(sid, effectivePrompt);
+      const promptForAI = effectivePrompt;
+      // 把发送瞬间的图片快照下来 —— 失败回滚时直接 setPendingImages(imagesAtSend)
+      // 即可恢复，包括 dataUrl 缩略图 (不用重新从 main 读文件转 base64)。
+      const imagesAtSend = pendingImages;
+      const artifactsForSend: InputArtifact[] | undefined =
+        imagesAtSend.length > 0
+          ? imagesAtSend.map((img) => ({
+              kind: 'image' as const,
+              path: img.path,
+              mediaType: img.mediaType,
+              source: 'user-inline' as const,
+            }))
+          : undefined;
       setPrompt('');
+      setPendingImages([]);
+      setImageErr(null);
       // Auto-title：仅在 session 当前无 title 时设置，避免覆盖用户手动重命名。
       // fire-and-forget — 失败不影响 send。
       const sessNow = useAppStore.getState().sessions.find((s) => s.sessionId === sid);
@@ -702,7 +840,11 @@ export function BottomBar(): JSX.Element {
         }
       }
       // P0c: 把发送的 prompt 推进历史（appendInputHistory 内部 trim + dedup）— 用 anchored form
-      appendInputHistory(sid, trimmed);
+      // review LOW-5 fix: 用户纯图片发送时 trimmed === ''，不该污染 ↑/↓ 历史
+      // （否则浏览历史会出现空条目）。effectivePrompt='(image)' 占位也不进史。
+      if (trimmed !== '') {
+        appendInputHistory(sid, trimmed);
+      }
       // P0c: 重置 history 浏览指针
       setHistoryIdx(-1);
       draftRef.current = '';
@@ -711,6 +853,7 @@ export function BottomBar(): JSX.Element {
       const result = await window.kodaxSpace.invoke('session.send', {
         sessionId: sid,
         prompt: promptForAI,
+        ...(artifactsForSend ? { artifacts: artifactsForSend } : {}),
       });
       if (!result.ok) {
         setPendingSend(sid, false);
@@ -722,6 +865,11 @@ export function BottomBar(): JSX.Element {
         // 鼠标 focus 让用户能立即重发/编辑。draftRef 之前也清成 '' 了，一并恢复。
         setPrompt(promptForAI);
         draftRef.current = promptForAI;
+        // OC-31 v0.1.9: 同理把 image chips 也复位 — 文件还在 main temp 目录里，path
+        // 还能再次用。otherwise 用户失败一次就丢图，得重新粘贴。
+        if (imagesAtSend.length > 0) {
+          setPendingImages((prev) => (prev.length === 0 ? imagesAtSend : prev));
+        }
         setErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`);
       } else if (result.data.queued) {
         // v0.1.4 B1: session 正在跑，prompt 进了 KodaX SDK MessageQueue。spinner 已经亮
@@ -835,8 +983,13 @@ export function BottomBar(): JSX.Element {
   }
 
   const isStreaming = useIsStreaming();
+  // OC-31 v0.1.9 — 文字非空 OR 至少有一张挂上的 image 即可发送（与 Claude.ai 桌面端
+  // "光贴图就能发"一致）。
   const canSend =
-    !busy && !isStreaming && prompt.trim().length > 0 && !!currentProjectPath;
+    !busy &&
+    !isStreaming &&
+    !!currentProjectPath &&
+    (prompt.trim().length > 0 || pendingImages.length > 0);
 
   return (
     // Claude Desktop 同款"贴底浮起卡片"。ActivitySpinner / err 仍在外层（瞬态指示，
@@ -867,6 +1020,44 @@ export function BottomBar(): JSX.Element {
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 px-3 pt-2 pb-2 space-y-1.5 shadow-sm focus-within:border-zinc-700 transition-colors">
         <ChipBar />
 
+        {/* OC-31 v0.1.9 — pending image chips。粘贴/拖入的图片以缩略图 + 删除按钮形式展示，
+         *  发送时一起送到 KodaX SDK (KodaXContextOptions.inputArtifacts)。 */}
+        {(pendingImages.length > 0 || imageErr) && (
+          <div className="space-y-1">
+            {pendingImages.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {pendingImages.map((img, idx) => (
+                  <div
+                    key={img.path}
+                    className="group relative inline-flex items-center gap-1.5 bg-zinc-800/70 border border-zinc-700 rounded pl-1 pr-1.5 py-0.5 text-[10px] text-zinc-300"
+                    title={`${img.label} · ${formatBytes(img.bytes)}`}
+                  >
+                    <img
+                      src={img.dataUrl}
+                      alt={img.label}
+                      className="w-7 h-7 rounded object-cover flex-shrink-0"
+                    />
+                    <span className="max-w-[120px] truncate">{img.label}</span>
+                    <span className="text-zinc-500">{formatBytes(img.bytes)}</span>
+                    <button
+                      type="button"
+                      onClick={() => removePendingImage(idx)}
+                      className="ml-0.5 w-3.5 h-3.5 rounded-full text-zinc-400 hover:bg-zinc-700 hover:text-zinc-100 flex items-center justify-center text-[10px] leading-none"
+                      aria-label={`Remove ${img.label}`}
+                      title="Remove"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {imageErr && (
+              <div className="text-[10px] text-amber-400">{imageErr}</div>
+            )}
+          </div>
+        )}
+
         <div className="relative">
           <textarea
             ref={textareaRef}
@@ -896,6 +1087,20 @@ export function BottomBar(): JSX.Element {
                 const ta = textareaRef.current;
                 if (ta) setCaret(ta.selectionStart ?? 0);
               });
+            }}
+            onPaste={(e) => {
+              // OC-31 v0.1.9 — clipboard 里有 image 文件就拦下 → 走 attachImages；
+              // 没 image (纯文本粘贴) 直接 fall through 用浏览器原生行为，不干扰用户。
+              const items = e.clipboardData?.files;
+              if (!items || items.length === 0) return;
+              const images: File[] = [];
+              for (let i = 0; i < items.length; i++) {
+                const f = items[i];
+                if (f && f.type.startsWith('image/')) images.push(f);
+              }
+              if (images.length === 0) return;
+              e.preventDefault();
+              void attachImages(images);
             }}
             disabled={busy || !currentProjectPath}
             rows={2}

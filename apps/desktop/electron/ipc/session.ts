@@ -22,6 +22,7 @@ import { loadKodaxUserDefaults } from '../kodax/user-config.js';
 import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
 import { loadPersistedSession } from '../kodax/session-store.js';
+import { assertArtifactPathInClipboardSandbox } from './clipboard.js';
 import type { AgentsFileMeta, SessionHistoryItem, SessionMeta } from '@kodax-space/space-ipc-schema';
 
 // SDK lazy + cached import — 跟其他 SDK 接入点 (agent.ts, queue.ts, catalog.ts) 同模式。
@@ -112,7 +113,19 @@ export function registerSessionChannels(): void {
     // send 是 fire-and-forget——立刻 ACK，事件流通过 push 推
     // v0.1.4 B1: send() 返回 {queued, queueId?} —— "正在跑时" Real adapter 会推 SDK queue
     // 而非 throw。把 queue 信息回带给 renderer，让 UI 标 "queued" pill 而不是显示 HANDLER_ERROR。
-    const result = await session.send(input.prompt);
+    // OC-31 v0.1.9: input.artifacts (image paste / drag-drop) 透传给 session.send，
+    // real-session 把它塞进 KodaXOptions.context.inputArtifacts → SDK 拼 multimodal content。
+    //
+    // review HIGH-2 fix: renderer 可能传任意 path 进 artifacts (eg /etc/passwd) 让 SDK
+    // 把任意文件读进 multimodal content 发给 LLM。这里在调 session.send 前对每个 artifact
+    // path 做沙箱校验——必须落在 <app temp>/kodax-space/clipboard/<sid>/ 之内，且 sid
+    // 等于本次 send 的 sessionId (不许跨 session 引用图)。
+    if (input.artifacts && input.artifacts.length > 0) {
+      for (const a of input.artifacts) {
+        await assertArtifactPathInClipboardSandbox(input.sessionId, a.path);
+      }
+    }
+    const result = await session.send(input.prompt, input.artifacts);
     return {
       accepted: true as const,
       ...(result.queued ? { queued: true, queueId: result.queueId } : {}),

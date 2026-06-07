@@ -1,0 +1,160 @@
+// Clipboard IPC handlers — OC-31 v0.1.9.
+//
+// 把 renderer 给的 base64 image 落到 app temp dir，返回绝对路径供 session.send.artifacts 引用。
+// session dispose 时清掉 per-session 子目录。
+//
+// 安全:
+//   - sessionId 用作子目录名，先 strict regex 校验 ([A-Za-z0-9_-]+，最大 128 字符）
+//     防 path traversal (`../` / NUL / 反斜杠等)
+//   - 落盘文件名是单调时间戳，renderer 不能控制
+//   - 落盘根目录 = app.getPath('temp')/kodax-space/clipboard/，进程独占
+//   - 写盘体积上限同 schema (6 MiB) —— Zod 已先于此 handler 拦
+//   - mediaType → 扩展名固定查表（png/jpg/webp），不让 renderer 指定文件后缀
+
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { registerChannel } from './register.js';
+
+const SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+
+const EXT_BY_MEDIA: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+};
+
+// 进程级单调计数器 — 同一毫秒多张粘贴避免文件名冲突。
+// (Date.now() 在 Workflow harness 里被禁，但 IPC handler 跑在 main 进程，
+//  Electron main 不在 Workflow 沙箱里 —— 这里 Date.now() 完全可用)
+let monotonicCounter = 0;
+
+// 懒加载 `app` —— electron 模块在 node --test 没原生 binary 时不暴露 `app`，
+// 而 host.test.ts → host.ts → 这里的 module load 链不应当因此而崩。registerClipboardChannels
+// 才是会被 main 调的入口，到时候 electron 已经在 main 进程里跑起来了。
+async function clipboardRoot(): Promise<string> {
+  try {
+    const electron = await import('electron');
+    const tempDir = electron.app.getPath('temp');
+    return path.join(tempDir, 'kodax-space', 'clipboard');
+  } catch {
+    // Fallback for non-Electron (test harness): os.tmpdir()。tests 永远不会用到
+    // 实际写盘路径，但 cleanupClipboardForSession 走的是 best-effort + rm，
+    // ENOENT 是正常路径，不该让 host.dispose 抛错。
+    return path.join(os.tmpdir(), 'kodax-space', 'clipboard');
+  }
+}
+
+async function sessionDir(sessionId: string): Promise<string> {
+  if (!SESSION_ID_RE.test(sessionId)) {
+    throw new Error('clipboard.saveImage: invalid sessionId');
+  }
+  return path.join(await clipboardRoot(), sessionId);
+}
+
+// review HIGH-1 fix: 解码后 image 大小硬上限。schema 的 base64 string 上限会让上
+// 一个 ~8 MiB 的 base64 串通过 — decoded 后落地约 6 MiB，超过 MAX_IMAGE_BYTES。
+// 把 MAX_IMAGE_BYTES 与上面 schema 的 MAX_IMAGE_BYTES (6 MiB) 对齐，主进程 handler
+// 再 enforce 一次 — schema 是 string 长度防 IPC 边界 DoS；这里是 decoded 防写盘 DoS。
+const MAX_DECODED_IMAGE_BYTES = 6 * 1024 * 1024;
+
+/** 单纯写盘逻辑 — registerClipboardChannels 和单元测试共用。*/
+export async function saveClipboardImage(input: {
+  readonly sessionId: string;
+  readonly base64: string;
+  readonly mediaType: 'image/png' | 'image/jpeg' | 'image/webp';
+}): Promise<{ path: string; bytes: number }> {
+  const dir = await sessionDir(input.sessionId);
+  // review HIGH-1 fix: 显式 0o700 而非依赖 umask —— 多用户系统下默认 0o755 让 sessionId
+  // 文件名 (含时间戳泄露使用窗口) 在 ls 可见，是元数据泄露。0o700 仅 owner 可读/进入。
+  // Windows 上 mode 不起 effect，但 POSIX 上必须。注意 `recursive: true` 只对**新建**
+  // 目录设 mode；用户已存在的 parent 不会被改 mode (这是预期 — 不应主动 chmod 用户目录)。
+  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+
+  const ext = EXT_BY_MEDIA[input.mediaType];
+  if (!ext) {
+    // schema 已限制 enum 三选一，能到这里说明 enum 列表与 EXT_BY_MEDIA 失配 —
+    // 是开发者改 schema 没改 handler 的 bug，不是用户输入。
+    throw new Error(`clipboard.saveImage: unsupported mediaType ${input.mediaType}`);
+  }
+  monotonicCounter = (monotonicCounter + 1) & 0xffff;
+  const filename = `${Date.now().toString(36)}-${monotonicCounter.toString(36)}.${ext}`;
+  const filePath = path.join(dir, filename);
+
+  const buf = Buffer.from(input.base64, 'base64');
+  if (buf.length === 0) {
+    throw new Error('clipboard.saveImage: empty image bytes after base64 decode');
+  }
+  if (buf.length > MAX_DECODED_IMAGE_BYTES) {
+    // review MEDIUM-5 fix: schema string max 算的是 base64 编码后的长度，decoded 后可能仍
+    // 超过 6 MiB 上限 (base64 有 ~33% 膨胀)。这里再 enforce 真实字节数，硬拒。
+    throw new Error(
+      `clipboard.saveImage: image too large after decode: ${buf.length} bytes (max ${MAX_DECODED_IMAGE_BYTES})`,
+    );
+  }
+  await fs.writeFile(filePath, buf, { mode: 0o600 });
+
+  return { path: filePath, bytes: buf.length };
+}
+
+/** 同上 — 单纯清盘逻辑，便于单测。*/
+export async function cleanupClipboardSession(input: {
+  readonly sessionId: string;
+}): Promise<{ removed: number }> {
+  const dir = await sessionDir(input.sessionId);
+  let removed = 0;
+  try {
+    const entries = await fs.readdir(dir);
+    removed = entries.length;
+    // rm -r 整个子目录；之后下次 saveImage 会重建。
+    await fs.rm(dir, { recursive: true, force: true });
+  } catch (err) {
+    // ENOENT = session 从没贴过图，正常路径
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
+  return { removed };
+}
+
+export function registerClipboardChannels(): void {
+  registerChannel('clipboard.saveImage', saveClipboardImage);
+  registerChannel('clipboard.cleanupSession', cleanupClipboardSession);
+}
+
+/**
+ * review HIGH-2 fix: session.send.artifacts[].path 由 renderer 传上来 —
+ * 必须验证它确实指向 `<clipboardRoot>/<sessionId>/...` 之内的某个文件，
+ * 否则恶意 / bug renderer 可以传 `/etc/passwd`，让 SDK 把任意文件
+ * 灌进 multimodal content block 发到 LLM 提供商。
+ *
+ * sessionId 强制是当前 send 调用的 sessionId（不让 renderer 同时引用别 session 的图）。
+ * 抛错时 caller (session.ts handler) 必须捕获 → 走 HANDLER_ERROR envelope。
+ */
+export async function assertArtifactPathInClipboardSandbox(
+  sessionId: string,
+  artifactPath: string,
+): Promise<void> {
+  if (!SESSION_ID_RE.test(sessionId)) {
+    throw new Error('artifact validation: invalid sessionId');
+  }
+  if (!path.isAbsolute(artifactPath)) {
+    throw new Error(`artifact path must be absolute: ${artifactPath}`);
+  }
+  const normalized = path.normalize(artifactPath);
+  // path.normalize 在 Windows 上会保留盘符 / Windows separator。下面 sandbox 已经经
+  // path.join → 同样平台风格，startsWith 比较是安全的（同进程同平台）。
+  const sandbox = path.join(await clipboardRoot(), sessionId) + path.sep;
+  if (!normalized.startsWith(sandbox)) {
+    throw new Error(
+      `artifact path outside clipboard sandbox (sid=${sessionId}): ${artifactPath}`,
+    );
+  }
+}
+
+/** main 端 host.dispose 直接调，跳 IPC 层；renderer 看不见 sessionId 不需经 Zod。*/
+export async function cleanupClipboardForSession(sessionId: string): Promise<void> {
+  if (!SESSION_ID_RE.test(sessionId)) return; // 静默丢弃 — disposeAll 不应因坏 id 抛错
+  const dir = path.join(await clipboardRoot(), sessionId);
+  await fs.rm(dir, { recursive: true, force: true }).catch(() => {
+    // ENOENT / 权限错误都不应当 throw —— dispose 路径只做 best-effort 清理
+  });
+}

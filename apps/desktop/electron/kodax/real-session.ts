@@ -92,7 +92,7 @@ import type {
   RunnerToolCall,
   ToolCallSignal,
 } from '@kodax-ai/kodax/coding';
-import type { SessionEvent } from '@kodax-space/space-ipc-schema';
+import type { InputArtifact, SessionEvent } from '@kodax-space/space-ipc-schema';
 import { askUserBroker } from '../permission/ask-user-broker.js';
 import { bootstrapAutoMode } from './auto-mode-bootstrap.js';
 import { getSessionStorageHandle } from './session-store.js';
@@ -163,7 +163,7 @@ export class RealKodaXSession implements ManagedSession {
     return this.currentAbort !== null;
   }
 
-  async send(prompt: string): Promise<SendResult> {
+  async send(prompt: string, artifacts?: readonly InputArtifact[]): Promise<SendResult> {
     if (this.disposed) {
       throw new Error(`[real-session ${this.sessionId}] already disposed`);
     }
@@ -174,7 +174,18 @@ export class RealKodaXSession implements ManagedSession {
     // review HIGH-1: 必须传 agentId=this.sessionId，否则 process-global queue 上
     // 多 in-flight session 时 A 的 prompt 可能被 B 先 drain 跑掉（跨 session 路由）。
     // review HIGH-2: enqueueUserPrompt 内部 MAX_QUEUE_DEPTH guard 防 OOM。
+    //
+    // OC-31 v0.1.9 — artifacts 仅在"立即起 run"路径生效（直接灌进
+    // options.context.inputArtifacts）。queued 路径 KodaX MessageQueue 当前签名
+    // 只接 prompt string，artifacts 在 drain 那一轮拿不到。先 fail-loud 反映
+    // 限制，让用户知道"图片只能在 idle 时贴"，避免静默丢图。后续可在 SDK
+    // 暴露 enqueueWithArtifacts 后改成 queue 也保留。
     if (this.currentAbort) {
+      if (artifacts && artifacts.length > 0) {
+        throw new Error(
+          'Cannot attach images while a turn is running — wait for the current response to finish, then paste again.',
+        );
+      }
       const queueId = await enqueueUserPrompt(this.sessionId, prompt);
       this.lastActivityAt = Date.now();
       return { queued: true, queueId };
@@ -184,7 +195,7 @@ export class RealKodaXSession implements ManagedSession {
     this.currentAbort = abort;
     this.lastActivityAt = Date.now();
 
-    void this.runRealStream(prompt, abort.signal).finally(() => {
+    void this.runRealStream(prompt, abort.signal, artifacts).finally(() => {
       if (this.currentAbort === abort) this.currentAbort = null;
     });
     return { queued: false };
@@ -268,7 +279,11 @@ export class RealKodaXSession implements ManagedSession {
     };
   }
 
-  private async runRealStream(prompt: string, signal: AbortSignal): Promise<void> {
+  private async runRealStream(
+    prompt: string,
+    signal: AbortSignal,
+    artifacts?: readonly InputArtifact[],
+  ): Promise<void> {
     const sid = this.sessionId;
     // SDK subpath dynamic load — 首次调时拉 chunks，后续命中 cache。
     // planModeBlockCheck (同步) 和 runKodaX (异步) 都需要这个 module。
@@ -691,6 +706,20 @@ export class RealKodaXSession implements ManagedSession {
         planModeBlockCheck,
         // skillsPrompt 仅在非空时挂——避免在 SDK 视角注入空字符串字段。
         ...(skillsPrompt ? { skillsPrompt } : {}),
+        // OC-31 v0.1.9 — 用户粘贴 / 拖拽的图片走这条路径。SDK
+        // buildPromptMessageContent(prompt, inputArtifacts) 会自动把每张图拼成
+        // multimodal content block ({type:'image', path, mediaType})。空数组就不传
+        // —— 让 SDK 走纯文本 fast path，不额外做 type checking 开销。
+        ...(artifacts && artifacts.length > 0
+          ? {
+              inputArtifacts: artifacts.map((a) => ({
+                kind: 'image' as const,
+                path: a.path,
+                ...(a.mediaType ? { mediaType: a.mediaType } : {}),
+                source: 'user-inline' as const,
+              })),
+            }
+          : {}),
         // /compact 标记: 把 currentTokens 顶到 999B,SDK needsCompaction 立即触发
         // 完事后 finally 清掉 flag (不管成功还是失败)
         ...(this.compactRequested

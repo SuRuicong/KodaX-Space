@@ -58,7 +58,13 @@ export {
   type SessionMeta,
   type SessionEvent,
   type SessionEventKind,
+  type InputArtifact,
 } from './channels/session.js';
+
+export {
+  clipboardSaveImageChannel,
+  clipboardCleanupSessionChannel,
+} from './channels/clipboard.js';
 
 export {
   projectListChannel,

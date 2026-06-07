@@ -110,6 +110,7 @@ import {
   terminalOutputChannel,
   terminalExitChannel,
 } from './terminal.js';
+import { clipboardSaveImageChannel, clipboardCleanupSessionChannel } from './clipboard.js';
 
 export const invokeChannels = {
   [versionChannel.name]: versionChannel,
@@ -184,6 +185,8 @@ export const invokeChannels = {
   [terminalWriteChannel.name]: terminalWriteChannel,
   [terminalResizeChannel.name]: terminalResizeChannel,
   [terminalKillChannel.name]: terminalKillChannel,
+  [clipboardSaveImageChannel.name]: clipboardSaveImageChannel,
+  [clipboardCleanupSessionChannel.name]: clipboardCleanupSessionChannel,
 } as const;
 
 export const pushChannels = {

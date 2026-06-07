@@ -160,6 +160,26 @@ export const sessionCreateChannel = {
   }),
 } as const;
 
+// ---- Input artifact (OC-31 v0.1.9, image-paste / drag-drop) ----
+//
+// 透传给 KodaX SDK 的 KodaXContextOptions.inputArtifacts；SDK 会用
+// buildPromptMessageContent(prompt, artifacts) 把每个 image 转成 multimodal
+// content block ({type:'image', path, mediaType}) 拼到 user message。
+//
+// `path`: main 端写到 app temp dir 的绝对路径 (Electron app.getPath('temp')/kodax-space/clipboard/<sid>/<ts>.png)
+//          ── renderer 不能传任意路径，path 必须是 clipboard.saveImage IPC 返回的
+//          ── 受信任值；schema 这层只做长度兜底，路径合法性由 main 端 saveImage 保证。
+// `mediaType`: 'image/png' | 'image/jpeg' | 'image/webp' (KodaX SDK 接 mediaType
+//          ── 由后端 provider transport 决定支持子集 — 这里只限制三个最常见的)
+// `source`: KodaXInputArtifact.source 闭集，当前 SDK 只接 'user-inline'。
+const inputArtifactSchema = z.object({
+  kind: z.literal('image'),
+  path: z.string().min(1).max(4096),
+  mediaType: z.enum(['image/png', 'image/jpeg', 'image/webp']),
+  source: z.literal('user-inline').default('user-inline'),
+});
+export type InputArtifact = z.infer<typeof inputArtifactSchema>;
+
 // ---- Invoke: session.send ----
 export const sessionSendChannel = {
   name: 'session.send',
@@ -167,6 +187,8 @@ export const sessionSendChannel = {
   input: z.object({
     sessionId: z.string().min(1),
     prompt: z.string().min(1).max(MAX_PROMPT_BYTES),
+    /** OC-31 v0.1.9 image paste/drag-drop. 上限 8 张/turn —— 防 DoS；UI 同步限制。 */
+    artifacts: z.array(inputArtifactSchema).max(8).optional(),
   }),
   output: z.object({
     // 只是 ACK"已排进 session 队列"——真正结果走 session.event push
