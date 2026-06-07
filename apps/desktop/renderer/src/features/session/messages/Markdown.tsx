@@ -62,9 +62,17 @@ export function _clearMarkdownLruCacheForTesting(): void {
   lruCache.clear();
 }
 
-// OC-25 代码块复制按钮：hover 时浮出，点一下复制 pre 文本内容、2 秒后回弹。
+// OC-25 代码块复制按钮：常驻显示 (低 opacity)、hover 后 100% + 强对比配色。
 // per-message copy 已经在 MessageFooter；这里给每个 ``` 块单独一个按钮，
 // 长回复里有多个代码片段时不用整段复制再剪。
+//
+// **2026-06 调整 (v0.1.9)**: 之前 `opacity-0 + hover 才出` + `bg-zinc-800`
+// 在 pre 的 `bg-zinc-950` 上对比度太弱，用户反馈"hover 出来都看不清是什么按钮"。
+// 改成：
+//   1. 默认 opacity-60 常驻 (不打扰阅读但能看到有按钮)，hover/focus opacity-100
+//   2. bg 提高一档 + 加 1px border 让轮廓清晰
+//   3. 字号 text-[11px]，图标 12×12，与文字 baseline 对齐
+//   4. 文字 "Copy" 大小写正常（之前 "copy" 全小写显得像 placeholder）
 function CopyCodeButton({ getText }: { getText: () => string }): JSX.Element {
   const [copied, setCopied] = useState(false);
   async function onCopy(): Promise<void> {
@@ -80,24 +88,25 @@ function CopyCodeButton({ getText }: { getText: () => string }): JSX.Element {
     <button
       type="button"
       onClick={() => void onCopy()}
-      // hover 浮现；focus-within 让键盘用户也能 tab 到
       className={[
-        'absolute top-2 right-2 px-1.5 py-0.5 text-[10px] rounded flex items-center gap-1',
-        'opacity-0 group-hover/codeblock:opacity-100 focus:opacity-100 transition-opacity',
-        'dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-300',
-        'bg-zinc-200 hover:bg-zinc-300 text-zinc-700',
+        'absolute top-1.5 right-1.5 px-2 py-0.5 text-[11px] rounded flex items-center gap-1 leading-none',
+        'opacity-60 hover:opacity-100 focus:opacity-100 group-hover/codeblock:opacity-100 transition-opacity',
+        // dark: zinc-700 衬 zinc-950 pre，对比够；border 给轮廓
+        'dark:bg-zinc-700/80 dark:hover:bg-zinc-600 dark:text-zinc-100 dark:border dark:border-zinc-600',
+        // light: zinc-200 衬白底 pre
+        'bg-zinc-200 hover:bg-zinc-300 text-zinc-700 border border-zinc-300',
       ].join(' ')}
       title={copied ? 'Copied' : 'Copy code'}
       aria-label={copied ? 'Code copied to clipboard' : 'Copy code to clipboard'}
     >
       {copied ? (
-        <span className="text-emerald-500">✓ copied</span>
+        <span className="text-emerald-400 dark:text-emerald-400 font-medium">✓ Copied</span>
       ) : (
         <>
           <svg
             aria-hidden
-            width="11"
-            height="11"
+            width="12"
+            height="12"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -108,7 +117,7 @@ function CopyCodeButton({ getText }: { getText: () => string }): JSX.Element {
             <rect width="14" height="14" x="8" y="8" rx="2" />
             <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
           </svg>
-          copy
+          Copy
         </>
       )}
     </button>
@@ -146,7 +155,12 @@ function MarkdownInner({ content }: MarkdownProps): JSX.Element {
     <div className="markdown-body text-zinc-100 leading-relaxed text-sm">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
+        // **2026-06 v0.1.9**: detect:false —— LLM 包 git status / 文件路径列表 / shell 输出
+        // 等"非代码"内容时,detect:true 会硬猜成 javascript / perl / diff,把 `M filename.js`
+        // 第一行识别成 hljs-deletion (粉红色) 而后续行不在 token 内,视觉上第一行颜色与后续
+        // 不一致,被用户当作"缩进错位"。改成"非显式 language 不高亮"——LLM 现在普遍会写
+        // ```python / ```diff / ```bash 这种带语言的 fence,纯文本块就显示成纯文本。
+        rehypePlugins={[[rehypeHighlight, { detect: false, ignoreMissing: true }]]}
         components={{
           // ---- 代码 ----
           // group/codeblock 让 CopyCodeButton 的 hover 作用域限定到本 pre 而非整个消息
