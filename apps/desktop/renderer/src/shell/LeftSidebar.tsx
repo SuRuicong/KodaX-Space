@@ -247,8 +247,6 @@ function ProjectTree({
     [statusMap],
   );
 
-  if (ordered.length === 0 && archived.length === 0) return null;
-
   // F043 review HIGH-1 修：blur=cancel, Enter=commit。原 onBlur 也调 submit 会让
   // Enter → setRenamingPath(null) → input unmount → blur 触发第二次 submit，并发两条 IPC。
   // 现在 onBlur 直接 setRenamingPath(null) 不动 IPC；只有 Enter 走 commit。
@@ -271,6 +269,11 @@ function ProjectTree({
     [refreshProjects],
   );
 
+  // ⚠️ 早 return 必须放在所有 hooks 之后 —— 否则首次启动 (projects 空) 提前 return 会跳过
+  //    下面的 onRenameCommit useCallback，项目注入后又执行，hooks 顺序不一致 → React #310 → 白屏。
+  //    这是个反复踩过的坑：新增 hook 一律加在这行之前。
+  if (ordered.length === 0 && archived.length === 0) return null;
+
   const renderProject = (proj: Project, treatAsCurrent: boolean): JSX.Element => {
     const projCanon = canonProjectRootBrowser(proj.path);
     const defaultExpanded = treatAsCurrent;
@@ -286,7 +289,7 @@ function ProjectTree({
     return (
       <div key={proj.path} className="mb-1">
         <div
-          className={`w-full text-xs px-2 py-1 rounded flex items-center gap-1.5 ${
+          className={`group/projectrow w-full text-xs px-2 py-1 rounded flex items-center gap-1.5 ${
             treatAsCurrent ? 'text-fg-primary font-semibold' : 'text-fg-secondary hover:bg-hover-bg hover:text-fg-primary'
           }`}
           onContextMenu={(e) => {
@@ -338,6 +341,40 @@ function ProjectTree({
               title={`${runningCount} session${runningCount === 1 ? '' : 's'} running`}
             >
               ●{runningCount}
+            </span>
+          )}
+          {/* v0.1.9: hover-only inline buttons — new session + contextmenu (codex 对齐) */}
+          {!isRenaming && (
+            <span className="flex items-center gap-0.5 opacity-0 group-hover/projectrow:opacity-100 transition-opacity flex-shrink-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  // 切到此项目 + 清 current session → BottomBar.ensureSession 在首发时
+                  // 懒建一个新 session（跟顶部"+ New session"按钮同一路径）
+                  const st = useAppStore.getState();
+                  st.setCurrentProject(proj.path);
+                  st.setCurrentSession(null);
+                }}
+                className="text-zinc-400 hover:text-zinc-100 px-1 leading-none"
+                aria-label={`New session in ${proj.name}`}
+                title="New session in this project"
+              >
+                ＋
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                  setProjCtxMenu({ project: proj, x: rect.right, y: rect.bottom });
+                }}
+                className="text-zinc-400 hover:text-zinc-100 px-1 leading-none"
+                aria-label={`${proj.name} actions`}
+                title="More actions"
+              >
+                ⋯
+              </button>
             </span>
           )}
         </div>
@@ -781,7 +818,9 @@ function RecentsHeader(): JSX.Element {
       : null;
   return (
     <div className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-wider text-zinc-400 flex justify-between items-center flex-shrink-0 relative">
-      <span>Recents</span>
+      {/* F043 v0.1.9: 改为"Projects" — 实际形态就是项目折叠树，原 Recents 概念被
+          ProjectTree 取代；点 ⇅ 仍调过滤菜单（session 级 active/archived/sort 等）。 */}
+      <span>Projects</span>
       <div className="flex items-center gap-2">
         {summary && <span className="normal-case text-zinc-500 text-[9px]">{summary}</span>}
         <button
@@ -789,7 +828,7 @@ function RecentsHeader(): JSX.Element {
           type="button"
           onClick={() => setMenuOpen((v) => !v)}
           className="text-zinc-400 hover:text-zinc-200 normal-case"
-          aria-label="Filter recents"
+          aria-label="Filter projects / sessions"
           title="Filter, group, sort"
         >
           ⇅
