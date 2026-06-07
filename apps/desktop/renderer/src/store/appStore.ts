@@ -21,6 +21,7 @@ import type {
   KodaxUserDefaults,
   QueuedMessageT,
 } from '@kodax-space/space-ipc-schema';
+import { canonProjectRoot as canonProjectRootShared } from '@kodax-space/space-ipc-schema';
 
 /**
  * Persistent inline notification (NotificationsSurface 渲染源)。
@@ -229,6 +230,15 @@ interface AppState {
    */
   smartPopoutEnabled: boolean;
   /**
+   * v0.1.9 Step 7 — 用户手动拖动排过的项目顺序 (canonProjectRoot 形态)。
+   *   - 空数组 = 没拖过,LeftSidebar 走原"lastUsedAt + current 排首"逻辑
+   *   - 非空 = 按本数组顺序排在前,不在本数组里的项目按 lastUsedAt 排到尾
+   * 持久化到 localStorage `kodax-space.projectOrder` (JSON 数组)。
+   */
+  projectOrder: readonly string[];
+  /** v0.1.9 Step 7 — sidebar "Archived (N)" 折叠组的展开状态。默认折叠,localStorage 持久化。*/
+  archivedProjectsExpanded: boolean;
+  /**
    * 该 session 已经被 director auto-promote 过的 popout kind 集合,**或**用户主动开/关
    * 过的 kind (两条路径都 mark promoted,避免再被自动抢)。
    * Map<sessionId, Set<SmartPopoutKind>>;不持久化(重启清),会话级临时记忆。
@@ -386,6 +396,14 @@ interface AppState {
   setSmartPopoutEnabled(enabled: boolean): void;
   /** KX-I-02: 标记某 (session, kind) 已被 promote 过(或用户主动开/关过),不再 auto。 */
   markPopoutPromoted(sessionId: string, kind: string): void;
+  /**
+   * v0.1.9 Step 7 — 用户拖动 src 项目到 target 位置(target 前面)。
+   * 内部按当前 projects 列表算出新顺序,写 store + localStorage。
+   * 路径用 canonProjectRoot 形态比较;src === target / 找不到任一时 no-op。
+   */
+  reorderProjects(srcCanonPath: string, targetCanonPath: string): void;
+  /** v0.1.9 Step 7 — 切"Archived (N)"折叠组展开状态。立即写 localStorage。 */
+  setArchivedProjectsExpanded(expanded: boolean): void;
 }
 
 // 单调 counter 用于生成 stable id——sessionId 内多条 user message 顺序唯一。
@@ -441,6 +459,27 @@ function readPersistedModel(): string | null {
   if (v === null) return null;
   if (v.length === 0 || v.length > PENDING_MODEL_MAX_LEN) return null;
   return v;
+}
+
+/**
+ * v0.1.9 Step 7 — 读用户拖排过的项目顺序 (canonProjectRoot 路径数组,顺序意义)。
+ * 坏值 (非 JSON / 非数组 / 元素非 string / 超 256 项) 一律返空,等效"按 lastUsedAt 排"。
+ */
+function readPersistedProjectOrder(): readonly string[] {
+  const raw = lsGet('kodax-space.projectOrder');
+  if (raw === null) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed) || parsed.length > 256) return [];
+    const out: string[] = [];
+    for (const p of parsed) {
+      if (typeof p !== 'string' || p.length === 0 || p.length > 4096) continue;
+      out.push(p);
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 /** F040: 从 localStorage 读 expanded projects map。坏值（非 object / 非 boolean） 一律返空。
@@ -505,6 +544,12 @@ function lsSet(key: string, value: string | null): void {
   }
 }
 
+// v0.1.9 Step 7 — 模块加载时一次性算 IS_WIN, 跟 LeftSidebar `IS_WIN` 同源 (review
+// MEDIUM-2)。reorderProjects 之前在 action 闭包里读 navigator.userAgent,跟 LeftSidebar
+// 的 IS_WIN module-const 双实现,逻辑上一致但脆弱;统一拉模块级常量。
+const IS_WIN_RENDERER =
+  typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent);
+
 // 2026-06: sidebar 宽度上下限。下限给用户拖到很窄时还能识别 icon + 一两个字符;
 // 上限避免误拖把主区域挤死。坏值（NaN / 越界）退回 fallback default。
 const SIDEBAR_WIDTH_MIN = 180;
@@ -565,6 +610,8 @@ export const useAppStore = create<AppState>((set) => ({
   // KX-I-02: smart director 默认 on。"0" 表示用户主动关过。
   smartPopoutEnabled: lsGet('kodax-space.smartPopoutEnabled') !== '0',
   promotedPopoutsBySession: {},
+  projectOrder: readPersistedProjectOrder(),
+  archivedProjectsExpanded: lsGet('kodax-space.archivedProjectsExpanded') === '1',
 
   setProjects: (projects) => set({ projects }),
 
@@ -1027,6 +1074,39 @@ export const useAppStore = create<AppState>((set) => ({
         },
       };
     }),
+
+  reorderProjects: (srcCanonPath, targetCanonPath) =>
+    set((state) => {
+      if (srcCanonPath === targetCanonPath) return state;
+      // 当前激活的 active projects (canon 形态),archived 不参与排序
+      const allCanon = state.projects
+        .filter((p) => p.archived !== true)
+        .map((p) => canonProjectRootShared(p.path, IS_WIN_RENDERER));
+
+      // 现有 order 把 archived/已不存在的 canon path 过滤掉,跟新 active 列表对齐
+      const validSet = new Set(allCanon);
+      const filteredOrder = state.projectOrder.filter((p) => validSet.has(p));
+      // 不在 filteredOrder 里的 active project (新加 / 之前不在 order) 按 store 顺序追加
+      const inOrder = new Set(filteredOrder);
+      const tail = allCanon.filter((p) => !inOrder.has(p));
+      const combined = [...filteredOrder, ...tail];
+
+      // 把 src 拿出来,插到 target 之前
+      const srcIdx = combined.indexOf(srcCanonPath);
+      const tgtIdx = combined.indexOf(targetCanonPath);
+      if (srcIdx === -1 || tgtIdx === -1) return state;
+      const without = combined.filter((_, i) => i !== srcIdx);
+      // 拿掉 src 后 target 位置变化:若原 target 在 src 之后,index 不变;否则减 1
+      const newTgt = tgtIdx > srcIdx ? tgtIdx - 1 : tgtIdx;
+      const next = [...without.slice(0, newTgt), srcCanonPath, ...without.slice(newTgt)];
+      lsSet('kodax-space.projectOrder', JSON.stringify(next));
+      return { projectOrder: next };
+    }),
+
+  setArchivedProjectsExpanded: (expanded) => {
+    lsSet('kodax-space.archivedProjectsExpanded', expanded ? '1' : '0');
+    set({ archivedProjectsExpanded: expanded });
+  },
 
   appendInputHistory: (sessionId, prompt) =>
     set((state) => {

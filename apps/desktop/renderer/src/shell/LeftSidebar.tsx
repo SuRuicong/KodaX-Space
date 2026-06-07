@@ -207,12 +207,18 @@ function ProjectTree({
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const expandedProjects = useAppStore((s) => s.expandedProjects);
   const toggleProjectExpanded = useAppStore((s) => s.toggleProjectExpanded);
+  // v0.1.9 Step 7 — 拖排顺序 + archived 折叠状态 (持久化)
+  const projectOrder = useAppStore((s) => s.projectOrder);
+  const reorderProjects = useAppStore((s) => s.reorderProjects);
+  const archivedExpanded = useAppStore((s) => s.archivedProjectsExpanded);
+  const setArchivedExpanded = useAppStore((s) => s.setArchivedProjectsExpanded);
 
   // F043: 项目级 contextmenu 状态 + inline rename
   const [projCtxMenu, setProjCtxMenu] = useState<{ project: Project; x: number; y: number } | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
-  // F043: archived projects 折叠开关（在主列表外另开"Archived (N)"分组）
-  const [showArchived, setShowArchived] = useState(false);
+  // v0.1.9 Step 7 — DnD: 拖动中的 source canon path (UI 高亮 + drop 时算位置)
+  const [dragSrcCanon, setDragSrcCanon] = useState<string | null>(null);
+  const [dragOverCanon, setDragOverCanon] = useState<string | null>(null);
   // v0.1.9: "+N more sessions" picker overlay — 哪个项目正在浏览全量
   const [pickerProject, setPickerProject] = useState<Project | null>(null);
 
@@ -232,19 +238,40 @@ function ProjectTree({
   const allSessionIds = useMemo(() => sessions.map((s) => s.sessionId), [sessions]);
   const statusMap = useSessionStatusMap(allSessionIds);
 
-  // 项目按 lastUsedAt 倒序；currentProjectPath 总是排第一（即便 lastUsedAt 不是最新，
-  // 当前项目应该最显眼，避免用户切到老项目后视觉跳动）。
-  // F043: archived 项目从主列表剔出，单独"Archived (N)"分组展示。
+  // 项目排序优先级:
+  //   1. v0.1.9 Step 7: 用户拖排过 (projectOrder 非空) → 按 projectOrder 排,新项目追加到尾
+  //   2. 旧默认: lastUsedAt 倒序 + currentProject 排首 (用户没拖过时保留原体验)
+  // F043: archived 项目从主列表剔出,单独"Archived (N)"分组展示。
   const ordered = useMemo(() => {
     const curCanon = currentProjectPath ? canonProjectRootBrowser(currentProjectPath) : null;
     const active = projects.filter((p) => p.archived !== true);
+
+    if (projectOrder.length > 0) {
+      // 用户已拖排过: 按 projectOrder 索引排,不在里面的追加(按 lastUsedAt 内部排)。
+      // review MEDIUM-1: 即便拖过,**当前打开的项目**仍然 pin 到最顶 — 用户切到老项目时
+      // 视觉焦点不应跳到中段。这跟 Codex/IDE workspace switch 体感一致。
+      const orderIdx = new Map<string, number>();
+      projectOrder.forEach((p, i) => orderIdx.set(p, i));
+      const sorted = [...active].sort((a, b) => {
+        const aIdx = orderIdx.get(canonProjectRootBrowser(a.path)) ?? Infinity;
+        const bIdx = orderIdx.get(canonProjectRootBrowser(b.path)) ?? Infinity;
+        if (aIdx !== bIdx) return aIdx - bIdx;
+        return b.lastUsedAt - a.lastUsedAt;
+      });
+      if (!curCanon) return sorted;
+      const curIdx = sorted.findIndex((p) => canonProjectRootBrowser(p.path) === curCanon);
+      if (curIdx <= 0) return sorted;
+      const current = sorted[curIdx]!;
+      return [current, ...sorted.slice(0, curIdx), ...sorted.slice(curIdx + 1)];
+    }
+
     const sorted = [...active].sort((a, b) => b.lastUsedAt - a.lastUsedAt);
     if (!curCanon) return sorted;
     const curIdx = sorted.findIndex((p) => canonProjectRootBrowser(p.path) === curCanon);
     if (curIdx <= 0) return sorted;
     const current = sorted[curIdx]!;
     return [current, ...sorted.slice(0, curIdx), ...sorted.slice(curIdx + 1)];
-  }, [projects, currentProjectPath]);
+  }, [projects, projectOrder, currentProjectPath]);
 
   const archived = useMemo(
     () => projects.filter((p) => p.archived === true).sort((a, b) => b.lastUsedAt - a.lastUsedAt),
@@ -309,12 +336,56 @@ function ProjectTree({
     );
     const isRenaming = renamingPath === proj.path;
 
+    // v0.1.9 Step 7 — DnD: 项目 row 整行 draggable。archived 项目不参与排序(语义上"已归档"
+    // 用户的 mental model 跟主列表不同),只对 active list 启用。
+    // review HIGH-3: 上下文菜单开着时禁拖 — 用户右键打开菜单后随手 mousedown 可能误触
+    // dragstart,造成菜单 + drag 状态打架。
+    const isArchivedRow = proj.archived === true;
+    const isCtxMenuOnRow = projCtxMenu?.project.path === proj.path;
+    const isDragSource = dragSrcCanon === projCanon;
+    const isDragOverTarget = dragOverCanon === projCanon && dragSrcCanon !== null && !isDragSource;
     return (
-      <div key={proj.path} className="mb-1">
+      <div key={proj.path} className={`mb-1 ${isDragSource ? 'opacity-40' : ''}`}>
         <div
+          draggable={!isArchivedRow && !isRenaming && !isCtxMenuOnRow}
+          onDragStart={(e) => {
+            if (isArchivedRow) return;
+            setDragSrcCanon(projCanon);
+            e.dataTransfer.effectAllowed = 'move';
+            // 必须 setData 才能在 Firefox / 某些 Linux 上触发 drag (Chrome 不严要求,但写上更稳)
+            try { e.dataTransfer.setData('text/plain', proj.path); } catch { /* fail silently */ }
+          }}
+          onDragEnd={() => {
+            setDragSrcCanon(null);
+            setDragOverCanon(null);
+          }}
+          onDragOver={(e) => {
+            if (isArchivedRow || dragSrcCanon === null || dragSrcCanon === projCanon) return;
+            e.preventDefault(); // 允许 drop
+            e.dataTransfer.dropEffect = 'move';
+            if (dragOverCanon !== projCanon) setDragOverCanon(projCanon);
+          }}
+          onDragLeave={(e) => {
+            // review HIGH-1: onDragLeave 也会在 cursor 移入 row 内子元素时触发(button / span 等),
+            // 直接清 dragOverCanon 会让 outline 在 row 内闪烁。只有 cursor 真的离开整个 row
+            // (relatedTarget 不在 row DOM 之内) 时才清。
+            if (dragOverCanon !== projCanon) return;
+            const related = e.relatedTarget as Node | null;
+            if (related && (e.currentTarget as HTMLElement).contains(related)) return;
+            setDragOverCanon(null);
+          }}
+          onDrop={(e) => {
+            if (isArchivedRow) return;
+            e.preventDefault();
+            const src = dragSrcCanon;
+            setDragSrcCanon(null);
+            setDragOverCanon(null);
+            if (!src || src === projCanon) return;
+            reorderProjects(src, projCanon);
+          }}
           className={`group/projectrow w-full text-xs px-2 py-1 rounded flex items-center gap-1.5 ${
             treatAsCurrent ? 'text-fg-primary font-semibold' : 'text-fg-secondary hover:bg-hover-bg hover:text-fg-primary'
-          }`}
+          } ${isDragOverTarget ? 'outline outline-1 outline-blue-500/60' : ''}`}
           onContextMenu={(e) => {
             e.preventDefault();
             setProjCtxMenu({ project: proj, x: e.clientX, y: e.clientY });
@@ -423,7 +494,22 @@ function ProjectTree({
   };
 
   return (
-    <>
+    // review HIGH-2: 包一个 wrapper 让 onDragLeave / onDragEnd 兜底 — 用户拖出 sidebar
+    // 整个 area 后 (浏览器有时不会发 row 的 onDragLeave),outline 不会被永久 stuck。
+    <div
+      onDragLeave={(e) => {
+        const related = e.relatedTarget as Node | null;
+        // related 不在 wrapper 内 = 拖出本 list
+        if (related && (e.currentTarget as HTMLElement).contains(related)) return;
+        if (dragOverCanon !== null) setDragOverCanon(null);
+      }}
+      onDragEnd={() => {
+        // 浏览器有时只在 source 上发 onDragEnd,有时在 document 上 — wrapper 多挂一道,
+        // 兜底清掉拖动状态。
+        if (dragSrcCanon !== null) setDragSrcCanon(null);
+        if (dragOverCanon !== null) setDragOverCanon(null);
+      }}
+    >
       {ordered.map((proj) => {
         const projCanon = canonProjectRootBrowser(proj.path);
         const isCurrent = currentProjectPath ? projCanon === canonProjectRootBrowser(currentProjectPath) : false;
@@ -434,14 +520,14 @@ function ProjectTree({
         <div className="mt-3 pt-2 border-t border-zinc-800/40">
           <button
             type="button"
-            onClick={() => setShowArchived((v) => !v)}
+            onClick={() => setArchivedExpanded(!archivedExpanded)}
             className="w-full text-left text-[10px] uppercase tracking-wider text-zinc-500 hover:text-zinc-300 px-2 py-1 flex items-center gap-1.5"
-            aria-expanded={showArchived}
+            aria-expanded={archivedExpanded}
           >
-            <span aria-hidden>{showArchived ? '▾' : '▸'}</span>
+            <span aria-hidden>{archivedExpanded ? '▾' : '▸'}</span>
             Archived ({archived.length})
           </button>
-          {showArchived && (
+          {archivedExpanded && (
             <div className="opacity-60">
               {archived.map((proj) => renderProject(proj, false))}
             </div>
@@ -478,7 +564,7 @@ function ProjectTree({
           onClose={() => setPickerProject(null)}
         />
       )}
-    </>
+    </div>
   );
 }
 
