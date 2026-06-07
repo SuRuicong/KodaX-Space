@@ -144,25 +144,31 @@ export interface PersistedSessionMeta {
  *   sidebar 当主对话显示
  * - limit 缺省 200——大于 F033 in-memory 的常见 100 量级，UI 翻滚也撑得住
  */
+// SDK 0.7.46 slow-path trigger: future-dated `before` 让 SDK listSessions
+// 不进 fast path（fast path 内部 storage.list(undefined) 会 fallback hostCwd
+// 把当前进程目录当 gitRoot,Space 启动目录是 KodaX-Space → 只看到自家 session）。
+// '2999-01-01' 远超任何合理 createdAt,等效"全量"。slow path 扫所有 projectKey
+// 子目录 + flat,自己做 scope='user' filter,不引入 archived 副作用。
+//
+// 见 KodaX session/public-api.ts:206 fast-path guard:
+//   `if (scope === 'user' && !gitRoot && before === undefined && !includeArchived)`
+//
+// 已写需求给 KodaX team：暴露 explicit `allProjects: true` 或 `scope: 'all-user'`
+// 选项,免去 sentinel date hack。
+const FORCE_SLOW_PATH_BEFORE = '2999-01-01T00:00:00.000Z';
+
 export async function listPersistedSessions(opts: {
   readonly projectRoot?: string;
   readonly limit?: number;
 }): Promise<PersistedSessionMeta[]> {
-  // SDK 0.7.46 (FEATURE_219) 修了之前的 cross-project filter bug —— listSessions
-  // 不再 fast-path fallback 到 process.cwd 的 gitRoot。同时引入了**真实** archived
-  // session 概念（archiveSession / unarchiveSession）+ `archived` 字段。
-  //
-  // 之前 v0.1.9 我们在 0.7.45 上用 `includeArchived: true` 强制 slow path 绕开
-  // bug ——这条 trick 现在反过来**有反效果**：会把用户 archive 掉的 session 拉回
-  // 主列表。所以恢复默认（不传 includeArchived 等于 false），archived session
-  // 只在用户显式开"Show archived" UI 时才取。
-  //
-  // archived UI 入口本版本未做（v0.1.10+ 单独 feature 接 SDK 原生 archiveSession）；
-  // 当前实际效果 = 用户 archive 后 session 从 sidebar 消失，符合预期。
+  // 当 caller 传了 projectRoot,SDK fast path 用 caller 给的 gitRoot 算 projectKey,
+  // 不再 fallback hostCwd —— 这条路径 fast path 是对的,不必触发 slow。
+  // 当 caller 不传 projectRoot,fast path 退到 fallback hostCwd 漂移,得强制 slow。
   const summaries = await activeImpl.listSessions({
     projectRoot: opts.projectRoot,
     scope: 'user',
     limit: opts.limit ?? 200,
+    ...(opts.projectRoot === undefined ? { before: FORCE_SLOW_PATH_BEFORE } : {}),
   });
   return summaries.map((s) => ({
     sessionId: s.id,
