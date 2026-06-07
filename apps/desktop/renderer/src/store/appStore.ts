@@ -954,6 +954,13 @@ export const useAppStore = create<AppState>((set) => ({
       // KX-I-02 review HIGH-3 — director 的 per-session promoted set 同样跟着 session
       // 走,session 删了就清掉,避免 long-lived 进程下泄漏。
       const { [sessionId]: _prom, ...restPromoted } = state.promotedPopoutsBySession;
+      // v0.1.9 release review HIGH-1 — 漏清 3 个 session-keyed map:
+      //   - inputHistoryBySession (200 string * N session 累积)
+      //   - pendingSendBySession (失败路径删 session 时 true 永留 spinner)
+      //   - sessionFlags (pinned/archived/unread 残留)
+      const { [sessionId]: _ih, ...restHistory } = state.inputHistoryBySession;
+      const { [sessionId]: _ps, ...restPending } = state.pendingSendBySession;
+      const { [sessionId]: _sf, ...restFlags } = state.sessionFlags;
       return {
         sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
         eventsBySession: restEvents,
@@ -964,6 +971,9 @@ export const useAppStore = create<AppState>((set) => ({
         managedTaskStatusBySession: restMts,
         tokensBySession: restTokens,
         promotedPopoutsBySession: restPromoted,
+        inputHistoryBySession: restHistory,
+        pendingSendBySession: restPending,
+        sessionFlags: restFlags,
         permissionQueue: state.permissionQueue.filter((p) => p.sessionId !== sessionId),
         askUserQueue: state.askUserQueue.filter((p) => p.sessionId !== sessionId),
         currentSessionId: state.currentSessionId === sessionId ? null : state.currentSessionId,

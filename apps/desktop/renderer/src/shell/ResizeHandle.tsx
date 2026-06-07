@@ -41,6 +41,14 @@ export function ResizeHandle({
     startWidth: number;
     active: boolean;
   } | null>(null);
+  // v0.1.9 release review HIGH-2: 拖动中组件 unmount 时 window 上的 3 个 listener
+  // 不会被 onUp / onKey 清掉,造成永久泄漏 + closure 持有过期 props。useEffect
+  // cleanup 通过这个 ref 拿到当前 listener 引用统一 detach。
+  const listenersRef = useRef<{
+    onMove: (e: MouseEvent) => void;
+    onUp: (e: MouseEvent) => void;
+    onKey: (e: KeyboardEvent) => void;
+  } | null>(null);
 
   const onMouseDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -64,6 +72,13 @@ export function ResizeHandle({
         onPreview?.(next);
       };
 
+      const detach = (): void => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        window.removeEventListener('keydown', onKey);
+        listenersRef.current = null;
+      };
+
       const onUp = (ev: MouseEvent): void => {
         const drag = dragRef.current;
         if (!drag) return;
@@ -72,9 +87,7 @@ export function ResizeHandle({
         dragRef.current = null;
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
-        window.removeEventListener('mousemove', onMove);
-        window.removeEventListener('mouseup', onUp);
-        window.removeEventListener('keydown', onKey);
+        detach();
         onCommit(next);
       };
 
@@ -86,9 +99,7 @@ export function ResizeHandle({
         dragRef.current = null;
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
-        window.removeEventListener('mousemove', onMove);
-        window.removeEventListener('mouseup', onUp);
-        window.removeEventListener('keydown', onKey);
+        detach();
         onPreview?.(drag.startWidth);
         onCommit(drag.startWidth);
       };
@@ -96,6 +107,7 @@ export function ResizeHandle({
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
       window.addEventListener('keydown', onKey);
+      listenersRef.current = { onMove, onUp, onKey };
     },
     [side, width, onCommit, onPreview],
   );
@@ -105,12 +117,22 @@ export function ResizeHandle({
     onCommit(defaultWidth);
   }, [defaultWidth, onCommit, onPreview]);
 
-  // 卸载时清理可能遗留的 body cursor（极端情况：组件 unmount 时还在拖）
+  // 卸载时清理:
+  //   - body cursor / userSelect (极端情况:组件 unmount 时还在拖)
+  //   - **window listener** (review HIGH-2): 拖动中 unmount 时 onUp/onKey 永远不会被调用,
+  //     listener 永远不会自己 detach。这里兜底 detach,否则 closure 持有过期 props/ref。
   useEffect(() => {
     return () => {
+      if (listenersRef.current) {
+        window.removeEventListener('mousemove', listenersRef.current.onMove);
+        window.removeEventListener('mouseup', listenersRef.current.onUp);
+        window.removeEventListener('keydown', listenersRef.current.onKey);
+        listenersRef.current = null;
+      }
       if (dragRef.current?.active) {
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
+        dragRef.current = null;
       }
     };
   }, []);
