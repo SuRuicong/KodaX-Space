@@ -6,7 +6,7 @@ import type { ConversationMessage } from '../composeMessages.js';
 import { Markdown } from './Markdown.js';
 // OC-21: side-effect import 让内置 tool renderers (write/edit/multi_edit) 注册到 registry
 import './toolRenderers.js';
-import { getToolInputRenderer } from './toolRegistry.js';
+import { getToolInputRenderer, getToolResultRenderer } from './toolRegistry.js';
 
 // ---- P4c: tool result 收窄渲染 ----
 
@@ -338,32 +338,15 @@ export function ToolCallCard({
               <div className="text-[11px] text-blue-300">{progress}</div>
             </section>
           )}
-          {resultCollapse && result !== undefined && (
-            <section>
-              <div className="text-[10px] text-zinc-500 uppercase mb-0.5 flex justify-between items-center">
-                <span>result</span>
-                {resultCollapse.collapsed && (
-                  <button
-                    type="button"
-                    onClick={() => setShowFullResult((v) => !v)}
-                    className="text-[10px] text-blue-400 hover:text-blue-300 normal-case"
-                  >
-                    {showFullResult ? 'Collapse' : `Show full (${resultCollapse.totalLines} lines)`}
-                  </button>
-                )}
-              </div>
-              <pre
-                className={[
-                  'text-[11px] whitespace-pre-wrap break-all max-h-64 overflow-auto',
-                  // Dark: pale emerald 文字保留原表意 (tool output 成功用绿区分);
-                  // Light: 深绿字 — text-emerald-300 已被 styles.css accent override 翻成 emerald-700,
-                  // 但显式 dark: 标注让意图更清楚
-                  'dark:text-emerald-300 text-emerald-700',
-                ].join(' ')}
-              >
-                {showFullResult ? result : resultCollapse.body}
-              </pre>
-            </section>
+          {result !== undefined && (
+            <ToolResultView
+              toolName={toolName}
+              result={result}
+              input={input}
+              resultCollapse={resultCollapse}
+              showFullResult={showFullResult}
+              setShowFullResult={setShowFullResult}
+            />
           )}
         </div>
       )}
@@ -549,3 +532,57 @@ function ToolEditInputView({ toolName, input }: ToolEditInputViewProps): JSX.Ele
   );
 }
 
+// ---- OC-21 v0.1.9 result-side dispatch ----
+//
+// 跟 ToolEditInputView 对称：toolName 查 result registry → 自定义渲染；
+// 找不到或返 null → 回退到原 raw-text collapse 视图（绿色 pre + Show full/Collapse）。
+
+interface ToolResultViewProps {
+  readonly toolName: string;
+  readonly result: string;
+  readonly input: Record<string, unknown> | undefined;
+  readonly resultCollapse: CollapseResult | null;
+  readonly showFullResult: boolean;
+  readonly setShowFullResult: (updater: (v: boolean) => boolean) => void;
+}
+
+function ToolResultView({
+  toolName,
+  result,
+  input,
+  resultCollapse,
+  showFullResult,
+  setShowFullResult,
+}: ToolResultViewProps): JSX.Element | null {
+  const renderer = getToolResultRenderer(toolName);
+  if (renderer !== null) {
+    const rendered = renderer({ toolName, result, input });
+    if (rendered !== null) return rendered;
+  }
+  // Fallback — raw-text collapse 视图
+  if (resultCollapse === null) return null;
+  return (
+    <section>
+      <div className="text-[10px] text-zinc-500 uppercase mb-0.5 flex justify-between items-center">
+        <span>result</span>
+        {resultCollapse.collapsed && (
+          <button
+            type="button"
+            onClick={() => setShowFullResult((v) => !v)}
+            className="text-[10px] text-blue-400 hover:text-blue-300 normal-case"
+          >
+            {showFullResult ? 'Collapse' : `Show full (${resultCollapse.totalLines} lines)`}
+          </button>
+        )}
+      </div>
+      <pre
+        className={[
+          'text-[11px] whitespace-pre-wrap break-all max-h-64 overflow-auto',
+          'dark:text-emerald-300 text-emerald-700',
+        ].join(' ')}
+      >
+        {showFullResult ? result : resultCollapse.body}
+      </pre>
+    </section>
+  );
+}
