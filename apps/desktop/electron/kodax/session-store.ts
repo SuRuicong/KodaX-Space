@@ -144,31 +144,32 @@ export interface PersistedSessionMeta {
  *   sidebar 当主对话显示
  * - limit 缺省 200——大于 F033 in-memory 的常见 100 量级，UI 翻滚也撑得住
  */
-// SDK 0.7.46 slow-path trigger: future-dated `before` 让 SDK listSessions
-// 不进 fast path（fast path 内部 storage.list(undefined) 会 fallback hostCwd
-// 把当前进程目录当 gitRoot,Space 启动目录是 KodaX-Space → 只看到自家 session）。
-// '2999-01-01' 远超任何合理 createdAt,等效"全量"。slow path 扫所有 projectKey
-// 子目录 + flat,自己做 scope='user' filter,不引入 archived 副作用。
-//
-// 见 KodaX session/public-api.ts:206 fast-path guard:
-//   `if (scope === 'user' && !gitRoot && before === undefined && !includeArchived)`
-//
-// 已写需求给 KodaX team：暴露 explicit `allProjects: true` 或 `scope: 'all-user'`
-// 选项,免去 sentinel date hack。
-const FORCE_SLOW_PATH_BEFORE = '2999-01-01T00:00:00.000Z';
-
 export async function listPersistedSessions(opts: {
   readonly projectRoot?: string;
   readonly limit?: number;
 }): Promise<PersistedSessionMeta[]> {
-  // 当 caller 传了 projectRoot,SDK fast path 用 caller 给的 gitRoot 算 projectKey,
-  // 不再 fallback hostCwd —— 这条路径 fast path 是对的,不必触发 slow。
-  // 当 caller 不传 projectRoot,fast path 退到 fallback hostCwd 漂移,得强制 slow。
+  // SDK 0.7.46 (FEATURE_219) 真修了 cross-project filter bug —— storage.ts:1259
+  // 现在 `currentGitRoot = gitRoot ?? (hostCwd ? getGitRoot(hostCwd) : null)`,
+  // **不再** fallback `getGitRoot(undefined)` → `process.cwd()`。Space 不传 hostCwd
+  // 构造 storage,所以 caller 不传 projectRoot 时 currentGitRoot=null → SDK 自动
+  // 走"扫所有 projectKey 目录"分支返回全量 (storage.ts:1281)。
+  //
+  // 配合 listSessions fast-path guard (scope=user && !gitRoot && !before &&
+  // !includeArchived → storage.list(undefined,{limit})),Space 端不再需要塞
+  // sentinel `before` date 强制 slow path —— SDK fast path 也对了。
+  //
+  // 历史:
+  //   v0.1.9 早期: 加 includeArchived:true 绕 0.7.45 bug (Space 进程 cwd =
+  //                KodaX-Space → fallback gitRoot → 只看到自家 session)
+  //   d410032: 改用 `before: '2999-...'` 触发 slow path (0.7.46 fast-path 内
+  //            仍 fallback hostCwd,只是从 process.cwd 改成 hostCwd ≈ undefined
+  //            → 行为没变)
+  //   本次: SDK 0.7.46 storage.list 加 `this.hostCwd ?` 守门,不传 hostCwd
+  //         就 currentGitRoot=null 走全量 → workaround 彻底不需要,恢复纯净调用
   const summaries = await activeImpl.listSessions({
     projectRoot: opts.projectRoot,
     scope: 'user',
     limit: opts.limit ?? 200,
-    ...(opts.projectRoot === undefined ? { before: FORCE_SLOW_PATH_BEFORE } : {}),
   });
   return summaries.map((s) => ({
     sessionId: s.id,
