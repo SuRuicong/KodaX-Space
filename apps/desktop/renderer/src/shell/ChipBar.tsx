@@ -11,7 +11,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../store/appStore.js';
-import { SettingsPopover } from './SettingsPopover.js';
+import { SettingsModal } from '../features/settings/SettingsModal.js';
 
 export function ChipBar(): JSX.Element | null {
   const projectPath = useAppStore((s) => s.currentProjectPath);
@@ -72,7 +72,9 @@ function LocalChip(): JSX.Element {
           </div>
         </div>
       )}
-      {settingsOpen && <SettingsPopover onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && (
+        <SettingsModal initialTab="preferences" onClose={() => setSettingsOpen(false)} />
+      )}
     </div>
   );
 }

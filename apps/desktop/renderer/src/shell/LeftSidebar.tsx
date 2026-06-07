@@ -25,6 +25,7 @@ import { SessionContextMenu } from './SessionContextMenu.js';
 import { ProjectContextMenu } from './ProjectContextMenu.js';
 import { ProjectSessionPicker } from './ProjectSessionPicker.js';
 import { RecentsFilterMenu } from './RecentsFilterMenu.js';
+import { SettingsModal } from '../features/settings/SettingsModal.js';
 import { useSessionStatusMap, type SessionStatus } from '../features/session/useSessionStatus.js';
 import { pushToast } from '../store/toastStore.js';
 import type { Project } from '@kodax-space/space-ipc-schema';
@@ -78,6 +79,9 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
   function handleNewSession(): void {
     setCurrentSession(null);
   }
+
+  // OC-29: 底栏 ⚙ 打开 unified SettingsModal (默认 Preferences tab)
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // open/setOpen 由 Shell 顶层 breadcrumb 行的 SidebarToggleButton 直接管理；
   // open=false 时 Shell 不会渲染本组件（不再保留竖条占位 — 避免无信息密度的 dead zone）
@@ -148,8 +152,19 @@ export function LeftSidebar({ mode, onModeChange }: LeftSidebarProps): JSX.Eleme
       {/* Bottom: mode/gateway label */}
       <div className="border-t border-border-default px-3 py-2 text-[10px] text-zinc-400 flex justify-between flex-shrink-0">
         <span className="truncate">KodaX Space · Gateway</span>
-        <button type="button" className="text-zinc-300 hover:text-zinc-100" aria-label="Settings">⚙</button>
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(true)}
+          className="text-zinc-300 hover:text-zinc-100"
+          aria-label="Settings"
+          title="Settings"
+        >
+          ⚙
+        </button>
       </div>
+      {settingsOpen && (
+        <SettingsModal initialTab="preferences" onClose={() => setSettingsOpen(false)} />
+      )}
     </aside>
   );
 }

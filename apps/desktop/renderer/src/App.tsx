@@ -25,7 +25,7 @@ import { SessionList } from './features/session/SessionList.js';
 import { EventStream } from './features/session/EventStream.js';
 import { PermissionModal } from './features/permission/PermissionModal.js';
 import { AskUserModal } from './features/ask-user/AskUserModal.js';
-import { ProviderSettings } from './features/provider/ProviderSettings.js';
+import { SettingsModal } from './features/settings/SettingsModal.js';
 import { QuickAskPopover } from './features/quick-ask/QuickAskPopover.js';
 import { useSessionCompleteNotification } from './features/notifications/useSessionCompleteNotification.js';
 import { FilePanel } from './features/code/FilePanel.js';
@@ -174,15 +174,7 @@ export default function App(): JSX.Element {
     setQueueState,
   ]);
 
-  // Esc 关 settings 面板
-  useEffect(() => {
-    if (!showSettings) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setShowSettings(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [showSettings]);
+  // (Esc 关 settings 面板已下放到 SettingsModal 自己 own —— 见 features/settings/SettingsModal.tsx)
 
   // OC-11: SystemNotice 的 "Provider settings" 按钮派发 CustomEvent —— 这里接住
   // 打开 Settings 模态，让 auth/quota 错误一键能跳转到改 key 的界面。
@@ -272,7 +264,9 @@ export default function App(): JSX.Element {
     return (
       <>
         <Shell />
-        {showSettings && <ProviderSettings onClose={() => setShowSettings(false)} />}
+        {showSettings && (
+          <SettingsModal initialTab="providers" onClose={() => setShowSettings(false)} />
+        )}
         <QuickAskPopover open={showQuickAsk} onClose={() => setShowQuickAsk(false)} />
       </>
     );
@@ -334,7 +328,9 @@ export default function App(): JSX.Element {
 
       <PermissionModal />
       <AskUserModal />
-      {showSettings && <ProviderSettings onClose={() => setShowSettings(false)} />}
+      {showSettings && (
+        <SettingsModal initialTab="providers" onClose={() => setShowSettings(false)} />
+      )}
     </div>
   );
 }
