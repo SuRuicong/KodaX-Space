@@ -7,6 +7,61 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 > **Historical gap note**: this file 0.1.3 / 0.1.4 / 0.1.5 / 0.1.6 没有正式 section。
 > 期间 ship 的 features (F019/F020/F021/F022 + F005 sidebar overhaul / F011 / F026 / F038 等)
 > 见 `docs/FEATURE_LIST.md` 真理源 + `git log v0.1.2..v0.1.7`。本 v0.1.7 起恢复正常 changelog 流程。
+>
+> **v0.1.7 状态**：tagged 但**release 撤回**(installer 白屏 + sessions 加载 bug)。
+> v0.1.7 内容 (F011/F023/F024/F026/F038) 跟 v0.1.8 一起发。GitHub Releases 顶部仍是 v0.1.5，
+> 0.1.7 这条 section 留作历史记录、git log 引用入口。
+
+## [0.1.8] - pending KodaX SDK 0.7.46 npm publish
+
+### Theme
+
+**v0.1.7 dogfood 修复 + polish + project menu + tool registry + permission batch.**
+
+v0.1.7 broken release 后立刻锁回 main，累积 7 项工作 + 把白屏类回归装上 CI gate。
+原本 v0.1.6 (F011 + F026 + F038) + v0.1.7 (F023 + F024) 计划的 ship 内容随本 release 一起发。
+
+### Added
+
+- **CSP inline-script hash** ([0169316](https://github.com/icetomoyo/KodaX-Space/commit/0169316)) — `apps/desktop/electron/csp-config.ts` 抽常量 `THEME_BOOTSTRAP_INLINE_HASH`，注入 prod CSP `script-src`。带启动期 drift guard 单测：动 inline script 忘改 hash → CI fail + 打印新期望值。
+- **HelpOverlay 跨平台快捷键显示** ([95b151f](https://github.com/icetomoyo/KodaX-Space/commit/95b151f)) — `Mod`/`Alt`/`Shift`/`Meta` sentinel，按 `window.kodaxSpace.platform` 翻译。Mac 显示 ⌘/⌥/⇧，Win/Linux 显示 Ctrl/Alt/Shift。6 个 formatKey 单测。
+- **Release pipeline renderer-boot last gate** ([108c434](https://github.com/icetomoyo/KodaX-Space/commit/108c434)) — `tests/e2e/renderer-boot.spec.ts` 用 launchSpace fixture + 4 个断言（no React error / no pageerror / `#root` 有 child / preload bridge 存在）。listeners 在 `domcontentloaded` 之前挂（抓 React #310 同步首屏崩）。release.yml ubuntu leg 跑，fail 拦 release job。
+- **F043 项目级 contextmenu** ([0e929a8](https://github.com/icetomoyo/KodaX-Space/commit/0e929a8) + [1dbdaa2](https://github.com/icetomoyo/KodaX-Space/commit/1dbdaa2)) — 右键项目节点：Rename (inline edit) / Archive / Remove from Space。
+  - 2 新 IPC：`project.recent.rename` + `project.recent.setArchived`；都走 `projectStore.assertAllowed` （path-probing 防御）
+  - `archived=false` 时 omit 字段（清洁序列化）；Archived 项目折叠到底部 "Archived (N)" 分组，opacity-60
+  - Inline rename：blur=cancel, Enter=commit (review HIGH 双 fire 已修)
+  - Remove 走 confirm dialog 二次确认，body 明示"不动文件夹"
+  - 11 个 ProjectStore 单测
+- **OC-21 ToolRegistry** ([a6ec112](https://github.com/icetomoyo/KodaX-Space/commit/a6ec112)) — `bubbles.tsx` 的 `if (toolName === ...)` if-chain 重构成 registry-driven lookup。新工具加渲染只需 `registerToolInputRenderer(toolName, fn)`，不改 bubbles。
+  - Renderer 是 pure function 返 `JSX.Element | null`，需要 hooks 的 renderer (multi_edit) 让返回 JSX 内嵌使用 hooks 的子组件
+  - 内置 write/edit/multi_edit 通过 side-effect import 注册
+  - 任意未注册工具走 raw-JSON collapse fallback（带 Show full / Collapse）
+  - 7 个 registry 单测
+- **KX-I-05 智能权限批处理 modal** ([57333c1](https://github.com/icetomoyo/KodaX-Space/commit/57333c1)) — 队列头部 ≥ 2 个同 session 非 danger 请求合并成 batch view。
+  - 顶部 Allow all (N) / Deny all (N) + 每行独立 Allow/Deny 兜底
+  - DANGER request 永远不入 batch（hard rule）
+  - 答复用 Promise.all 并发；try/finally 防 IPC throw 让 busy 卡死（review HIGH 修）
+  - 10 个 selectPermissionBatch 单测
+
+### Fixed (v0.1.7 dogfood 收尾)
+
+- **ProjectTree React Rules of Hooks 违例** ([a74fc02](https://github.com/icetomoyo/KodaX-Space/commit/a74fc02), GPT 协助诊断) — early-return 卡在 useMemo + useCallback 中间，第一次启动空 project 时不调后续 hooks，project 加载后 hooks 顺序变 → React error #310 → renderer 崩 → 白屏。修法：early return 挪到所有 hooks 后面。
+- **dev.mjs Vite 5173 端口守卫** ([a74fc02](https://github.com/icetomoyo/KodaX-Space/commit/a74fc02), GPT 协助) — 旧 vite 进程占着 5173 时 wait-on 通过、新 vite 失败，electron 加载旧 server 的状态出现白屏。`isPortOpen` 预检 + 清晰错误 + Win PowerShell 帮助命令。
+- **CI `SKIP_PTY_TESTS=1`** ([1ca85be](https://github.com/icetomoyo/KodaX-Space/commit/1ca85be)) — F011 PTY spec 在 GitHub Actions headless 环境（特别是 macOS）spawn 真 shell 不稳。CI 跳过这 8 个；本地 dev + smoke-pack + 用户实际运行验证。
+
+### Diagnostics
+
+- **`scripts/diag-sessions-load.mjs`** ([f94bc7a](https://github.com/icetomoyo/KodaX-Space/commit/f94bc7a)) — Playwright 启 prod build Electron 指向真 `~/.kodax`，读 zustand store 也调 IPC，dump JSON。Read-only 不动用户数据。任何 release 前一键确认 renderer 真起得来 + sessions 真路径不是占位 `/`。
+
+### Acknowledged but not fixed in 0.1.8
+
+- F042 NAPI native helpers — 仍 deferred 等真实性能数据
+- F018 PRD 全集 Quick Ask / F015 Repointel warm API — 等 KodaX SDK 暴露
+- 累计 LOW 项（z-index 不一致、a11y treeitem role、HelpOverlay 静态 array key 等）— polish pass 一次性收
+
+### Pending before tag
+
+- KodaX SDK 0.7.46 npm publish — listSessions fast-path 漏 `gitRoot` 字段 + hard cap 10 修复在源码已 ready 但还没 publish。Space 锁回 `^0.7.46` 后 bump + tag。
 
 ## [0.1.7] - 2026-06-06
 

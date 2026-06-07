@@ -114,7 +114,8 @@ export function ProjectContextMenu({
   return (
     <div
       ref={ref}
-      className="fixed z-[60] min-w-[180px] bg-zinc-950 border border-zinc-800 rounded shadow-2xl text-xs py-1"
+      // z-[100] 对齐 SessionContextMenu (一致 z-stack 减少未来万一双 menu 同屏时的层级 bug)
+      className="fixed z-[100] min-w-[180px] bg-zinc-950 border border-zinc-800 rounded shadow-2xl text-xs py-1"
       style={{ left, top }}
       role="menu"
       aria-label={`${project.name} actions`}

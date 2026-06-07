@@ -126,13 +126,16 @@ export function HelpOverlayController(): JSX.Element | null {
             <section key={g.title}>
               <h3 className="text-[10px] uppercase tracking-wider text-fg-muted mb-2">{g.title}</h3>
               <ul className="space-y-1.5 text-[11px]">
-                {g.items.map((it, i) => (
-                  <li key={i} className="flex items-center justify-between gap-2">
+                {g.items.map((it) => (
+                  // GROUPS 是 module-level const，label 字符串足够稳定唯一作 key —
+                  // 比 array index 更经得起未来 GROUPS 重排时的 React 重用 (review LOW)
+                  <li key={it.label} className="flex items-center justify-between gap-2">
                     <span className="text-fg-secondary truncate">{it.label}</span>
                     <span className="flex items-center gap-1 flex-shrink-0">
-                      {it.keys.map((k, j) => (
+                      {it.keys.map((k) => (
                         <kbd
-                          key={j}
+                          // 单 shortcut 内 key 序列各 modifier+letter 已天然唯一
+                          key={k}
                           className="px-1.5 py-0.5 border border-border-default rounded bg-surface-2 text-fg-primary text-[10px] font-mono"
                         >
                           {formatKey(k, platform)}

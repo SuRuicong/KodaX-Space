@@ -1,6 +1,11 @@
 # KodaX Space Feature List
 
-> Last Updated: 2026-06-06 (账本校准：把"实际 ship 但状态写 Planned 的项"全部纠正。v0.1.7 ship = F011+F023+F024+F026+F038（含 F026 ⌘Shift+P 替换 ⌘K 解 F018 冲突）+ 此前 v0.1.3-v0.1.5 期间已发但未及时同步状态的 F015 partial / F016 / F019 / F020 / F022 / F036 / F037 / F039 / F040 / F041。明确 Deferred：F012/F013 被 F037/F036/F039 取代；F014 并入 F042 NAPI 合并版；F017 等 SDK teleport API；F018 Quick Ask 与 F026 冲突解决后保留 Partial（PRD 全集留 v0.1.8）。)
+> Last Updated: 2026-06-07 (v0.1.8 work-in-progress：7 项已 ship 到 main，等 KodaX SDK 0.7.46 publish 后 bump + tag。
+> v0.1.8 内容：CSP inline-script hash 修复 / HelpOverlay 跨平台快捷键显示 / OC-25 代码块复制 (已存在) /
+> release pipeline renderer-boot last gate / F043 项目级 contextmenu (rename/archive/remove) /
+> OC-21 ToolRegistry tool 卡可扩展渲染 / KX-I-05 智能权限批处理 modal。)
+> Earlier note (2026-06-06)：账本校准把"实际 ship 但状态写 Planned 的项"全部纠正。v0.1.7 ship = F011+F023+F024+F026+F038。
+> Deferred：F014 并入 F042；F017 等 SDK teleport；F018 PRD 全集留 v0.1.9+ 等 SDK sideQuery。
 >
 > **2026-05-18 form-factor reset**：alpha.0 的 UI 形态偏 IDE，alpha.1 按 [ADR-004](ADR/ADR-004-panel-model.md) 重构对齐 Claude Desktop 中的 Claude Code。F006/F008/F009 标记重做（main 端保留）；新增 F011-revised / F012-revised。详见下面 "v0.1.0-alpha.1 重构 plan" 区段。
 >
@@ -44,6 +49,7 @@
 | ~~025~~ | ~~NAPI native-diff~~ — 2026-06-05 合并入 [F042](features/v0.1.4.md#feature_042-napi-native-helpers合并版) | ~~Refactor~~ | — | — | Merged | — |
 | 026 | ⌘Shift+P 命令面板（JS fuzzy MVP） | New | High | v0.1.7 | Completed | [v0.1.4.md#026](features/v0.1.4.md#feature_026-shiftp-命令面板js-fuzzy-mvp) |
 | 042 | NAPI native-helpers（合并 F014 tokenizer + F025 diff + F026b fuzzy） | Refactor | Low | v0.1.x+ | Deferred | [v0.1.4.md#042](features/v0.1.4.md#feature_042-napi-native-helpers合并版) |
+| 043 | 项目级 contextmenu（rename / archive / remove from Space） — codex 形态对齐 | New | High | v0.1.8 | Completed | [v0.1.8.md#043](features/v0.1.8.md#feature_043-项目级-contextmenu) |
 | ~~027~~ | ~~代码签名 + notarize~~ — 2026-06-05 移除，KodaX Space 不走"陌生人公开 Beta"路径 | ~~Internal~~ | — | — | Dropped | — |
 | ~~028~~ | ~~隐私政策 + 文档站~~ — 同上 | ~~Internal~~ | — | — | Dropped | — |
 | 029 | Permission Mode canonical 3 + Auto engine 子档 | Refactor | Critical | v0.1.0-alpha.1 | Completed | [v0.1.0.md#029](features/v0.1.0.md#feature_029-permission-mode-canonical-3--auto-engine-子档) |
@@ -204,8 +210,9 @@ OC-01~50 (50) + KX-I-01~09 (9) — 见下方「opencode 对标批次」段；穿
 | **v0.1.4** | Power features | （重组散到 v0.1.7：F023/F024/F026 + F042 deferred） | — |
 | **v0.1.5** | Sidebar overhaul + review closeout | ✅ F021 mcpb + F039/F040/F041 + F005 + B1/C3 review long-tail + F019/F020/F022 closeout | 2026-Q4 |
 | **v0.1.6** | Internal milestone | F011 + F026 + F038 — 合并进 v0.1.7 release，无独立 tag | — |
-| **v0.1.7** | Terminal + preview + palette | ✅ F011 真 PTY + F023 多 tab + F024 富预览 + F026 ⌘Shift+P 命令面板 + F038 持久化 | 2026-06-06 |
-| **v0.1.8+** | F015 warm / F018 Quick Ask 全集 / OC+KX-I 批次 | TBD |
+| **v0.1.7** | Terminal + preview + palette | ⚠️ 已 ship 但 release tag 撤掉（v0.1.7 binary 有白屏 + sessions 加载 bug）；内容合并进 v0.1.8 | 撤 |
+| **v0.1.8** | Polish + project menu + tool registry + permission batch | ✅ CSP fix + HelpOverlay 跨平台 + OC-25 已实现 + renderer-boot gate + F043 项目 contextmenu + OC-21 ToolRegistry + KX-I-05 智能权限批 — 等 KodaX SDK 0.7.46 publish 后 bump + tag | 2026-06-07 |
+| **v0.1.9+** | F015 warm / F018 Quick Ask 全集 / 其它 OC+KX-I 批次 | TBD |
 | **v0.1.x+** | NAPI native-helpers | F042（F014 + F025 + F026b）— 等 F026 上线后用数据决定启动 | TBD |
 | **v0.1.8** | 工具渲染 + 事件架构 + 智能（opencode 批次） | ToolRegistry + 全局 session bus + 智能权限批处理 + Quick Ask 智能升级 | 2026-Q4 |
 | **v0.1.9** | Provider/Model 智能 + i18n + UI 基建（opencode 批次） | 任务感知 model 路由 + 中/英 i18n + 命令面板 + 设置弹窗 | 2026-Q4 末 |
