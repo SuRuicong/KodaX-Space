@@ -148,26 +148,21 @@ export async function listPersistedSessions(opts: {
   readonly projectRoot?: string;
   readonly limit?: number;
 }): Promise<PersistedSessionMeta[]> {
-  // ⚠️ SDK cross-project filter bug workaround (v0.1.9)
+  // SDK 0.7.46 (FEATURE_219) 修了之前的 cross-project filter bug —— listSessions
+  // 不再 fast-path fallback 到 process.cwd 的 gitRoot。同时引入了**真实** archived
+  // session 概念（archiveSession / unarchiveSession）+ `archived` 字段。
   //
-  // SDK listSessions fast path (storage.ts:1057-1071) 在 caller 不传 gitRoot 时
-  // 自动 fallback 到 process.cwd() 的 git root，然后过滤掉非 same-workspace 的
-  // session。Space 跑在 KodaX-Space 项目下 → currentGitRoot=Space → 其它项目
-  // (例如 KodaX 项目 443 个 session) 全部被吞，只看到 9 个 Space 自己的。
+  // 之前 v0.1.9 我们在 0.7.45 上用 `includeArchived: true` 强制 slow path 绕开
+  // bug ——这条 trick 现在反过来**有反效果**：会把用户 archive 掉的 session 拉回
+  // 主列表。所以恢复默认（不传 includeArchived 等于 false），archived session
+  // 只在用户显式开"Show archived" UI 时才取。
   //
-  // 短期 workaround：传 `includeArchived: true` 强制走 slow path。slow path
-  // 没有这个 gitRoot 过滤行为 (见 public-api.ts:142-201)，会返回磁盘上所有
-  // scope='user' 的 session，让 Space 多项目 sidebar 拿全量。当前 SDK 没有
-  // 真实 archived session（archive 功能未实现），includeArchived=true 不引入
-  // 副作用；将来 SDK 加 archive 后，本调用 + renderer 显示策略再调整。
-  //
-  // 已写需求给 KodaX team：fast path 不应在 caller 不传 gitRoot 时 fallback
-  // 到 process.cwd()。caller 不传 = 想要所有 session，不是想要当前 workspace。
+  // archived UI 入口本版本未做（v0.1.10+ 单独 feature 接 SDK 原生 archiveSession）；
+  // 当前实际效果 = 用户 archive 后 session 从 sidebar 消失，符合预期。
   const summaries = await activeImpl.listSessions({
     projectRoot: opts.projectRoot,
     scope: 'user',
     limit: opts.limit ?? 200,
-    includeArchived: true,
   });
   return summaries.map((s) => ({
     sessionId: s.id,
