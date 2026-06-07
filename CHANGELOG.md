@@ -12,7 +12,62 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 > v0.1.7 内容 (F011/F023/F024/F026/F038) 跟 v0.1.8 一起发。GitHub Releases 顶部仍是 v0.1.5，
 > 0.1.7 这条 section 留作历史记录、git log 引用入口。
 
-## [0.1.8] - pending KodaX SDK 0.7.46 npm publish
+## [0.1.9] - 2026-06-08
+
+### Theme
+
+**Multimodal input + smart popout director + Codex parity polish.**
+
+合并 release: SDK 0.7.46 publish 解锁了 v0.1.8 的 tag 阻塞,本版本同时带 9 项新增。
+**v0.1.8 不单独 tag** — 内容见下方 [0.1.8] section,功能同样进 v0.1.9 binary。
+
+详细 design doc: [`docs/features/v0.1.9.md`](docs/features/v0.1.9.md)
+
+### Added
+
+- **OC-31 image paste 多模态输入** ([a0933f5](https://github.com/icetomoyo/KodaX-Space/commit/a0933f5)) — composer 直接粘贴 PNG/JPEG/WEBP 截图,缩略图 chip 在 textarea 上方,发送时 SDK 通过 `KodaXContextOptions.inputArtifacts` 拼成 multimodal content block 喂给 LLM。
+  - 新 IPC `clipboard.saveImage` + `clipboard.cleanupSession`: app temp dir per-session 子目录,dir 0o700 / file 0o600
+  - 6 MiB / 张 + 8 张 / turn 上限;decoded buffer 主进程二次 enforce 防 base64 编码 inflation 绕过
+  - `assertArtifactPathInClipboardSandbox` 在 `session.send` 处校验 artifacts[].path 在 `<root>/<本次 sid>/` 之内,防恶意 renderer 传 `/etc/passwd` 让 SDK 读任意文件
+  - 12 个 clipboard 单测 (sandbox / path traversal / mime / 0o600 mode / decoded size)
+- **KX-I-02 Smart Popout Director** ([708a108](https://github.com/icetomoyo/KodaX-Space/commit/708a108)) — session events 首次出现 plan/diff/tasks 信号时**自动展开**对应 right popout,每 (session, kind) 一次。
+  - 优先级 tasks > plan > diff;activePopout 非 null 不抢;用户手动开/关 popout 也 mark promoted (不打扰)
+  - PreferencesPanel 加 toggle, lsKey `kodax-space.smartPopoutEnabled` 持久化
+  - rules.ts pure function + 20 单测
+- **Sidebar resize + 宽度持久化 (Codex parity)** ([d22c935](https://github.com/icetomoyo/KodaX-Space/commit/d22c935)) — 左/右侧栏可拖,默认 260/320 px,上下限 180-520 clamp,双击 reset,Esc 取消;aside 默认基础字号 [13px] 对齐 Codex 视觉。
+- **F040 项目拖排 + Archived 折叠持久化** ([5cc44ed](https://github.com/icetomoyo/KodaX-Space/commit/5cc44ed)) — LeftSidebar 项目 row HTML5 DnD 拖排,`projectOrder` 持久化 lsKey;"Archived (N)" 折叠状态走 store + LS 重启保留;projectOrder 非空时仍 pin current 到最顶。9 reducer 单测。
+- **F040 项目 session cap 8 + ProjectSessionPicker** ([a57df0e](https://github.com/icetomoyo/KodaX-Space/commit/a57df0e)) — sidebar 单项目默认显示 8 条,超出 "+N more" 弹覆层全量搜索;切到那条自动归属对应 project。
+- **OC-29 unified Settings modal** ([7d5f459](https://github.com/icetomoyo/KodaX-Space/commit/7d5f459)) — 旧 SettingsPopover + ProviderSettings 合并到 2-tab modal (Preferences / Providers);切 tab 用 `hidden` 不 unmount,保留 in-progress 编辑;正确 ARIA tablist/tab/aria-selected。
+- **OC-21 result-side ToolRegistry** ([5cb281a](https://github.com/icetomoyo/KodaX-Space/commit/5cb281a)) — tool result 区也走 registry,跟 v0.1.8 ship 的 input-side 对称;本版不注册内置 (零行为变更),纯留扩展位。
+- **8 个 e2e 测试** ([d32808a](https://github.com/icetomoyo/KodaX-Space/commit/d32808a)) — settings-modal x2, sidebar-resize x2, project-reorder x3 + 1。13/13 e2e 全绿。
+
+### Fixed
+
+- **SDK 0.7.46 cross-project filter** ([23ffa5e](https://github.com/icetomoyo/KodaX-Space/commit/23ffa5e) / [d410032](https://github.com/icetomoyo/KodaX-Space/commit/d410032) / [304e638](https://github.com/icetomoyo/KodaX-Space/commit/304e638)) — SDK 0.7.45 listSessions fast-path 在 caller 不传 gitRoot 时 fallback 到 process.cwd → Space 只看到自家项目 session,KodaX 项目下数百 session 消失。
+  - v0.1.9 三次迭代:`includeArchived: true` workaround → `before: '2999-...'` sentinel → SDK 0.7.46 storage.list 加 `this.hostCwd ?` 守门后撤掉所有 workaround,纯净调用
+- **Markdown code block copy 按钮看不清 + 缩进闪烁** ([ee91e18](https://github.com/icetomoyo/KodaX-Space/commit/ee91e18)) — hover 出来对比度太弱;包 `M packages/...` 等纯文本被 rehype-highlight 误识别成 diff/perl 让第一行变粉红。copy 按钮 opacity-60 + border 常驻;detect:false 防纯文本误识别。
+- **Release review HIGH** ([69ed136](https://github.com/icetomoyo/KodaX-Space/commit/69ed136)):
+  - removeSession 漏清 `inputHistoryBySession / pendingSendBySession / sessionFlags`, long-lived 累积
+  - ResizeHandle 拖动中 unmount, 3 个 window listener 不 detach → closure leak
+
+### SDK 升级
+
+- `@kodax-ai/kodax`: `^0.7.45` → `^0.7.46`
+  - FEATURE_219 真实 archive (archiveSession / unarchiveSession + SessionSummary.archived/projectKey)
+  - listSessions cross-project bug 修了 (见上方 Fixed)
+  - 自动迁移 flat → `<sessionsDir>/<projectKey>/<sid>.jsonl` per-project 目录布局,Space 透明感知
+
+### Verified
+
+- typecheck pass
+- 553/553 unit tests pass (本版 +41: 12 clipboard / 20 director / 9 reorder)
+- 13/13 e2e tests pass (本版 +8)
+- build:smoke pass
+- renderer-boot e2e pass (Linux CI leg)
+- code-reviewer: 0 CRITICAL / 0 HIGH (本版 2 HIGH 已 fix)
+- security-reviewer: 0 CRITICAL / 0 HIGH (image paste sandbox + cross-project list 都 clean)
+
+## [0.1.8] - 2026-06-07 (released as part of v0.1.9 — see above)
 
 ### Theme
 
