@@ -66,7 +66,7 @@ export function PreviewPanel(): JSX.Element {
   return (
     <div className="h-full flex flex-col">
       <form
-        className="px-3 py-2 border-b border-zinc-900 flex-shrink-0"
+        className="px-3 py-2 border-b border-border-default flex-shrink-0"
         onSubmit={(e) => {
           e.preventDefault();
           setPath(pathInput.trim());
@@ -77,12 +77,12 @@ export function PreviewPanel(): JSX.Element {
           value={pathInput}
           onChange={(e) => setPathInput(e.target.value)}
           placeholder="path/to/file.ts (relative to project root)"
-          className="w-full bg-zinc-900 border border-zinc-800 text-xs text-zinc-200 px-2 py-1 rounded focus:outline-none focus:border-zinc-700"
+          className="w-full bg-surface-2 border border-border-default text-xs text-fg-primary px-2 py-1 rounded focus:outline-none focus:border-border-strong"
         />
       </form>
       <div className="flex-1 min-h-0 relative">
         {!path && (
-          <div className="absolute inset-0 flex items-center justify-center text-zinc-600 text-xs">
+          <div className="absolute inset-0 flex items-center justify-center text-fg-faint text-xs">
             Enter a path above.
           </div>
         )}
@@ -90,18 +90,20 @@ export function PreviewPanel(): JSX.Element {
           <RichPreview projectRoot={projectRoot} path={path} kind={richKind} />
         )}
         {richKind === null && busy && (
-          <div className="absolute inset-0 flex items-center justify-center text-zinc-500 text-xs">loading…</div>
+          <div className="absolute inset-0 flex items-center justify-center text-fg-muted text-xs">
+            loading…
+          </div>
         )}
         {richKind === null && err && (
           <div className="p-3 text-xs text-red-400 font-mono">{err}</div>
         )}
         {richKind === null && !busy && !err && file?.truncated && (
-          <div className="flex items-center justify-center h-full text-xs text-zinc-500 p-4 text-center">
+          <div className="flex items-center justify-center h-full text-xs text-fg-muted p-4 text-center">
             File too large ({(file.size / 1048576).toFixed(2)} MB) — viewer cap is 5 MB.
           </div>
         )}
         {richKind === null && !busy && !err && file?.isBinary && (
-          <div className="flex items-center justify-center h-full text-xs text-zinc-500 p-4 text-center">
+          <div className="flex items-center justify-center h-full text-xs text-fg-muted p-4 text-center">
             <code className="font-mono">{path}</code> appears to be binary.
           </div>
         )}

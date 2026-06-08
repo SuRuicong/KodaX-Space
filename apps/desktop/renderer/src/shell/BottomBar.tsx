@@ -8,6 +8,7 @@
 // 取代旧 EventStream 底部 InputBox 区。
 
 import { useEffect, useRef, useState } from 'react';
+import { ArrowUp, Plus, X } from 'lucide-react';
 import type { InputArtifact, SessionMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 import { ChipBar } from './ChipBar.js';
@@ -94,9 +95,8 @@ function deriveTitle(prompt: string): string | null {
   if (trimmed.startsWith('/')) return null;
   // 取前 N 字符，单行
   const oneLine = trimmed.replace(/\s+/g, ' ');
-  const sliced = oneLine.length > TITLE_MAX_CHARS
-    ? oneLine.slice(0, TITLE_MAX_CHARS).trimEnd() + '…'
-    : oneLine;
+  const sliced =
+    oneLine.length > TITLE_MAX_CHARS ? oneLine.slice(0, TITLE_MAX_CHARS).trimEnd() + '…' : oneLine;
   return sliced;
 }
 function tokenizeArgs(rest: string): string[] {
@@ -129,7 +129,9 @@ export function BottomBar(): JSX.Element {
   const setPendingSend = useAppStore((s) => s.setPendingSend);
   const appendInputHistory = useAppStore((s) => s.appendInputHistory);
   const inputHistory = useAppStore((s) =>
-    currentSessionId ? s.inputHistoryBySession[currentSessionId] ?? EMPTY_INPUT_HISTORY : EMPTY_INPUT_HISTORY,
+    currentSessionId
+      ? (s.inputHistoryBySession[currentSessionId] ?? EMPTY_INPUT_HISTORY)
+      : EMPTY_INPUT_HISTORY,
   );
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
@@ -319,7 +321,9 @@ export function BottomBar(): JSX.Element {
         continue;
       }
       if (b.size > MAX_PASTE_BYTES) {
-        setImageErr(`Image too large: ${formatBytes(b.size)}. Max ${formatBytes(MAX_PASTE_BYTES)}.`);
+        setImageErr(
+          `Image too large: ${formatBytes(b.size)}. Max ${formatBytes(MAX_PASTE_BYTES)}.`,
+        );
         continue;
       }
       if (pendingImages.length + accepted.length >= MAX_PENDING_IMAGES) {
@@ -396,7 +400,9 @@ export function BottomBar(): JSX.Element {
         args,
       });
       if (!result.ok) {
-        setErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`);
+        setErr(
+          `${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`,
+        );
         return;
       }
       const { ok, message, echo, clearStream, unknownCommand } = result.data;
@@ -468,7 +474,10 @@ export function BottomBar(): JSX.Element {
         else if (ev.kind === 'session_complete' || ev.kind === 'session_error') {
           // 跳过这条 lifecycle event 继续往前收
           continue;
-        } else if (lastText.length > 0 && (ev.kind === 'tool_result' || ev.kind === 'session_start')) {
+        } else if (
+          lastText.length > 0 &&
+          (ev.kind === 'tool_result' || ev.kind === 'session_start')
+        ) {
           break;
         }
       }
@@ -497,7 +506,12 @@ export function BottomBar(): JSX.Element {
       let maxIter = 0;
       for (const ev of events) {
         if (ev.kind === 'iteration_end') {
-          const e = ev as { iter?: number; maxIter?: number; tokenCount?: number; usage?: { inputTokens?: number; outputTokens?: number } };
+          const e = ev as {
+            iter?: number;
+            maxIter?: number;
+            tokenCount?: number;
+            usage?: { inputTokens?: number; outputTokens?: number };
+          };
           if (typeof e.iter === 'number') lastIter = e.iter;
           if (typeof e.maxIter === 'number') maxIter = e.maxIter;
           if (typeof e.tokenCount === 'number') totalTokens = e.tokenCount;
@@ -570,17 +584,27 @@ export function BottomBar(): JSX.Element {
 
     if (action === 'show-repointel') {
       // events buffer 倒序找最近 8 条 repointel_trace
-      const traces: Array<{ kind: string; mode?: string; engine?: string; status?: string; latencyMs?: number; cacheHit?: boolean }> = [];
+      const traces: Array<{
+        kind: string;
+        mode?: string;
+        engine?: string;
+        status?: string;
+        latencyMs?: number;
+        cacheHit?: boolean;
+      }> = [];
       for (let i = events.length - 1; i >= 0 && traces.length < 8; i--) {
         const ev = events[i];
         if (ev.kind === 'repointel_trace') {
           // event 字段在 ZodSchema 中是 nested 在 .event 里
-          const e = (ev as { event?: typeof traces[number] }).event;
+          const e = (ev as { event?: (typeof traces)[number] }).event;
           if (e) traces.unshift(e);
         }
       }
       if (traces.length === 0) {
-        appendUserMessage(sessionId, '[repointel] no traces yet — KodaX repo-intelligence has not emitted any events this session');
+        appendUserMessage(
+          sessionId,
+          '[repointel] no traces yet — KodaX repo-intelligence has not emitted any events this session',
+        );
         return;
       }
       const lines = [
@@ -611,7 +635,9 @@ export function BottomBar(): JSX.Element {
         appendUserMessage(sessionId, '[review] no project / IPC unavailable');
         return;
       }
-      const r = await window.kodaxSpace.invoke('project.gitDiff', { projectRoot: currentProjectPath });
+      const r = await window.kodaxSpace.invoke('project.gitDiff', {
+        projectRoot: currentProjectPath,
+      });
       if (!r.ok) {
         appendUserMessage(sessionId, `[review] git diff failed: ${r.error?.message ?? 'unknown'}`);
         return;
@@ -630,7 +656,9 @@ export function BottomBar(): JSX.Element {
         return;
       }
       // 把模板 + diff 塞入 textarea (替换当前 prompt) — 用户审阅后按 Send
-      const truncationNote = r.data.truncated ? '\n\n*(diff truncated at 64KB — full review may need narrower scope)*' : '';
+      const truncationNote = r.data.truncated
+        ? '\n\n*(diff truncated at 64KB — full review may need narrower scope)*'
+        : '';
       const template = [
         'Please review the following uncommitted changes vs HEAD. For each meaningful change:',
         '- Note correctness bugs or edge cases',
@@ -656,7 +684,10 @@ export function BottomBar(): JSX.Element {
       }
       const r = await window.kodaxSpace.invoke('session.listRunning', undefined);
       if (!r.ok) {
-        appendUserMessage(sessionId, `[status] listRunning failed: ${r.error?.message ?? 'unknown'}`);
+        appendUserMessage(
+          sessionId,
+          `[status] listRunning failed: ${r.error?.message ?? 'unknown'}`,
+        );
         return;
       }
       const peers = r.data.peers;
@@ -667,7 +698,12 @@ export function BottomBar(): JSX.Element {
       const lines = [`[status] ${peers.length} other peer instance(s):`];
       for (const p of peers) {
         const ageSec = Math.max(0, Math.floor((Date.now() - p.startedAt) / 1000));
-        const ageLabel = ageSec < 60 ? `${ageSec}s` : ageSec < 3600 ? `${Math.floor(ageSec / 60)}m` : `${Math.floor(ageSec / 3600)}h`;
+        const ageLabel =
+          ageSec < 60
+            ? `${ageSec}s`
+            : ageSec < 3600
+              ? `${Math.floor(ageSec / 60)}m`
+              : `${Math.floor(ageSec / 3600)}h`;
         const sid = p.sessionId ? p.sessionId.slice(0, 12) : '(bootstrapping)';
         lines.push(`  pid ${p.pid} · session ${sid} · ${ageLabel} ago · ${p.cwd}`);
       }
@@ -682,7 +718,10 @@ export function BottomBar(): JSX.Element {
       }
       const r = await window.kodaxSpace.invoke('provider.list', undefined);
       if (!r.ok) {
-        appendUserMessage(sessionId, `[doctor] provider.list failed: ${r.error?.message ?? 'unknown'}`);
+        appendUserMessage(
+          sessionId,
+          `[doctor] provider.list failed: ${r.error?.message ?? 'unknown'}`,
+        );
         return;
       }
       const providers = r.data.providers;
@@ -703,7 +742,9 @@ export function BottomBar(): JSX.Element {
       );
       const probeById = new Map(probeResults.map((x) => [x.id, x]));
 
-      const lines: string[] = [`[doctor] ${providers.length} provider(s), default = ${r.data.defaultProviderId ?? '(none)'}, keychain = ${r.data.keychainBackend}`];
+      const lines: string[] = [
+        `[doctor] ${providers.length} provider(s), default = ${r.data.defaultProviderId ?? '(none)'}, keychain = ${r.data.keychainBackend}`,
+      ];
       for (const p of providers) {
         const isDefault = p.id === r.data.defaultProviderId ? ' ★' : '';
         const keyStatus = p.configured ? '✓ key' : '⨯ no key';
@@ -772,7 +813,9 @@ export function BottomBar(): JSX.Element {
       setPendingSend(sessionId, false);
       // v0.1.4 B3: 失败 → 回滚刚 echo 的 user message，避免对话流挂着孤气泡
       rollbackLastUserMessage(sessionId, skillEcho);
-      setErr(`${sendResult.error?.code ?? 'ERR_UNKNOWN'}: ${sendResult.error?.message ?? 'unknown error'}`);
+      setErr(
+        `${sendResult.error?.code ?? 'ERR_UNKNOWN'}: ${sendResult.error?.message ?? 'unknown error'}`,
+      );
     } else if (sendResult.data.queued) {
       pushToast('Queued — will run after the current turn finishes', 'info');
     }
@@ -884,7 +927,9 @@ export function BottomBar(): JSX.Element {
         if (imagesAtSend.length > 0) {
           setPendingImages((prev) => (prev.length === 0 ? imagesAtSend : prev));
         }
-        setErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`);
+        setErr(
+          `${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`,
+        );
       } else if (result.data.queued) {
         // v0.1.4 B1: session 正在跑，prompt 进了 KodaX SDK MessageQueue。spinner 已经亮
         // （上一轮在跑），不动 pendingSend。toast 提示用户消息已排队，不必再追着发。
@@ -939,7 +984,6 @@ export function BottomBar(): JSX.Element {
     else pushToast(r.error?.message ?? 'Cancel failed', 'error');
   }
 
-
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
     if (e.key === 'Enter' && !e.shiftKey) {
       // F031: slash 模式下让 SlashCommandPopover 的 onPick (window keydown) 处理 Enter
@@ -966,8 +1010,7 @@ export function BottomBar(): JSX.Element {
       if (e.key === 'ArrowUp' && isOnFirstLine) {
         // 首次按 ↑ → 保存 draft，然后取最近一条
         if (historyIdx === -1) draftRef.current = value;
-        const nextIdx =
-          historyIdx === -1 ? inputHistory.length - 1 : Math.max(0, historyIdx - 1);
+        const nextIdx = historyIdx === -1 ? inputHistory.length - 1 : Math.max(0, historyIdx - 1);
         e.preventDefault();
         setHistoryIdx(nextIdx);
         setPrompt(inputHistory[nextIdx]);
@@ -988,13 +1031,7 @@ export function BottomBar(): JSX.Element {
       }
     }
     // 用户开始打字 / 输入 → 取消历史浏览态（不打扰编辑）
-    if (
-      historyIdx !== -1 &&
-      e.key.length === 1 &&
-      !e.ctrlKey &&
-      !e.metaKey &&
-      !e.altKey
-    ) {
+    if (historyIdx !== -1 && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       setHistoryIdx(-1);
       // 不还原 draft——用户已经在 history 项上手动编辑了，应当 keep 当前内容
     }
@@ -1014,7 +1051,7 @@ export function BottomBar(): JSX.Element {
     // 不应挤压 input card 的视觉重量）。card 用 zinc-900/60 衬色 + 一圈极淡 border，
     // 比"顶 border-t + 三段堆叠"更整体。
     <div className="px-3 pt-1 pb-3 flex-shrink-0 space-y-1">
-      {err && <div className="text-red-400 text-[11px] font-mono px-1">{err}</div>}
+      {err && <div className="text-danger text-xs font-mono px-1">{err}</div>}
 
       {/* 持久内联通知 (REPL NotificationsSurface 等价) — auto-engine fallback 等 */}
       <NotificationsSurface />
@@ -1035,7 +1072,7 @@ export function BottomBar(): JSX.Element {
           Claude Code "正在做什么"放在历史下方紧邻输入框上的位置感。
           这里只保留 useIsStreaming hook 的 import（Send/Stop 按钮还在用）。*/}
 
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 px-3 pt-2 pb-2 space-y-1.5 shadow-sm focus-within:border-zinc-700 transition-colors">
+      <div className="rounded-2xl border border-border-default bg-surface-2 px-3 pt-2 pb-2 space-y-1.5 shadow-sm focus-within:border-accent/50 transition-colors">
         <ChipBar />
 
         {/* OC-31 v0.1.9 — pending image chips。粘贴/拖入的图片以缩略图 + 删除按钮形式展示，
@@ -1047,7 +1084,7 @@ export function BottomBar(): JSX.Element {
                 {pendingImages.map((img, idx) => (
                   <div
                     key={img.path}
-                    className="group relative inline-flex items-center gap-1.5 bg-zinc-800/70 border border-zinc-700 rounded pl-1 pr-1.5 py-0.5 text-[10px] text-zinc-300"
+                    className="group relative inline-flex items-center gap-1.5 bg-surface-3 border border-border-default rounded-md pl-1 pr-1.5 py-0.5 text-xs text-fg-secondary"
                     title={`${img.label} · ${formatBytes(img.bytes)}`}
                   >
                     <img
@@ -1056,23 +1093,21 @@ export function BottomBar(): JSX.Element {
                       className="w-7 h-7 rounded object-cover flex-shrink-0"
                     />
                     <span className="max-w-[120px] truncate">{img.label}</span>
-                    <span className="text-zinc-500">{formatBytes(img.bytes)}</span>
+                    <span className="text-fg-muted">{formatBytes(img.bytes)}</span>
                     <button
                       type="button"
                       onClick={() => removePendingImage(idx)}
-                      className="ml-0.5 w-3.5 h-3.5 rounded-full text-zinc-400 hover:bg-zinc-700 hover:text-zinc-100 flex items-center justify-center text-[10px] leading-none"
+                      className="ml-0.5 w-4 h-4 rounded-full text-fg-muted hover:bg-hover-bg hover:text-fg-primary flex items-center justify-center leading-none"
                       aria-label={`Remove ${img.label}`}
                       title="Remove"
                     >
-                      ×
+                      <X className="w-3 h-3" />
                     </button>
                   </div>
                 ))}
               </div>
             )}
-            {imageErr && (
-              <div className="text-[10px] text-amber-400">{imageErr}</div>
-            )}
+            {imageErr && <div className="text-xs text-warn">{imageErr}</div>}
           </div>
         )}
 
@@ -1129,7 +1164,7 @@ export function BottomBar(): JSX.Element {
                   ? 'Describe a task or ask a question — Type / for commands'
                   : 'Describe a task or ask a question — session will be created on send'
             }
-            className="w-full bg-transparent text-sm text-zinc-100 placeholder-zinc-500 resize-none focus:outline-none px-0.5 py-1 pr-44 disabled:opacity-50"
+            className="w-full bg-transparent text-sm text-fg-primary placeholder-fg-muted resize-none focus:outline-none px-0.5 py-1 pr-44 disabled:opacity-50"
           />
           {/* Context window indicator + queue badge 浮在输入框右下角 */}
           <div className="absolute right-1 bottom-1 pointer-events-auto flex items-center gap-3">
@@ -1137,9 +1172,7 @@ export function BottomBar(): JSX.Element {
             <ContextWindowIndicator />
           </div>
           {/* F031: slash 补全 popover — prompt trim 后以 '/' 开头且未含空白时显示 */}
-          {slashMode && (
-            <SlashCommandPopover query={trimmedPrompt} onPick={onSlashPick} />
-          )}
+          {slashMode && <SlashCommandPopover query={trimmedPrompt} onPick={onSlashPick} />}
           {/* @path 文件补全 popover (REPL SuggestionsDisplay 等价)。slash 模式时不显示避免抢键盘。 */}
           {!slashMode && (
             <AtPathPopover
@@ -1154,7 +1187,11 @@ export function BottomBar(): JSX.Element {
                   const live = textareaRef.current;
                   if (!live) return;
                   live.focus();
-                  try { live.setSelectionRange(newCaret, newCaret); } catch { /* ignore */ }
+                  try {
+                    live.setSelectionRange(newCaret, newCaret);
+                  } catch {
+                    /* ignore */
+                  }
                   setCaret(newCaret);
                 });
               }}
@@ -1165,16 +1202,16 @@ export function BottomBar(): JSX.Element {
           )}
         </div>
 
-        <div className="flex items-center gap-2 text-[10px]">
+        <div className="flex items-center gap-2 text-[11px]">
           <div className="relative">
             <button
               type="button"
               onClick={() => setAttachOpen((v) => !v)}
-              className="w-5 h-5 rounded text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 text-sm flex items-center justify-center"
+              className="w-6 h-6 rounded-md text-fg-muted hover:bg-hover-bg hover:text-fg-primary flex items-center justify-center"
               title="Attach / Commands"
               aria-label="Open attach menu"
             >
-              ＋
+              <Plus className="w-4 h-4" />
             </button>
             <AttachMenu
               open={attachOpen}
@@ -1187,19 +1224,17 @@ export function BottomBar(): JSX.Element {
           <AgentModeSelector />
           <span className="ml-auto" />
           <ModelEffortSelector />
-          {/* Send / Stop 圆形按钮 — Claude Code / ChatGPT 同款。streaming 时变成 Stop。
-              亮 / 暗双主题: enable 态都是绿/红 + 白字 (色相饱和不变);
-              disable 态分主题做 — 暗 zinc-800 衬 zinc-500 字, 亮 zinc-300 衬 zinc-500 字,
-              保证按钮在白底卡片上仍能"看得见"而不是融化掉。 */}
+          {/* Send / Stop 按钮 (F054 hero CTA)。Send = 唯一享 .btn-accent gradient+辉光的强调按钮；
+              streaming 时变 Stop (danger 红)。disable 态用 surface-3 衬 fg-muted，白底卡片上仍可见。 */}
           {isStreaming ? (
             <button
               type="button"
               onClick={() => void handleCancel()}
-              className="ml-1 w-7 h-7 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-sm"
+              className="ml-1 w-8 h-8 rounded-lg bg-danger hover:brightness-110 text-white flex items-center justify-center shadow-sm transition-[filter]"
               title="Stop (Esc)"
               aria-label="Stop generation"
             >
-              <span aria-hidden className="block w-2.5 h-2.5 bg-white rounded-[1px]" />
+              <span aria-hidden className="block w-2.5 h-2.5 bg-white rounded-[2px]" />
             </button>
           ) : (
             <button
@@ -1207,18 +1242,13 @@ export function BottomBar(): JSX.Element {
               onClick={() => void handleSend()}
               disabled={!canSend}
               className={[
-                'ml-1 w-7 h-7 rounded-full flex items-center justify-center disabled:cursor-not-allowed shadow-sm',
-                // Enable: 暗/亮都用 emerald 绿 + 白字
-                'bg-emerald-600 hover:bg-emerald-500 text-white',
-                // Disable (dark): 暗灰圈 + 中灰箭头
-                'dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500',
-                // Disable (light): 用 zinc-300 衬底 + zinc-500 字 → 白底卡片上仍可见
-                'disabled:bg-zinc-300 disabled:text-zinc-500 disabled:shadow-none',
+                'ml-1 w-8 h-8 rounded-lg flex items-center justify-center disabled:cursor-not-allowed',
+                canSend ? 'btn-accent' : 'bg-surface-3 text-fg-muted',
               ].join(' ')}
               title={canSend ? 'Send (Enter)' : 'Type a message first'}
               aria-label="Send message"
             >
-              <span aria-hidden className="text-sm leading-none">↑</span>
+              <ArrowUp className="w-4 h-4" strokeWidth={2.25} />
             </button>
           )}
         </div>

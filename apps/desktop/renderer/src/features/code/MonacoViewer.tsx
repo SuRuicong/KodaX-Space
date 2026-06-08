@@ -67,7 +67,7 @@ export function MonacoViewer({ path, content }: MonacoViewerProps): JSX.Element 
         // 隐藏 readonly tooltip 闪一下"Cannot edit..."
         readOnlyMessage: { value: '' },
       }}
-      loading={<div className="text-xs text-zinc-500 p-2">loading editor…</div>}
+      loading={<div className="text-xs text-fg-muted p-2">loading editor…</div>}
     />
   );
 }

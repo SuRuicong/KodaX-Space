@@ -37,7 +37,13 @@ interface SessionContextMenuProps {
   readonly onStartRename: () => void;
 }
 
-export function SessionContextMenu({ session, x, y, onClose, onStartRename }: SessionContextMenuProps): JSX.Element {
+export function SessionContextMenu({
+  session,
+  x,
+  y,
+  onClose,
+  onStartRename,
+}: SessionContextMenuProps): JSX.Element {
   const ref = useRef<HTMLDivElement | null>(null);
   const toggleFlag = useAppStore((s) => s.toggleSessionFlag);
   const upsertSession = useAppStore((s) => s.upsertSession);
@@ -138,18 +144,39 @@ export function SessionContextMenu({ session, x, y, onClose, onStartRename }: Se
   return (
     <div
       ref={ref}
-      className="fixed bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 text-xs z-[100] min-w-[12rem]"
+      className="fixed bg-surface-2 border border-border-default rounded shadow-xl py-1 text-xs z-[100] min-w-[12rem]"
       style={{ left, top }}
       role="menu"
     >
       <MenuRow label="Open in" hint="" disabled chevron tip="v0.1.x" />
       <Divider />
-      <MenuRow label="Pin" hint="P" onClick={() => { toggleFlag(session.sessionId, 'pinned'); onClose(); }} />
-      <MenuRow label="Mark as unread" hint="U" onClick={() => { toggleFlag(session.sessionId, 'unread'); onClose(); }} />
+      <MenuRow
+        label="Pin"
+        hint="P"
+        onClick={() => {
+          toggleFlag(session.sessionId, 'pinned');
+          onClose();
+        }}
+      />
+      <MenuRow
+        label="Mark as unread"
+        hint="U"
+        onClick={() => {
+          toggleFlag(session.sessionId, 'unread');
+          onClose();
+        }}
+      />
       <MenuRow label="Rename" hint="R" onClick={onStartRename} />
       <MenuRow label="Fork" hint="F" onClick={() => void onFork()} />
       <MenuRow label="Move to group" hint="" disabled chevron tip="v0.1.x" />
-      <MenuRow label="Archive" hint="A" onClick={() => { toggleFlag(session.sessionId, 'archived'); onClose(); }} />
+      <MenuRow
+        label="Archive"
+        hint="A"
+        onClick={() => {
+          toggleFlag(session.sessionId, 'archived');
+          onClose();
+        }}
+      />
       <Divider />
       <MenuRow label="Delete" hint="D" onClick={() => void onDelete()} danger />
     </div>
@@ -182,19 +209,19 @@ function MenuRow({
       role="menuitem"
       className={`w-full text-left px-3 py-1 flex items-center gap-2 ${
         disabled
-          ? 'text-zinc-600 cursor-not-allowed'
+          ? 'text-fg-faint cursor-not-allowed'
           : danger
-            ? 'text-red-400 hover:bg-zinc-800'
-            : 'text-zinc-200 hover:bg-zinc-800'
+            ? 'text-red-400 hover:bg-hover-bg'
+            : 'text-fg-primary hover:bg-hover-bg'
       }`}
     >
       <span className="flex-1">{label}</span>
-      {chevron && <Caret open={false} className="text-zinc-500" />}
-      {hint && <span className="text-zinc-500 text-[10px] font-mono">{hint}</span>}
+      {chevron && <Caret open={false} className="text-fg-muted" />}
+      {hint && <span className="text-fg-muted text-[11px] font-mono">{hint}</span>}
     </button>
   );
 }
 
 function Divider(): JSX.Element {
-  return <div className="border-t border-zinc-800 my-1" />;
+  return <div className="border-t border-border-default my-1" />;
 }

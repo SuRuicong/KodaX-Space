@@ -29,7 +29,7 @@ registerToolInputRenderer('write', ({ input }) => {
   if (content === null) return null; // shape 不对 → fallback
   return (
     <section className="space-y-1">
-      <div className="text-[10px] text-zinc-500 uppercase">write</div>
+      <div className="text-[11px] text-fg-muted uppercase">write</div>
       <ToolDiffView path={path} before="" after={content} defaultExpanded={false} />
     </section>
   );
@@ -44,7 +44,7 @@ registerToolInputRenderer('edit', ({ input }) => {
   if (oldS === null || newS === null) return null;
   return (
     <section className="space-y-1">
-      <div className="text-[10px] text-zinc-500 uppercase">edit</div>
+      <div className="text-[11px] text-fg-muted uppercase">edit</div>
       <ToolDiffView path={path} before={oldS} after={newS} defaultExpanded={false} />
     </section>
   );
@@ -68,7 +68,7 @@ function MultiEditList({ path, edits }: MultiEditListProps): JSX.Element {
   const overflow = edits.length - MAX_VISIBLE;
   return (
     <section className="space-y-1.5">
-      <div className="text-[10px] text-zinc-500 uppercase">
+      <div className="text-[11px] text-fg-muted uppercase">
         multi_edit · {edits.length} edit{edits.length === 1 ? '' : 's'}
       </div>
       {visible.map((e, i) => {
@@ -79,7 +79,7 @@ function MultiEditList({ path, edits }: MultiEditListProps): JSX.Element {
           return (
             <div
               key={i}
-              className="text-[10px] text-zinc-500 italic px-2 py-1 border border-dashed border-zinc-700/40 rounded"
+              className="text-[11px] text-fg-muted italic px-2 py-1 border border-dashed border-border-strong/40 rounded"
             >
               Edit #{i + 1}: missing old_string / new_string fields
             </div>
@@ -93,7 +93,7 @@ function MultiEditList({ path, edits }: MultiEditListProps): JSX.Element {
         <button
           type="button"
           onClick={() => setShowAllEdits(true)}
-          className="text-[10px] text-blue-400 hover:text-blue-300 px-2 py-0.5"
+          className="text-[11px] text-blue-400 hover:text-blue-300 px-2 py-0.5"
         >
           + {overflow} more edit{overflow === 1 ? '' : 's'}
         </button>

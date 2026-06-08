@@ -41,7 +41,6 @@ async function main() {
 
   // Step 2: bump KodaX-Space
   const kodaxSpace = original.projects.find((p) => p.name === 'KodaX-Space');
-  const kodaxWorkspace = original.projects.find((p) => p.name === 'kodax_workspace');
   if (!kodaxSpace) {
     console.error('[e2e] FAIL: KodaX-Space not in projects.json — re-open it once in dev first');
     process.exit(2);
@@ -108,11 +107,9 @@ async function main() {
     // 我们的 store 在 setCurrentProject 时落 localStorage('kodax-space.currentProjectPath')。
     // 等 App.tsx 启动 effect 跑完 → localStorage 有值 → 拿出来对照。
     const projectPath = await win
-      .waitForFunction(
-        () => window.localStorage.getItem('kodax-space.currentProjectPath'),
-        null,
-        { timeout: 15_000 },
-      )
+      .waitForFunction(() => window.localStorage.getItem('kodax-space.currentProjectPath'), null, {
+        timeout: 15_000,
+      })
       .then((h) => h.jsonValue());
 
     console.log('[e2e] localStorage currentProjectPath:', JSON.stringify(projectPath));
@@ -127,7 +124,9 @@ async function main() {
       restore();
       process.exit(0);
     } else {
-      console.error(`[e2e] FAIL: expected basename "KodaX-Space", got "${basename}" (full: ${projectPath})`);
+      console.error(
+        `[e2e] FAIL: expected basename "KodaX-Space", got "${basename}" (full: ${projectPath})`,
+      );
       await app.close();
       restore();
       process.exit(1);

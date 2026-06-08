@@ -23,6 +23,7 @@
 //   - Permission modal / Settings overlay → 复用旧 App 的实现挂载点
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { PanelLeft, PanelRight } from 'lucide-react';
 import { LeftSidebar } from './LeftSidebar.js';
 import { ResizeHandle } from './ResizeHandle.js';
 import { useSmartPopoutDirector } from '../features/popout-director/useSmartPopoutDirector.js';
@@ -108,24 +109,22 @@ export function Shell(): JSX.Element {
     // 注意:不再在 IPC 调用前 short-circuit "buffer 非空"——那是旧版兜底,现在 prepend
     // 是原子的,即使 buffer 已经有 in-flight 会话也能正确插入历史在前面。
     let cancelled = false;
-    void window.kodaxSpace
-      .invoke('session.history', { sessionId: sid })
-      .then((r) => {
-        if (cancelled || !r.ok) return;
-        const items = r.data.items;
-        if (items.length === 0) {
-          restoredSessionIds.add(sid);
-          return;
-        }
-        const store = useAppStore.getState();
-        // history fallback timestamp：用 session.createdAt（SDK 落盘时刻），让 footer
-        // 显示 "Xd ago" 反映 session 创建时间而不是"恢复瞬间 just now"。SDK 未来给
-        // per-message timestamp 时再走 item.sentAt。
-        const sess = store.sessions.find((s) => s.sessionId === sid);
-        const fallbackTs = sess?.createdAt ?? Date.now();
-        store.prependSessionHistory(sid, items, fallbackTs);
+    void window.kodaxSpace.invoke('session.history', { sessionId: sid }).then((r) => {
+      if (cancelled || !r.ok) return;
+      const items = r.data.items;
+      if (items.length === 0) {
         restoredSessionIds.add(sid);
-      });
+        return;
+      }
+      const store = useAppStore.getState();
+      // history fallback timestamp：用 session.createdAt（SDK 落盘时刻），让 footer
+      // 显示 "Xd ago" 反映 session 创建时间而不是"恢复瞬间 just now"。SDK 未来给
+      // per-message timestamp 时再走 item.sentAt。
+      const sess = store.sessions.find((s) => s.sessionId === sid);
+      const fallbackTs = sess?.createdAt ?? Date.now();
+      store.prependSessionHistory(sid, items, fallbackTs);
+      restoredSessionIds.add(sid);
+    });
     return () => {
       cancelled = true;
     };
@@ -196,7 +195,7 @@ export function Shell(): JSX.Element {
       setActivePopout(requestedPopout as PopoutKind);
     }
     setRequestedPopout(null); // 消费完清回 null,允许下次 slash command 再次触发
-  }, [requestedPopout, setRequestedPopout]);
+  }, [requestedPopout, setRequestedPopout, setActivePopout]);
 
   // P4a: Ctrl+\ 进入/退出"专注阅读"模式 — 隐藏 Left / Right Sidebar，让主区域满宽。
   //   - BottomBar / Breadcrumb / titlebar 保留（用户仍要发消息 + 窗口操作）
@@ -218,9 +217,13 @@ export function Shell(): JSX.Element {
       {/* 顶部自定义 titlebar — 自身做窗口拖动 + 留出 Windows overlay 控件 (close/min/max) 空间。
           Mac 上 traffic lights 占 ~78px (hiddenInset)；Windows 上 OS 把 close/min/max 画在右侧 ~138px (titleBarOverlay)。 */}
       <div className="app-titlebar h-9 flex items-center px-3 border-b border-border-default bg-surface flex-shrink-0 select-none">
-        <div className="text-[11px] text-fg-muted font-mono titlebar-brand">
-          <span className="text-amber-400" aria-hidden>✱</span>{' '}
-          <span>KodaX Space</span>
+        <div className="text-[12px] text-fg-muted titlebar-brand flex items-center gap-1.5">
+          <span className="text-accent-ink text-[13px] leading-none" aria-hidden>
+            ✱
+          </span>
+          <span>
+            <span className="text-fg-primary font-semibold">KodaX</span> Space
+          </span>
         </div>
         <div className="flex-1" />
         <ThemeToggle />
@@ -264,7 +267,7 @@ export function Shell(): JSX.Element {
               <button
                 type="button"
                 onClick={() => setFullscreenRead(false)}
-                className="ml-1 text-[10px] px-2 py-0.5 rounded border border-border-default text-fg-muted hover:text-fg-primary"
+                className="ml-1 text-[11px] px-2 py-0.5 rounded border border-border-default text-fg-muted hover:text-fg-primary"
                 title="Exit focus mode (Ctrl+\\)"
               >
                 ↗ Focus
@@ -334,20 +337,20 @@ interface SidebarToggleButtonProps {
  * - open 时图标 text-fg-primary；close 时 text-fg-muted（让用户一眼看出当前状态）
  */
 function SidebarToggleButton({ side, open, onClick }: SidebarToggleButtonProps): JSX.Element {
-  const icon = side === 'left' ? '◧' : '◨';
+  const Icon = side === 'left' ? PanelLeft : PanelRight;
   const label = `${open ? 'Hide' : 'Show'} ${side} sidebar`;
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`w-6 h-6 rounded text-[12px] flex items-center justify-center flex-shrink-0 hover:bg-hover-bg ${
+      className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 hover:bg-hover-bg transition-colors ${
         open ? 'text-fg-primary' : 'text-fg-muted hover:text-fg-primary'
       }`}
       title={label}
       aria-label={label}
       aria-pressed={open}
     >
-      {icon}
+      <Icon className="w-4 h-4" strokeWidth={1.75} />
     </button>
   );
 }

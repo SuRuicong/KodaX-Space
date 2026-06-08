@@ -1,6 +1,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+// F054 视觉刷新：本地打包字体 (Electron 无网 + CSP)，不走 Google Fonts CDN。
+// Variable 字体单文件覆盖全字重；--ui / --mono 在 styles.css 指向它们。
+import '@fontsource-variable/geist';
+import '@fontsource-variable/jetbrains-mono';
 import './styles.css';
 
 // v0.1.3.1 修复 F019 FOUC：在 React render 之前同步把 theme class 打到 <html>，

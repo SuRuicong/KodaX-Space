@@ -41,7 +41,6 @@ async function main() {
 
   // 在 main 端 stub dialog — 让 project.openDialog 不弹真窗口直接返回 repoRoot
   await app.evaluate(async ({ dialog }, root) => {
-    const origShow = dialog.showOpenDialog;
     dialog.showOpenDialog = async () => {
       console.log('[main-stub] dialog.showOpenDialog → returning', root);
       return { canceled: false, filePaths: [root] };
@@ -94,7 +93,9 @@ async function main() {
   // 2) 切 provider → zhipu-coding，effort = Medium
   console.log('[e2e] opening provider picker');
   // 右下角按钮：文字 "pick provider · ..." 或 "(next)" — 用更宽松的 selector
-  const providerBtn = win.locator('button[title*="provider"], button[title*="Pick provider"]').first();
+  const providerBtn = win
+    .locator('button[title*="provider"], button[title*="Pick provider"]')
+    .first();
   await providerBtn.click({ timeout: 5000 }).catch(async () => {
     // fallback: 找 footer-bottom bar 里的 font-mono 按钮
     await win.locator('div.relative > button.font-mono').last().click({ timeout: 3000 });
@@ -158,24 +159,29 @@ async function main() {
   let lastShotAt = 0;
   while (Date.now() - startedAt < TIMEOUT_MS) {
     // 探测：有 "你好" user message + 有任何 assistant content > 10 字符
-    const userVisible = await win.locator('text=你好').count() > 0;
+    const userVisible = (await win.locator('text=你好').count()) > 0;
     if (userVisible) {
       // 等 assistant 文本流回 — 用 ConversationStreamV2 的内部容器
       const streamLen = await win.evaluate(() => {
         const root = document.querySelector('.h-full.overflow-auto');
-        return root ? root.textContent?.length ?? 0 : 0;
+        return root ? (root.textContent?.length ?? 0) : 0;
       });
       if (streamLen > 100) {
         // 至少 100 字符说明 assistant 在流
         if (Date.now() - lastShotAt > 5000) {
-          await win.screenshot({ path: `${SHOT_DIR}/06-streaming-${Math.floor((Date.now() - startedAt) / 1000)}s.png`, fullPage: false }).catch(() => {});
+          await win
+            .screenshot({
+              path: `${SHOT_DIR}/06-streaming-${Math.floor((Date.now() - startedAt) / 1000)}s.png`,
+              fullPage: false,
+            })
+            .catch(() => {});
           lastShotAt = Date.now();
         }
         // 如果稳定 4s 没增长，认为完成
         await win.waitForTimeout(4000);
         const streamLen2 = await win.evaluate(() => {
           const root = document.querySelector('.h-full.overflow-auto');
-          return root ? root.textContent?.length ?? 0 : 0;
+          return root ? (root.textContent?.length ?? 0) : 0;
         });
         if (streamLen2 === streamLen) {
           gotResponse = true;
@@ -193,7 +199,7 @@ async function main() {
   // 提取 conversation 文本作 sanity check
   const finalText = await win.evaluate(() => {
     const root = document.querySelector('.h-full.overflow-auto');
-    return root ? root.textContent?.slice(0, 1000) ?? '' : '';
+    return root ? (root.textContent?.slice(0, 1000) ?? '') : '';
   });
   console.log('[e2e] conversation text (first 1000 chars):');
   console.log('---');
@@ -208,8 +214,14 @@ async function main() {
     await sessionRow.click({ button: 'right' });
     await win.waitForTimeout(800);
     await win.screenshot({ path: `${SHOT_DIR}/08-context-menu.png`, fullPage: false });
-    const hasDelete = await win.locator('[role="menu"] >> text=Delete').isVisible().catch(() => false);
-    const hasFork = await win.locator('[role="menu"] >> text=Fork').isVisible().catch(() => false);
+    const hasDelete = await win
+      .locator('[role="menu"] >> text=Delete')
+      .isVisible()
+      .catch(() => false);
+    const hasFork = await win
+      .locator('[role="menu"] >> text=Fork')
+      .isVisible()
+      .catch(() => false);
     console.log('[e2e] context menu — Delete:', hasDelete, '· Fork:', hasFork);
     await win.keyboard.press('Escape');
   } else {
@@ -231,11 +243,17 @@ async function main() {
   // 7) auto-title — sidebar 当前 session 标题应是 "你好"（首条 user msg slice）
   console.log('[e2e] checking auto-title');
   await win.waitForTimeout(1500); // 等 setTitle round-trip
-  const sidebarHasNihao = await win.locator('aside button:has-text("你好")').count() > 0;
+  const sidebarHasNihao = (await win.locator('aside button:has-text("你好")').count()) > 0;
   // breadcrumb 顶部 (KodaX-Space / 你好) 也应改
-  const breadcrumbText = await win.locator('header, .border-b').first().textContent().catch(() => '');
+  const breadcrumbText = await win
+    .locator('header, .border-b')
+    .first()
+    .textContent()
+    .catch(() => '');
   results.autoTitle = sidebarHasNihao;
-  console.log(`[e2e] auto-title — sidebar has '你好': ${sidebarHasNihao} · breadcrumb: ${breadcrumbText.slice(0, 80)}`);
+  console.log(
+    `[e2e] auto-title — sidebar has '你好': ${sidebarHasNihao} · breadcrumb: ${breadcrumbText.slice(0, 80)}`,
+  );
   await win.screenshot({ path: `${SHOT_DIR}/11-auto-title.png`, fullPage: false });
 
   // 8) Mode picker — 点 mode chip 弹 popup, 切到 Plan, 再切回 Accept edits
@@ -272,7 +290,10 @@ async function main() {
   await transBtn.click();
   await win.waitForTimeout(400);
   await win.screenshot({ path: `${SHOT_DIR}/14-transcript-popup.png`, fullPage: false });
-  results.transcriptOpen = await win.locator('text=Transcript view').isVisible().catch(() => false);
+  results.transcriptOpen = await win
+    .locator('text=Transcript view')
+    .isVisible()
+    .catch(() => false);
   // 切 font size
   const fontLgBtn = win.locator('button[title*="Large"]').first();
   if (await fontLgBtn.isVisible().catch(() => false)) {
@@ -289,7 +310,9 @@ async function main() {
   await actBtn.click();
   await win.waitForTimeout(400);
   await win.screenshot({ path: `${SHOT_DIR}/15-activity-dropdown.png`, fullPage: false });
-  results.activityItems = await win.locator('text=/Preview|Diff|Terminal|Tasks|Plan|Agents|MCP/').count();
+  results.activityItems = await win
+    .locator('text=/Preview|Diff|Terminal|Tasks|Plan|Agents|MCP/')
+    .count();
   console.log(`[e2e] activity dropdown items: ${results.activityItems}`);
   await win.keyboard.press('Escape');
   await win.waitForTimeout(300);
@@ -301,7 +324,10 @@ async function main() {
     await ctxBtn.click();
     await win.waitForTimeout(400);
     await win.screenshot({ path: `${SHOT_DIR}/16-context-popup.png`, fullPage: false });
-    results.contextExpanded = await win.locator('text=/% used/').isVisible().catch(() => false);
+    results.contextExpanded = await win
+      .locator('text=/% used/')
+      .isVisible()
+      .catch(() => false);
     console.log(`[e2e] context window expanded: ${results.contextExpanded}`);
     await win.keyboard.press('Escape');
   }
@@ -313,23 +339,33 @@ async function main() {
     await recentsFilterBtn.click();
     await win.waitForTimeout(400);
     await win.screenshot({ path: `${SHOT_DIR}/17-recents-filter.png`, fullPage: false });
-    results.recentsFilter = await win.locator('text=Status').isVisible().catch(() => false);
+    results.recentsFilter = await win
+      .locator('text=Status')
+      .isVisible()
+      .catch(() => false);
     console.log(`[e2e] recents filter open: ${results.recentsFilter}`);
     await win.keyboard.press('Escape');
   }
 
   // 13) Pin session via context menu — 验证 sidebar 出现 pinned indicator
   console.log('[e2e] pin session via context menu');
-  const row = win.locator('aside button:has(span:text-is("你好")), aside button:has(span:text-is("Untitled session"))').first();
+  const row = win
+    .locator(
+      'aside button:has(span:text-is("你好")), aside button:has(span:text-is("Untitled session"))',
+    )
+    .first();
   if (await row.isVisible().catch(() => false)) {
     await row.click({ button: 'right' });
     await win.waitForTimeout(400);
-    await win.locator('[role="menu"] >> text=Pin').click({ timeout: 3000 }).catch(() => {});
+    await win
+      .locator('[role="menu"] >> text=Pin')
+      .click({ timeout: 3000 })
+      .catch(() => {});
     await win.waitForTimeout(500);
     // 重新右键看看菜单文字是否变 "Unpin"（注意 SessionContextMenu 不会反转 label，
     // 但 Sidebar SessionRow 会出现 📌 emoji；先 screenshot）
     await win.screenshot({ path: `${SHOT_DIR}/18-after-pin.png`, fullPage: false });
-    results.pinIndicator = await win.locator('aside [title="Pinned"]').count() > 0;
+    results.pinIndicator = (await win.locator('aside [title="Pinned"]').count()) > 0;
     console.log(`[e2e] pin indicator visible: ${results.pinIndicator}`);
   }
 
@@ -349,7 +385,15 @@ async function main() {
   for (const e of consoleErrors) console.log('    -', e);
 
   await app.close();
-  const allPass = gotResponse && results.autoTitle && results.modeSwitch && results.transcriptOpen && results.activityItems >= 7 && results.contextExpanded && results.recentsFilter && results.pinIndicator;
+  const allPass =
+    gotResponse &&
+    results.autoTitle &&
+    results.modeSwitch &&
+    results.transcriptOpen &&
+    results.activityItems >= 7 &&
+    results.contextExpanded &&
+    results.recentsFilter &&
+    results.pinIndicator;
   process.exit(allPass ? 0 : 1);
 }
 

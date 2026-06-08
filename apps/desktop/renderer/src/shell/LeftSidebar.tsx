@@ -18,10 +18,24 @@
 // ADR-004 v2 决策：M0 就显示 Coder/Partner tab；Partner 灰 + "Coming"。
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Code2,
+  Handshake,
+  Plus,
+  Clock,
+  Briefcase,
+  ChevronDown,
+  Settings,
+  type LucideIcon,
+} from 'lucide-react';
 import type { Mode } from './Shell.js';
 import { useAppStore } from '../store/appStore.js';
 import { Caret } from '../components/Caret.js';
-import { canonProjectRoot, type SessionMeta, type RunningSessionInfoT } from '@kodax-space/space-ipc-schema';
+import {
+  canonProjectRoot,
+  type SessionMeta,
+  type RunningSessionInfoT,
+} from '@kodax-space/space-ipc-schema';
 import { SessionContextMenu } from './SessionContextMenu.js';
 import { ProjectContextMenu } from './ProjectContextMenu.js';
 import { ProjectSessionPicker } from './ProjectSessionPicker.js';
@@ -100,18 +114,24 @@ export function LeftSidebar({ mode, onModeChange, width }: LeftSidebarProps): JS
           type="button"
           onClick={() => onModeChange('coder')}
           className={`flex-1 text-xs py-1.5 rounded ${
-            mode === 'coder' ? 'bg-surface-3 text-fg-primary' : 'text-zinc-400 hover:text-zinc-100'
+            mode === 'coder'
+              ? 'bg-surface-3 text-fg-primary'
+              : 'text-fg-muted hover:text-fg-primary'
           }`}
         >
-          <span aria-hidden>≡</span> Coder
+          <span className="inline-flex items-center justify-center gap-1.5">
+            <Code2 className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden /> Coder
+          </span>
         </button>
         <button
           type="button"
           disabled
-          className="flex-1 text-xs py-1.5 rounded text-zinc-500 cursor-not-allowed relative"
+          className="flex-1 text-xs py-1.5 rounded text-fg-muted cursor-not-allowed relative"
           title="Partner — Coming in v0.1.x"
         >
-          <span aria-hidden>◐</span> Partner
+          <span className="inline-flex items-center justify-center gap-1.5">
+            <Handshake className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden /> Partner
+          </span>
           <span className="absolute -top-0.5 -right-0.5 text-[8px] text-amber-500">soon</span>
         </button>
       </div>
@@ -122,15 +142,15 @@ export function LeftSidebar({ mode, onModeChange, width }: LeftSidebarProps): JS
           type="button"
           onClick={handleNewSession}
           disabled={!currentProjectPath}
-          className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-zinc-800 text-zinc-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+          className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-hover-bg text-fg-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
           title={!currentProjectPath ? 'Open a folder first' : 'New session'}
         >
-          <span aria-hidden>＋</span>
+          <Plus className="w-4 h-4 flex-shrink-0" strokeWidth={1.75} aria-hidden />
           New session
         </button>
-        <DisabledMenuItem icon="⏰" label="Scheduled" hint="v0.1.x" />
-        <DisabledMenuItem icon="💼" label="Customize" hint="v0.1.x" />
-        <DisabledMenuItem icon="▾" label="More" hint="" />
+        <DisabledMenuItem Icon={Clock} label="Scheduled" hint="v0.1.x" />
+        <DisabledMenuItem Icon={Briefcase} label="Customize" hint="v0.1.x" />
+        <DisabledMenuItem Icon={ChevronDown} label="More" hint="" />
       </div>
 
       {/* F017 Running peers — 其他 KodaX 进程（CLI / 别的 Space 窗口）当前活动的 session。
@@ -142,7 +162,7 @@ export function LeftSidebar({ mode, onModeChange, width }: LeftSidebarProps): JS
 
       <div className="flex-1 overflow-y-auto px-1.5 pb-2">
         {sessions.length === 0 && (
-          <div className="text-xs text-zinc-400 px-2 py-3">
+          <div className="text-xs text-fg-muted px-2 py-3">
             {currentProjectPath ? 'No sessions yet.' : 'Open a folder to start.'}
           </div>
         )}
@@ -156,16 +176,16 @@ export function LeftSidebar({ mode, onModeChange, width }: LeftSidebarProps): JS
       </div>
 
       {/* Bottom: mode/gateway label */}
-      <div className="border-t border-border-default px-3 py-2 text-[10px] text-zinc-400 flex justify-between flex-shrink-0">
+      <div className="border-t border-border-default px-3 py-2 text-[11px] text-fg-muted flex justify-between flex-shrink-0">
         <span className="truncate">KodaX Space · Gateway</span>
         <button
           type="button"
           onClick={() => setSettingsOpen(true)}
-          className="text-zinc-300 hover:text-zinc-100"
+          className="text-fg-secondary hover:text-fg-primary inline-flex items-center"
           aria-label="Settings"
           title="Settings"
         >
-          ⚙
+          <Settings className="w-4 h-4" strokeWidth={1.75} />
         </button>
       </div>
       {settingsOpen && (
@@ -215,7 +235,9 @@ function ProjectTree({
   const setArchivedExpanded = useAppStore((s) => s.setArchivedProjectsExpanded);
 
   // F043: 项目级 contextmenu 状态 + inline rename
-  const [projCtxMenu, setProjCtxMenu] = useState<{ project: Project; x: number; y: number } | null>(null);
+  const [projCtxMenu, setProjCtxMenu] = useState<{ project: Project; x: number; y: number } | null>(
+    null,
+  );
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   // v0.1.9 Step 7 — DnD: 拖动中的 source canon path (UI 高亮 + drop 时算位置)
   const [dragSrcCanon, setDragSrcCanon] = useState<string | null>(null);
@@ -354,7 +376,11 @@ function ProjectTree({
             setDragSrcCanon(projCanon);
             e.dataTransfer.effectAllowed = 'move';
             // 必须 setData 才能在 Firefox / 某些 Linux 上触发 drag (Chrome 不严要求,但写上更稳)
-            try { e.dataTransfer.setData('text/plain', proj.path); } catch { /* fail silently */ }
+            try {
+              e.dataTransfer.setData('text/plain', proj.path);
+            } catch {
+              /* fail silently */
+            }
           }}
           onDragEnd={() => {
             setDragSrcCanon(null);
@@ -385,7 +411,9 @@ function ProjectTree({
             reorderProjects(src, projCanon);
           }}
           className={`group/projectrow w-full text-xs px-2 py-1 rounded flex items-center gap-1.5 ${
-            treatAsCurrent ? 'text-fg-primary font-semibold' : 'text-fg-secondary hover:bg-hover-bg hover:text-fg-primary'
+            treatAsCurrent
+              ? 'text-fg-primary font-semibold'
+              : 'text-fg-secondary hover:bg-hover-bg hover:text-fg-primary'
           } ${isDragOverTarget ? 'outline outline-1 outline-blue-500/60' : ''}`}
           onContextMenu={(e) => {
             e.preventDefault();
@@ -396,7 +424,7 @@ function ProjectTree({
           <button
             type="button"
             onClick={() => toggleProjectExpanded(proj.path, defaultExpanded)}
-            className="text-zinc-500 flex-shrink-0"
+            className="text-fg-muted flex-shrink-0"
             aria-label={isExpanded ? 'Collapse project' : 'Expand project'}
           >
             <Caret open={isExpanded} />
@@ -407,7 +435,7 @@ function ProjectTree({
               defaultValue={proj.name}
               autoFocus
               maxLength={256}
-              className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-1 py-0.5 text-xs text-zinc-100 outline-none focus:border-zinc-500"
+              className="flex-1 bg-surface-2 border border-border-strong rounded px-1 py-0.5 text-xs text-fg-primary outline-none focus:border-border-strong"
               onBlur={() => setRenamingPath(null)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
@@ -431,7 +459,7 @@ function ProjectTree({
           )}
           {runningCount > 0 && !isRenaming && (
             <span
-              className="text-emerald-400 text-[10px] flex-shrink-0 font-mono"
+              className="text-emerald-400 text-[11px] flex-shrink-0 font-mono"
               aria-label={`${runningCount} running`}
               title={`${runningCount} session${runningCount === 1 ? '' : 's'} running`}
             >
@@ -451,7 +479,7 @@ function ProjectTree({
                   st.setCurrentProject(proj.path);
                   st.setCurrentSession(null);
                 }}
-                className="text-zinc-400 hover:text-zinc-100 px-1 leading-none"
+                className="text-fg-muted hover:text-fg-primary px-1 leading-none"
                 aria-label={`New session in ${proj.name}`}
                 title="New session in this project"
               >
@@ -464,7 +492,7 @@ function ProjectTree({
                   const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
                   setProjCtxMenu({ project: proj, x: rect.right, y: rect.bottom });
                 }}
-                className="text-zinc-400 hover:text-zinc-100 px-1 leading-none"
+                className="text-fg-muted hover:text-fg-primary px-1 leading-none"
                 aria-label={`${proj.name} actions`}
                 title="More actions"
               >
@@ -476,7 +504,9 @@ function ProjectTree({
         {isExpanded && (
           <div className="ml-1">
             {projSessions.length === 0 ? (
-              <div className="text-[10px] text-zinc-500 italic px-3 py-1">No sessions in this project.</div>
+              <div className="text-[11px] text-fg-muted italic px-3 py-1">
+                No sessions in this project.
+              </div>
             ) : (
               <SessionTree
                 sessions={sessions}
@@ -513,25 +543,25 @@ function ProjectTree({
     >
       {ordered.map((proj) => {
         const projCanon = canonProjectRootBrowser(proj.path);
-        const isCurrent = currentProjectPath ? projCanon === canonProjectRootBrowser(currentProjectPath) : false;
+        const isCurrent = currentProjectPath
+          ? projCanon === canonProjectRootBrowser(currentProjectPath)
+          : false;
         return renderProject(proj, isCurrent);
       })}
 
       {archived.length > 0 && (
-        <div className="mt-3 pt-2 border-t border-zinc-800/40">
+        <div className="mt-3 pt-2 border-t border-border-default/40">
           <button
             type="button"
             onClick={() => setArchivedExpanded(!archivedExpanded)}
-            className="w-full text-left text-[10px] uppercase tracking-wider text-zinc-500 hover:text-zinc-300 px-2 py-1 flex items-center gap-1.5"
+            className="w-full text-left text-[11px] uppercase tracking-wider text-fg-muted hover:text-fg-secondary px-2 py-1 flex items-center gap-1.5"
             aria-expanded={archivedExpanded}
           >
             <Caret open={archivedExpanded} />
             Archived ({archived.length})
           </button>
           {archivedExpanded && (
-            <div className="opacity-60">
-              {archived.map((proj) => renderProject(proj, false))}
-            </div>
+            <div className="opacity-60">{archived.map((proj) => renderProject(proj, false))}</div>
           )}
         </div>
       )}
@@ -623,10 +653,13 @@ function SessionTree({
   const visible = useMemo(() => {
     const now = Date.now();
     const cutoff =
-      filter.lastActivity === 'today' ? now - 24 * 3600 * 1000 :
-      filter.lastActivity === '7d' ? now - 7 * 24 * 3600 * 1000 :
-      filter.lastActivity === '30d' ? now - 30 * 24 * 3600 * 1000 :
-      0;
+      filter.lastActivity === 'today'
+        ? now - 24 * 3600 * 1000
+        : filter.lastActivity === '7d'
+          ? now - 7 * 24 * 3600 * 1000
+          : filter.lastActivity === '30d'
+            ? now - 30 * 24 * 3600 * 1000
+            : 0;
     const overrideCanon = projectRootOverride ? canonProjectRootBrowser(projectRootOverride) : null;
     const curCanon = currentProjectPath ? canonProjectRootBrowser(currentProjectPath) : null;
     return sessions.filter((s) => {
@@ -658,7 +691,9 @@ function SessionTree({
     });
   }, [visible, sessionFlags, filter.sortBy]);
   // 右键菜单状态：哪个 session + 屏幕坐标
-  const [ctxMenu, setCtxMenu] = useState<{ session: SessionMeta; x: number; y: number } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ session: SessionMeta; x: number; y: number } | null>(
+    null,
+  );
   // 内联 rename：哪个 session 正在编辑（点 Rename / 双击触发）
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
 
@@ -700,13 +735,18 @@ function SessionTree({
         <button
           type="button"
           onClick={onShowMore}
-          className="w-full text-left text-xs text-zinc-500 hover:text-zinc-200 px-3 py-1 flex items-center gap-1.5"
+          className="w-full text-left text-xs text-fg-muted hover:text-fg-primary px-3 py-1 flex items-center gap-1.5"
           aria-label={`Browse all ${rendered.length} sessions in this project`}
         >
-          <span className="w-3 flex items-center justify-center flex-shrink-0 text-base leading-none text-zinc-400" aria-hidden>
+          <span
+            className="w-3 flex items-center justify-center flex-shrink-0 text-base leading-none text-fg-muted"
+            aria-hidden
+          >
             +
           </span>
-          <span className="italic">{overflowCount} more session{overflowCount === 1 ? '' : 's'}…</span>
+          <span className="italic">
+            {overflowCount} more session{overflowCount === 1 ? '' : 's'}…
+          </span>
         </button>
       )}
       {ctxMenu && (
@@ -777,14 +817,17 @@ export function buildSessionTreeOrder(
 function SessionBullet({ isFork }: { isFork: boolean }): JSX.Element {
   if (isFork) {
     return (
-      <span className="text-zinc-500 text-[13px] leading-none w-3 text-center flex-shrink-0" aria-hidden>
+      <span
+        className="text-fg-muted text-[13px] leading-none w-3 text-center flex-shrink-0"
+        aria-hidden
+      >
         ⑂
       </span>
     );
   }
   return (
     <span className="w-3 flex items-center justify-center flex-shrink-0" aria-hidden>
-      <span className="w-[7px] h-[7px] rounded-full bg-zinc-500" />
+      <span className="w-[7px] h-[7px] rounded-full bg-fg-muted" />
     </span>
   );
 }
@@ -857,25 +900,43 @@ function SessionRow({
         onContextMenu(e.clientX, e.clientY);
       }}
       className={`w-full text-left text-xs px-2 py-1 rounded truncate flex items-center gap-1 ${
-        isSelected ? 'bg-surface-3 text-fg-primary' : 'text-fg-secondary hover:bg-hover-bg hover:text-fg-primary'
+        isSelected
+          ? 'bg-surface-3 text-fg-primary'
+          : 'text-fg-secondary hover:bg-hover-bg hover:text-fg-primary'
       }`}
       style={{ paddingLeft: padLeft }}
       title={`${session.title ?? session.sessionId} (double-click to rename)`}
     >
       <SessionBullet isFork={isFork} />
-      {flags?.pinned && <span className="text-amber-400 text-[10px]" aria-hidden title="Pinned">📌</span>}
+      {flags?.pinned && (
+        <span className="text-amber-400 text-[11px]" aria-hidden title="Pinned">
+          📌
+        </span>
+      )}
       <span className="truncate flex-1">{session.title ?? 'Untitled session'}</span>
-      {flags?.unread && <span className="text-emerald-400 text-[10px]" aria-hidden title="Unread">●</span>}
+      {flags?.unread && (
+        <span className="text-emerald-400 text-[11px]" aria-hidden title="Unread">
+          ●
+        </span>
+      )}
       {/* F040 状态点：idle 不渲染（最常态、避免视觉噪音）。awaiting/error/running 都用单色圆点。 */}
       {status && status !== 'idle' && (
         <span
-          className={`text-[10px] flex-shrink-0 ${
-            status === 'awaiting' ? 'text-amber-400' :
-            status === 'error' ? 'text-red-400' :
-            'text-emerald-400' /* running */
+          className={`text-[11px] flex-shrink-0 ${
+            status === 'awaiting'
+              ? 'text-amber-400'
+              : status === 'error'
+                ? 'text-red-400'
+                : 'text-emerald-400' /* running */
           }`}
           aria-hidden
-          title={status === 'awaiting' ? 'Awaiting confirmation' : status === 'error' ? 'Errored' : 'Running'}
+          title={
+            status === 'awaiting'
+              ? 'Awaiting confirmation'
+              : status === 'error'
+                ? 'Errored'
+                : 'Running'
+          }
         >
           ●
         </span>
@@ -958,14 +1019,19 @@ function RunningPeersPanel(): JSX.Element | null {
 
   return (
     <div className="border-b border-border-default px-2 py-1.5">
-      <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1 px-1 flex items-center gap-1.5">
+      <div className="text-[11px] uppercase tracking-wider text-fg-muted mb-1 px-1 flex items-center gap-1.5">
         <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
         <span>Running · {peers.length}</span>
       </div>
       {peers.map((p) => {
         const cwdName = (p.cwd.split(/[\\/]/).filter(Boolean).pop() ?? p.cwd).slice(0, 32);
         const ageSec = Math.max(0, Math.floor((Date.now() - p.startedAt) / 1000));
-        const ageLabel = ageSec < 60 ? `${ageSec}s` : ageSec < 3600 ? `${Math.floor(ageSec / 60)}m` : `${Math.floor(ageSec / 3600)}h`;
+        const ageLabel =
+          ageSec < 60
+            ? `${ageSec}s`
+            : ageSec < 3600
+              ? `${Math.floor(ageSec / 60)}m`
+              : `${Math.floor(ageSec / 3600)}h`;
         const isClickable = p.sessionId !== undefined && p.sessionId !== currentSessionId;
         return (
           <button
@@ -974,18 +1040,22 @@ function RunningPeersPanel(): JSX.Element | null {
             onClick={() => p.sessionId && setCurrentSession(p.sessionId)}
             disabled={!isClickable}
             className={[
-              'w-full text-left text-[11px] px-1.5 py-1 rounded flex items-center gap-1.5',
+              'w-full text-left text-xs px-1.5 py-1 rounded flex items-center gap-1.5',
               isClickable
-                ? 'hover:bg-zinc-800 text-zinc-300 cursor-pointer'
-                : 'text-zinc-500 cursor-default',
+                ? 'hover:bg-hover-bg text-fg-secondary cursor-pointer'
+                : 'text-fg-muted cursor-default',
             ].join(' ')}
-            title={p.sessionId
-              ? `pid ${p.pid} · session ${p.sessionId}\ncwd: ${p.cwd}\nclick to open (read-only resume while peer is alive)`
-              : `pid ${p.pid} · session bootstrapping\ncwd: ${p.cwd}`}
+            title={
+              p.sessionId
+                ? `pid ${p.pid} · session ${p.sessionId}\ncwd: ${p.cwd}\nclick to open (read-only resume while peer is alive)`
+                : `pid ${p.pid} · session bootstrapping\ncwd: ${p.cwd}`
+            }
           >
-            <span aria-hidden className="text-zinc-600 font-mono flex-shrink-0">⚙</span>
+            <span aria-hidden className="text-fg-faint font-mono flex-shrink-0">
+              ⚙
+            </span>
             <span className="truncate flex-1">{cwdName}</span>
-            <span className="text-[9px] text-zinc-500 font-mono flex-shrink-0">{ageLabel}</span>
+            <span className="text-[9px] text-fg-muted font-mono flex-shrink-0">{ageLabel}</span>
           </button>
         );
       })}
@@ -1001,41 +1071,56 @@ function RecentsHeader(): JSX.Element {
   const filter = useAppStore((s) => s.recentsFilter);
   // 显示当前过滤 summary，给用户暗示"我现在看的是哪部分"
   const summary =
-    filter.status !== 'active' || filter.lastActivity !== 'all' || filter.sortBy !== 'recency' || filter.groupBy !== 'none'
+    filter.status !== 'active' ||
+    filter.lastActivity !== 'all' ||
+    filter.sortBy !== 'recency' ||
+    filter.groupBy !== 'none'
       ? `${filter.status === 'active' ? '' : filter.status + ' · '}${filter.sortBy}`
       : null;
   return (
-    <div className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-wider text-zinc-400 flex justify-between items-center flex-shrink-0 relative">
+    <div className="px-3 pt-3 pb-1 text-[11px] uppercase tracking-wider text-fg-muted flex justify-between items-center flex-shrink-0 relative">
       {/* F043 v0.1.9: 改为"Projects" — 实际形态就是项目折叠树，原 Recents 概念被
           ProjectTree 取代；点 ⇅ 仍调过滤菜单（session 级 active/archived/sort 等）。 */}
       <span>Projects</span>
       <div className="flex items-center gap-2">
-        {summary && <span className="normal-case text-zinc-500 text-[9px]">{summary}</span>}
+        {summary && <span className="normal-case text-fg-muted text-[9px]">{summary}</span>}
         <button
           ref={buttonRef}
           type="button"
           onClick={() => setMenuOpen((v) => !v)}
-          className="text-zinc-400 hover:text-zinc-200 normal-case"
+          className="text-fg-muted hover:text-fg-primary normal-case"
           aria-label="Filter projects / sessions"
           title="Filter, group, sort"
         >
           ⇅
         </button>
       </div>
-      <RecentsFilterMenu open={menuOpen} onClose={() => setMenuOpen(false)} anchorEl={buttonRef.current} />
+      <RecentsFilterMenu
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        anchorEl={buttonRef.current}
+      />
     </div>
   );
 }
 
-function DisabledMenuItem({ icon, label, hint }: { icon: string; label: string; hint: string }): JSX.Element {
+function DisabledMenuItem({
+  Icon,
+  label,
+  hint,
+}: {
+  Icon: LucideIcon;
+  label: string;
+  hint: string;
+}): JSX.Element {
   return (
     <div
-      className="w-full text-xs px-2 py-1.5 rounded text-zinc-500 cursor-not-allowed flex items-center gap-2"
+      className="w-full text-xs px-2 py-1.5 rounded text-fg-muted cursor-not-allowed flex items-center gap-2"
       title={hint ? `${label} — ${hint}` : label}
     >
-      <span aria-hidden>{icon}</span>
+      <Icon className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={1.75} aria-hidden />
       <span>{label}</span>
-      {hint && <span className="ml-auto text-[9px] text-zinc-500">{hint}</span>}
+      {hint && <span className="ml-auto text-[9px] text-fg-muted">{hint}</span>}
     </div>
   );
 }

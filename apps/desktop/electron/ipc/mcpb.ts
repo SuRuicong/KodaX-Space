@@ -87,7 +87,7 @@ function sanitizeNotificationBody(raw: string): string {
   if (home.length > 0) cleaned = cleaned.split(home).join('~');
   cleaned = cleaned
     .replace(/([A-Za-z]:[\\/][^\s"]+|\\\\[^\s"]+|\/[A-Za-z][^\s"]+)/g, '<path>')
-    .replace(/[\x00-\x1f\x7f]/g, ' '); // eslint-disable-line no-control-regex
+    .replace(/[\x00-\x1f\x7f]/g, ' ');
   return cleaned.slice(0, 280).trim() || 'Install failed';
 }
 

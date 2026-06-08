@@ -28,7 +28,9 @@ import { DiffPanel } from './DiffPanel.js';
 // Lazy 加载：xterm + 2 个 addon + CSS 只在用户首次开 Terminal popout 时拉，
 // 避免 startup bundle 体积膨胀 + 把任何 xterm 模块加载错误隔离到 popout 内（不白屏整 app）。
 const TerminalPanel = lazy(() =>
-  import('../../features/terminal/TerminalManager.js').then((m) => ({ default: m.TerminalManager })),
+  import('../../features/terminal/TerminalManager.js').then((m) => ({
+    default: m.TerminalManager,
+  })),
 );
 import { TasksPanel } from './TasksPanel.js';
 import { PlanPanel } from './PlanPanel.js';
@@ -48,18 +50,16 @@ export function PopoutOverlay({ kind, onClose }: PopoutOverlayProps): JSX.Elemen
     : `${POPOUT_WIDTH[kind] ?? DEFAULT_POPOUT_WIDTH} max-w-[95vw]`;
   return (
     <>
-      <div
-        className="absolute inset-0 bg-black/30 z-30"
-        onClick={onClose}
-        aria-hidden
-      />
-      <aside className={`absolute right-0 top-10 bottom-0 ${widthCls} bg-zinc-950 border-l border-zinc-900 z-40 flex flex-col`}>
-        <div className="px-3 py-2 border-b border-zinc-900 flex items-center text-xs text-zinc-400 flex-shrink-0">
+      <div className="absolute inset-0 bg-black/30 z-30" onClick={onClose} aria-hidden />
+      <aside
+        className={`absolute right-0 top-10 bottom-0 ${widthCls} bg-surface border-l border-border-default z-40 flex flex-col`}
+      >
+        <div className="px-3 py-2 border-b border-border-default flex items-center text-xs text-fg-muted flex-shrink-0">
           <span className="capitalize">{kind}</span>
           <button
             type="button"
             onClick={onClose}
-            className="ml-auto px-2 py-0.5 hover:text-zinc-200"
+            className="ml-auto px-2 py-0.5 hover:text-fg-primary"
             aria-label="Close popout"
           >
             ✕
@@ -69,7 +69,7 @@ export function PopoutOverlay({ kind, onClose }: PopoutOverlayProps): JSX.Elemen
           {kind === 'preview' && <PreviewPanel />}
           {kind === 'diff' && <DiffPanel />}
           {kind === 'terminal' && (
-            <Suspense fallback={<div className="p-3 text-xs text-zinc-500">Loading terminal…</div>}>
+            <Suspense fallback={<div className="p-3 text-xs text-fg-muted">Loading terminal…</div>}>
               <TerminalPanel />
             </Suspense>
           )}

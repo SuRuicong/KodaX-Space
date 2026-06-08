@@ -296,19 +296,33 @@ export function WelcomeDashboard(): JSX.Element {
   return (
     <div className="flex-1 overflow-auto px-6 py-10 flex flex-col items-center">
       {/* 大标题 */}
-      <h1 className="text-2xl text-zinc-100 mb-8 flex items-center gap-2">
-        <span className="text-amber-400" aria-hidden>✱</span>
+      <h1 className="text-2xl text-fg-primary mb-8 flex items-center gap-2">
+        <span className="text-amber-400" aria-hidden>
+          ✱
+        </span>
         What&apos;s up next, <span className="font-semibold">{userName}</span>?
       </h1>
 
       {/* Overview 卡 */}
-      <div className="w-full max-w-3xl bg-zinc-900/60 border border-zinc-800 rounded-lg p-5">
+      <div className="w-full max-w-3xl bg-surface-2/60 border border-border-default rounded-lg p-5">
         {/* View tab + 时间范围 */}
         <div className="flex justify-between items-center mb-4 text-xs">
           <div className="flex gap-1">
-            <TabButton active={view === 'overview'} onClick={() => setView('overview')} label="Overview" />
-            <TabButton active={view === 'models'} onClick={() => setView('models')} label="Models" />
-            <TabButton active={view === 'project'} onClick={() => setView('project')} label="Project" />
+            <TabButton
+              active={view === 'overview'}
+              onClick={() => setView('overview')}
+              label="Overview"
+            />
+            <TabButton
+              active={view === 'models'}
+              onClick={() => setView('models')}
+              label="Models"
+            />
+            <TabButton
+              active={view === 'project'}
+              onClick={() => setView('project')}
+              label="Project"
+            />
           </div>
           <div className="flex gap-1">
             <RangeButton active={range === 'all'} onClick={() => setRange('all')} label="All" />
@@ -341,15 +355,15 @@ export function WelcomeDashboard(): JSX.Element {
 
             {/* 一句话 */}
             {duneMul > 0 ? (
-              <div className="text-xs text-zinc-500">
+              <div className="text-xs text-fg-muted">
                 You&apos;ve used ~{duneMul}× more tokens than Dune (full novel).
               </div>
             ) : stats.sessions === 0 ? (
-              <div className="text-xs text-zinc-500 italic">
+              <div className="text-xs text-fg-muted italic">
                 No sessions yet — type below to start one.
               </div>
             ) : (
-              <div className="text-xs text-zinc-500 italic">
+              <div className="text-xs text-fg-muted italic">
                 Send a few messages to see token comparisons.
               </div>
             )}
@@ -357,16 +371,14 @@ export function WelcomeDashboard(): JSX.Element {
         ) : view === 'models' ? (
           <ModelsView breakdown={stats.modelBreakdown} providers={providers} />
         ) : (
-          <ProjectView
-            gitStats={gitStats}
-            loading={gitLoading}
-            projectRoot={currentProjectPath}
-          />
+          <ProjectView gitStats={gitStats} loading={gitLoading} projectRoot={currentProjectPath} />
         )}
       </div>
 
       {/* 像素狗占位 */}
-      <div className="mt-8 text-2xl select-none" aria-hidden>🐕</div>
+      <div className="mt-8 text-2xl select-none" aria-hidden>
+        🐕
+      </div>
     </div>
   );
 }
@@ -374,14 +386,27 @@ export function WelcomeDashboard(): JSX.Element {
 // 5 档梯度——更明显的台阶差，让稀疏数据也能看出"活跃 vs 极度活跃"层次。
 // 0 用极淡 fill（不是全暗），让网格本身可读；1→4 蓝色从深到浅渐变
 const LEVEL_BG: Record<0 | 1 | 2 | 3 | 4, string> = {
-  0: 'bg-zinc-800/40',
+  0: 'bg-surface-3/40',
   1: 'bg-blue-900',
   2: 'bg-blue-700',
   3: 'bg-blue-500',
   4: 'bg-blue-300',
 };
 
-const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+const MONTH_SHORT = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
 
 interface HeatmapCell {
   readonly date: string;
@@ -400,7 +425,11 @@ interface HeatmapCell {
  * （避免 weekday label 占额外 ~28px 把 heatmap 主体推到右侧造成上下错位）。
  * GitHub-style 网格用户通常熟悉"行=weekday 周日→周六、列=week"，无标签也可读。
  */
-function Heatmap({ cols }: { cols: ReadonlyArray<ReadonlyArray<HeatmapCell | null>> }): JSX.Element {
+function Heatmap({
+  cols,
+}: {
+  cols: ReadonlyArray<ReadonlyArray<HeatmapCell | null>>;
+}): JSX.Element {
   // 每列对应的月份：取列中第一个非空 cell 的月份；用于决定哪些列显示月标签
   const monthLabels: ({ month: string; key: number } | null)[] = cols.map((col, ci) => {
     const firstCell = col.find((c): c is HeatmapCell => c !== null);
@@ -427,7 +456,7 @@ function Heatmap({ cols }: { cols: ReadonlyArray<ReadonlyArray<HeatmapCell | nul
         {monthLabels.map((m, ci) => (
           <div
             key={ci}
-            className="text-[10px] text-zinc-500 font-mono leading-none whitespace-nowrap overflow-visible"
+            className="text-[11px] text-fg-muted font-mono leading-none whitespace-nowrap overflow-visible"
           >
             {m?.month ?? ''}
           </div>
@@ -444,7 +473,7 @@ function Heatmap({ cols }: { cols: ReadonlyArray<ReadonlyArray<HeatmapCell | nul
               ) : (
                 <div
                   key={cell.date}
-                  className={`aspect-square rounded-sm transition-all hover:ring-1 hover:ring-zinc-400 hover:scale-110 cursor-default ${LEVEL_BG[cell.level]}`}
+                  className={`aspect-square rounded-sm transition-all hover:ring-1 hover:ring-border-strong hover:scale-110 cursor-default ${LEVEL_BG[cell.level]}`}
                   title={`${cell.date} · ${cell.count} message${cell.count === 1 ? '' : 's'}`}
                 />
               ),
@@ -454,7 +483,7 @@ function Heatmap({ cols }: { cols: ReadonlyArray<ReadonlyArray<HeatmapCell | nul
       </div>
 
       {/* 图例 — 靠右贴 heatmap 右缘 */}
-      <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-zinc-500 font-mono justify-end">
+      <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-fg-muted font-mono justify-end">
         <span>Less</span>
         <div className={`w-3 h-3 rounded-sm ${LEVEL_BG[0]}`} aria-hidden />
         <div className={`w-3 h-3 rounded-sm ${LEVEL_BG[1]}`} aria-hidden />
@@ -488,18 +517,15 @@ function FavoriteModelCell({
   // 副名 dim 一档 + 多行（provider · sessions 计数）。
   return (
     <div className="min-w-0">
-      <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-0.5">
+      <div className="text-[11px] text-fg-muted uppercase tracking-wider mb-0.5">
         Favorite model
       </div>
       <div className="flex items-start gap-1.5 min-w-0">
-        <span
-          className="w-1.5 h-1.5 rounded-full bg-purple-400 flex-shrink-0 mt-1.5"
-          aria-hidden
-        />
+        <span className="w-1.5 h-1.5 rounded-full bg-purple-400 flex-shrink-0 mt-1.5" aria-hidden />
         <div className="min-w-0 flex-1">
           {/* 主名：有 model 时优先显示 model alias（更精确）；允许 break-words 多行 wrap */}
           <div
-            className="text-sm text-zinc-100 leading-tight break-words"
+            className="text-sm text-fg-primary leading-tight break-words"
             title={modelLabel ?? providerLabel}
           >
             {modelLabel ?? providerLabel}
@@ -507,18 +533,18 @@ function FavoriteModelCell({
           {/* 副名：当有 model 时，下一行显示 provider；否则显示 sessions 数 */}
           {modelLabel ? (
             <>
-              <div className="text-[10px] text-zinc-400 mt-0.5 break-words leading-tight">
+              <div className="text-[11px] text-fg-muted mt-0.5 break-words leading-tight">
                 {providerLabel}
               </div>
               {sessions > 0 && (
-                <div className="text-[10px] text-zinc-500 mt-0.5">
+                <div className="text-[11px] text-fg-muted mt-0.5">
                   {sessions} session{sessions === 1 ? '' : 's'}
                 </div>
               )}
             </>
           ) : (
             sessions > 0 && (
-              <div className="text-[10px] text-zinc-500 mt-0.5">
+              <div className="text-[11px] text-fg-muted mt-0.5">
                 {sessions} session{sessions === 1 ? '' : 's'}
               </div>
             )
@@ -546,7 +572,7 @@ function ModelsView({
 }): JSX.Element {
   if (breakdown.length === 0) {
     return (
-      <div className="text-xs text-zinc-500 italic py-8 text-center">
+      <div className="text-xs text-fg-muted italic py-8 text-center">
         No model usage yet — start a session to see your model breakdown.
       </div>
     );
@@ -554,7 +580,7 @@ function ModelsView({
   const maxTokens = Math.max(...breakdown.map((b) => b.tokens), 1);
   return (
     <div className="flex flex-col gap-2">
-      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 text-[10px] text-zinc-500 uppercase tracking-wider pb-1 border-b border-zinc-800">
+      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 text-[11px] text-fg-muted uppercase tracking-wider pb-1 border-b border-border-default">
         <span>Model</span>
         <span className="text-right">Sessions</span>
         <span className="text-right">Messages</span>
@@ -562,23 +588,29 @@ function ModelsView({
       </div>
       {breakdown.map((b) => {
         // 真 model alias 时显示 "model · provider"；只有 provider id 时退回 displayName
-        const providerName = providers.find((p) => p.id === b.providerId)?.displayName ?? b.providerId;
+        const providerName =
+          providers.find((p) => p.id === b.providerId)?.displayName ?? b.providerId;
         const isRealModel = b.id !== b.providerId;
         const displayName = isRealModel ? `${b.id} · ${providerName}` : providerName;
         const pct = (b.tokens / maxTokens) * 100;
         return (
-          <div key={b.id} className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 items-center text-xs py-1">
+          <div
+            key={b.id}
+            className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 items-center text-xs py-1"
+          >
             <div className="min-w-0">
-              <div className="text-zinc-200 truncate font-medium" title={displayName}>
+              <div className="text-fg-primary truncate font-medium" title={displayName}>
                 {displayName}
               </div>
-              <div className="h-1 bg-zinc-800 rounded overflow-hidden mt-1">
+              <div className="h-1 bg-surface-3 rounded overflow-hidden mt-1">
                 <div className="h-full bg-blue-500" style={{ width: `${pct}%` }} />
               </div>
             </div>
-            <span className="text-zinc-300 text-right font-mono">{formatNum(b.sessions)}</span>
-            <span className="text-zinc-300 text-right font-mono">{formatNum(b.messages)}</span>
-            <span className="text-zinc-300 text-right font-mono">{formatTokensBig(b.tokens)}</span>
+            <span className="text-fg-secondary text-right font-mono">{formatNum(b.sessions)}</span>
+            <span className="text-fg-secondary text-right font-mono">{formatNum(b.messages)}</span>
+            <span className="text-fg-secondary text-right font-mono">
+              {formatTokensBig(b.tokens)}
+            </span>
           </div>
         );
       })}
@@ -597,22 +629,21 @@ function ProjectView({
 }): JSX.Element {
   if (!projectRoot) {
     return (
-      <div className="text-xs text-zinc-500 italic py-8 text-center">
+      <div className="text-xs text-fg-muted italic py-8 text-center">
         Open a project to see git activity.
       </div>
     );
   }
   if (loading && gitStats === null) {
     return (
-      <div className="text-xs text-zinc-500 italic py-8 text-center">
-        Reading git history…
-      </div>
+      <div className="text-xs text-fg-muted italic py-8 text-center">Reading git history…</div>
     );
   }
   if (!gitStats || !gitStats.isGitRepo) {
     return (
-      <div className="text-xs text-zinc-500 italic py-8 text-center">
-        Not a git repository — open a project that has <code className="text-zinc-400 bg-zinc-900 px-1 rounded">.git/</code>.
+      <div className="text-xs text-fg-muted italic py-8 text-center">
+        Not a git repository — open a project that has{' '}
+        <code className="text-fg-muted bg-surface-2 px-1 rounded">.git/</code>.
       </div>
     );
   }
@@ -640,20 +671,14 @@ function ProjectView({
         <StatCell label="Commits" value={formatNum(gitStats.commits)} />
         <StatCell label="Contributors" value={String(gitStats.contributors)} />
         <StatCell label="Files changed" value={formatNum(gitStats.filesChanged)} />
-        <StatCell
-          label="Lines added"
-          value={`+${formatNum(gitStats.linesAdded)}`}
-        />
-        <StatCell
-          label="Lines deleted"
-          value={`−${formatNum(gitStats.linesDeleted)}`}
-        />
+        <StatCell label="Lines added" value={`+${formatNum(gitStats.linesAdded)}`} />
+        <StatCell label="Lines deleted" value={`−${formatNum(gitStats.linesDeleted)}`} />
       </div>
 
       {/* 每日 commits 柱状图 (最近 30 天) */}
       {gitStats.commits > 0 && (
         <div>
-          <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">
+          <div className="text-[11px] text-fg-muted uppercase tracking-wider mb-1.5">
             Commits per day · last 30 days
           </div>
           <div className="flex items-end gap-0.5 h-16">
@@ -662,7 +687,7 @@ function ProjectView({
               return (
                 <div
                   key={b.date}
-                  className="flex-1 bg-zinc-800/60 rounded-sm relative overflow-hidden"
+                  className="flex-1 bg-surface-3/60 rounded-sm relative overflow-hidden"
                   title={`${b.date} · ${b.count} commit${b.count === 1 ? '' : 's'}`}
                 >
                   <div
@@ -677,7 +702,7 @@ function ProjectView({
       )}
 
       {gitStats.commits === 0 && (
-        <div className="text-xs text-zinc-500 italic py-4 text-center">
+        <div className="text-xs text-fg-muted italic py-4 text-center">
           No commits in this time range.
         </div>
       )}
@@ -699,7 +724,7 @@ function TabButton({
       type="button"
       onClick={onClick}
       className={`px-2.5 py-1 rounded text-xs font-medium ${
-        active ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
+        active ? 'bg-surface-3 text-fg-primary' : 'text-fg-muted hover:text-fg-secondary'
       }`}
     >
       {label}
@@ -720,8 +745,8 @@ function RangeButton({
     <button
       type="button"
       onClick={onClick}
-      className={`px-2 py-1 rounded text-[10px] font-mono ${
-        active ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
+      className={`px-2 py-1 rounded text-[11px] font-mono ${
+        active ? 'bg-surface-3 text-fg-primary' : 'text-fg-muted hover:text-fg-secondary'
       }`}
     >
       {label}
@@ -740,8 +765,8 @@ function StatCell({
 }): JSX.Element {
   return (
     <div className="min-w-0">
-      <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-0.5">{label}</div>
-      <div className={`text-lg text-zinc-100 ${truncate ? 'truncate' : ''}`} title={value}>
+      <div className="text-[11px] text-fg-muted uppercase tracking-wider mb-0.5">{label}</div>
+      <div className={`text-lg text-fg-primary ${truncate ? 'truncate' : ''}`} title={value}>
         {value}
       </div>
     </div>

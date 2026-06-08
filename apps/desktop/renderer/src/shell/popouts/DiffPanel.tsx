@@ -97,16 +97,16 @@ export function DiffPanel(): JSX.Element {
 
   if (!path) {
     return (
-      <div className="h-full flex items-center justify-center text-zinc-600 text-xs p-4 text-center">
+      <div className="h-full flex items-center justify-center text-fg-faint text-xs p-4 text-center">
         No diff selected. Run a write/edit tool to populate.
       </div>
     );
   }
   if (err) {
-    return <div className="p-3 text-xs text-zinc-500 font-mono">{err}</div>;
+    return <div className="p-3 text-xs text-fg-muted font-mono">{err}</div>;
   }
   if (!diff) {
-    return <div className="p-3 text-xs text-zinc-500">loading…</div>;
+    return <div className="p-3 text-xs text-fg-muted">loading…</div>;
   }
   // F044: 头部加 source pill 让用户分辨数据来源
   const sourcePill = (() => {
@@ -121,8 +121,8 @@ export function DiffPanel(): JSX.Element {
   })();
   return (
     <div className="h-full flex flex-col">
-      <div className="px-3 py-1 border-b border-zinc-900 text-[11px] text-zinc-500 font-mono truncate flex-shrink-0 flex items-center gap-2">
-        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${sourcePill.cls}`}>
+      <div className="px-3 py-1 border-b border-border-default text-xs text-fg-muted font-mono truncate flex-shrink-0 flex items-center gap-2">
+        <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${sourcePill.cls}`}>
           {sourcePill.text}
         </span>
         <span className="truncate">{path}</span>

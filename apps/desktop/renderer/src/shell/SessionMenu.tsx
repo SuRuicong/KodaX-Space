@@ -34,7 +34,9 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
   const setCurrentSession = useAppStore((s) => s.setCurrentSession);
   const forkSessionBuffers = useAppStore((s) => s.forkSessionBuffers);
   const rewindSessionBuffers = useAppStore((s) => s.rewindSessionBuffers);
-  const userMessages = useAppStore((s) => s.userMessagesBySession[sessionId] ?? EMPTY_USER_MESSAGES);
+  const userMessages = useAppStore(
+    (s) => s.userMessagesBySession[sessionId] ?? EMPTY_USER_MESSAGES,
+  );
   const sessionFlags = useAppStore((s) => s.sessionFlags[sessionId]);
   const toggleFlag = useAppStore((s) => s.toggleSessionFlag);
   const session = sessions.find((x) => x.sessionId === sessionId);
@@ -53,9 +55,18 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
         f: () => void doFork(),
         w: () => void doRewind(),
         l: () => setShowLineage((v) => !v),
-        p: () => { toggleFlag(sessionId, 'pinned'); onClose(); },
-        u: () => { toggleFlag(sessionId, 'unread'); onClose(); },
-        a: () => { toggleFlag(sessionId, 'archived'); onClose(); },
+        p: () => {
+          toggleFlag(sessionId, 'pinned');
+          onClose();
+        },
+        u: () => {
+          toggleFlag(sessionId, 'unread');
+          onClose();
+        },
+        a: () => {
+          toggleFlag(sessionId, 'archived');
+          onClose();
+        },
         escape: () => onClose(),
       };
       const fn = map[key];
@@ -188,9 +199,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
 
   if (renaming) {
     return (
-      <div
-        className="absolute left-0 top-full mt-1 w-64 bg-zinc-900 border border-zinc-800 rounded shadow-xl p-2 z-50"
-      >
+      <div className="absolute left-0 top-full mt-1 w-64 bg-surface-2 border border-border-default rounded shadow-xl p-2 z-50">
         <input
           type="text"
           value={newTitle}
@@ -203,14 +212,14 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
             }
           }}
           autoFocus
-          className="w-full bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 px-2 py-1 rounded focus:outline-none focus:border-zinc-700"
+          className="w-full bg-surface border border-border-default text-xs text-fg-primary px-2 py-1 rounded focus:outline-none focus:border-border-strong"
           placeholder="New session title"
         />
-        <div className="flex gap-1 mt-1 text-[10px]">
+        <div className="flex gap-1 mt-1 text-[11px]">
           <button
             type="button"
             onClick={() => void doRename()}
-            className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+            className="px-2 py-0.5 rounded bg-surface-3 hover:bg-hover-bg text-fg-primary"
           >
             Save
           </button>
@@ -220,7 +229,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
               setRenaming(false);
               onClose();
             }}
-            className="px-2 py-0.5 text-zinc-500 hover:text-zinc-300"
+            className="px-2 py-0.5 text-fg-muted hover:text-fg-secondary"
           >
             Cancel
           </button>
@@ -231,7 +240,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
 
   return (
     <div
-      className={`absolute left-0 top-full mt-1 ${showLineage ? 'w-80' : 'w-52'} bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 text-xs z-50`}
+      className={`absolute left-0 top-full mt-1 ${showLineage ? 'w-80' : 'w-52'} bg-surface-2 border border-border-default rounded shadow-xl py-1 text-xs z-50`}
       onMouseLeave={onClose}
     >
       <MenuRow icon="↗" label="Open in" shortcut="" disabled hint="External app — v0.1.x" />
@@ -239,13 +248,19 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
         icon={sessionFlags?.pinned ? '📌✓' : '📌'}
         label={sessionFlags?.pinned ? 'Unpin' : 'Pin'}
         shortcut="P"
-        onClick={() => { toggleFlag(sessionId, 'pinned'); onClose(); }}
+        onClick={() => {
+          toggleFlag(sessionId, 'pinned');
+          onClose();
+        }}
       />
       <MenuRow
         icon={sessionFlags?.unread ? '●✓' : '●'}
         label={sessionFlags?.unread ? 'Mark as read' : 'Mark as unread'}
         shortcut="U"
-        onClick={() => { toggleFlag(sessionId, 'unread'); onClose(); }}
+        onClick={() => {
+          toggleFlag(sessionId, 'unread');
+          onClose();
+        }}
       />
       <MenuRow icon="✎" label="Rename" shortcut="R" onClick={() => setRenaming(true)} />
       <MenuRow icon="⑂" label="Fork" shortcut="F" onClick={() => void doFork()} />
@@ -264,7 +279,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
         onClick={() => setShowLineage((v) => !v)}
       />
       {showLineage && (
-        <div className="border-t border-zinc-800 mt-1 pt-1">
+        <div className="border-t border-border-default mt-1 pt-1">
           <SessionLineagePanel
             anchorSessionId={sessionId}
             onPickSession={(sid) => {
@@ -279,9 +294,12 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
         icon={sessionFlags?.archived ? '📦✓' : '📦'}
         label={sessionFlags?.archived ? 'Unarchive' : 'Archive'}
         shortcut="A"
-        onClick={() => { toggleFlag(sessionId, 'archived'); onClose(); }}
+        onClick={() => {
+          toggleFlag(sessionId, 'archived');
+          onClose();
+        }}
       />
-      <div className="border-t border-zinc-800 my-1" />
+      <div className="border-t border-border-default my-1" />
       <MenuRow icon="🗑" label="Delete" shortcut="D" onClick={() => void doDelete()} danger />
     </div>
   );
@@ -297,7 +315,15 @@ interface MenuRowProps {
   danger?: boolean;
 }
 
-function MenuRow({ icon, label, shortcut, onClick, disabled, hint, danger }: MenuRowProps): JSX.Element {
+function MenuRow({
+  icon,
+  label,
+  shortcut,
+  onClick,
+  disabled,
+  hint,
+  danger,
+}: MenuRowProps): JSX.Element {
   return (
     <button
       type="button"
@@ -306,15 +332,17 @@ function MenuRow({ icon, label, shortcut, onClick, disabled, hint, danger }: Men
       title={hint}
       className={`w-full text-left px-3 py-1 flex items-center gap-2 ${
         disabled
-          ? 'text-zinc-700 cursor-not-allowed'
+          ? 'text-fg-faint cursor-not-allowed'
           : danger
             ? 'text-red-400 hover:bg-red-950/40'
-            : 'text-zinc-300 hover:bg-zinc-800'
+            : 'text-fg-secondary hover:bg-hover-bg'
       }`}
     >
-      <span className="w-4" aria-hidden>{icon}</span>
+      <span className="w-4" aria-hidden>
+        {icon}
+      </span>
       <span className="flex-1">{label}</span>
-      <span className="text-[10px] text-zinc-600">{shortcut}</span>
+      <span className="text-[11px] text-fg-faint">{shortcut}</span>
     </button>
   );
 }

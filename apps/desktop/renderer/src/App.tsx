@@ -68,7 +68,11 @@ export default function App(): JSX.Element {
     // FEATURE_004 启动时拉一次 provider 列表（main 已经把 keychain 中的 key 注入 env）
     bridge.invoke('provider.list', undefined).then((result) => {
       if (result.ok) {
-        setProviders(result.data.providers, result.data.defaultProviderId, result.data.keychainBackend);
+        setProviders(
+          result.data.providers,
+          result.data.defaultProviderId,
+          result.data.keychainBackend,
+        );
       }
     });
 
@@ -212,9 +216,7 @@ export default function App(): JSX.Element {
     if (!window.kodaxSpace) return;
     const unsub = window.kodaxSpace.on('notification.clicked', (payload) => {
       if (!payload.sessionId) return;
-      const exists = useAppStore
-        .getState()
-        .sessions.some((s) => s.sessionId === payload.sessionId);
+      const exists = useAppStore.getState().sessions.some((s) => s.sessionId === payload.sessionId);
       if (exists) setCurrentSessionForNotif(payload.sessionId);
     });
     return () => unsub();
@@ -273,18 +275,18 @@ export default function App(): JSX.Element {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100">
-      <header className="border-b border-zinc-800 px-4 py-2.5 flex items-center gap-3 flex-shrink-0">
+    <div className="h-screen flex flex-col bg-surface text-fg-primary">
+      <header className="border-b border-border-default px-4 py-2.5 flex items-center gap-3 flex-shrink-0">
         <div className="w-2 h-2 rounded-full bg-emerald-500" aria-hidden />
         <h1 className="text-sm font-semibold">KodaX Space</h1>
-        <span className="text-xs text-zinc-500 font-mono">
-          v{version?.spaceVersion ?? '?.?.?'}
-        </span>
+        <span className="text-xs text-fg-muted font-mono">v{version?.spaceVersion ?? '?.?.?'}</span>
         <button
           type="button"
           onClick={() => setShowFiles((v) => !v)}
-          className={`ml-auto px-2 py-1 text-[11px] rounded border border-zinc-800 flex items-center gap-1.5 ${
-            showFiles ? 'bg-zinc-800 text-zinc-100' : 'bg-zinc-900 text-zinc-400 hover:bg-zinc-800'
+          className={`ml-auto px-2 py-1 text-xs rounded border border-border-default flex items-center gap-1.5 ${
+            showFiles
+              ? 'bg-surface-3 text-fg-primary'
+              : 'bg-surface-2 text-fg-muted hover:bg-hover-bg'
           }`}
           title="Toggle file panel"
         >
@@ -294,15 +296,17 @@ export default function App(): JSX.Element {
         <button
           type="button"
           onClick={() => setShowSettings(true)}
-          className="px-2 py-1 text-[11px] rounded bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-zinc-800 flex items-center gap-1.5"
+          className="px-2 py-1 text-xs rounded bg-surface-2 border border-border-default text-fg-secondary hover:bg-hover-bg flex items-center gap-1.5"
           title="Provider settings"
         >
           <span aria-hidden>⚙</span>
           <span className="font-mono">
-            {defaultProvider ? defaultProvider.displayName : `${configuredCount}/${providers.length} providers`}
+            {defaultProvider
+              ? defaultProvider.displayName
+              : `${configuredCount}/${providers.length} providers`}
           </span>
         </button>
-        <span className="text-[10px] text-zinc-600 font-mono">
+        <span className="text-[11px] text-fg-faint font-mono">
           {version
             ? `electron ${version.electronVersion} · chromium ${version.chromeVersion}`
             : 'loading…'}
@@ -310,7 +314,7 @@ export default function App(): JSX.Element {
       </header>
 
       <div className="flex-1 flex min-h-0">
-        <aside className="w-60 flex flex-col border-r border-zinc-800 flex-shrink-0">
+        <aside className="w-60 flex flex-col border-r border-border-default flex-shrink-0">
           <ProjectPicker />
           <SessionList />
         </aside>
@@ -318,10 +322,10 @@ export default function App(): JSX.Element {
         {showFiles && <FilePanel />}
       </div>
 
-      <footer className="border-t border-zinc-800 px-4 py-1.5 text-[10px] text-zinc-600 flex justify-between flex-shrink-0">
+      <footer className="border-t border-border-default px-4 py-1.5 text-[11px] text-fg-faint flex justify-between flex-shrink-0">
         <span>
           FEATURE_004 · Mock adapter · docs:{' '}
-          <code className="font-mono text-zinc-500">docs/HLD.md</code>
+          <code className="font-mono text-fg-muted">docs/HLD.md</code>
         </span>
         <span>{version?.platform ?? ''}</span>
       </footer>

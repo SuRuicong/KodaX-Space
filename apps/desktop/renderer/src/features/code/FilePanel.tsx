@@ -114,26 +114,28 @@ export function FilePanel(): JSX.Element | null {
 
   if (!projectRoot) {
     return (
-      <div className="w-[420px] border-l border-zinc-800 flex items-center justify-center text-zinc-600 text-xs">
+      <div className="w-[420px] border-l border-border-default flex items-center justify-center text-fg-faint text-xs">
         Open a project to browse files.
       </div>
     );
   }
 
   return (
-    <aside className="w-[480px] border-l border-zinc-800 flex flex-col flex-shrink-0 min-h-0">
-      <div className="px-3 py-2 border-b border-zinc-800 flex items-center gap-2 text-[11px] text-zinc-400 flex-shrink-0">
+    <aside className="w-[480px] border-l border-border-default flex flex-col flex-shrink-0 min-h-0">
+      <div className="px-3 py-2 border-b border-border-default flex items-center gap-2 text-xs text-fg-muted flex-shrink-0">
         <span className="font-medium">Files</span>
         {selectedPath && (
           <>
-            <span className="text-zinc-700">·</span>
-            <code className="font-mono truncate flex-1 text-zinc-500" title={selectedPath}>
+            <span className="text-fg-faint">·</span>
+            <code className="font-mono truncate flex-1 text-fg-muted" title={selectedPath}>
               {selectedPath}
             </code>
             <button
               type="button"
-              className={`px-1.5 py-0.5 rounded text-[10px] ${
-                viewMode === 'read' ? 'bg-zinc-800 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'
+              className={`px-1.5 py-0.5 rounded text-[11px] ${
+                viewMode === 'read'
+                  ? 'bg-surface-3 text-fg-primary'
+                  : 'text-fg-muted hover:text-fg-secondary'
               }`}
               onClick={() => setViewMode('read')}
             >
@@ -141,8 +143,10 @@ export function FilePanel(): JSX.Element | null {
             </button>
             <button
               type="button"
-              className={`px-1.5 py-0.5 rounded text-[10px] ${
-                viewMode === 'diff' ? 'bg-zinc-800 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'
+              className={`px-1.5 py-0.5 rounded text-[11px] ${
+                viewMode === 'diff'
+                  ? 'bg-surface-3 text-fg-primary'
+                  : 'text-fg-muted hover:text-fg-secondary'
               }`}
               onClick={() => setViewMode('diff')}
               disabled={!diffContent && viewMode !== 'diff'}
@@ -154,7 +158,7 @@ export function FilePanel(): JSX.Element | null {
       </div>
 
       <div className="flex flex-1 min-h-0">
-        <div className="w-[180px] border-r border-zinc-800 overflow-y-auto overflow-x-hidden flex-shrink-0">
+        <div className="w-[180px] border-r border-border-default overflow-y-auto overflow-x-hidden flex-shrink-0">
           <FileTree
             projectRoot={projectRoot}
             selectedPath={selectedPath}
@@ -167,12 +171,12 @@ export function FilePanel(): JSX.Element | null {
 
         <div className="flex-1 min-w-0 relative">
           {selectedPath === null && (
-            <div className="absolute inset-0 flex items-center justify-center text-zinc-600 text-xs">
+            <div className="absolute inset-0 flex items-center justify-center text-fg-faint text-xs">
               Select a file from the tree.
             </div>
           )}
           {selectedPath !== null && busy && (
-            <div className="absolute inset-0 flex items-center justify-center text-zinc-500 text-xs">
+            <div className="absolute inset-0 flex items-center justify-center text-fg-muted text-xs">
               loading…
             </div>
           )}
@@ -191,7 +195,9 @@ export function FilePanel(): JSX.Element | null {
             fileContent &&
             !fileContent.truncated &&
             !fileContent.isBinary &&
-            viewMode === 'read' && <MonacoViewer path={selectedPath} content={fileContent.content} />}
+            viewMode === 'read' && (
+              <MonacoViewer path={selectedPath} content={fileContent.content} />
+            )}
           {selectedPath !== null &&
             !busy &&
             !err &&
@@ -215,7 +221,7 @@ export function FilePanel(): JSX.Element | null {
 function FileTooLargePlaceholder({ size }: { size: number }): JSX.Element {
   const mb = (size / (1024 * 1024)).toFixed(2);
   return (
-    <div className="flex items-center justify-center h-full text-xs text-zinc-500 p-4 text-center">
+    <div className="flex items-center justify-center h-full text-xs text-fg-muted p-4 text-center">
       File too large ({mb} MB) — viewer cap is 5 MB.
       <br />
       Open it in your system editor instead.
@@ -225,8 +231,8 @@ function FileTooLargePlaceholder({ size }: { size: number }): JSX.Element {
 
 function BinaryPlaceholder({ path }: { path: string }): JSX.Element {
   return (
-    <div className="flex items-center justify-center h-full text-xs text-zinc-500 p-4 text-center">
-      <code className="font-mono text-zinc-400">{path}</code>
+    <div className="flex items-center justify-center h-full text-xs text-fg-muted p-4 text-center">
+      <code className="font-mono text-fg-muted">{path}</code>
       <br />
       appears to be a binary file.
     </div>

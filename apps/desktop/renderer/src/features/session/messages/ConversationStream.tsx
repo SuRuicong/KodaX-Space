@@ -24,7 +24,9 @@ interface ConversationStreamProps {
 
 export function ConversationStream({ sessionId }: ConversationStreamProps): JSX.Element {
   const events = useAppStore((s) => s.eventsBySession[sessionId] ?? EMPTY_EVENTS);
-  const userMessages = useAppStore((s) => s.userMessagesBySession[sessionId] ?? EMPTY_USER_MESSAGES);
+  const userMessages = useAppStore(
+    (s) => s.userMessagesBySession[sessionId] ?? EMPTY_USER_MESSAGES,
+  );
 
   const messages = useMemo(() => composeMessages({ events, userMessages }), [events, userMessages]);
 
@@ -71,9 +73,7 @@ export function ConversationStream({ sessionId }: ConversationStreamProps): JSX.
         className="h-full overflow-auto px-4 py-3 space-y-3"
       >
         {messages.length === 0 && (
-          <div className="text-zinc-600 italic text-sm">
-            Send a prompt below to start.
-          </div>
+          <div className="text-fg-faint italic text-sm">Send a prompt below to start.</div>
         )}
         {messages.map((m) => {
           switch (m.kind) {
@@ -93,7 +93,7 @@ export function ConversationStream({ sessionId }: ConversationStreamProps): JSX.
         <button
           type="button"
           onClick={jumpToBottom}
-          className="absolute bottom-3 right-4 text-xs px-2 py-1 rounded-full bg-zinc-800/90 border border-zinc-700 hover:bg-zinc-700 text-zinc-300 shadow-lg"
+          className="absolute bottom-3 right-4 text-xs px-2 py-1 rounded-full bg-surface-3/90 border border-border-strong hover:bg-hover-bg text-fg-secondary shadow-lg"
         >
           ↓ Jump to bottom
         </button>

@@ -47,7 +47,10 @@ const GROUPS: readonly ShortcutGroup[] = [
     title: 'UI',
     items: [
       { keys: ['Mod', 'K'], label: 'Quick Ask (one-shot question, no session)' },
-      { keys: ['Mod', 'Shift', 'P'], label: 'Command palette (actions / sessions / files / slash)' },
+      {
+        keys: ['Mod', 'Shift', 'P'],
+        label: 'Command palette (actions / sessions / files / slash)',
+      },
       { keys: ['Mod', 'Shift', 'T'], label: 'Cycle theme (Dark / Light / System)' },
       { keys: ['Mod', 'F'], label: 'Find in transcript (↑/↓ to nav)' },
       { keys: ['Mod', '\\'], label: 'Toggle focus mode (hide sidebars)' },
@@ -111,7 +114,9 @@ export function HelpOverlayController(): JSX.Element | null {
         onClick={(e) => e.stopPropagation()}
       >
         <header className="px-4 py-3 border-b border-border-default flex items-center justify-between sticky top-0 bg-surface">
-          <h2 className="text-sm font-semibold text-fg-primary">Keyboard shortcuts &amp; commands</h2>
+          <h2 className="text-sm font-semibold text-fg-primary">
+            Keyboard shortcuts &amp; commands
+          </h2>
           <button
             type="button"
             onClick={() => setOpen(false)}
@@ -124,8 +129,8 @@ export function HelpOverlayController(): JSX.Element | null {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 p-4">
           {GROUPS.map((g) => (
             <section key={g.title}>
-              <h3 className="text-[10px] uppercase tracking-wider text-fg-muted mb-2">{g.title}</h3>
-              <ul className="space-y-1.5 text-[11px]">
+              <h3 className="text-[11px] uppercase tracking-wider text-fg-muted mb-2">{g.title}</h3>
+              <ul className="space-y-1.5 text-xs">
                 {g.items.map((it) => (
                   // GROUPS 是 module-level const，label 字符串足够稳定唯一作 key —
                   // 比 array index 更经得起未来 GROUPS 重排时的 React 重用 (review LOW)
@@ -136,7 +141,7 @@ export function HelpOverlayController(): JSX.Element | null {
                         <kbd
                           // 单 shortcut 内 key 序列各 modifier+letter 已天然唯一
                           key={k}
-                          className="px-1.5 py-0.5 border border-border-default rounded bg-surface-2 text-fg-primary text-[10px] font-mono"
+                          className="px-1.5 py-0.5 border border-border-default rounded bg-surface-2 text-fg-primary text-[11px] font-mono"
                         >
                           {formatKey(k, platform)}
                         </kbd>

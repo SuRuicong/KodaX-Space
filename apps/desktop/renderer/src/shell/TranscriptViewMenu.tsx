@@ -24,7 +24,7 @@ const VIEW_OPTIONS = [
 ];
 
 const FONT_OPTIONS = [
-  { key: 'sm' as const, label: 'Aa', cls: 'text-[10px]' },
+  { key: 'sm' as const, label: 'Aa', cls: 'text-[11px]' },
   { key: 'base' as const, label: 'Aa', cls: 'text-xs' },
   { key: 'lg' as const, label: 'Aa', cls: 'text-sm' },
 ];
@@ -64,8 +64,10 @@ export function TranscriptViewMenu(): JSX.Element {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`px-2 py-1 text-[11px] rounded font-mono ${
-          open ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800/50'
+        className={`px-2 py-1 text-xs rounded font-mono ${
+          open
+            ? 'bg-surface-3 text-fg-primary'
+            : 'text-fg-secondary hover:text-fg-primary hover:bg-hover-bg'
         }`}
         title="Transcript view (Ctrl+O)"
         aria-label="Transcript view"
@@ -73,29 +75,36 @@ export function TranscriptViewMenu(): JSX.Element {
         <span aria-hidden>▤</span>
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-56 bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 text-xs z-50">
-          <div className="px-3 py-1 flex justify-between items-center text-zinc-500 text-[10px] uppercase tracking-wider">
+        <div className="absolute right-0 top-full mt-1 w-56 bg-surface-2 border border-border-default rounded shadow-xl py-1 text-xs z-50">
+          <div className="px-3 py-1 flex justify-between items-center text-fg-muted text-[11px] uppercase tracking-wider">
             <span>Transcript view</span>
-            <span className="font-mono text-zinc-400 flex items-center gap-1">
-              <kbd className="px-1 border border-zinc-700 rounded">Ctrl</kbd>
-              <kbd className="px-1 border border-zinc-700 rounded">O</kbd>
+            <span className="font-mono text-fg-muted flex items-center gap-1">
+              <kbd className="px-1 border border-border-strong rounded">Ctrl</kbd>
+              <kbd className="px-1 border border-border-strong rounded">O</kbd>
             </span>
           </div>
           {VIEW_OPTIONS.map((o) => (
             <button
               key={o.key}
               type="button"
-              onClick={() => { setView(o.key); setOpen(false); }}
-              className={`w-full text-left px-3 py-1 hover:bg-zinc-800 flex items-center gap-2 ${
-                view === o.key ? 'text-zinc-100' : 'text-zinc-300'
+              onClick={() => {
+                setView(o.key);
+                setOpen(false);
+              }}
+              className={`w-full text-left px-3 py-1 hover:bg-hover-bg flex items-center gap-2 ${
+                view === o.key ? 'text-fg-primary' : 'text-fg-secondary'
               }`}
             >
               <span className="flex-1">{o.label}</span>
-              {view === o.key && <span className="text-emerald-500" aria-hidden>✓</span>}
+              {view === o.key && (
+                <span className="text-emerald-500" aria-hidden>
+                  ✓
+                </span>
+              )}
             </button>
           ))}
           {/* 字号选择 */}
-          <div className="border-t border-zinc-800 mt-1 pt-1 px-3 py-1 flex items-center gap-2">
+          <div className="border-t border-border-default mt-1 pt-1 px-3 py-1 flex items-center gap-2">
             {FONT_OPTIONS.map((f, idx) => (
               <button
                 key={f.key}
@@ -103,8 +112,8 @@ export function TranscriptViewMenu(): JSX.Element {
                 onClick={() => setFont(f.key)}
                 className={`px-2 py-0.5 rounded border ${
                   fontSize === f.key
-                    ? 'border-emerald-500 text-zinc-100'
-                    : 'border-zinc-700 text-zinc-400 hover:text-zinc-200'
+                    ? 'border-emerald-500 text-fg-primary'
+                    : 'border-border-strong text-fg-muted hover:text-fg-primary'
                 }`}
                 title={`Font ${['Small', 'Medium', 'Large'][idx]}`}
               >
@@ -115,13 +124,13 @@ export function TranscriptViewMenu(): JSX.Element {
           {/* 整窗缩放 — 浏览器式 −/百分比/+。点百分比复位 100%。系数全局持久；
               与 Ctrl+滚轮 / Ctrl+± / Ctrl+0 同源（zoomStore）。注意：这跟上面只缩放
               transcript 的字号 [Aa] 是两回事——这里是整个 app 缩放。 */}
-          <div className="border-t border-zinc-800 mt-1 pt-1.5 px-3 py-1.5 flex items-center justify-between gap-2">
-            <span className="text-zinc-400">Zoom</span>
+          <div className="border-t border-border-default mt-1 pt-1.5 px-3 py-1.5 flex items-center justify-between gap-2">
+            <span className="text-fg-muted">Zoom</span>
             <div className="flex items-center gap-0.5">
               <button
                 type="button"
                 onClick={() => stepZoom(-ZOOM_STEP)}
-                className="w-6 h-6 rounded border border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 flex items-center justify-center text-sm leading-none"
+                className="w-6 h-6 rounded border border-border-strong text-fg-secondary hover:bg-hover-bg hover:text-fg-primary flex items-center justify-center text-sm leading-none"
                 title="缩小 (Ctrl+-)"
                 aria-label="Zoom out"
               >
@@ -130,7 +139,7 @@ export function TranscriptViewMenu(): JSX.Element {
               <button
                 type="button"
                 onClick={resetZoom}
-                className="min-w-[3.25rem] px-1 py-0.5 rounded text-zinc-200 hover:bg-zinc-800 tabular-nums text-center"
+                className="min-w-[3.25rem] px-1 py-0.5 rounded text-fg-primary hover:bg-hover-bg tabular-nums text-center"
                 title="复位 100% (Ctrl+0)"
                 aria-label="Reset zoom to 100%"
               >
@@ -139,7 +148,7 @@ export function TranscriptViewMenu(): JSX.Element {
               <button
                 type="button"
                 onClick={() => stepZoom(ZOOM_STEP)}
-                className="w-6 h-6 rounded border border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 flex items-center justify-center text-sm leading-none"
+                className="w-6 h-6 rounded border border-border-strong text-fg-secondary hover:bg-hover-bg hover:text-fg-primary flex items-center justify-center text-sm leading-none"
                 title="放大 (Ctrl+=)"
                 aria-label="Zoom in"
               >

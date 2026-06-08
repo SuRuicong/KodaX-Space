@@ -14,7 +14,7 @@
 //
 // 性能：5k 候选 × 短 query 在 < 30ms；不依赖 DOM，可在 worker 中跑。
 
-const SEP_RE = /[\/\\._\-\s]/;
+const SEP_RE = /[/\\._\-\s]/;
 
 function isBoundary(prev: string | undefined, curr: string): boolean {
   if (prev === undefined) return true; // 起始位置
@@ -33,7 +33,7 @@ function scoreFromStart(
   lcCandidate: string,
   lcQuery: string,
   basenameStart: number,
-  startIdx: number
+  startIdx: number,
 ): number {
   let score = 0;
   let qi = 0;

@@ -1,6 +1,6 @@
 # KodaX Space Feature List
 
-> Last Updated: 2026-06-08 (v0.1.9 released as合并 release; v0.1.10 planning: F044 git diff popout + chore: 清理 ~/.kodax_space 孤儿目录。
+> Last Updated: 2026-06-08 (v0.1.10 planning: F044 git diff popout + F054 视觉系统刷新(refined dark+light token/Geist+JetBrains Mono/Lucide/单一琥珀金, In Progress) + chore: 清理 ~/.kodax_space 孤儿目录。
 > 2026-06-07 (v0.1.8 work-in-progress：7 项已 ship 到 main，等 KodaX SDK 0.7.46 publish 后 bump + tag。
 > v0.1.8 内容：CSP inline-script hash 修复 / HelpOverlay 跨平台快捷键显示 / OC-25 代码块复制 (已存在) /
 > release pipeline renderer-boot last gate / F043 项目级 contextmenu (rename/archive/remove) /
@@ -63,6 +63,7 @@
 | 051 | Partner skill pack：文档事务（PDF 抽表 / 总结 / slides 生成） | New | Medium | v0.1.13 | Planned | [v0.1.13.md#feature_051](features/v0.1.13.md#feature_051-partner-skill-pack文档事务) |
 | 052 | Partner skill pack：研究（deep-research 内化 + web 知识源） | New | Medium | v0.1.14 | Planned | [v0.1.14.md#feature_052](features/v0.1.14.md#feature_052-partner-skill-pack研究) |
 | 053 | Partner 自定义画像 + H1-Partner 完整 harness（依赖 SDK R1/R2） | New | High | v0.1.14 | Blocked | [v0.1.14.md#feature_053](features/v0.1.14.md#feature_053-partner-自定义画像--h1-partner-完整-harness) |
+| 054 | 视觉系统刷新（refined dark+light token / Geist+JetBrains Mono / Lucide / 单一琥珀金） | Enhancement | High | v0.1.10 | In Progress | [v0.1.10.md#feature_054](features/v0.1.10.md#feature_054-视觉系统刷新-refined-darklight-token--geistjetbrains-mono--lucide--单一琥珀金强调) |
 | ~~027~~ | ~~代码签名 + notarize~~ — 2026-06-05 移除，KodaX Space 不走"陌生人公开 Beta"路径 | ~~Internal~~ | — | — | Dropped | — |
 | ~~028~~ | ~~隐私政策 + 文档站~~ — 同上 | ~~Internal~~ | — | — | Dropped | — |
 | 029 | Permission Mode canonical 3 + Auto engine 子档 | Refactor | Critical | v0.1.0-alpha.1 | Completed | [v0.1.0.md#029](features/v0.1.0.md#feature_029-permission-mode-canonical-3--auto-engine-子档) |

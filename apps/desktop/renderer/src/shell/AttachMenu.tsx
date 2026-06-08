@@ -137,13 +137,13 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
               onInsertText(s.cmd + ' ');
               onClose();
             }}
-            className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 flex items-center gap-2 text-xs"
+            className="w-full text-left px-3 py-1.5 hover:bg-hover-bg flex items-center gap-2 text-xs"
           >
             <code className="text-emerald-400 font-mono">{s.cmd}</code>
-            <span className="text-zinc-500 truncate">{s.desc}</span>
+            <span className="text-fg-muted truncate">{s.desc}</span>
           </button>
         ))}
-        <div className="border-t border-zinc-800 mt-1 pt-1 px-3 py-1 text-[10px] text-zinc-500">
+        <div className="border-t border-border-default mt-1 pt-1 px-3 py-1 text-[11px] text-fg-muted">
           Use `/` in textarea for full skill + command picker
         </div>
       </SubMenuFrame>
@@ -153,24 +153,26 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
   if (sub === 'connectors') {
     return (
       <SubMenuFrame title="Connectors (MCP)" onBack={() => setSub('root')}>
-        {discoverErr && <div className="px-3 py-1 text-[10px] text-amber-400">{discoverErr}</div>}
+        {discoverErr && <div className="px-3 py-1 text-[11px] text-amber-400">{discoverErr}</div>}
         {mcpServers === null && !discoverErr && (
-          <div className="px-3 py-1 text-[10px] text-zinc-400">Loading…</div>
+          <div className="px-3 py-1 text-[11px] text-fg-muted">Loading…</div>
         )}
         {mcpServers !== null && mcpServers.length === 0 && (
-          <div className="px-3 py-1 text-[10px] text-zinc-400">
+          <div className="px-3 py-1 text-[11px] text-fg-muted">
             No MCP servers configured. Edit ~/.kodax/config.json to add.
           </div>
         )}
         {mcpServers?.map((s) => (
           <div
             key={`${s.source}:${s.name}`}
-            className="px-3 py-1.5 hover:bg-zinc-800/40 text-xs flex items-center gap-2"
+            className="px-3 py-1.5 hover:bg-hover-bg text-xs flex items-center gap-2"
           >
-            <span className="text-emerald-400" aria-hidden>●</span>
+            <span className="text-emerald-400" aria-hidden>
+              ●
+            </span>
             <span className="flex-1 truncate">{s.name}</span>
-            <span className="text-[10px] text-zinc-500 font-mono">{s.transport}</span>
-            <span className="text-[10px] text-zinc-600">{s.source}</span>
+            <span className="text-[11px] text-fg-muted font-mono">{s.transport}</span>
+            <span className="text-[11px] text-fg-faint">{s.source}</span>
           </div>
         ))}
       </SubMenuFrame>
@@ -180,12 +182,12 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
   if (sub === 'skills') {
     return (
       <SubMenuFrame title="Skills" onBack={() => setSub('root')}>
-        {discoverErr && <div className="px-3 py-1 text-[10px] text-amber-400">{discoverErr}</div>}
+        {discoverErr && <div className="px-3 py-1 text-[11px] text-amber-400">{discoverErr}</div>}
         {skills === null && !discoverErr && (
-          <div className="px-3 py-1 text-[10px] text-zinc-400">Loading…</div>
+          <div className="px-3 py-1 text-[11px] text-fg-muted">Loading…</div>
         )}
         {skills !== null && skills.length === 0 && (
-          <div className="px-3 py-1 text-[10px] text-zinc-400">No skills registered yet.</div>
+          <div className="px-3 py-1 text-[11px] text-fg-muted">No skills registered yet.</div>
         )}
         {skills?.map((sk) => (
           <button
@@ -195,12 +197,12 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
               onInsertText(`/${sk.name}${sk.argumentHint ? ' ' : ''}`);
               onClose();
             }}
-            className="w-full text-left px-3 py-1.5 hover:bg-zinc-800 flex items-center gap-2 text-xs"
+            className="w-full text-left px-3 py-1.5 hover:bg-hover-bg flex items-center gap-2 text-xs"
             title={`${sk.path} (${sk.source})`}
           >
             <code className="text-emerald-400 font-mono">/{sk.name}</code>
-            <span className="text-zinc-500 truncate flex-1">{sk.description}</span>
-            <span className="text-[10px] text-zinc-600">{sk.source}</span>
+            <span className="text-fg-muted truncate flex-1">{sk.description}</span>
+            <span className="text-[11px] text-fg-faint">{sk.source}</span>
           </button>
         ))}
       </SubMenuFrame>
@@ -209,7 +211,7 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
 
   return (
     <div
-      className="absolute left-0 bottom-full mb-1 w-60 bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 text-xs z-50"
+      className="absolute left-0 bottom-full mb-1 w-60 bg-surface-2 border border-border-default rounded shadow-xl py-1 text-xs z-50"
       onMouseLeave={onClose}
     >
       <AttachRow icon="📎" label="Add files or photos" onClick={() => void addFiles()} />
@@ -231,9 +233,16 @@ function SubMenuFrame({
   children: React.ReactNode;
 }): JSX.Element {
   return (
-    <div className="absolute left-0 bottom-full mb-1 w-72 bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 z-50 max-h-80 overflow-y-auto">
-      <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-zinc-500 flex items-center gap-2 sticky top-0 bg-zinc-900">
-        <button type="button" onClick={onBack} className="hover:text-zinc-300" aria-label="Back">←</button>
+    <div className="absolute left-0 bottom-full mb-1 w-72 bg-surface-2 border border-border-default rounded shadow-xl py-1 z-50 max-h-80 overflow-y-auto">
+      <div className="px-3 py-1 text-[11px] uppercase tracking-wider text-fg-muted flex items-center gap-2 sticky top-0 bg-surface-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="hover:text-fg-secondary"
+          aria-label="Back"
+        >
+          ←
+        </button>
         <span>{title}</span>
       </div>
       {children}
@@ -263,12 +272,14 @@ function AttachRow({
       disabled={disabled}
       title={hint}
       className={`w-full text-left px-3 py-1.5 flex items-center gap-2 ${
-        disabled ? 'text-zinc-700 cursor-not-allowed' : 'text-zinc-300 hover:bg-zinc-800'
+        disabled ? 'text-fg-faint cursor-not-allowed' : 'text-fg-secondary hover:bg-hover-bg'
       }`}
     >
-      <span className="w-4" aria-hidden>{icon}</span>
+      <span className="w-4" aria-hidden>
+        {icon}
+      </span>
       <span className="flex-1">{label}</span>
-      {chevron && <Caret open={false} className="text-zinc-600" />}
+      {chevron && <Caret open={false} className="text-fg-faint" />}
     </button>
   );
 }

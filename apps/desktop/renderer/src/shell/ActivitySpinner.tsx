@@ -82,7 +82,11 @@ function snapshotFromEvents(
     const ev = events[i];
     // 状态文案 — 只用最新一条匹配的（外层 break 前先抓 iter/tokens）
     if (status === 'Thinking…') {
-      if (ev.kind === 'tool_start' || ev.kind === 'tool_input_delta' || ev.kind === 'tool_progress') {
+      if (
+        ev.kind === 'tool_start' ||
+        ev.kind === 'tool_input_delta' ||
+        ev.kind === 'tool_progress'
+      ) {
         const name = (ev as { toolName?: string }).toolName ?? 'tool';
         status = `Running ${name}…`;
         activeToolId = (ev as { toolId?: string }).toolId;
@@ -92,7 +96,11 @@ function snapshotFromEvents(
         status = 'Thinking…';
       } else if (ev.kind === 'text_delta') {
         status = 'Writing…';
-      } else if (ev.kind === 'compact_start' || ev.kind === 'compact_stats' || ev.kind === 'compact_end') {
+      } else if (
+        ev.kind === 'compact_start' ||
+        ev.kind === 'compact_stats' ||
+        ev.kind === 'compact_end'
+      ) {
         status = 'Compacting context…';
       }
     }
@@ -140,8 +148,14 @@ function snapshotFromEvents(
           total = ev.thinking.length;
         }
         break;
-      } else if (ev.kind === 'text_delta' || ev.kind === 'tool_start' || ev.kind === 'tool_result'
-              || ev.kind === 'iteration_end' || ev.kind === 'session_start' || ev.kind === 'session_complete') {
+      } else if (
+        ev.kind === 'text_delta' ||
+        ev.kind === 'tool_start' ||
+        ev.kind === 'tool_result' ||
+        ev.kind === 'iteration_end' ||
+        ev.kind === 'session_start' ||
+        ev.kind === 'session_complete'
+      ) {
         break;
       }
     }
@@ -174,7 +188,16 @@ function snapshotFromEvents(
     toolInputChars = undefined;
   }
 
-  return { streaming: true, status, iter, tokens, startedAt, toolPath, thinkingChars, toolInputChars };
+  return {
+    streaming: true,
+    status,
+    iter,
+    tokens,
+    startedAt,
+    toolPath,
+    thinkingChars,
+    toolInputChars,
+  };
 }
 
 function formatTokens(n: number): string {
@@ -216,7 +239,7 @@ function resolveStartedAtMemo(events: readonly SessionEvent[]): number {
 export function ActivitySpinner(): JSX.Element | null {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const events = useAppStore((s) =>
-    currentSessionId ? s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS : EMPTY_EVENTS,
+    currentSessionId ? (s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS) : EMPTY_EVENTS,
   );
   const pending = useAppStore((s) =>
     currentSessionId ? Boolean(s.pendingSendBySession[currentSessionId]) : false,
@@ -242,9 +265,8 @@ export function ActivitySpinner(): JSX.Element | null {
 
   if (!snap.streaming) return null;
 
-  const elapsedSec = snap.startedAt !== null
-    ? Math.max(0, Math.round((Date.now() - snap.startedAt) / 1000))
-    : 0;
+  const elapsedSec =
+    snap.startedAt !== null ? Math.max(0, Math.round((Date.now() - snap.startedAt) / 1000)) : 0;
   const elapsedStr = elapsedSec > 0 ? `${elapsedSec}s` : '';
 
   const iterStr = snap.iter ? `iter ${snap.iter.current}/${snap.iter.max}` : '';
@@ -278,17 +300,17 @@ export function ActivitySpinner(): JSX.Element | null {
   const tail = [elapsedStr, iterStr, tokenStr, charStr].filter(Boolean).join(' · ');
 
   return (
-    <div className="flex items-center gap-2 text-[11px] text-zinc-400 font-mono px-1 py-0.5">
+    <div className="flex items-center gap-2 text-xs text-fg-muted font-mono px-1 py-0.5">
       <span className="text-amber-400 inline-block w-3 text-center" aria-hidden>
         {FRAMES[frame]}
       </span>
-      <span className="text-zinc-300">{statusBase}</span>
+      <span className="text-fg-secondary">{statusBase}</span>
       {toolBase && (
-        <span className="text-zinc-500 truncate max-w-[280px]" title={snap.toolPath ?? undefined}>
+        <span className="text-fg-muted truncate max-w-[280px]" title={snap.toolPath ?? undefined}>
           {toolBase}
         </span>
       )}
-      {tail && <span className="text-zinc-500">· {tail}</span>}
+      {tail && <span className="text-fg-muted">· {tail}</span>}
     </div>
   );
 }
@@ -297,7 +319,7 @@ export function ActivitySpinner(): JSX.Element | null {
 export function useIsStreaming(): boolean {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const events = useAppStore((s) =>
-    currentSessionId ? s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS : EMPTY_EVENTS,
+    currentSessionId ? (s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS) : EMPTY_EVENTS,
   );
   const pending = useAppStore((s) =>
     currentSessionId ? Boolean(s.pendingSendBySession[currentSessionId]) : false,

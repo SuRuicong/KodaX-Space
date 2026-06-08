@@ -116,11 +116,11 @@ function MessageFooter({ text, sentAt }: { text: string; sentAt?: number }): JSX
   // (group/copy 限制 hover 作用域到本按钮，避免 message bubble 整体 hover 时一直显示)。
   // 这样用户一眼看见两个 affordance，不再需要鼠标先找到 bubble 才知道有 copy 可用。
   return (
-    <div className="mt-1 flex items-center gap-2 text-[10px]">
+    <div className="mt-1 flex items-center gap-2 text-[11px]">
       <button
         type="button"
         onClick={() => void copyToClipboard()}
-        className="group/copy flex items-center gap-1 text-zinc-400 hover:text-zinc-100 transition-colors"
+        className="group/copy flex items-center gap-1 text-fg-muted hover:text-fg-primary transition-colors"
         title="Copy message"
         aria-label="Copy message"
       >
@@ -152,10 +152,7 @@ function MessageFooter({ text, sentAt }: { text: string; sentAt?: number }): JSX
         )}
       </button>
       {timeStr && (
-        <span
-          className="text-zinc-500"
-          title={new Date(sentAt!).toLocaleString()}
-        >
+        <span className="text-fg-muted" title={new Date(sentAt!).toLocaleString()}>
           {timeStr}
         </span>
       )}
@@ -189,13 +186,7 @@ function formatRelativeTime(ts: number): string {
 
 // ---- User Bubble ----
 
-export function UserBubble({
-  content,
-  sentAt,
-}: {
-  content: string;
-  sentAt?: number;
-}): JSX.Element {
+export function UserBubble({ content, sentAt }: { content: string; sentAt?: number }): JSX.Element {
   // Claude Desktop 风格 ——「对话即文档」单列布局：user pill **左对齐**与 assistant
   // 同列，浅蓝窄底色、收宽到 max-w-[80%]、width 跟内容走 (inline-block) 不撑满。
   // 这样比之前 80% 右对齐蓝 bubble 视觉更克制，整体读起来像一段文档流。
@@ -236,7 +227,7 @@ export function AssistantBubble({
           type="button"
           onClick={() => setShowThinking((v) => !v)}
           className={[
-            'text-[11px] font-mono mb-1.5 flex items-center gap-1.5',
+            'text-xs font-mono mb-1.5 flex items-center gap-1.5',
             'dark:text-purple-400 dark:hover:text-purple-300',
             'text-purple-700 hover:text-purple-900',
           ].join(' ')}
@@ -256,11 +247,11 @@ export function AssistantBubble({
           {thinking}
         </div>
       )}
-      <div className="text-sm leading-relaxed dark:text-zinc-100 text-zinc-900">
+      <div className="text-sm leading-relaxed dark:text-fg-primary text-fg-primary">
         {text.length > 0 ? (
           <Markdown content={text} />
         ) : (
-          <span className="dark:text-zinc-600 text-zinc-400 italic">…</span>
+          <span className="dark:text-fg-faint text-fg-muted italic">…</span>
         )}
       </div>
       {text.length > 0 && <MessageFooter text={text} sentAt={sentAt} />}
@@ -275,19 +266,19 @@ export function AssistantBubble({
 // 状态主导后 done=emerald / running=amber，跟 DONE 徽章语义一致。
 const TOOL_STATUS_COLOR: Record<'running' | 'done', string> = {
   running: 'dark:border-amber-800/30 dark:bg-amber-950/20 border-amber-200 bg-amber-50/70',
-  done:    'dark:border-emerald-800/30 dark:bg-emerald-950/20 border-emerald-200 bg-emerald-50/70',
+  done: 'dark:border-emerald-800/30 dark:bg-emerald-950/20 border-emerald-200 bg-emerald-50/70',
 };
 
 // 工具种类色相留在 tool name 文字上 —— 用户仍能一眼分清工具类型，但不再霸占 body。
 // 注意：bash 不用 red (语义=错误)，改 rose 表达"powerful + 注意"。
 const TOOL_NAME_COLOR: Record<string, string> = {
-  read:  'dark:text-blue-300 text-blue-700',
+  read: 'dark:text-blue-300 text-blue-700',
   write: 'dark:text-amber-300 text-amber-700',
-  edit:  'dark:text-amber-300 text-amber-700',
-  multi_edit:  'dark:text-amber-300 text-amber-700',
-  bash:  'dark:text-rose-300 text-rose-700',
-  grep:  'dark:text-emerald-300 text-emerald-700',
-  glob:  'dark:text-emerald-300 text-emerald-700',
+  edit: 'dark:text-amber-300 text-amber-700',
+  multi_edit: 'dark:text-amber-300 text-amber-700',
+  bash: 'dark:text-rose-300 text-rose-700',
+  grep: 'dark:text-emerald-300 text-emerald-700',
+  glob: 'dark:text-emerald-300 text-emerald-700',
 };
 
 // v0.1.9 fix: 文件修改类工具默认展开 — 用户期望对话流里直接看到 diff 摘要 (path + ±N),
@@ -314,8 +305,8 @@ export function ToolCallCard({
   const [showFullResult, setShowFullResult] = useState(false);
   // showFullInput / inputPretty / inputCollapse 状态已搬进 ToolEditInputView —
   // OC-21 之后 raw-JSON fallback 由那边统一处理
-  const colorClass = TOOL_STATUS_COLOR[status] ?? 'border-zinc-700 bg-zinc-900/50';
-  const toolNameColor = TOOL_NAME_COLOR[toolName] ?? 'dark:text-zinc-200 text-zinc-800';
+  const colorClass = TOOL_STATUS_COLOR[status] ?? 'border-border-strong bg-surface-2/50';
+  const toolNameColor = TOOL_NAME_COLOR[toolName] ?? 'dark:text-fg-primary text-fg-faint';
   const argSummary = summarizeInput(input);
 
   // P4c: result 走行级折叠（diff middle-collapse / 极端守门）
@@ -329,16 +320,16 @@ export function ToolCallCard({
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-zinc-900/40 rounded"
+        className="w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-hover-bg rounded"
       >
-        <Caret open={expanded} className="text-zinc-500" />
+        <Caret open={expanded} className="text-fg-muted" />
         <span className={`font-semibold ${toolNameColor}`}>{toolName}</span>
-        <span className="text-zinc-400 truncate flex-1">{argSummary}</span>
+        <span className="text-fg-muted truncate flex-1">{argSummary}</span>
         <StatusBadge status={status} />
       </button>
 
       {expanded && (
-        <div className="border-t border-zinc-800 px-3 py-2 space-y-2">
+        <div className="border-t border-border-default px-3 py-2 space-y-2">
           {/* OC-21 (v0.1.8): tool input 渲染走 toolRegistry 查表分发。任意 toolName 都进
               ToolEditInputView，registry 找不到 / 返 null 就回退到 raw-JSON collapse 视图。
               新 tool 加自己的 renderer 只需 registerToolInputRenderer，不再改本文件。 */}
@@ -346,8 +337,8 @@ export function ToolCallCard({
 
           {progress !== undefined && (
             <section>
-              <div className="text-[10px] text-zinc-500 uppercase mb-0.5">progress</div>
-              <div className="text-[11px] text-blue-300">{progress}</div>
+              <div className="text-[11px] text-fg-muted uppercase mb-0.5">progress</div>
+              <div className="text-xs text-blue-300">{progress}</div>
             </section>
           )}
           {result !== undefined && (
@@ -371,7 +362,7 @@ function StatusBadge({ status }: { status: 'running' | 'done' }): JSX.Element {
     return (
       <span
         className={[
-          'text-[10px] uppercase px-1.5 py-0.5 rounded border',
+          'text-[11px] uppercase px-1.5 py-0.5 rounded border',
           'dark:text-amber-400 dark:bg-amber-950/40 dark:border-amber-800/40',
           // Light: 深琥珀字 + 中浅琥珀衬底 + 中深边 — running 显眼
           'text-amber-800 bg-amber-100 border-amber-300',
@@ -384,11 +375,12 @@ function StatusBadge({ status }: { status: 'running' | 'done' }): JSX.Element {
   return (
     <span
       className={[
-        'text-[10px] uppercase px-1.5 py-0.5 rounded border',
+        'text-[11px] uppercase px-1.5 py-0.5 rounded border',
         'dark:text-emerald-400 dark:bg-emerald-950/40 dark:border-emerald-800/40',
         // Light: 深翠字 + 中浅翠衬底 — done 视觉确认强
         'text-emerald-800 bg-emerald-100 border-emerald-300',
-      ].join(' ')}>
+      ].join(' ')}
+    >
       done
     </span>
   );
@@ -417,9 +409,17 @@ function summarizeInput(input?: Record<string, unknown>): string {
 //
 // change_model / check_network 当前没有干净的 renderer 入口，文案已经告诉用户该做什么，
 // 不强行加按钮：错的按钮比没按钮更恼人。
-const ACTION_BUTTONS: Partial<Record<NonNullable<Extract<ConversationMessage, { kind: 'system_notice' }>['action']>, { label: string; event: string }>> = {
+const ACTION_BUTTONS: Partial<
+  Record<
+    NonNullable<Extract<ConversationMessage, { kind: 'system_notice' }>['action']>,
+    { label: string; event: string }
+  >
+> = {
   retry: { label: 'Retry', event: 'kodax-space.focus-textarea' },
-  open_provider_settings: { label: 'Provider settings', event: 'kodax-space.open-provider-settings' },
+  open_provider_settings: {
+    label: 'Provider settings',
+    event: 'kodax-space.open-provider-settings',
+  },
 };
 
 /**
@@ -462,7 +462,9 @@ export function SystemNotice({
   const countdownActive = action === 'retry' && secondsLeft > 0;
 
   return (
-    <div className={`text-[10px] font-mono text-center py-1 border-y ${color} flex items-center justify-center gap-2 flex-wrap`}>
+    <div
+      className={`text-[11px] font-mono text-center py-1 border-y ${color} flex items-center justify-center gap-2 flex-wrap`}
+    >
       <span>{text}</span>
       {actionDef && (
         <button
@@ -525,19 +527,19 @@ function ToolEditInputView({ toolName, input }: ToolEditInputViewProps): JSX.Ele
   if (inputCollapse === null || inputPretty === null) return null;
   return (
     <section>
-      <div className="text-[10px] text-zinc-500 uppercase mb-0.5 flex justify-between items-center">
+      <div className="text-[11px] text-fg-muted uppercase mb-0.5 flex justify-between items-center">
         <span>input</span>
         {inputCollapse.collapsed && (
           <button
             type="button"
             onClick={() => setShowFullInput((v) => !v)}
-            className="text-[10px] text-blue-400 hover:text-blue-300 normal-case"
+            className="text-[11px] text-blue-400 hover:text-blue-300 normal-case"
           >
             {showFullInput ? 'Collapse' : `Show full (${inputCollapse.totalLines} lines)`}
           </button>
         )}
       </div>
-      <pre className="text-[11px] text-zinc-300 whitespace-pre-wrap break-all max-h-96 overflow-auto">
+      <pre className="text-xs text-fg-secondary whitespace-pre-wrap break-all max-h-96 overflow-auto">
         {showFullInput ? inputPretty : inputCollapse.body}
       </pre>
     </section>
@@ -575,13 +577,13 @@ function ToolResultView({
   if (resultCollapse === null) return null;
   return (
     <section>
-      <div className="text-[10px] text-zinc-500 uppercase mb-0.5 flex justify-between items-center">
+      <div className="text-[11px] text-fg-muted uppercase mb-0.5 flex justify-between items-center">
         <span>result</span>
         {resultCollapse.collapsed && (
           <button
             type="button"
             onClick={() => setShowFullResult((v) => !v)}
-            className="text-[10px] text-blue-400 hover:text-blue-300 normal-case"
+            className="text-[11px] text-blue-400 hover:text-blue-300 normal-case"
           >
             {showFullResult ? 'Collapse' : `Show full (${resultCollapse.totalLines} lines)`}
           </button>
@@ -589,7 +591,7 @@ function ToolResultView({
       </div>
       <pre
         className={[
-          'text-[11px] whitespace-pre-wrap break-all max-h-64 overflow-auto',
+          'text-xs whitespace-pre-wrap break-all max-h-64 overflow-auto',
           'dark:text-emerald-300 text-emerald-700',
         ].join(' ')}
       >

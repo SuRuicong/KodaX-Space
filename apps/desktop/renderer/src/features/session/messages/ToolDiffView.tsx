@@ -60,18 +60,21 @@ function basenameOf(p: string): string {
 
 export function ToolDiffView(props: ToolDiffViewProps): JSX.Element {
   const [expanded, setExpanded] = useState(props.defaultExpanded ?? false);
-  const summary = useMemo(() => summarizeChange(props.before, props.after), [props.before, props.after]);
+  const summary = useMemo(
+    () => summarizeChange(props.before, props.after),
+    [props.before, props.after],
+  );
   const name = basenameOf(props.path);
 
   return (
-    <div className="rounded border dark:border-zinc-800 border-zinc-200 overflow-hidden">
+    <div className="rounded border dark:border-border-default border-border-default overflow-hidden">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
         className={[
-          'w-full px-2.5 py-1.5 flex items-center gap-2 text-left text-[11px] font-mono',
-          'dark:bg-zinc-900/50 dark:hover:bg-zinc-900/80 bg-zinc-50 hover:bg-zinc-100',
-          'dark:text-zinc-300 text-zinc-700',
+          'w-full px-2.5 py-1.5 flex items-center gap-2 text-left text-xs font-mono',
+          'dark:bg-surface-2/50 dark:hover:bg-hover-bg bg-surface hover:bg-hover-bg',
+          'dark:text-fg-secondary text-fg-faint',
         ].join(' ')}
         aria-expanded={expanded}
       >
@@ -82,17 +85,15 @@ export function ToolDiffView(props: ToolDiffViewProps): JSX.Element {
         {summary.plus > 0 && (
           <span className="text-emerald-500 font-semibold">+{summary.plus}</span>
         )}
-        {summary.minus > 0 && (
-          <span className="text-red-400 font-semibold">−{summary.minus}</span>
-        )}
+        {summary.minus > 0 && <span className="text-red-400 font-semibold">−{summary.minus}</span>}
         {/* review C3-HIGH-2: 多集合 diff 算出 0/0 但 before !== after 是"行只是被
             重排了" —— 说 "no change" 会误导用户（Monaco 展开后会显示真实 diff）。
             用 ~reordered 跟"真没改"区分。 */}
         {summary.plus === 0 && summary.minus === 0 && props.before !== props.after && (
-          <span className="dark:text-zinc-500 text-zinc-400">~reordered</span>
+          <span className="dark:text-fg-muted text-fg-muted">~reordered</span>
         )}
         {summary.plus === 0 && summary.minus === 0 && props.before === props.after && (
-          <span className="dark:text-zinc-500 text-zinc-400">no change</span>
+          <span className="dark:text-fg-muted text-fg-muted">no change</span>
         )}
       </button>
       {expanded && (
@@ -101,7 +102,7 @@ export function ToolDiffView(props: ToolDiffViewProps): JSX.Element {
         <div className="dark:bg-[#09090b] bg-white" style={{ height: '50vh', maxHeight: 480 }}>
           <Suspense
             fallback={
-              <div className="text-xs dark:text-zinc-500 text-zinc-500 p-2">loading diff…</div>
+              <div className="text-xs dark:text-fg-muted text-fg-muted p-2">loading diff…</div>
             }
           >
             <MonacoDiffViewer path={props.path} before={props.before} after={props.after} />

@@ -81,12 +81,12 @@ export function ZoomController(): JSX.Element | null {
       onClick={resetZoom}
       title="点击复位 100%（Ctrl+0）"
       className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] px-3 py-1.5 rounded-full
-                 bg-zinc-900/90 border border-zinc-700 text-zinc-100 text-xs font-mono shadow-xl
+                 bg-surface-2/90 border border-border-strong text-fg-primary text-xs font-mono shadow-xl
                  backdrop-blur-sm flex items-center gap-2 select-none cursor-pointer
-                 hover:bg-zinc-800/90 transition-colors"
+                 hover:bg-hover-bg transition-colors"
     >
       <span className="tabular-nums">{percent}%</span>
-      {percent !== 100 && <span className="text-[10px] text-zinc-400">Ctrl+0 复位</span>}
+      {percent !== 100 && <span className="text-[11px] text-fg-muted">Ctrl+0 复位</span>}
     </button>
   );
 }

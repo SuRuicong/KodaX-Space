@@ -394,9 +394,7 @@ export function registerProjectChannels(): void {
       return { isGitRepo: false, diff: '', truncated: false, error: null };
     }
     // --no-color: 避免 ANSI 染色字符进 schema; --unified=3: 默认上下文够阅读
-    const diffResult = await runGit(projectRoot, [
-      'diff', '--no-color', '--unified=3', 'HEAD',
-    ]);
+    const diffResult = await runGit(projectRoot, ['diff', '--no-color', '--unified=3', 'HEAD']);
     if (!diffResult.ok) {
       // git diff 失败 — 区分于"无改动"返回 error 让 UI 报错而不是误显示"无改动" (审查 M2)
       return {
@@ -443,7 +441,7 @@ export function registerProjectChannels(): void {
     let target: string;
     try {
       target = await resolveInsideProject(root, input.path);
-    } catch (err) {
+    } catch {
       // path escapes / NUL byte 等 → 不暴露原始 path,统一返 no-such-file
       // (review LOW-1 顺手 fix: 不再回显 input.path 让 caller 反射)
       return {
@@ -612,10 +610,27 @@ const fileSearchCache = new Map<string, { ts: number; paths: readonly string[] }
 
 // 启发式跳过: 不扫这些目录(performance + 内容不会被 @path 引用)
 const IGNORED_DIRS = new Set<string>([
-  'node_modules', '.git', '.svn', '.hg', '.idea', '.vscode',
-  'dist', 'build', 'out', 'target', '.next', '.nuxt', '.turbo',
-  '.cache', '.parcel-cache', '__pycache__', '.venv', 'venv',
-  'coverage', '.coverage', '.pytest_cache',
+  'node_modules',
+  '.git',
+  '.svn',
+  '.hg',
+  '.idea',
+  '.vscode',
+  'dist',
+  'build',
+  'out',
+  'target',
+  '.next',
+  '.nuxt',
+  '.turbo',
+  '.cache',
+  '.parcel-cache',
+  '__pycache__',
+  '.venv',
+  'venv',
+  'coverage',
+  '.coverage',
+  '.pytest_cache',
 ]);
 
 /** Walk projectRoot 收集 posix 相对路径,跳过 IGNORED_DIRS。BFS 限上限文件数。 */

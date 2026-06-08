@@ -65,7 +65,11 @@ export function TopBar({ sessionId }: TopBarProps): JSX.Element | null {
       .map((p) => ({ id: p.id, displayName: p.displayName, configured: true })),
     ...realProviders
       .filter((p) => !p.configured)
-      .map((p) => ({ id: p.id, displayName: `${p.displayName} (not configured)`, configured: false })),
+      .map((p) => ({
+        id: p.id,
+        displayName: `${p.displayName} (not configured)`,
+        configured: false,
+      })),
   ];
 
   async function handleProviderChange(providerId: string): Promise<void> {
@@ -82,7 +86,7 @@ export function TopBar({ sessionId }: TopBarProps): JSX.Element | null {
         return;
       }
       // 乐观更新本地 session meta——下次 session.list 拉到的就是新值
-      upsertSession({ ...sess,provider: providerId });
+      upsertSession({ ...sess, provider: providerId });
     } finally {
       setProviderBusy(false);
     }
@@ -104,28 +108,24 @@ export function TopBar({ sessionId }: TopBarProps): JSX.Element | null {
         setErr(`${result.error.code}: ${result.error.message}`);
         return;
       }
-      upsertSession({ ...sess,reasoningMode: value });
+      upsertSession({ ...sess, reasoningMode: value });
     } finally {
       setReasoningBusy(false);
     }
   }
 
   return (
-    <div className="border-b border-zinc-800 px-4 py-1.5 flex items-center gap-3 flex-shrink-0 text-xs">
+    <div className="border-b border-border-default px-4 py-1.5 flex items-center gap-3 flex-shrink-0 text-xs">
       {/* 左：provider dropdown */}
       <select
         value={sess.provider}
         onChange={(e) => void handleProviderChange(e.target.value)}
         disabled={providerBusy}
-        className="bg-zinc-900 border border-zinc-800 text-zinc-200 rounded px-1.5 py-0.5 max-w-[180px]"
+        className="bg-surface-2 border border-border-default text-fg-primary rounded px-1.5 py-0.5 max-w-[180px]"
         title="Provider for next prompt"
       >
         {providerOptions.map((p) => (
-          <option
-            key={p.id}
-            value={p.id}
-            disabled={!p.configured && p.id !== MOCK_PROVIDER}
-          >
+          <option key={p.id} value={p.id} disabled={!p.configured && p.id !== MOCK_PROVIDER}>
             {p.displayName}
           </option>
         ))}
@@ -144,12 +144,12 @@ export function TopBar({ sessionId }: TopBarProps): JSX.Element | null {
 
       {/* 右：reasoning mode dropdown */}
       <div className="ml-auto flex items-center gap-1.5">
-        <span className="text-[10px] text-zinc-500 font-mono uppercase">Reasoning</span>
+        <span className="text-[11px] text-fg-muted font-mono uppercase">Reasoning</span>
         <select
           value={sess.reasoningMode}
           onChange={(e) => void handleReasoningChange(e.target.value)}
           disabled={reasoningBusy}
-          className="bg-zinc-900 border border-zinc-800 text-zinc-200 rounded px-1.5 py-0.5"
+          className="bg-surface-2 border border-border-default text-fg-primary rounded px-1.5 py-0.5"
           title="Reasoning mode for next prompt"
         >
           {REASONING_MODES.map((m) => (
@@ -161,7 +161,7 @@ export function TopBar({ sessionId }: TopBarProps): JSX.Element | null {
       </div>
 
       {err && (
-        <span className="text-[10px] text-red-400 font-mono" title={err}>
+        <span className="text-[11px] text-red-400 font-mono" title={err}>
           ⚠ {err.length > 40 ? `${err.slice(0, 40)}…` : err}
         </span>
       )}

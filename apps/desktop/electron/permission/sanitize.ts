@@ -26,8 +26,8 @@
 //   U+2066-2069  isolate（LRI / RLI / FSI / PDI）— 较新的方向操控
 //   U+FEFF       BOM / 零宽不间断空格
 
-// eslint-disable-next-line no-control-regex
-const INVISIBLE_CHARS_RE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g;
+const INVISIBLE_CHARS_RE =
+  /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g;
 
 /**
  * 剥控制符 / RTL override / 零宽 / BOM，折叠空白。

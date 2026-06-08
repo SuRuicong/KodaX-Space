@@ -26,12 +26,12 @@ export function Breadcrumb(): JSX.Element {
   }
 
   return (
-    <div className="flex items-center gap-1 text-sm text-zinc-300 flex-1 min-w-0">
+    <div className="flex items-center gap-1 text-sm text-fg-secondary flex-1 min-w-0">
       {projectName ? (
         <button
           type="button"
           onClick={() => void pickProject()}
-          className="px-1.5 py-0.5 rounded hover:bg-zinc-900 truncate"
+          className="px-1.5 py-0.5 rounded hover:bg-hover-bg truncate"
           title={projectPath ?? ''}
         >
           {projectName}
@@ -40,14 +40,14 @@ export function Breadcrumb(): JSX.Element {
         <button
           type="button"
           onClick={() => void pickProject()}
-          className="px-1.5 py-0.5 rounded hover:bg-zinc-900 text-zinc-500"
+          className="px-1.5 py-0.5 rounded hover:bg-hover-bg text-fg-muted"
         >
           Open folder…
         </button>
       )}
-      <span className="text-zinc-500">/</span>
+      <span className="text-fg-muted">/</span>
       <div className="relative flex items-center min-w-0">
-        <span className="px-1.5 py-0.5 truncate text-zinc-400" title={session?.sessionId}>
+        <span className="px-1.5 py-0.5 truncate text-fg-muted" title={session?.sessionId}>
           {session?.title ?? (session ? 'Untitled session' : 'New session')}
         </span>
         {session && (
@@ -55,7 +55,7 @@ export function Breadcrumb(): JSX.Element {
             <button
               type="button"
               onClick={() => setMenuOpen((v) => !v)}
-              className="px-1 py-0.5 text-zinc-400 hover:text-zinc-300 text-xs"
+              className="px-1 py-0.5 text-fg-muted hover:text-fg-secondary text-xs"
               aria-label="Session options"
             >
               ▾

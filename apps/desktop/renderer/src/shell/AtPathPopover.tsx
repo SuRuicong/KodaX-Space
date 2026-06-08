@@ -97,6 +97,8 @@ export function AtPathPopover({
       cancelled = true;
       clearTimeout(debounceTimer);
     };
+    // 故意只依赖 token?.query：整个 token 对象每次渲染换引用，纳入会导致无谓重跑。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, projectRoot, token?.query]);
 
   // 注册键盘 handler (open 时消费 Tab/Enter/↑↓/Esc; close 时还原 null)
@@ -140,8 +142,8 @@ export function AtPathPopover({
   if (!open || matches.length === 0) return null;
 
   return (
-    <div className="absolute left-1 bottom-full mb-2 w-80 max-h-72 overflow-auto bg-zinc-900 border border-zinc-800 rounded shadow-xl text-[12px] z-50">
-      <div className="px-2 py-1 text-[10px] text-zinc-500 uppercase tracking-wider border-b border-zinc-800/60">
+    <div className="absolute left-1 bottom-full mb-2 w-80 max-h-72 overflow-auto bg-surface-2 border border-border-default rounded shadow-xl text-[12px] z-50">
+      <div className="px-2 py-1 text-[11px] text-fg-muted uppercase tracking-wider border-b border-border-default/60">
         @ Files {token?.query ? `· "${token.query}"` : ''}
       </div>
       <ul>
@@ -158,18 +160,18 @@ export function AtPathPopover({
                   if (token) onAccept(`@${p} `, token.start, caret);
                 }}
                 className={`w-full text-left px-2 py-1 font-mono truncate ${
-                  isActive ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-800/50'
+                  isActive ? 'bg-surface-3 text-fg-primary' : 'text-fg-muted hover:bg-hover-bg'
                 }`}
                 title={p}
               >
-                <span className="text-zinc-200">{basename}</span>
-                {dirname && <span className="text-zinc-500"> · {dirname.replace(/\/$/, '')}</span>}
+                <span className="text-fg-primary">{basename}</span>
+                {dirname && <span className="text-fg-muted"> · {dirname.replace(/\/$/, '')}</span>}
               </button>
             </li>
           );
         })}
       </ul>
-      <div className="px-2 py-1 text-[10px] text-zinc-600 border-t border-zinc-800/60">
+      <div className="px-2 py-1 text-[11px] text-fg-faint border-t border-border-default/60">
         Tab / Enter to insert · ↑↓ to navigate
       </div>
     </div>

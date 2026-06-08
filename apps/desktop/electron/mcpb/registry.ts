@@ -44,14 +44,22 @@ const entrySchema = z.object({
   extensionId: z.string().min(1).max(256),
   name: z.string().min(1).max(128),
   displayName: z.string().min(1).max(128),
-  version: z.string().min(1).max(64).regex(/^[0-9A-Za-z.+\-]+$/),
+  version: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[0-9A-Za-z.+-]+$/),
   description: z.string().max(280).optional(),
   author: z.string().max(128).optional(),
   transport: z.enum(['stdio', 'http']),
   toolCount: z.number().int().min(0).max(1024),
   installedAt: z.number().int().min(0),
   // 内部字段也校验：installDir 必须是绝对路径，server.command 仍走 allowlist （读盘信不过 manifest 写时已校验）
-  installDir: z.string().min(1).max(4096).refine((v) => path.isAbsolute(v), 'installDir must be absolute'),
+  installDir: z
+    .string()
+    .min(1)
+    .max(4096)
+    .refine((v) => path.isAbsolute(v), 'installDir must be absolute'),
   server: z
     .object({
       command: z.string().min(1).max(64),
@@ -103,7 +111,9 @@ export async function readRegistry(): Promise<RegistryFile> {
         // 篡改 / 旧版 schema 不兼容的条目静默丢弃 —— 不致命，重装即可恢复
         const issue = parsed.error.issues[0];
         const namePart =
-          typeof item === 'object' && item !== null && 'name' in item ? String((item as { name: unknown }).name).slice(0, 64) : 'unknown';
+          typeof item === 'object' && item !== null && 'name' in item
+            ? String((item as { name: unknown }).name).slice(0, 64)
+            : 'unknown';
         console.warn(
           `[mcpb-registry] dropped invalid entry "${namePart}" at ${issue?.path.join('.') ?? '<root>'}: ${issue?.message ?? 'schema failed'}`,
         );
@@ -122,7 +132,10 @@ export async function readRegistry(): Promise<RegistryFile> {
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') return EMPTY;
-    console.warn('[mcpb-registry] read failed, starting empty:', err instanceof Error ? err.message : err);
+    console.warn(
+      '[mcpb-registry] read failed, starting empty:',
+      err instanceof Error ? err.message : err,
+    );
     return EMPTY;
   }
 }

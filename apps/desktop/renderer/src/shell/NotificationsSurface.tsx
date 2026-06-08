@@ -49,14 +49,16 @@ export function NotificationsSurface(): JSX.Element | null {
       {visible.map((n) => (
         <div
           key={n.id}
-          className={`px-2 py-1 rounded border text-[11px] flex items-start gap-2 ${SEVERITY_BG[n.severity]}`}
+          className={`px-2 py-1 rounded border text-xs flex items-start gap-2 ${SEVERITY_BG[n.severity]}`}
         >
-          <span aria-hidden className="mt-px">{SEVERITY_ICON[n.severity]}</span>
+          <span aria-hidden className="mt-px">
+            {SEVERITY_ICON[n.severity]}
+          </span>
           <span className="flex-1 leading-snug">{n.text}</span>
           <button
             type="button"
             onClick={() => dismissNotification(n.id)}
-            className="text-zinc-400 hover:text-zinc-200 text-[12px] leading-none"
+            className="text-fg-muted hover:text-fg-primary text-[12px] leading-none"
             title="Dismiss"
             aria-label="Dismiss notification"
           >

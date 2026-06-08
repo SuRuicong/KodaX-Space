@@ -102,7 +102,7 @@ export function ThemeToggle(): JSX.Element {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-[11px] text-fg-muted hover:text-fg-primary px-1.5 py-0.5 rounded hover:bg-hover-bg flex items-center gap-1"
+        className="text-xs text-fg-muted hover:text-fg-primary px-1.5 py-0.5 rounded hover:bg-hover-bg flex items-center gap-1"
         title={`Theme: ${current.label} (⇧Ctrl+T)`}
         aria-label={`Theme ${current.label}`}
       >
@@ -110,13 +110,13 @@ export function ThemeToggle(): JSX.Element {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-44 bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 text-xs z-50">
-          <div className="px-3 py-1 flex justify-between items-center text-zinc-500 text-[10px] uppercase tracking-wider">
+        <div className="absolute right-0 top-full mt-1 w-44 bg-surface-2 border border-border-default rounded shadow-xl py-1 text-xs z-50">
+          <div className="px-3 py-1 flex justify-between items-center text-fg-muted text-[11px] uppercase tracking-wider">
             <span>Theme</span>
-            <span className="font-mono text-zinc-400 flex items-center gap-1">
-              <kbd className="px-1 border border-zinc-700 rounded">⇧</kbd>
-              <kbd className="px-1 border border-zinc-700 rounded">Ctrl</kbd>
-              <kbd className="px-1 border border-zinc-700 rounded">T</kbd>
+            <span className="font-mono text-fg-muted flex items-center gap-1">
+              <kbd className="px-1 border border-border-strong rounded">⇧</kbd>
+              <kbd className="px-1 border border-border-strong rounded">Ctrl</kbd>
+              <kbd className="px-1 border border-border-strong rounded">T</kbd>
             </span>
           </div>
           {OPTIONS.map((o) => {
@@ -129,13 +129,19 @@ export function ThemeToggle(): JSX.Element {
                   setTheme(o.key);
                   setOpen(false);
                 }}
-                className={`w-full text-left px-3 py-1 hover:bg-zinc-800 flex items-center gap-2 ${
-                  selected ? 'text-zinc-100' : 'text-zinc-300'
+                className={`w-full text-left px-3 py-1 hover:bg-hover-bg flex items-center gap-2 ${
+                  selected ? 'text-fg-primary' : 'text-fg-secondary'
                 }`}
               >
-                <span className="w-4" aria-hidden>{o.icon}</span>
+                <span className="w-4" aria-hidden>
+                  {o.icon}
+                </span>
                 <span className="flex-1">{o.label}</span>
-                {selected && <span className="text-emerald-500" aria-hidden>✓</span>}
+                {selected && (
+                  <span className="text-emerald-500" aria-hidden>
+                    ✓
+                  </span>
+                )}
               </button>
             );
           })}

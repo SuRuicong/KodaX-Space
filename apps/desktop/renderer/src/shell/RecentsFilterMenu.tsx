@@ -47,7 +47,11 @@ const GROUP_OPTIONS: ReadonlyArray<{ key: RecentsFilter['groupBy']; label: strin
   { key: 'status', label: 'Status' },
 ];
 
-export function RecentsFilterMenu({ open, onClose, anchorEl }: RecentsFilterMenuProps): JSX.Element | null {
+export function RecentsFilterMenu({
+  open,
+  onClose,
+  anchorEl,
+}: RecentsFilterMenuProps): JSX.Element | null {
   const filter = useAppStore((s) => s.recentsFilter);
   const setFilter = useAppStore((s) => s.setRecentsFilter);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -74,7 +78,7 @@ export function RecentsFilterMenu({ open, onClose, anchorEl }: RecentsFilterMenu
   return (
     <div
       ref={ref}
-      className="absolute left-2 top-8 w-56 bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 text-xs z-50"
+      className="absolute left-2 top-8 w-56 bg-surface-2 border border-border-default rounded shadow-xl py-1 text-xs z-50"
       role="menu"
     >
       <FilterRow
@@ -90,7 +94,9 @@ export function RecentsFilterMenu({ open, onClose, anchorEl }: RecentsFilterMenu
           { key: 'current', label: 'Current only' },
           { key: 'all', label: 'All' },
         ]}
-        onPick={(key) => setFilter({ ...filter, projectScope: key as RecentsFilter['projectScope'] })}
+        onPick={(key) =>
+          setFilter({ ...filter, projectScope: key as RecentsFilter['projectScope'] })
+        }
       />
       <FilterRow
         label="Last activity"
@@ -136,16 +142,16 @@ function FilterRow<T extends string>({
     <button
       type="button"
       onClick={onCycle}
-      className="w-full text-left px-3 py-1 hover:bg-zinc-800 flex items-center gap-2 text-zinc-200"
+      className="w-full text-left px-3 py-1 hover:bg-hover-bg flex items-center gap-2 text-fg-primary"
       title="Click to cycle"
     >
       <span className="flex-1">{label}</span>
-      <span className="text-zinc-400 text-[10px]">{value}</span>
-      <Caret open={false} className="text-zinc-500" />
+      <span className="text-fg-muted text-[11px]">{value}</span>
+      <Caret open={false} className="text-fg-muted" />
     </button>
   );
 }
 
 function Divider(): JSX.Element {
-  return <div className="border-t border-zinc-800 my-1" />;
+  return <div className="border-t border-border-default my-1" />;
 }

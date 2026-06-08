@@ -208,10 +208,10 @@ function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Element | n
       aria-label="Command palette"
     >
       <div
-        className="bg-zinc-950 border border-zinc-800 rounded-lg shadow-2xl w-[640px] max-w-[90vw] max-h-[70vh] flex flex-col overflow-hidden"
+        className="bg-surface border border-border-default rounded-lg shadow-2xl w-[640px] max-w-[90vw] max-h-[70vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="border-b border-zinc-800 px-3 py-2">
+        <div className="border-b border-border-default px-3 py-2">
           <input
             ref={inputRef}
             autoFocus
@@ -219,16 +219,16 @@ function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Element | n
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Type a command, file, session, or /slash…"
-            className="w-full bg-transparent text-zinc-100 placeholder:text-zinc-600 outline-none text-sm"
+            className="w-full bg-transparent text-fg-primary placeholder:text-fg-faint outline-none text-sm"
             aria-label="Command query"
           />
         </div>
         <ul ref={listRef} className="overflow-y-auto flex-1 text-[13px]">
           {loading && filtered.length === 0 && (
-            <li className="px-3 py-4 text-zinc-500 text-center">Loading…</li>
+            <li className="px-3 py-4 text-fg-muted text-center">Loading…</li>
           )}
           {!loading && filtered.length === 0 && (
-            <li className="px-3 py-4 text-zinc-500 text-center">No matches</li>
+            <li className="px-3 py-4 text-fg-muted text-center">No matches</li>
           )}
           {GROUP_ORDER.flatMap((kind) => {
             const arr = grouped.get(kind);
@@ -236,7 +236,7 @@ function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Element | n
             return [
               <li
                 key={`group:${kind}`}
-                className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-zinc-500"
+                className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wider text-fg-muted"
               >
                 {KIND_BADGE[kind].label}
               </li>,
@@ -250,8 +250,8 @@ function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Element | n
                       onClick={() => void item.onPick()}
                       className={`w-full text-left px-3 py-1.5 flex items-center gap-2 ${
                         isActive
-                          ? 'bg-zinc-800 text-zinc-100'
-                          : 'text-zinc-300 hover:bg-zinc-800/60'
+                          ? 'bg-surface-3 text-fg-primary'
+                          : 'text-fg-secondary hover:bg-hover-bg'
                       }`}
                     >
                       <span
@@ -261,7 +261,10 @@ function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Element | n
                       </span>
                       <span className="truncate flex-1">{item.label}</span>
                       {item.hint && (
-                        <span className="text-[11px] text-zinc-500 truncate max-w-[40%]" title={item.hint}>
+                        <span
+                          className="text-xs text-fg-muted truncate max-w-[40%]"
+                          title={item.hint}
+                        >
                           {item.hint}
                         </span>
                       )}
@@ -272,7 +275,7 @@ function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Element | n
             ];
           })}
         </ul>
-        <div className="border-t border-zinc-800 px-3 py-1.5 text-[10px] text-zinc-500 flex gap-3">
+        <div className="border-t border-border-default px-3 py-1.5 text-[11px] text-fg-muted flex gap-3">
           <span>↑↓ navigate</span>
           <span>Enter to select</span>
           <span>Esc to close</span>
@@ -302,10 +305,7 @@ export function CommandPaletteController(): JSX.Element | null {
     const onKey = (e: KeyboardEvent): void => {
       // ⌘Shift+P / Ctrl+Shift+P — VS Code-family command palette muscle memory
       const isCmdShiftP =
-        (e.metaKey || e.ctrlKey) &&
-        e.shiftKey &&
-        !e.altKey &&
-        e.key.toLowerCase() === 'p';
+        (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p';
       if (isCmdShiftP) {
         e.preventDefault();
         setOpen((v) => !v);

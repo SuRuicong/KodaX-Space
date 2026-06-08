@@ -164,7 +164,7 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
   return (
     <div
       ref={listRef}
-      className="absolute left-3 right-3 bottom-full mb-1 max-h-64 overflow-y-auto bg-zinc-900 border border-zinc-800 rounded shadow-xl text-xs z-40"
+      className="absolute left-3 right-3 bottom-full mb-1 max-h-64 overflow-y-auto bg-surface-2 border border-border-default rounded shadow-xl text-xs z-40"
       role="listbox"
       aria-label="Slash commands and skills"
     >
@@ -184,7 +184,7 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
             }}
             onMouseEnter={() => setSelectedIdx(idx)}
             className={`px-3 py-1.5 flex items-center gap-3 cursor-pointer ${
-              selected ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-850'
+              selected ? 'bg-surface-3 text-fg-primary' : 'text-fg-muted hover:bg-hover-bg'
             }`}
           >
             <span
@@ -196,11 +196,9 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
                   slash command 仍 `/<name>` 紧凑显示 */}
               {item.kind === 'skill' ? `/skill:${m.name}` : `/${m.name}`}
             </span>
-            {argsHint && (
-              <span className="text-[10px] text-zinc-600 font-mono">{argsHint}</span>
-            )}
-            <span className="text-zinc-500 truncate">{m.description}</span>
-            <span className="ml-auto text-[9px] text-zinc-600 uppercase">
+            {argsHint && <span className="text-[11px] text-fg-faint font-mono">{argsHint}</span>}
+            <span className="text-fg-muted truncate">{m.description}</span>
+            <span className="ml-auto text-[9px] text-fg-faint uppercase">
               {item.kind === 'slash'
                 ? item.meta.source === 'user'
                   ? 'user'

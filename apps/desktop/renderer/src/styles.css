@@ -16,90 +16,119 @@
     padding: 0;
   }
   body {
-    font-family:
-      -apple-system,
-      BlinkMacSystemFont,
-      'Segoe UI',
-      Roboto,
-      Oxygen,
-      Ubuntu,
-      Cantarell,
-      sans-serif;
+    font-family: var(--ui);
+    font-size: 13.5px;
+    line-height: 1.55;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
-  /* 主题变量 — 默认 light；<html class="dark"> 时切到 dark.
-     R G B 三元 (Tailwind <alpha-value> 模板要求空格分隔的 0-255 数值)。 */
+  /* ============================================================
+     F054 视觉系统刷新 — 单一 token 源 (refined dark+light)
+     :root = light (默认)，<html class="dark"> = dark 覆盖。
+     RGB-triplet 格式 (Tailwind <alpha-value> 要求空格分隔 0-255)。
+     设计依据 + 原型: docs/design/visual-refresh-prototype.html
+     —— 浅色非反转：白内容 + 灰 chrome；off-black 文字；琥珀金 fill 保亮金质感。
+
+     降风险策略：旧 token 名 (surface / fg-x / border-x / hover-bg) 不重命名，
+       只重指到新刻度；新增 surface-4 / accent 系 / fg-faint / code / syntax。
+       于是未迁移组件 (含下方 zinc 反转层) 零改动即换肤。
+     ============================================================ */
   :root {
-    /* light theme (默认) */
-    --surface: 255 255 255;        /* white */
-    --surface-2: 244 244 245;      /* zinc-100 */
-    --surface-3: 228 228 231;      /* zinc-200 */
-    --fg-primary: 24 24 27;        /* zinc-900 */
-    --fg-secondary: 63 63 70;      /* zinc-700 */
-    --fg-muted: 113 113 122;       /* zinc-500 */
-    --border-default: 228 228 231; /* zinc-200 */
-    --border-strong: 212 212 216;  /* zinc-300 */
-    --hover-bg: 244 244 245;       /* zinc-100 */
-    /* 同步 native scrollbar / form widget 配色 */
+    /* —— 表面：4 层 (白内容 + 灰 chrome)。旧名复用，surface-4 为浮层级 —— */
+    --surface: 255 255 255; /* base 对话画布 */
+    --surface-2: 247 247 248; /* raised 面板/侧栏/卡片 */
+    --surface-3: 238 238 241; /* inset 输入/嵌套 */
+    --surface-4: 255 255 255; /* float 弹窗/下拉 (配 shadow) */
+
+    /* —— 文字：off-black，三级 + faint —— */
+    --fg-primary: 26 26 31;
+    --fg-secondary: 86 86 95;
+    --fg-muted: 138 138 147;
+    --fg-faint: 182 182 189;
+
+    /* —— 边框：旧名保留不透明等价值；半透明版给手写工具类 —— */
+    --border-default: 232 232 236;
+    --border-strong: 212 212 216;
+    --hover-bg: 240 240 243;
+    --border-subtle-rgba: rgba(17, 17, 20, 0.07);
+    --border-rgba: rgba(17, 17, 20, 0.12);
+
+    /* —— 品牌强调色：琥珀金。fill 亮金 / ink 取深档保白底 AA / fg 为 fill 上的字 —— */
+    --accent: 245 166 35;
+    --accent-ink: 168 105 8;
+    --accent-fg: 42 29 5;
+    --accent-soft: rgba(245, 166, 35, 0.14);
+    --accent-border: rgba(245, 166, 35, 0.42);
+    --accent-glow: rgba(245, 166, 35, 0.42);
+
+    /* —— 语义状态色 (白底加深档)，只做状态点 —— */
+    --ok: 31 157 82;
+    --run: 31 143 214;
+    --warn: 201 138 9;
+    --danger: 220 77 77;
+
+    /* —— 代码 / diff / 语法 (atom-one-light) —— */
+    --code-bg: 246 246 248;
+    --diff-bg: 251 251 252;
+    --add-bg: rgba(31, 157, 82, 0.1);
+    --add-fg: 21 127 59;
+    --del-bg: rgba(220, 77, 77, 0.09);
+    --del-fg: 179 38 30;
+
     color-scheme: light;
+
+    /* —— shared (不随主题变) —— */
+    --ui:
+      'Geist Variable', 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --mono:
+      'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas,
+      monospace;
+    --ease: cubic-bezier(0.4, 0, 0.2, 1);
   }
   html.dark {
-    --surface: 11 11 12;           /* zinc-950 */
-    --surface-2: 24 24 27;         /* zinc-900 */
-    --surface-3: 39 39 42;         /* zinc-800 */
-    --fg-primary: 244 244 245;     /* zinc-100 */
-    --fg-secondary: 212 212 216;   /* zinc-300 */
-    --fg-muted: 161 161 170;       /* zinc-400 */
-    --border-default: 39 39 42;    /* zinc-800 */
-    --border-strong: 63 63 70;     /* zinc-700 */
-    --hover-bg: 39 39 42;          /* zinc-800 */
+    --surface: 11 11 13; /* base */
+    --surface-2: 21 21 24; /* raised */
+    --surface-3: 29 29 33; /* inset */
+    --surface-4: 38 38 43; /* float */
+
+    --fg-primary: 237 237 239; /* off-white，减光晕 */
+    --fg-secondary: 166 166 174;
+    --fg-muted: 107 107 116;
+    --fg-faint: 70 70 78;
+
+    --border-default: 39 39 42;
+    --border-strong: 63 63 70;
+    --hover-bg: 38 38 43;
+    --border-subtle-rgba: rgba(255, 255, 255, 0.055);
+    --border-rgba: rgba(255, 255, 255, 0.1);
+
+    --accent: 245 181 68;
+    --accent-ink: 245 181 68;
+    --accent-fg: 26 20 7;
+    --accent-soft: rgba(245, 181, 68, 0.12);
+    --accent-border: rgba(245, 181, 68, 0.34);
+    --accent-glow: rgba(245, 181, 68, 0.3);
+
+    --ok: 74 222 128;
+    --run: 76 194 255;
+    --warn: 251 191 36;
+    --danger: 248 113 113;
+
+    --code-bg: 14 14 16;
+    --diff-bg: 14 14 16;
+    --add-bg: rgba(74, 222, 128, 0.07);
+    --add-fg: 134 239 172;
+    --del-bg: rgba(248, 113, 113, 0.06);
+    --del-fg: 252 165 165;
+
     color-scheme: dark;
   }
 }
 
-/* Light theme override layer — alpha.1.
-   组件目前大量使用字面 Tailwind zinc-{50..950} 暗色类（早期一次性建立）。逐文件迁移到
-   语义类 (bg-surface / text-fg-* / etc) 工程量大，先用这层覆盖：
-     html:not(.dark) .bg-zinc-950 → 白
-     html:not(.dark) .bg-zinc-900 → zinc-100
-     ...
-   规则选择器多一层 (html:not(.dark) + .bg-zinc-*) 比裸 .bg-zinc-* 特异性高，覆盖生效。
-   逐步把组件改成语义类后，这层可以缩减乃至删除。
-
-   *只覆盖背景/文字/边框三类*。Accent (emerald / amber / red / blue / purple) 颜色保持不变 —
-   它们在亮/暗背景上都能 work，强行翻转反而破坏视觉层级。 */
-/* Backgrounds */
-html:not(.dark) .bg-zinc-950 { background-color: rgb(255 255 255); }
-html:not(.dark) .bg-zinc-900 { background-color: rgb(244 244 245); }
-html:not(.dark) .bg-zinc-800 { background-color: rgb(228 228 231); }
-html:not(.dark) .bg-zinc-700 { background-color: rgb(212 212 216); }
-html:not(.dark) .hover\:bg-zinc-900:hover { background-color: rgb(244 244 245); }
-html:not(.dark) .hover\:bg-zinc-800:hover { background-color: rgb(228 228 231); }
-html:not(.dark) .hover\:bg-zinc-700:hover { background-color: rgb(212 212 216); }
-/* Borders */
-html:not(.dark) .border-zinc-900 { border-color: rgb(228 228 231); }
-html:not(.dark) .border-zinc-800 { border-color: rgb(212 212 216); }
-html:not(.dark) .border-zinc-700 { border-color: rgb(161 161 170); }
-/* Text — 反转。zinc-50 也算上，否则 Markdown 的 **strong** 用 text-zinc-50 在白底上消失 (2026-05 用户报) */
-html:not(.dark) .text-zinc-50 { color: rgb(9 9 11); }     /* zinc-950 — 最深,给 strong/heading */
-html:not(.dark) .text-zinc-100 { color: rgb(24 24 27); }
-html:not(.dark) .text-zinc-200 { color: rgb(39 39 42); }
-html:not(.dark) .text-zinc-300 { color: rgb(63 63 70); }
-html:not(.dark) .text-zinc-400 { color: rgb(82 82 91); }
-html:not(.dark) .text-zinc-500 { color: rgb(113 113 122); }
-html:not(.dark) .text-zinc-600 { color: rgb(161 161 170); }
-html:not(.dark) .text-zinc-700 { color: rgb(212 212 216); }
-html:not(.dark) .hover\:text-zinc-100:hover { color: rgb(24 24 27); }
-html:not(.dark) .hover\:text-zinc-200:hover { color: rgb(39 39 42); }
-html:not(.dark) .hover\:text-zinc-300:hover { color: rgb(63 63 70); }
-/* Placeholder */
-html:not(.dark) .placeholder-zinc-400::placeholder { color: rgb(113 113 122); }
-/* opaque overlays (modal backdrop) */
-html:not(.dark) .bg-zinc-800\/40 { background-color: rgb(228 228 231 / 0.4); }
-html:not(.dark) .bg-zinc-800\/90 { background-color: rgb(228 228 231 / 0.95); }
-html:not(.dark) .bg-zinc-900\/60 { background-color: rgb(244 244 245 / 0.6); }
-html:not(.dark) .bg-zinc-900\/90 { background-color: rgb(244 244 245 / 0.9); }
+/* F054: zinc 反转 hack 已删除 —— 组件已全量迁移到语义 token (bg-surface / text-fg-* /
+   border-border-* / hover:bg-hover-bg)，这些 token 本身 theme-aware，不再需要 light-mode
+   逐类反转。(grep "zinc-" renderer/src 仅余注释与 Monaco 主题 hex。) */
 /* ===== Accent text colors — light-mode override (2026-05) =====
    组件大量用 `text-{accent}-{100|200|300}` (pale tone for dark bg)。这些 class 在 styles.css
    反转表里之前只覆盖了 amber-300。其他 (blue/emerald/red/orange/violet/sky/...) 在 light
@@ -107,46 +136,110 @@ html:not(.dark) .bg-zinc-900\/90 { background-color: rgb(244 244 245 / 0.9); }
    规则: 把 100/200/300 全部映射到对应同色相的 700/800 tone (深色,在白底可读 WCAG AA)。
    组件如果已经写了 dark:text-foo + light:text-bar 之类显式双主题则不受影响 (那种情况下
    light: 前缀的特异性高于这里的 html:not(.dark))。 */
-html:not(.dark) .text-amber-100 { color: rgb(146 64 14); }   /* amber-800 */
-html:not(.dark) .text-amber-200 { color: rgb(180 83 9); }    /* amber-700 */
-html:not(.dark) .text-amber-300 { color: rgb(180 83 9); }    /* amber-700 — 已有,inline code 复用 */
-html:not(.dark) .text-amber-400 { color: rgb(217 119 6); }   /* amber-600 — 弱一档 */
+html:not(.dark) .text-amber-100 {
+  color: rgb(146 64 14);
+} /* amber-800 */
+html:not(.dark) .text-amber-200 {
+  color: rgb(180 83 9);
+} /* amber-700 */
+html:not(.dark) .text-amber-300 {
+  color: rgb(180 83 9);
+} /* amber-700 — 已有,inline code 复用 */
+html:not(.dark) .text-amber-400 {
+  color: rgb(217 119 6);
+} /* amber-600 — 弱一档 */
 
-html:not(.dark) .text-sky-100 { color: rgb(7 89 133); }      /* sky-800 */
-html:not(.dark) .text-sky-200 { color: rgb(3 105 161); }     /* sky-700 */
-html:not(.dark) .text-sky-300 { color: rgb(3 105 161); }     /* sky-700 */
-html:not(.dark) .text-sky-400 { color: rgb(2 132 199); }     /* sky-600 */
+html:not(.dark) .text-sky-100 {
+  color: rgb(7 89 133);
+} /* sky-800 */
+html:not(.dark) .text-sky-200 {
+  color: rgb(3 105 161);
+} /* sky-700 */
+html:not(.dark) .text-sky-300 {
+  color: rgb(3 105 161);
+} /* sky-700 */
+html:not(.dark) .text-sky-400 {
+  color: rgb(2 132 199);
+} /* sky-600 */
 
-html:not(.dark) .text-blue-100 { color: rgb(30 64 175); }    /* blue-800 */
-html:not(.dark) .text-blue-200 { color: rgb(29 78 216); }    /* blue-700 */
-html:not(.dark) .text-blue-300 { color: rgb(29 78 216); }    /* blue-700 */
-html:not(.dark) .text-blue-400 { color: rgb(37 99 235); }    /* blue-600 */
+html:not(.dark) .text-blue-100 {
+  color: rgb(30 64 175);
+} /* blue-800 */
+html:not(.dark) .text-blue-200 {
+  color: rgb(29 78 216);
+} /* blue-700 */
+html:not(.dark) .text-blue-300 {
+  color: rgb(29 78 216);
+} /* blue-700 */
+html:not(.dark) .text-blue-400 {
+  color: rgb(37 99 235);
+} /* blue-600 */
 
-html:not(.dark) .text-emerald-100 { color: rgb(6 95 70); }   /* emerald-800 */
-html:not(.dark) .text-emerald-200 { color: rgb(4 120 87); }  /* emerald-700 */
-html:not(.dark) .text-emerald-300 { color: rgb(4 120 87); }  /* emerald-700 */
-html:not(.dark) .text-emerald-400 { color: rgb(5 150 105); } /* emerald-600 */
+html:not(.dark) .text-emerald-100 {
+  color: rgb(6 95 70);
+} /* emerald-800 */
+html:not(.dark) .text-emerald-200 {
+  color: rgb(4 120 87);
+} /* emerald-700 */
+html:not(.dark) .text-emerald-300 {
+  color: rgb(4 120 87);
+} /* emerald-700 */
+html:not(.dark) .text-emerald-400 {
+  color: rgb(5 150 105);
+} /* emerald-600 */
 
-html:not(.dark) .text-red-100 { color: rgb(153 27 27); }     /* red-800 */
-html:not(.dark) .text-red-200 { color: rgb(185 28 28); }     /* red-700 */
-html:not(.dark) .text-red-300 { color: rgb(185 28 28); }     /* red-700 */
-html:not(.dark) .text-red-400 { color: rgb(220 38 38); }     /* red-600 */
+html:not(.dark) .text-red-100 {
+  color: rgb(153 27 27);
+} /* red-800 */
+html:not(.dark) .text-red-200 {
+  color: rgb(185 28 28);
+} /* red-700 */
+html:not(.dark) .text-red-300 {
+  color: rgb(185 28 28);
+} /* red-700 */
+html:not(.dark) .text-red-400 {
+  color: rgb(220 38 38);
+} /* red-600 */
 
-html:not(.dark) .text-orange-100 { color: rgb(154 52 18); }  /* orange-800 */
-html:not(.dark) .text-orange-200 { color: rgb(194 65 12); }  /* orange-700 */
-html:not(.dark) .text-orange-300 { color: rgb(194 65 12); }  /* orange-700 */
+html:not(.dark) .text-orange-100 {
+  color: rgb(154 52 18);
+} /* orange-800 */
+html:not(.dark) .text-orange-200 {
+  color: rgb(194 65 12);
+} /* orange-700 */
+html:not(.dark) .text-orange-300 {
+  color: rgb(194 65 12);
+} /* orange-700 */
 
-html:not(.dark) .text-violet-100 { color: rgb(91 33 182); }  /* violet-800 */
-html:not(.dark) .text-violet-200 { color: rgb(109 40 217); } /* violet-700 */
-html:not(.dark) .text-violet-300 { color: rgb(109 40 217); } /* violet-700 */
-html:not(.dark) .text-violet-400 { color: rgb(124 58 237); } /* violet-600 */
+html:not(.dark) .text-violet-100 {
+  color: rgb(91 33 182);
+} /* violet-800 */
+html:not(.dark) .text-violet-200 {
+  color: rgb(109 40 217);
+} /* violet-700 */
+html:not(.dark) .text-violet-300 {
+  color: rgb(109 40 217);
+} /* violet-700 */
+html:not(.dark) .text-violet-400 {
+  color: rgb(124 58 237);
+} /* violet-600 */
 
-html:not(.dark) .text-purple-200 { color: rgb(126 34 206); } /* purple-700 */
-html:not(.dark) .text-purple-300 { color: rgb(126 34 206); } /* purple-700 */
-html:not(.dark) .text-purple-400 { color: rgb(147 51 234); } /* purple-600 */
+html:not(.dark) .text-purple-200 {
+  color: rgb(126 34 206);
+} /* purple-700 */
+html:not(.dark) .text-purple-300 {
+  color: rgb(126 34 206);
+} /* purple-700 */
+html:not(.dark) .text-purple-400 {
+  color: rgb(147 51 234);
+} /* purple-600 */
 
-html:not(.dark) .text-rose-200 { color: rgb(190 18 60); }    /* rose-700 */
-html:not(.dark) .text-rose-300 { color: rgb(190 18 60); }    /* rose-700 */
+html:not(.dark) .text-rose-200 {
+  color: rgb(190 18 60);
+} /* rose-700 */
+html:not(.dark) .text-rose-300 {
+  color: rgb(190 18 60);
+} /* rose-700 */
 
 /* highlight.js 浅色 token 覆盖 — atom-one-dark.css 通过 @import 加载，
    规则字面是 .hljs / .hljs-keyword 等不带 dark 限定，在 light 模式仍生效。
@@ -156,23 +249,36 @@ html:not(.dark) .hljs {
   background: rgb(244 244 245); /* zinc-100 */
 }
 html:not(.dark) .hljs-comment,
-html:not(.dark) .hljs-quote { color: #a0a1a7; font-style: italic; }
+html:not(.dark) .hljs-quote {
+  color: #a0a1a7;
+  font-style: italic;
+}
 html:not(.dark) .hljs-doctag,
 html:not(.dark) .hljs-keyword,
-html:not(.dark) .hljs-formula { color: #a626a4; }
+html:not(.dark) .hljs-formula {
+  color: #a626a4;
+}
 html:not(.dark) .hljs-section,
 html:not(.dark) .hljs-name,
 html:not(.dark) .hljs-selector-tag,
 html:not(.dark) .hljs-deletion,
-html:not(.dark) .hljs-subst { color: #e45649; }
-html:not(.dark) .hljs-literal { color: #0184bb; }
+html:not(.dark) .hljs-subst {
+  color: #e45649;
+}
+html:not(.dark) .hljs-literal {
+  color: #0184bb;
+}
 html:not(.dark) .hljs-string,
 html:not(.dark) .hljs-regexp,
 html:not(.dark) .hljs-addition,
 html:not(.dark) .hljs-attribute,
-html:not(.dark) .hljs-meta .hljs-string { color: #50a14f; }
+html:not(.dark) .hljs-meta .hljs-string {
+  color: #50a14f;
+}
 html:not(.dark) .hljs-built_in,
-html:not(.dark) .hljs-class .hljs-title { color: #c18401; }
+html:not(.dark) .hljs-class .hljs-title {
+  color: #c18401;
+}
 html:not(.dark) .hljs-attr,
 html:not(.dark) .hljs-variable,
 html:not(.dark) .hljs-template-variable,
@@ -180,16 +286,26 @@ html:not(.dark) .hljs-type,
 html:not(.dark) .hljs-selector-class,
 html:not(.dark) .hljs-selector-attr,
 html:not(.dark) .hljs-selector-pseudo,
-html:not(.dark) .hljs-number { color: #986801; }
+html:not(.dark) .hljs-number {
+  color: #986801;
+}
 html:not(.dark) .hljs-symbol,
 html:not(.dark) .hljs-bullet,
 html:not(.dark) .hljs-link,
 html:not(.dark) .hljs-meta,
 html:not(.dark) .hljs-selector-id,
-html:not(.dark) .hljs-title { color: #4078f2; }
-html:not(.dark) .hljs-emphasis { font-style: italic; }
-html:not(.dark) .hljs-strong { font-weight: bold; }
-html:not(.dark) .hljs-link { text-decoration: underline; }
+html:not(.dark) .hljs-title {
+  color: #4078f2;
+}
+html:not(.dark) .hljs-emphasis {
+  font-style: italic;
+}
+html:not(.dark) .hljs-strong {
+  font-weight: bold;
+}
+html:not(.dark) .hljs-link {
+  text-decoration: underline;
+}
 
 /* Custom titlebar 拖动 — main.ts 用 titleBarStyle: 'hidden' + titleBarOverlay 隐掉系统 chrome。
    .app-titlebar 自身可拖窗 (-webkit-app-region: drag)；按钮/输入等需 'no-drag'。 */
@@ -209,4 +325,48 @@ html:not(.dark) .hljs-link { text-decoration: underline; }
    否则 ThemeToggle 等右对齐控件会被压在 OS 按钮下面看不见。 */
 .platform-win32 .app-titlebar {
   padding-right: 144px;
+}
+
+/* ============================================================
+   F054 视觉刷新 — 复用工具类
+   ============================================================ */
+
+/* hero CTA：唯一享受 gradient + 辉光 + 顶部高光的强调按钮 (发送键等)。
+   只给主操作用——强调色省着花才高级。深/浅两套靠 --accent* token 自动适配。 */
+.btn-accent {
+  color: rgb(var(--accent-fg));
+  background: linear-gradient(180deg, rgb(var(--accent) / 0.92), rgb(var(--accent)));
+  box-shadow:
+    var(--tw-shadow, 0 2px 8px var(--accent-glow)),
+    inset 0 1px 0 rgb(255 255 255 / 0.28);
+  transition:
+    transform 0.15s var(--ease),
+    box-shadow 0.15s var(--ease),
+    filter 0.15s var(--ease);
+}
+.btn-accent:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+  box-shadow:
+    0 4px 13px var(--accent-glow),
+    inset 0 1px 0 rgb(255 255 255 / 0.36);
+}
+.btn-accent:active {
+  transform: translateY(0);
+  filter: brightness(0.98);
+}
+
+/* 主题切换平滑过渡：只对颜色相关属性，避免布局抖动。
+   挂在 body 上用后代选择器覆盖常见容器；新组件自然继承。 */
+.theme-anim,
+.theme-anim * {
+  transition:
+    background-color 0.25s var(--ease),
+    border-color 0.25s var(--ease),
+    color 0.2s var(--ease);
+}
+
+/* tabular 数字：计数 / budget / 时间戳对齐用 */
+.tnum {
+  font-variant-numeric: tabular-nums;
 }

@@ -33,47 +33,40 @@ const envValueSchema = z.string().min(0).max(4096);
  * 不在 allowlist 的（bash, sh, cmd, powershell, pwsh, curl, wget, python2 等）一律拒绝。
  * 这是硬约束 —— 用户安装时显示明确错误，让他举报恶意 manifest 而非 silent reject。
  */
-const COMMAND_ALLOWLIST = [
-  'node',
-  'python',
-  'python3',
-  'uv',
-  'uvx',
-  'npx',
-  'deno',
-  'bun',
-] as const;
+const COMMAND_ALLOWLIST = ['node', 'python', 'python3', 'uv', 'uvx', 'npx', 'deno', 'bun'] as const;
 
-const serverSchema = z.object({
-  /** 'node' | 'python' | 'binary' — DXT 规范字段，Space 当前只用 'node' / 'binary'，
-   *  'python' 走 binary（用户提供解释器路径） */
-  type: z.enum(['node', 'python', 'binary']).optional(),
-  /** archive 内相对路径 —— '/' 或 'C:\' 开头会被拒绝 */
-  entry_point: z
-    .string()
-    .min(1)
-    .max(1024)
-    .refine(
-      (v) => !v.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(v) && !v.startsWith('\\'),
-      'entry_point must be a relative path inside the archive',
-    )
-    .refine((v) => !v.split(/[\\/]/).includes('..'), 'entry_point must not contain ..')
-    .optional(),
-  /** 实际执行命令 —— 必须是 COMMAND_ALLOWLIST 中的 runtime 名（不允许绝对路径 / shell） */
-  mcp_config: z
-    .object({
-      command: z
-        .string()
-        .min(1)
-        .max(64)
-        .refine((v) => (COMMAND_ALLOWLIST as readonly string[]).includes(v), {
-          message: `command must be one of: ${COMMAND_ALLOWLIST.join(', ')}`,
-        }),
-      args: z.array(z.string().min(0).max(1024)).max(64).optional(),
-      env: z.record(envValueSchema).optional(),
-    })
-    .strict(),
-}).strict();
+const serverSchema = z
+  .object({
+    /** 'node' | 'python' | 'binary' — DXT 规范字段，Space 当前只用 'node' / 'binary'，
+     *  'python' 走 binary（用户提供解释器路径） */
+    type: z.enum(['node', 'python', 'binary']).optional(),
+    /** archive 内相对路径 —— '/' 或 'C:\' 开头会被拒绝 */
+    entry_point: z
+      .string()
+      .min(1)
+      .max(1024)
+      .refine(
+        (v) => !v.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(v) && !v.startsWith('\\'),
+        'entry_point must be a relative path inside the archive',
+      )
+      .refine((v) => !v.split(/[\\/]/).includes('..'), 'entry_point must not contain ..')
+      .optional(),
+    /** 实际执行命令 —— 必须是 COMMAND_ALLOWLIST 中的 runtime 名（不允许绝对路径 / shell） */
+    mcp_config: z
+      .object({
+        command: z
+          .string()
+          .min(1)
+          .max(64)
+          .refine((v) => (COMMAND_ALLOWLIST as readonly string[]).includes(v), {
+            message: `command must be one of: ${COMMAND_ALLOWLIST.join(', ')}`,
+          }),
+        args: z.array(z.string().min(0).max(1024)).max(64).optional(),
+        env: z.record(envValueSchema).optional(),
+      })
+      .strict(),
+  })
+  .strict();
 
 const toolSchema = z
   .object({
@@ -85,11 +78,25 @@ const toolSchema = z
 export const manifestSchema = z
   .object({
     /** dxt_version (官方) / manifest_version (旧别名) —— 任意一个即可 */
-    dxt_version: z.string().regex(/^[0-9]+\.[0-9]+(\.[0-9]+)?$/).optional(),
-    manifest_version: z.string().regex(/^[0-9]+\.[0-9]+(\.[0-9]+)?$/).optional(),
-    name: z.string().min(1).max(128).regex(/^[a-zA-Z0-9._\-]+$/, 'name must be kebab/identifier'),
+    dxt_version: z
+      .string()
+      .regex(/^[0-9]+\.[0-9]+(\.[0-9]+)?$/)
+      .optional(),
+    manifest_version: z
+      .string()
+      .regex(/^[0-9]+\.[0-9]+(\.[0-9]+)?$/)
+      .optional(),
+    name: z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(/^[a-zA-Z0-9._-]+$/, 'name must be kebab/identifier'),
     display_name: z.string().min(1).max(128).optional(),
-    version: z.string().min(1).max(64).regex(/^[0-9A-Za-z.+\-]+$/, 'invalid semver'),
+    version: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[0-9A-Za-z.+-]+$/, 'invalid semver'),
     description: z.string().max(2048).optional(),
     author: z
       .object({
@@ -103,27 +110,33 @@ export const manifestSchema = z
     tools: z.array(toolSchema).max(1024).optional(),
   })
   .passthrough()
-  .refine(
-    (v) => Boolean(v.dxt_version ?? v.manifest_version),
-    { message: 'manifest must declare dxt_version or manifest_version' },
-  );
+  .refine((v) => Boolean(v.dxt_version ?? v.manifest_version), {
+    message: 'manifest must declare dxt_version or manifest_version',
+  });
 
 export type ManifestT = z.infer<typeof manifestSchema>;
 
 /** 解析 manifest 字节流 —— 返回 ManifestT 或 reason 字符串 */
-export function parseManifest(buf: Buffer): { ok: true; manifest: ManifestT } | { ok: false; error: string } {
+export function parseManifest(
+  buf: Buffer,
+): { ok: true; manifest: ManifestT } | { ok: false; error: string } {
   let json: unknown;
   try {
     json = JSON.parse(buf.toString('utf8'));
   } catch (err) {
-    return { ok: false, error: `manifest.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}` };
+    return {
+      ok: false,
+      error: `manifest.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
   const parsed = manifestSchema.safeParse(json);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
     return {
       ok: false,
-      error: first ? `manifest invalid at ${first.path.join('.') || '<root>'}: ${first.message}` : 'manifest invalid',
+      error: first
+        ? `manifest invalid at ${first.path.join('.') || '<root>'}: ${first.message}`
+        : 'manifest invalid',
     };
   }
   return { ok: true, manifest: parsed.data };

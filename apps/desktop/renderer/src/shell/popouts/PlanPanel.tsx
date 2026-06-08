@@ -14,7 +14,7 @@ export function PlanPanel(): JSX.Element {
 
   if (!currentSessionId) {
     return (
-      <div className="h-full flex items-center justify-center text-zinc-600 text-xs">
+      <div className="h-full flex items-center justify-center text-fg-faint text-xs">
         No active session.
       </div>
     );
@@ -22,9 +22,11 @@ export function PlanPanel(): JSX.Element {
 
   if (!todos || todos.length === 0) {
     return (
-      <div className="h-full flex flex-col items-center justify-center text-zinc-600 text-xs p-4 gap-2">
-        <span aria-hidden className="text-2xl">☰</span>
-        <div className="text-zinc-500">No plan yet</div>
+      <div className="h-full flex flex-col items-center justify-center text-fg-faint text-xs p-4 gap-2">
+        <span aria-hidden className="text-2xl">
+          ☰
+        </span>
+        <div className="text-fg-muted">No plan yet</div>
         <div className="text-center max-w-[260px]">
           Send a multi-step request. KodaX Scout will seed the todo list when planning is needed.
         </div>
@@ -38,15 +40,15 @@ export function PlanPanel(): JSX.Element {
 
   return (
     <div className="h-full flex flex-col text-xs">
-      <header className="px-3 py-2 border-b border-zinc-800/60 flex items-center justify-between">
-        <div className="text-zinc-300 font-medium">
+      <header className="px-3 py-2 border-b border-border-default/60 flex items-center justify-between">
+        <div className="text-fg-secondary font-medium">
           Plan{' '}
-          <span className="text-zinc-500 font-normal">
+          <span className="text-fg-muted font-normal">
             ({done}/{total})
           </span>
         </div>
         {running?.activeForm && (
-          <div className="text-zinc-500 text-[10px] truncate ml-2 max-w-[160px]">
+          <div className="text-fg-muted text-[11px] truncate ml-2 max-w-[160px]">
             {running.activeForm}
           </div>
         )}
@@ -72,13 +74,13 @@ export function PlanPanel(): JSX.Element {
                   ? 'bg-emerald-500 border-emerald-400'
                   : todo.status === 'in_progress'
                     ? 'border-sky-400 bg-sky-500/30 animate-pulse'
-                    : 'border-zinc-600')
+                    : 'border-border-strong')
               }
               aria-label={`status: ${todo.status}`}
             />
             <span
               className={
-                todo.status === 'completed' ? 'text-zinc-500 line-through' : 'text-zinc-200'
+                todo.status === 'completed' ? 'text-fg-muted line-through' : 'text-fg-primary'
               }
             >
               {todo.content}

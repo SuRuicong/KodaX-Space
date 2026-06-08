@@ -84,7 +84,7 @@ const MAX_ERROR_KEY_LEN = 64; // server name 显示给 errors[].path 的截断�
  * 单纯展示用，原始 name 仍然保留在 servers[] 列表的 name 字段（schema 已限制 max 128）。
  */
 function sanitizeKeyForErrorPath(name: string): string {
-  const stripped = name.replace(/[\x00-\x1f\x7f]/g, '?'); // eslint-disable-line no-control-regex
+  const stripped = name.replace(/[\x00-\x1f\x7f]/g, '?');
   return stripped.length > MAX_ERROR_KEY_LEN
     ? `${stripped.slice(0, MAX_ERROR_KEY_LEN)}…`
     : stripped;
@@ -113,9 +113,7 @@ export async function discoverMcpServers(opts: DiscoverOptions): Promise<Discove
   if (!path.isAbsolute(opts.projectRoot)) {
     return {
       servers: [],
-      errors: [
-        { path: opts.projectRoot, error: 'projectRoot must be absolute' },
-      ],
+      errors: [{ path: opts.projectRoot, error: 'projectRoot must be absolute' }],
     };
   }
 

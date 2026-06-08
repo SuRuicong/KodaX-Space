@@ -16,10 +16,10 @@ import type { QueuedMessageT, MessageModeT } from '@kodax-space/space-ipc-schema
 
 const PRIORITY_COLOR: Record<QueuedMessageT['priority'], string> = {
   user: 'text-amber-300',
-  background: 'text-zinc-400',
+  background: 'text-fg-muted',
 };
 const MODE_LABEL: Record<QueuedMessageT['mode'], string> = {
-  'prompt': 'prompt',
+  prompt: 'prompt',
   'task-notification': 'task',
   'system-reminder': 'system',
 };
@@ -56,21 +56,21 @@ export function QueueIndicator(): JSX.Element | null {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-[10px] font-mono flex items-center gap-1 text-zinc-300 hover:text-zinc-100"
+        className="text-[11px] font-mono flex items-center gap-1 text-fg-secondary hover:text-fg-primary"
         title={`KodaX message queue: ${total} item${total !== 1 ? 's' : ''}`}
         aria-label="View message queue"
       >
         <span aria-hidden>⌛</span>
         <span>Queue {total}</span>
-        <Caret open={false} className="text-zinc-500" />
+        <Caret open={false} className="text-fg-muted" />
       </button>
 
       {open && (
         <div
-          className="absolute right-0 bottom-full mb-2 w-96 max-h-80 overflow-auto bg-zinc-900 border border-zinc-800 rounded shadow-xl p-3 text-xs z-50"
+          className="absolute right-0 bottom-full mb-2 w-96 max-h-80 overflow-auto bg-surface-2 border border-border-default rounded shadow-xl p-3 text-xs z-50"
           onMouseLeave={() => setOpen(false)}
         >
-          <div className="text-zinc-500 text-[10px] uppercase tracking-wider mb-2 flex justify-between">
+          <div className="text-fg-muted text-[11px] uppercase tracking-wider mb-2 flex justify-between">
             <span>KodaX Message Queue</span>
             <span>{total} total</span>
           </div>
@@ -86,17 +86,19 @@ export function QueueIndicator(): JSX.Element | null {
                   key={m}
                   type="button"
                   onClick={() => setFilter(m)}
-                  className={`px-2 py-0.5 text-[10px] rounded ${
-                    isActive ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+                  className={`px-2 py-0.5 text-[11px] rounded ${
+                    isActive
+                      ? 'bg-surface-3 text-fg-primary'
+                      : 'text-fg-muted hover:text-fg-primary hover:bg-hover-bg'
                   }`}
                 >
-                  {FILTER_LABEL[m]} {count > 0 && <span className="text-zinc-500">{count}</span>}
+                  {FILTER_LABEL[m]} {count > 0 && <span className="text-fg-muted">{count}</span>}
                 </button>
               );
             })}
           </div>
           {filtered.length === 0 ? (
-            <div className="text-zinc-500 italic">
+            <div className="text-fg-muted italic">
               {filter === 'all'
                 ? 'Items in subagent queues; switch filter to view.'
                 : `No ${FILTER_LABEL[filter]} messages.`}
@@ -104,31 +106,31 @@ export function QueueIndicator(): JSX.Element | null {
           ) : (
             <ul className="space-y-2">
               {filtered.map((m) => (
-                <li key={m.id} className="border-b border-zinc-800 pb-2 last:border-b-0">
-                  <div className="flex items-center gap-2 text-[10px]">
+                <li key={m.id} className="border-b border-border-default pb-2 last:border-b-0">
+                  <div className="flex items-center gap-2 text-[11px]">
                     <span className={PRIORITY_COLOR[m.priority]}>{m.priority}</span>
-                    <span className="text-zinc-500">·</span>
-                    <span className="text-zinc-400">{MODE_LABEL[m.mode]}</span>
+                    <span className="text-fg-muted">·</span>
+                    <span className="text-fg-muted">{MODE_LABEL[m.mode]}</span>
                     {m.agentId !== undefined && (
                       <>
-                        <span className="text-zinc-500">·</span>
-                        <span className="text-zinc-400 font-mono truncate" title={m.agentId}>
+                        <span className="text-fg-muted">·</span>
+                        <span className="text-fg-muted font-mono truncate" title={m.agentId}>
                           {m.agentId.slice(0, 16)}
                         </span>
                       </>
                     )}
-                    <span className="text-zinc-600 ml-auto">{formatTime(m.enqueuedAt)}</span>
+                    <span className="text-fg-faint ml-auto">{formatTime(m.enqueuedAt)}</span>
                   </div>
-                  <div className="mt-1 text-zinc-300 break-words" title={m.content}>
+                  <div className="mt-1 text-fg-secondary break-words" title={m.content}>
                     {m.content.length > 200 ? m.content.slice(0, 200) + '…' : m.content}
                   </div>
                 </li>
               ))}
             </ul>
           )}
-          <div className="mt-3 border-t border-zinc-800 pt-2 text-[10px] text-zinc-500 leading-relaxed">
-            Read-only view. user-priority drains before background. Subagent task-notifications
-            wait until parent agent peeks.
+          <div className="mt-3 border-t border-border-default pt-2 text-[11px] text-fg-muted leading-relaxed">
+            Read-only view. user-priority drains before background. Subagent task-notifications wait
+            until parent agent peeks.
           </div>
         </div>
       )}

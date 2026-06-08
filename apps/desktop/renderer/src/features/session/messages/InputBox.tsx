@@ -49,7 +49,7 @@ export function InputBox({
         placeholder={placeholder}
         disabled={disabled}
         rows={MIN_ROWS}
-        className="flex-1 px-3 py-2 text-sm rounded bg-zinc-950 border border-zinc-800 font-mono text-zinc-100 resize-none focus:outline-none focus:border-blue-700 disabled:opacity-50"
+        className="flex-1 px-3 py-2 text-sm rounded bg-surface border border-border-default font-mono text-fg-primary resize-none focus:outline-none focus:border-blue-700 disabled:opacity-50"
         onKeyDown={(e) => {
           if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
             e.preventDefault();
@@ -72,7 +72,7 @@ export function InputBox({
         <button
           type="button"
           onClick={onCancel}
-          className="text-sm px-3 py-2 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 self-stretch"
+          className="text-sm px-3 py-2 rounded bg-surface-3 hover:bg-hover-bg text-fg-primary self-stretch"
           title="Cancel current run"
         >
           ⏹

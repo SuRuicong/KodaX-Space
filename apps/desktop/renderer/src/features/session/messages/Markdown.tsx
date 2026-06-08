@@ -66,12 +66,12 @@ export function _clearMarkdownLruCacheForTesting(): void {
 // per-message copy 已经在 MessageFooter；这里给每个 ``` 块单独一个按钮，
 // 长回复里有多个代码片段时不用整段复制再剪。
 //
-// **2026-06 调整 (v0.1.9)**: 之前 `opacity-0 + hover 才出` + `bg-zinc-800`
-// 在 pre 的 `bg-zinc-950` 上对比度太弱，用户反馈"hover 出来都看不清是什么按钮"。
+// **2026-06 调整 (v0.1.9)**: 之前 `opacity-0 + hover 才出` + `bg-surface-3`
+// 在 pre 的 `bg-surface` 上对比度太弱，用户反馈"hover 出来都看不清是什么按钮"。
 // 改成：
 //   1. 默认 opacity-60 常驻 (不打扰阅读但能看到有按钮)，hover/focus opacity-100
 //   2. bg 提高一档 + 加 1px border 让轮廓清晰
-//   3. 字号 text-[11px]，图标 12×12，与文字 baseline 对齐
+//   3. 字号 text-xs，图标 12×12，与文字 baseline 对齐
 //   4. 文字 "Copy" 大小写正常（之前 "copy" 全小写显得像 placeholder）
 function CopyCodeButton({ getText }: { getText: () => string }): JSX.Element {
   const [copied, setCopied] = useState(false);
@@ -89,12 +89,12 @@ function CopyCodeButton({ getText }: { getText: () => string }): JSX.Element {
       type="button"
       onClick={() => void onCopy()}
       className={[
-        'absolute top-1.5 right-1.5 px-2 py-0.5 text-[11px] rounded flex items-center gap-1 leading-none',
+        'absolute top-1.5 right-1.5 px-2 py-0.5 text-xs rounded flex items-center gap-1 leading-none',
         'opacity-60 hover:opacity-100 focus:opacity-100 group-hover/codeblock:opacity-100 transition-opacity',
         // dark: zinc-700 衬 zinc-950 pre，对比够；border 给轮廓
-        'dark:bg-zinc-700/80 dark:hover:bg-zinc-600 dark:text-zinc-100 dark:border dark:border-zinc-600',
+        'dark:bg-surface-3/80 dark:hover:bg-hover-bg dark:text-fg-primary dark:border dark:border-border-strong',
         // light: zinc-200 衬白底 pre
-        'bg-zinc-200 hover:bg-zinc-300 text-zinc-700 border border-zinc-300',
+        'bg-surface-3 hover:bg-hover-bg text-fg-faint border border-border-strong',
       ].join(' ')}
       title={copied ? 'Copied' : 'Copy code'}
       aria-label={copied ? 'Code copied to clipboard' : 'Copy code to clipboard'}
@@ -152,7 +152,7 @@ function MarkdownInner({ content }: MarkdownProps): JSX.Element {
   // 每个 element 用 components 里的覆盖样式手动控制。
   // 全 zinc-100 文字 + styles.css light-override 自动翻成深色,亮暗双主题都吃得下。
   const rendered = (
-    <div className="markdown-body text-zinc-100 leading-relaxed text-sm">
+    <div className="markdown-body text-fg-primary leading-relaxed text-sm">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         // **2026-06 v0.1.9**: detect:false —— LLM 包 git status / 文件路径列表 / shell 输出
@@ -165,7 +165,7 @@ function MarkdownInner({ content }: MarkdownProps): JSX.Element {
           // ---- 代码 ----
           // group/codeblock 让 CopyCodeButton 的 hover 作用域限定到本 pre 而非整个消息
           pre: ({ children }) => (
-            <pre className="group/codeblock relative bg-zinc-950 border border-zinc-800 rounded-md p-3 my-2.5 overflow-x-auto text-xs leading-relaxed">
+            <pre className="group/codeblock relative bg-surface border border-border-default rounded-md p-3 my-2.5 overflow-x-auto text-xs leading-relaxed">
               <CopyCodeButton getText={() => extractTextFromNode(children)} />
               {children}
             </pre>
@@ -205,21 +205,23 @@ function MarkdownInner({ content }: MarkdownProps): JSX.Element {
           // my-2 让段落之间有"呼吸"，单段也不会太紧贴边。
           p: ({ children }) => <p className="my-2 leading-relaxed">{children}</p>,
           // hr 给一条淡线分隔大块,跟段落 my-2 协调
-          hr: () => <hr className="my-4 border-t border-zinc-800" />,
-          strong: ({ children }) => <strong className="font-semibold text-zinc-50">{children}</strong>,
-          em: ({ children }) => <em className="italic text-zinc-200">{children}</em>,
-          del: ({ children }) => <del className="text-zinc-500 line-through">{children}</del>,
+          hr: () => <hr className="my-4 border-t border-border-default" />,
+          strong: ({ children }) => (
+            <strong className="font-semibold text-fg-primary">{children}</strong>
+          ),
+          em: ({ children }) => <em className="italic text-fg-primary">{children}</em>,
+          del: ({ children }) => <del className="text-fg-muted line-through">{children}</del>,
 
           // ---- 列表 ----
           // list-outside + pl-5: bullet 在文字左侧外,文字保持对齐;嵌套 ul/ol 通过 ml-* 自动二级缩进
           // marker 用 zinc-500 让 bullet 弱化,文字才是主角
           ul: ({ children }) => (
-            <ul className="my-2 ml-5 list-disc list-outside space-y-1 marker:text-zinc-500">
+            <ul className="my-2 ml-5 list-disc list-outside space-y-1 marker:text-fg-muted">
               {children}
             </ul>
           ),
           ol: ({ children }) => (
-            <ol className="my-2 ml-5 list-decimal list-outside space-y-1 marker:text-zinc-500">
+            <ol className="my-2 ml-5 list-decimal list-outside space-y-1 marker:text-fg-muted">
               {children}
             </ol>
           ),
@@ -227,7 +229,7 @@ function MarkdownInner({ content }: MarkdownProps): JSX.Element {
 
           // ---- 引用 ----
           blockquote: ({ children }) => (
-            <blockquote className="my-3 border-l-2 border-zinc-700 pl-3 text-zinc-400 italic [&>p]:my-1.5">
+            <blockquote className="my-3 border-l-2 border-border-strong pl-3 text-fg-muted italic [&>p]:my-1.5">
               {children}
             </blockquote>
           ),
@@ -235,24 +237,24 @@ function MarkdownInner({ content }: MarkdownProps): JSX.Element {
           // ---- 标题阶梯 ----
           // H1 ~ H4 用明显的字号阶梯,LLM 输出"## Steps" "### Phase 1" 时一眼能看出层级
           h1: ({ children }) => (
-            <h1 className="mt-4 mb-2 text-xl font-semibold text-zinc-50 border-b border-zinc-800 pb-1">
+            <h1 className="mt-4 mb-2 text-xl font-semibold text-fg-primary border-b border-border-default pb-1">
               {children}
             </h1>
           ),
           h2: ({ children }) => (
-            <h2 className="mt-4 mb-2 text-lg font-semibold text-zinc-50">{children}</h2>
+            <h2 className="mt-4 mb-2 text-lg font-semibold text-fg-primary">{children}</h2>
           ),
           h3: ({ children }) => (
-            <h3 className="mt-3 mb-1.5 text-base font-semibold text-zinc-100">{children}</h3>
+            <h3 className="mt-3 mb-1.5 text-base font-semibold text-fg-primary">{children}</h3>
           ),
           h4: ({ children }) => (
-            <h4 className="mt-3 mb-1 text-sm font-semibold text-zinc-100">{children}</h4>
+            <h4 className="mt-3 mb-1 text-sm font-semibold text-fg-primary">{children}</h4>
           ),
           h5: ({ children }) => (
-            <h5 className="mt-2 mb-1 text-sm font-medium text-zinc-200">{children}</h5>
+            <h5 className="mt-2 mb-1 text-sm font-medium text-fg-primary">{children}</h5>
           ),
           h6: ({ children }) => (
-            <h6 className="mt-2 mb-1 text-xs font-medium text-zinc-300 uppercase tracking-wider">
+            <h6 className="mt-2 mb-1 text-xs font-medium text-fg-secondary uppercase tracking-wider">
               {children}
             </h6>
           ),
@@ -260,17 +262,17 @@ function MarkdownInner({ content }: MarkdownProps): JSX.Element {
           // ---- GFM Table ----
           // remark-gfm 把 | a | b | 解析成 table;这里给 cell border + zebra stripe 让数据可读
           table: ({ children }) => (
-            <div className="my-3 overflow-x-auto rounded-md border border-zinc-800">
+            <div className="my-3 overflow-x-auto rounded-md border border-border-default">
               <table className="w-full text-xs">{children}</table>
             </div>
           ),
           thead: ({ children }) => (
-            <thead className="bg-zinc-900 text-zinc-300 text-[11px] uppercase tracking-wider">
+            <thead className="bg-surface-2 text-fg-secondary text-xs uppercase tracking-wider">
               {children}
             </thead>
           ),
           tbody: ({ children }) => (
-            <tbody className="divide-y divide-zinc-800">{children}</tbody>
+            <tbody className="divide-y divide-border-default">{children}</tbody>
           ),
           tr: ({ children }) => <tr>{children}</tr>,
           th: ({ children }) => (

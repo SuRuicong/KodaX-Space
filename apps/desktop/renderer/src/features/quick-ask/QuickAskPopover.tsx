@@ -131,7 +131,10 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
     const POLL_INTERVAL_MS = 80;
     const TIMEOUT_MS = 60_000;
 
-    const sendR = await window.kodaxSpace.invoke('session.send', { sessionId: sid, prompt: trimmed });
+    const sendR = await window.kodaxSpace.invoke('session.send', {
+      sessionId: sid,
+      prompt: trimmed,
+    });
     if (!sendR.ok) {
       setState({ kind: 'error', message: sendR.error?.message ?? 'send failed' });
       return;
@@ -191,21 +194,26 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
       }}
     >
       <div
-        className="w-[640px] max-w-[92vw] max-h-[80vh] flex flex-col dark:bg-zinc-900 bg-zinc-50 border dark:border-zinc-800 border-zinc-200 rounded-lg shadow-2xl"
+        className="w-[640px] max-w-[92vw] max-h-[80vh] flex flex-col dark:bg-surface-2 bg-surface border dark:border-border-default border-border-default rounded-lg shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-4 py-3 border-b dark:border-zinc-800 border-zinc-200 flex items-center gap-2 flex-shrink-0">
-          <span aria-hidden className="dark:text-amber-400 text-amber-600">⚡</span>
-          <h2 id="quick-ask-title" className="text-sm font-semibold dark:text-zinc-100 text-zinc-900">
+        <div className="px-4 py-3 border-b dark:border-border-default border-border-default flex items-center gap-2 flex-shrink-0">
+          <span aria-hidden className="dark:text-amber-400 text-amber-600">
+            ⚡
+          </span>
+          <h2
+            id="quick-ask-title"
+            className="text-sm font-semibold dark:text-fg-primary text-fg-primary"
+          >
             Quick Ask
           </h2>
-          <span className="text-[10px] dark:text-zinc-500 text-zinc-500 font-mono">
+          <span className="text-[11px] dark:text-fg-muted text-fg-muted font-mono">
             plan mode · ephemeral
           </span>
           <button
             type="button"
             onClick={() => void closeAndCleanup()}
-            className="ml-auto text-[10px] dark:text-zinc-500 dark:hover:text-zinc-300 text-zinc-500 hover:text-zinc-800"
+            className="ml-auto text-[11px] dark:text-fg-muted dark:hover:text-fg-secondary text-fg-muted hover:text-fg-faint"
             aria-label="Close Quick Ask"
             title="Esc to close"
           >
@@ -226,13 +234,13 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
                 ? 'Ask anything about this project (no file edits)…'
                 : 'Open a project first to use Quick Ask'
             }
-            className="w-full resize-none bg-transparent dark:text-zinc-100 text-zinc-900 placeholder-zinc-500 text-sm focus:outline-none disabled:opacity-50"
+            className="w-full resize-none bg-transparent dark:text-fg-primary text-fg-primary placeholder-fg-muted text-sm focus:outline-none disabled:opacity-50"
           />
           {(state.kind === 'streaming' || state.kind === 'done') && state.reply.length > 0 && (
-            <div className="mt-3 pt-3 border-t dark:border-zinc-800 border-zinc-200">
+            <div className="mt-3 pt-3 border-t dark:border-border-default border-border-default">
               <Markdown content={state.reply} />
               {state.kind === 'streaming' && (
-                <span className="text-[10px] dark:text-zinc-500 text-zinc-500 font-mono">
+                <span className="text-[11px] dark:text-fg-muted text-fg-muted font-mono">
                   ●●● streaming…
                 </span>
               )}
@@ -244,13 +252,13 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
             </div>
           )}
           {state.kind === 'creating-session' && (
-            <div className="mt-3 pt-3 border-t dark:border-zinc-800 border-zinc-200 text-[10px] dark:text-zinc-500 text-zinc-500 font-mono">
+            <div className="mt-3 pt-3 border-t dark:border-border-default border-border-default text-[11px] dark:text-fg-muted text-fg-muted font-mono">
               creating session…
             </div>
           )}
         </div>
 
-        <div className="px-4 py-2 border-t dark:border-zinc-800 border-zinc-200 flex items-center justify-between text-[10px] dark:text-zinc-500 text-zinc-500 font-mono flex-shrink-0">
+        <div className="px-4 py-2 border-t dark:border-border-default border-border-default flex items-center justify-between text-[11px] dark:text-fg-muted text-fg-muted font-mono flex-shrink-0">
           <span>Enter to send · Shift+Enter newline · Esc close</span>
           <button
             type="button"

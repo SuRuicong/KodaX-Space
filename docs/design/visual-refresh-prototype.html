@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="zh" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>KodaX Space · 视觉刷新原型</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<style>
+  /* ============================================================
+     KodaX Space — 视觉刷新原型 (refined dark, single amber accent)
+     这是一个对齐"新长相"的独立静态原型，不接任何真实数据。
+     设计 token 见 :root —— 若拍板，这套值就是要落进 styles.css 的源。
+     ============================================================ */
+
+  /* ---- Design tokens ----
+     :root = light (默认主题)，html.dark = dark 覆盖 —— 与真实 styles.css 约定一致。
+     浅色不是深色反转：白内容 + 灰 chrome、off-black 文字、强调色加深保证白底对比度。 */
+  :root {
+    /* 表面：白对话画布 + 灰 chrome 面板（层级语义，非纯亮度递增） */
+    --bg-base:    #ffffff;   /* 对话画布 */
+    --bg-raised:  #f7f7f8;   /* 面板 / 侧栏 / 卡片 */
+    --bg-inset:   #eeeef1;   /* 输入 / 嵌套 */
+    --bg-float:   #ffffff;   /* 弹窗 / 下拉（+shadow） */
+
+    /* 边框：低对比，非硬线 */
+    --border-subtle: rgba(17,17,20,.07);
+    --border:        rgba(17,17,20,.12);
+    --border-strong: rgba(17,17,20,.20);
+
+    /* 文字：off-black，三级 + faint */
+    --fg-primary:   #1a1a1f;
+    --fg-secondary: #56565f;
+    --fg-muted:     #8a8a93;
+    --fg-faint:     #b6b6bd;
+
+    /* 品牌强调色：琥珀金。fill 保留"亮金"质感（靠深色字 + 渐变 + 辉光在白底立住）；
+       ink 单独取深档，给文字/图标在白底上的 AA 对比度。 */
+    --accent:        #f5a623;
+    --accent-ink:    #a86908;
+    --accent-hover:  #ffbb47;
+    --accent-soft:   rgba(245,166,35,.14);
+    --accent-border: rgba(245,166,35,.42);
+    --accent-fg:     #2a1d05;
+    --accent-glow:   rgba(245,166,35,.42);
+
+    /* 语义状态色（白底加深档） */
+    --ok:#1f9d52; --run:#1f8fd6; --warn:#c98a09; --danger:#dc4d4d;
+
+    /* 代码 / diff / 语法高亮（atom-one-light 调色） */
+    --code-bg: #f6f6f8; --code-border: rgba(17,17,20,.07); --diff-bg: #fbfbfc;
+    --add-bg: rgba(31,157,82,.10); --add-fg:#157f3b;
+    --del-bg: rgba(220,77,77,.09); --del-fg:#b3261e;
+    --t-key:#a626a4; --t-fn:#3f78e0; --t-str:#3f9142; --t-com:#9a9aa2; --t-num:#9a6a07; --t-punc:#8a8a93;
+
+    color-scheme: light;
+
+    /* ---- shared（不随主题变）---- */
+    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s8:32px;
+    --r-sm:6px; --r-md:8px; --r-lg:12px; --r-xl:16px;
+    --t-xs:11px; --t-sm:12.5px; --t-base:13.5px; --t-md:15px; --t-lg:18px; --t-xl:22px;
+    --ui: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    --ease: cubic-bezier(.4,0,.2,1);
+  }
+
+  html.dark {
+    --bg-base:#0b0b0d; --bg-raised:#151518; --bg-inset:#1d1d21; --bg-float:#26262b;
+    --border-subtle: rgba(255,255,255,.055); --border: rgba(255,255,255,.10); --border-strong: rgba(255,255,255,.16);
+    --fg-primary:#ededef; --fg-secondary:#a6a6ae; --fg-muted:#6b6b74; --fg-faint:#46464e;
+    --accent:#f5b544; --accent-ink:#f5b544; --accent-hover:#f7c468;
+    --accent-soft:rgba(245,181,68,.12); --accent-border:rgba(245,181,68,.34); --accent-fg:#1a1407;
+    --accent-glow:rgba(245,181,68,.30);
+    --ok:#4ade80; --run:#4cc2ff; --warn:#fbbf24; --danger:#f87171;
+    --code-bg:#0e0e10; --code-border: rgba(255,255,255,.055); --diff-bg:#0e0e10;
+    --add-bg: rgba(74,222,128,.07); --add-fg:#86efac; --del-bg: rgba(248,113,113,.06); --del-fg:#fca5a5;
+    --t-key:#c792ea; --t-fn:#82aaff; --t-str:#c3e88d; --t-com:#5c5c66; --t-num:#f78c6c; --t-punc:#6b6b74;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--ui);
+    font-size: var(--t-base);
+    line-height: 1.55;
+    color: var(--fg-primary);
+    background: var(--bg-base);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow: hidden;
+  }
+  /* 主题切换平滑过渡（仅颜色相关属性，避免布局抖动） */
+  .titlebar, .left, .center, .right, .sect, .tool, .code, .diff, .inputwrap,
+  .newbtn, .search, .pill, .badge, .think, .chip { transition: background-color .25s var(--ease), border-color .25s var(--ease), color .25s var(--ease); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; border: 3px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-strong); background-clip: content-box; }
+  .mono { font-family: var(--mono); }
+  .tnum { font-variant-numeric: tabular-nums; }
+
+  /* ---- App shell grid ---- */
+  .app { display: flex; flex-direction: column; height: 100vh; }
+
+  /* Titlebar */
+  .titlebar {
+    height: 40px; flex-shrink: 0;
+    display: flex; align-items: center; gap: var(--s3);
+    padding: 0 var(--s4);
+    background: var(--bg-base);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .brand { display: flex; align-items: center; gap: 8px; font-size: var(--t-sm); color: var(--fg-secondary); letter-spacing: .2px; }
+  .brand .star { color: var(--accent-ink); font-size: 14px; line-height: 1; }
+  .brand b { color: var(--fg-primary); font-weight: 600; }
+  .titlebar .spacer { flex: 1; }
+  .winbtn { width: 30px; height: 26px; display: grid; place-items: center; border-radius: var(--r-sm); color: var(--fg-muted); transition: all .15s var(--ease); }
+  .winbtn:hover { background: var(--bg-float); color: var(--fg-primary); }
+  .winbtn svg { width: 15px; height: 15px; }
+
+  .body { flex: 1; display: flex; min-height: 0; }
+
+  /* ---- Generic small bits ---- */
+  .icon { width: 16px; height: 16px; stroke-width: 1.75; flex-shrink: 0; }
+  .icon-sm { width: 14px; height: 14px; stroke-width: 1.75; flex-shrink: 0; }
+  .dot { width: 7px; height: 7px; border-radius: 99px; flex-shrink: 0; }
+  .dot.run { background: var(--run); box-shadow: 0 0 0 3px rgba(76,194,255,.16); animation: pulse 1.6s var(--ease) infinite; }
+  .dot.ok { background: var(--ok); }
+  .dot.warn { background: var(--warn); }
+  .dot.idle { background: var(--fg-faint); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  .kbd { font-family: var(--mono); font-size: 10px; color: var(--fg-muted); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; background: var(--bg-inset); }
+
+  /* ============================ LEFT SIDEBAR ============================ */
+  .left { width: 256px; flex-shrink: 0; background: var(--bg-raised); border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column; }
+  .left .topcap { padding: var(--s3) var(--s3) var(--s2); }
+  .newbtn {
+    width: 100%; display: flex; align-items: center; gap: var(--s2);
+    padding: 9px var(--s3); border-radius: var(--r-md);
+    border: 1px solid var(--border); background: var(--bg-inset);
+    color: var(--fg-primary); font-size: var(--t-sm); font-weight: 500;
+    cursor: pointer; transition: all .15s var(--ease);
+  }
+  .newbtn:hover { border-color: var(--accent-border); background: var(--accent-soft); }
+  .newbtn .icon-sm { color: var(--accent-ink); }
+  .newbtn .kbd { margin-left: auto; }
+
+  .search { margin: 0 var(--s3) var(--s2); display:flex; align-items:center; gap:8px; padding: 7px var(--s3); border-radius: var(--r-md); background: var(--bg-inset); border: 1px solid var(--border-subtle); }
+  .search input { background: none; border: none; outline: none; color: var(--fg-secondary); font-family: var(--ui); font-size: var(--t-sm); width: 100%; }
+  .search input::placeholder { color: var(--fg-muted); }
+  .search .icon-sm { color: var(--fg-muted); }
+
+  .scroll { flex: 1; overflow-y: auto; padding: var(--s2) 6px var(--s4); }
+  .nav-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .9px; color: var(--fg-muted); padding: var(--s3) var(--s3) 6px; font-weight: 500; }
+
+  /* project node */
+  .proj { margin-bottom: 2px; }
+  .proj-row { display: flex; align-items: center; gap: 7px; padding: 7px var(--s2); border-radius: var(--r-sm); cursor: pointer; color: var(--fg-secondary); transition: background .12s var(--ease); }
+  .proj-row:hover { background: var(--bg-float); }
+  .proj-row .chev { color: var(--fg-muted); transition: transform .18s var(--ease); }
+  .proj-row.open .chev { transform: rotate(90deg); }
+  .proj-row .pname { font-size: var(--t-sm); font-weight: 500; color: var(--fg-primary); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .proj-row .pcount { font-family: var(--mono); font-size: 10px; color: var(--fg-muted); display:flex; align-items:center; gap:4px; }
+  .proj-row .folder { color: var(--fg-muted); }
+  .proj.current .proj-row .folder { color: var(--accent-ink); }
+
+  .sessions { margin: 2px 0 6px; padding-left: 14px; border-left: 1px solid var(--border-subtle); margin-left: 13px; }
+  .sess { display: flex; align-items: center; gap: 9px; padding: 6px 9px; border-radius: var(--r-sm); cursor: pointer; transition: background .12s var(--ease); position: relative; }
+  .sess:hover { background: var(--bg-float); }
+  .sess.active { background: var(--accent-soft); }
+  .sess.active::before { content:''; position:absolute; left:-15px; top:50%; transform:translateY(-50%); width:2px; height:16px; background:var(--accent); border-radius:2px; }
+  .sess .stitle { flex: 1; font-size: var(--t-sm); color: var(--fg-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sess.active .stitle { color: var(--fg-primary); }
+  .sess .stime { font-size: 10px; color: var(--fg-faint); font-family: var(--mono); }
+  .sess .more { font-size: 11px; color: var(--accent-ink); padding: 5px 9px; cursor: pointer; }
+
+  /* user chip bottom of left */
+  .leftfoot { border-top: 1px solid var(--border-subtle); padding: var(--s2) var(--s3); display:flex; align-items:center; gap: var(--s2); }
+  .avatar { width: 26px; height: 26px; border-radius: 99px; background: linear-gradient(135deg, var(--accent), #d98a1f); display:grid; place-items:center; color: var(--accent-fg); font-weight:700; font-size: 12px; }
+  .leftfoot .who { font-size: var(--t-sm); color: var(--fg-secondary); flex:1; }
+  .leftfoot .who small { display:block; color: var(--fg-muted); font-size: 10.5px; }
+
+  /* ============================ CENTER ============================ */
+  .center { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg-base); }
+  .topbar { height: 44px; flex-shrink: 0; display: flex; align-items: center; gap: 4px; padding: 0 var(--s3); border-bottom: 1px solid var(--border-subtle); }
+  .iconbtn { width: 28px; height: 28px; display: grid; place-items: center; border-radius: var(--r-sm); color: var(--fg-muted); cursor: pointer; transition: all .15s var(--ease); }
+  .iconbtn:hover { background: var(--bg-float); color: var(--fg-primary); }
+  .iconbtn.on { color: var(--fg-primary); }
+  .crumb { display:flex; align-items:center; gap: 7px; font-size: var(--t-sm); color: var(--fg-muted); padding: 0 4px; }
+  .crumb b { color: var(--fg-secondary); font-weight: 500; }
+  .crumb .sess-name { color: var(--fg-primary); font-weight: 500; display:flex; align-items:center; gap:5px; cursor:pointer; }
+  .topbar .spacer { flex: 1; }
+  .pill { display:flex; align-items:center; gap:6px; font-size: var(--t-sm); color: var(--fg-secondary); padding: 5px 10px; border-radius: var(--r-sm); border:1px solid var(--border-subtle); cursor:pointer; transition: all .15s var(--ease); }
+  .pill:hover { background: var(--bg-float); border-color: var(--border); }
+  .pill .icon-sm { color: var(--fg-muted); }
+
+  /* conversation */
+  .convo { flex: 1; overflow-y: auto; }
+  .convo-inner { max-width: 760px; margin: 0 auto; padding: var(--s8) var(--s6) var(--s6); display: flex; flex-direction: column; gap: var(--s6); }
+
+  .msg { display: flex; gap: var(--s3); }
+  .msg .gut { width: 26px; flex-shrink: 0; padding-top: 1px; }
+  .msg .badge { width: 26px; height: 26px; border-radius: var(--r-sm); display: grid; place-items: center; font-size: 11px; font-weight: 600; }
+  .badge.user { background: var(--bg-inset); color: var(--fg-secondary); border: 1px solid var(--border); }
+  .badge.ai { background: var(--accent-soft); color: var(--accent-ink); border: 1px solid var(--accent-border); }
+  .msg .content { flex: 1; min-width: 0; }
+  .msg .name { font-size: var(--t-sm); font-weight: 600; color: var(--fg-secondary); margin-bottom: 5px; }
+  .prose { color: var(--fg-primary); font-size: var(--t-base); }
+  .prose p { margin-bottom: var(--s3); }
+  .prose code.inl { font-family: var(--mono); font-size: 12px; background: var(--bg-inset); border: 1px solid var(--border-subtle); color: var(--accent-ink); padding: 1px 6px; border-radius: 5px; }
+  .prose strong { color: var(--fg-primary); font-weight: 600; }
+
+  /* thinking (collapsed) */
+  .think { display:flex; align-items:center; gap:8px; font-size: var(--t-sm); color: var(--fg-muted); padding: 7px 11px; border:1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-raised); cursor:pointer; width:fit-content; margin-bottom: var(--s4); transition: all .15s var(--ease); }
+  .think:hover { border-color: var(--border); color: var(--fg-secondary); }
+  .think .chev { transition: transform .18s var(--ease); }
+
+  /* tool-call card */
+  .tool { border: 1px solid var(--border-subtle); border-radius: var(--r-lg); overflow: hidden; margin-bottom: var(--s4); background: var(--bg-raised); }
+  .tool-head { display: flex; align-items: center; gap: 9px; padding: 9px var(--s3); font-size: var(--t-sm); cursor: pointer; }
+  .tool-head .ic { width: 26px; height: 26px; border-radius: 7px; background: var(--bg-inset); display:grid; place-items:center; color: var(--accent-ink); border:1px solid var(--border-subtle); }
+  .tool-head .tname { font-weight: 600; color: var(--fg-primary); }
+  .tool-head .targ { font-family: var(--mono); font-size: 12px; color: var(--fg-secondary); }
+  .tool-head .ok { margin-left: auto; display:flex; align-items:center; gap:6px; font-size: 11.5px; color: var(--ok); }
+  .diff { border-top: 1px solid var(--border-subtle); font-family: var(--mono); font-size: 12px; line-height: 1.7; background: var(--diff-bg); }
+  .diff .ln { display: flex; padding: 0 var(--s3); }
+  .diff .gut2 { width: 34px; color: var(--fg-faint); text-align: right; padding-right: var(--s3); user-select: none; flex-shrink:0; }
+  .diff .add { background: var(--add-bg); }
+  .diff .add .txt { color: var(--add-fg); }
+  .diff .del { background: var(--del-bg); }
+  .diff .del .txt { color: var(--del-fg); }
+  .diff .txt { white-space: pre; color: var(--fg-secondary); }
+
+  /* code block */
+  .code { border: 1px solid var(--code-border); border-radius: var(--r-lg); overflow: hidden; background: var(--code-bg); }
+  .code-head { display:flex; align-items:center; gap:8px; padding: 7px var(--s3); border-bottom:1px solid var(--code-border); background: var(--bg-inset); }
+  .code-head .lang { font-family: var(--mono); font-size: 11px; color: var(--fg-muted); }
+  .code-head .copy { margin-left:auto; display:flex; align-items:center; gap:5px; font-size:11px; color: var(--fg-muted); cursor:pointer; padding: 3px 8px; border-radius: 5px; transition: all .15s var(--ease); }
+  .code-head .copy:hover { background: var(--bg-float); color: var(--fg-secondary); }
+  .code pre { padding: var(--s3) var(--s4); overflow-x: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.75; }
+  .tok-key { color: var(--t-key); } .tok-fn { color: var(--t-fn); } .tok-str { color: var(--t-str); } .tok-com { color: var(--t-com); font-style: italic; } .tok-num { color: var(--t-num); } .tok-punc { color: var(--t-punc); }
+
+  /* ---- bottom input ---- */
+  .composer { flex-shrink: 0; padding: 0 var(--s6) var(--s4); }
+  .composer-inner { max-width: 760px; margin: 0 auto; }
+  .chips { display:flex; align-items:center; gap:7px; margin-bottom: var(--s2); padding-left: 2px; }
+  .chip { display:flex; align-items:center; gap:5px; font-size: 11px; color: var(--fg-muted); font-family: var(--mono); }
+  .chip .dot { width:6px; height:6px; }
+  .inputwrap { border: 1px solid var(--border); border-radius: var(--r-xl); background: var(--bg-inset); transition: border-color .15s var(--ease); overflow:hidden; }
+  .inputwrap:focus-within { border-color: var(--accent-border); }
+  .inputwrap textarea { width:100%; background:none; border:none; outline:none; resize:none; color: var(--fg-primary); font-family: var(--ui); font-size: var(--t-base); padding: var(--s3) var(--s4); height: 56px; }
+  .inputwrap textarea::placeholder { color: var(--fg-muted); }
+  .inputbar { display:flex; align-items:center; gap: 6px; padding: 6px var(--s2) 8px var(--s3); }
+  .selbtn { display:flex; align-items:center; gap:6px; font-size: var(--t-sm); color: var(--fg-secondary); padding: 5px 9px; border-radius: var(--r-sm); cursor:pointer; transition: all .15s var(--ease); }
+  .selbtn:hover { background: var(--bg-float); }
+  .selbtn .icon-sm { color: var(--fg-muted); }
+  .selbtn.mode { color: var(--accent-ink); }
+  .selbtn.mode .icon-sm { color: var(--accent-ink); }
+  .inputbar .spacer { flex:1; }
+  .send { width: 32px; height: 32px; border-radius: var(--r-md); border:none; cursor:pointer; display:grid; place-items:center;
+          color: var(--accent-fg);
+          background: linear-gradient(180deg, var(--accent-hover), var(--accent));
+          box-shadow: 0 2px 8px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,.28);
+          transition: all .15s var(--ease); }
+  .send:hover { transform: translateY(-1px); filter: brightness(1.04);
+          box-shadow: 0 4px 13px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,.36); }
+  .send:active { transform: translateY(0); filter: brightness(.98); }
+  .send svg { width: 17px; height: 17px; stroke-width: 2.25; }
+
+  /* ============================ RIGHT SIDEBAR (F041) ============================ */
+  .right { width: 304px; flex-shrink: 0; background: var(--bg-raised); border-left: 1px solid var(--border-subtle); display:flex; flex-direction:column; overflow-y:auto; }
+  .sect { border-bottom: 1px solid var(--border-subtle); }
+  .sect-head { display:flex; align-items:center; gap:8px; padding: 11px var(--s4); cursor:pointer; user-select:none; }
+  .sect-head .chev { color: var(--fg-faint); transition: transform .18s var(--ease); }
+  .sect-head.closed .chev { transform: rotate(-90deg); }
+  .sect-head .stitle { font-size: 11px; text-transform: uppercase; letter-spacing: .9px; color: var(--fg-muted); font-weight: 600; }
+  .sect-head .meta { margin-left:auto; font-size: 11px; color: var(--fg-muted); font-family: var(--mono); }
+  .sect-head .expand { color: var(--fg-faint); margin-left: 8px; transition: color .15s var(--ease); }
+  .sect-head:hover .expand { color: var(--fg-secondary); }
+  .sect-body { padding: 0 var(--s4) var(--s4); }
+  .sect-body.hidden { display:none; }
+
+  /* plan */
+  .planbar { height: 4px; border-radius: 99px; background: var(--bg-inset); overflow:hidden; margin-bottom: var(--s3); }
+  .planbar i { display:block; height:100%; background: var(--accent); border-radius:99px; }
+  .todo { display:flex; align-items:flex-start; gap: 9px; padding: 5px 0; font-size: var(--t-sm); }
+  .todo .num { font-family: var(--mono); font-size: 10px; color: var(--fg-faint); width: 14px; text-align:right; padding-top:3px; }
+  .todo .tk { width:14px; height:14px; border-radius:99px; flex-shrink:0; margin-top:2px; display:grid; place-items:center; }
+  .todo .tk.done { background: var(--ok); color:#0b0b0d; }
+  .todo .tk.done svg { width:9px; height:9px; stroke-width:3.5; }
+  .todo .tk.run { border:2px solid var(--run); background: rgba(76,194,255,.18); }
+  .todo .tk.wait { border:1.5px solid var(--border-strong); }
+  .todo .tt { color: var(--fg-secondary); }
+  .todo.done .tt { color: var(--fg-muted); text-decoration: line-through; }
+  .todo.run .tt { color: var(--fg-primary); }
+
+  /* workers */
+  .worker { padding: 7px 0; }
+  .worker-row { display:flex; align-items:center; gap:9px; font-size: var(--t-sm); }
+  .worker-row .wt { color: var(--fg-primary); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .worker-row .wph { font-family: var(--mono); font-size: 10.5px; color: var(--fg-muted); }
+  .budget { margin-top: var(--s3); font-size: 11px; color: var(--fg-muted); }
+  .budget .bbar { height:5px; border-radius:99px; background: var(--bg-inset); margin-top:5px; overflow:hidden; }
+  .budget .bbar i { display:block; height:100%; background: linear-gradient(90deg, var(--ok), #22c55e); border-radius:99px; }
+
+  /* changes */
+  .change { display:flex; align-items:center; gap:9px; padding: 5px 7px; margin: 0 -7px; border-radius: var(--r-sm); cursor:pointer; transition: background .12s var(--ease); }
+  .change:hover { background: var(--bg-float); }
+  .change .bdg { width:16px; height:16px; border-radius:4px; display:grid; place-items:center; font-family:var(--mono); font-size:10px; font-weight:700; flex-shrink:0; }
+  .bdg.m { background: rgba(251,191,36,.16); color: var(--warn); }
+  .bdg.a { background: rgba(74,222,128,.16); color: var(--ok); }
+  .bdg.u { background: var(--border); color: var(--fg-muted); }
+  .change .cf { font-family: var(--mono); font-size: 12px; color: var(--fg-secondary); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .change:hover .cf { color: var(--fg-primary); }
+  .change .arr { color: var(--fg-faint); opacity:0; transition: opacity .12s var(--ease); }
+  .change:hover .arr { opacity:1; }
+  .change-foot { font-size: 11px; color: var(--fg-muted); padding-top: var(--s2); display:flex; align-items:center; gap:6px; }
+
+  .demo-tag { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 50; font-size: 11px; color: var(--fg-muted); background: var(--bg-float); border:1px solid var(--border); padding: 5px 12px; border-radius: 99px; font-family: var(--mono); }
+  .demo-tag b { color: var(--accent-ink); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===== Titlebar ===== -->
+  <div class="titlebar">
+    <div class="brand"><span class="star">✱</span> <b>KodaX</b> Space</div>
+    <div class="spacer"></div>
+    <div class="winbtn" id="themeBtn" title="切换深/浅主题" onclick="toggleTheme()"><i data-lucide="moon"></i></div>
+  </div>
+
+  <div class="body">
+
+    <!-- ===== Left sidebar ===== -->
+    <aside class="left">
+      <div class="topcap">
+        <button class="newbtn"><i data-lucide="plus" class="icon-sm"></i> New session <span class="kbd">⌘N</span></button>
+      </div>
+      <div class="search"><i data-lucide="search" class="icon-sm"></i><input placeholder="搜索项目 / 会话…" /></div>
+
+      <div class="scroll">
+        <div class="nav-label">Projects</div>
+
+        <!-- current project -->
+        <div class="proj current">
+          <div class="proj-row open" onclick="this.classList.toggle('open'); this.parentElement.querySelector('.sessions').classList.toggle('hidden')">
+            <i data-lucide="chevron-right" class="icon-sm chev"></i>
+            <i data-lucide="folder" class="icon-sm folder"></i>
+            <span class="pname">KodaX-Space</span>
+            <span class="pcount"><span class="dot run"></span>1</span>
+          </div>
+          <div class="sessions">
+            <div class="sess active"><span class="dot run"></span><span class="stitle">右侧栏视觉刷新</span><span class="stime">now</span></div>
+            <div class="sess"><span class="dot idle"></span><span class="stitle">F041 mission control 设计</span><span class="stime">2h</span></div>
+            <div class="sess"><span class="dot idle"></span><span class="stitle">macOS Edit 菜单快捷键修复</span><span class="stime">1d</span></div>
+            <div class="sess"><span class="dot idle"></span><span class="stitle">browser-style zoom</span><span class="stime">1d</span></div>
+            <div class="more">还有 6 条…</div>
+          </div>
+        </div>
+
+        <!-- other projects -->
+        <div class="proj">
+          <div class="proj-row" onclick="this.classList.toggle('open')">
+            <i data-lucide="chevron-right" class="icon-sm chev"></i>
+            <i data-lucide="folder" class="icon-sm folder"></i>
+            <span class="pname">KodaX (SDK)</span>
+            <span class="pcount">12</span>
+          </div>
+        </div>
+        <div class="proj">
+          <div class="proj-row" onclick="this.classList.toggle('open')">
+            <i data-lucide="chevron-right" class="icon-sm chev"></i>
+            <i data-lucide="folder" class="icon-sm folder"></i>
+            <span class="pname">repointel-core</span>
+            <span class="pcount">3</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="leftfoot">
+        <div class="avatar">I</div>
+        <div class="who">icetomoyo<small>GLM · Opus 4.8</small></div>
+        <div class="winbtn"><i data-lucide="settings" class="icon-sm"></i></div>
+      </div>
+    </aside>
+
+    <!-- ===== Center ===== -->
+    <main class="center">
+      <div class="topbar">
+        <div class="iconbtn on" title="左栏"><i data-lucide="panel-left" class="icon"></i></div>
+        <div class="crumb">
+          <b>KodaX-Space</b> <i data-lucide="chevron-right" class="icon-sm"></i>
+          <span class="sess-name">右侧栏视觉刷新 <i data-lucide="chevron-down" class="icon-sm"></i></span>
+        </div>
+        <div class="spacer"></div>
+        <div class="pill"><i data-lucide="layout-grid" class="icon-sm"></i> Activity</div>
+        <div class="iconbtn on" title="右栏"><i data-lucide="panel-right" class="icon"></i></div>
+      </div>
+
+      <div class="convo">
+        <div class="convo-inner">
+
+          <!-- user -->
+          <div class="msg">
+            <div class="gut"><div class="badge user">你</div></div>
+            <div class="content">
+              <div class="name">You</div>
+              <div class="prose"><p>把右侧栏的 <code class="inl">StashNotice</code> 横幅退役，改成常驻的 Plan / Workers / Changes 三节。Changes 点文件能看 diff。</p></div>
+            </div>
+          </div>
+
+          <!-- assistant -->
+          <div class="msg">
+            <div class="gut"><div class="badge ai">✱</div></div>
+            <div class="content">
+              <div class="name">KodaX</div>
+
+              <div class="think" onclick="const c=this.querySelector('.chev'); c.style.transform = c.style.transform?'':'rotate(90deg)'">
+                <i data-lucide="chevron-right" class="icon-sm chev"></i>
+                <i data-lucide="sparkles" class="icon-sm"></i> Thought for 4s
+              </div>
+
+              <div class="prose">
+                <p>好的。我会重排 <strong>RightSidebar</strong>，把三节置顶常驻，旧的 Working folder / Context 降级折叠。先改 <code class="inl">project.gitChanges</code> 拿带路径的变动列表，再让 Changes 点行打开该文件 diff：</p>
+              </div>
+
+              <!-- tool call card -->
+              <div class="tool">
+                <div class="tool-head">
+                  <div class="ic"><i data-lucide="file-pen-line" class="icon-sm"></i></div>
+                  <span class="tname">Edit</span>
+                  <span class="targ">RightSidebar.tsx</span>
+                  <span class="ok"><i data-lucide="check" class="icon-sm"></i> +24 −9</span>
+                </div>
+                <div class="diff">
+                  <div class="ln del"><span class="gut2">58</span><span class="txt">  <span>function ProgressSection() {</span></span></div>
+                  <div class="ln add"><span class="gut2">58</span><span class="txt">  function PlanSection() {</span></div>
+                  <div class="ln add"><span class="gut2">59</span><span class="txt">    return &lt;Section title="Plan" onExpand={...}&gt;</span></div>
+                  <div class="ln"><span class="gut2">60</span><span class="txt">      &lt;Progress todos={todos} /&gt;</span></div>
+                </div>
+              </div>
+
+              <div class="prose"><p>新增的 IPC channel：</p></div>
+
+              <!-- code block -->
+              <div class="code">
+                <div class="code-head">
+                  <span class="lang">typescript</span>
+                  <span class="copy"><i data-lucide="copy" class="icon-sm"></i> Copy</span>
+                </div>
+<pre><span class="tok-com">// 带路径的变动文件列表（区别于只回计数的 gitStatus）</span>
+<span class="tok-key">export const</span> <span class="tok-fn">projectGitChangesChannel</span> <span class="tok-punc">= {</span>
+  name<span class="tok-punc">:</span> <span class="tok-str">'project.gitChanges'</span><span class="tok-punc">,</span>
+  output<span class="tok-punc">:</span> z.<span class="tok-fn">object</span><span class="tok-punc">({</span>
+    files<span class="tok-punc">:</span> z.<span class="tok-fn">array</span>(fileSchema).<span class="tok-fn">max</span>(<span class="tok-num">200</span>)<span class="tok-punc">,</span>
+    truncated<span class="tok-punc">:</span> z.<span class="tok-fn">boolean</span>()<span class="tok-punc">,</span>
+  <span class="tok-punc">}),</span>
+<span class="tok-punc">}</span></pre>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- composer -->
+      <div class="composer">
+        <div class="composer-inner">
+          <div class="chips">
+            <span class="chip"><span class="dot ok"></span>Local</span>
+            <span class="chip"><i data-lucide="folder" class="icon-sm" style="width:12px;height:12px"></i> KodaX-Space</span>
+            <span class="chip"><i data-lucide="git-branch" class="icon-sm" style="width:12px;height:12px"></i> main</span>
+          </div>
+          <div class="inputwrap">
+            <textarea placeholder="给 KodaX 发消息…  用 @ 引用文件，/ 调用命令"></textarea>
+            <div class="inputbar">
+              <div class="selbtn mode"><i data-lucide="shield-check" class="icon-sm"></i> Accept edits</div>
+              <div class="selbtn"><i data-lucide="cpu" class="icon-sm"></i> Opus 4.8 · high</div>
+              <div class="spacer"></div>
+              <div class="selbtn"><i data-lucide="paperclip" class="icon-sm"></i></div>
+              <button class="send"><i data-lucide="arrow-up"></i></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ===== Right sidebar (F041) ===== -->
+    <aside class="right">
+
+      <!-- PLAN -->
+      <div class="sect">
+        <div class="sect-head" onclick="toggleSect(this)">
+          <i data-lucide="chevron-down" class="icon-sm chev"></i>
+          <span class="stitle">Plan</span>
+          <span class="meta">3/7</span>
+          <i data-lucide="maximize-2" class="icon-sm expand" title="展开大图"></i>
+        </div>
+        <div class="sect-body">
+          <div class="planbar"><i style="width:43%"></i></div>
+          <div class="todo done"><span class="num">1</span><span class="tk done"><i data-lucide="check"></i></span><span class="tt">抽 gitChanges schema</span></div>
+          <div class="todo done"><span class="num">2</span><span class="tk done"><i data-lucide="check"></i></span><span class="tt">main 实现 gitChanges</span></div>
+          <div class="todo done"><span class="num">3</span><span class="tk done"><i data-lucide="check"></i></span><span class="tt">files.diff git fallback</span></div>
+          <div class="todo run"><span class="num">4</span><span class="tk run"></span><span class="tt">重排 RightSidebar 三节</span></div>
+          <div class="todo"><span class="num">5</span><span class="tk wait"></span><span class="tt">ChangesSection 点行看 diff</span></div>
+          <div class="todo"><span class="num">6</span><span class="tk wait"></span><span class="tt">CommandToolbar 去重</span></div>
+          <div class="todo"><span class="num">7</span><span class="tk wait"></span><span class="tt">退役 StashNotice + 测试</span></div>
+        </div>
+      </div>
+
+      <!-- WORKERS -->
+      <div class="sect">
+        <div class="sect-head" onclick="toggleSect(this)">
+          <i data-lucide="chevron-down" class="icon-sm chev"></i>
+          <span class="stitle">Workers</span>
+          <span class="meta">2 active</span>
+          <i data-lucide="maximize-2" class="icon-sm expand"></i>
+        </div>
+        <div class="sect-body">
+          <div class="worker"><div class="worker-row"><span class="dot run"></span><span class="wt">coder · editing</span><span class="wph">round 2</span></div></div>
+          <div class="worker"><div class="worker-row"><span class="dot run"></span><span class="wt">scout · planning</span><span class="wph">H1</span></div></div>
+          <div class="worker"><div class="worker-row"><span class="dot ok"></span><span class="wt">verifier · done</span><span class="wph">pass</span></div></div>
+          <div class="budget">Work budget · 18 / 40
+            <div class="bbar"><i style="width:45%"></i></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CHANGES -->
+      <div class="sect">
+        <div class="sect-head" onclick="toggleSect(this)">
+          <i data-lucide="chevron-down" class="icon-sm chev"></i>
+          <span class="stitle">Changes</span>
+          <span class="meta">8 · main</span>
+        </div>
+        <div class="sect-body">
+          <div class="change"><span class="bdg m">M</span><span class="cf">RightSidebar.tsx</span><i data-lucide="chevron-right" class="icon-sm arr"></i></div>
+          <div class="change"><span class="bdg m">M</span><span class="cf">CommandToolbar.tsx</span><i data-lucide="chevron-right" class="icon-sm arr"></i></div>
+          <div class="change"><span class="bdg a">A</span><span class="cf">ChangesSection.tsx</span><i data-lucide="chevron-right" class="icon-sm arr"></i></div>
+          <div class="change"><span class="bdg m">M</span><span class="cf">ipc/project.ts</span><i data-lucide="chevron-right" class="icon-sm arr"></i></div>
+          <div class="change"><span class="bdg a">A</span><span class="cf">channels/project.ts</span><i data-lucide="chevron-right" class="icon-sm arr"></i></div>
+          <div class="change"><span class="bdg u">U</span><span class="cf">scratch/notes.md</span><i data-lucide="chevron-right" class="icon-sm arr"></i></div>
+          <div class="change-foot"><i data-lucide="git-commit-horizontal" class="icon-sm"></i> +186 −42 · 点文件看 diff</div>
+        </div>
+      </div>
+
+      <!-- demoted -->
+      <div class="sect">
+        <div class="sect-head closed" onclick="toggleSect(this)">
+          <i data-lucide="chevron-down" class="icon-sm chev"></i>
+          <span class="stitle">Working folder</span>
+        </div>
+        <div class="sect-body hidden"></div>
+      </div>
+      <div class="sect">
+        <div class="sect-head closed" onclick="toggleSect(this)">
+          <i data-lucide="chevron-down" class="icon-sm chev"></i>
+          <span class="stitle">Context</span>
+        </div>
+        <div class="sect-body hidden"></div>
+      </div>
+
+    </aside>
+
+  </div>
+</div>
+
+<div class="demo-tag">视觉刷新原型 · <b>静态 mock</b> · 非真实数据</div>
+
+<script>
+  function toggleSect(h){ h.classList.toggle('closed'); h.parentElement.querySelector('.sect-body').classList.toggle('hidden'); }
+  function toggleTheme(){
+    const dark = document.documentElement.classList.toggle('dark');
+    document.getElementById('themeBtn').innerHTML =
+      '<i data-lucide="' + (dark ? 'moon' : 'sun') + '"></i>';
+    lucide.createIcons();
+  }
+  lucide.createIcons();
+</script>
+</body>
+</html>

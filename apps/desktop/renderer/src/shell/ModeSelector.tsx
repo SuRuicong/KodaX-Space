@@ -146,9 +146,7 @@ export function ModeSelector(): JSX.Element {
     }
   }
 
-  const baseLabel = current === 'auto'
-    ? `Auto · ${ENGINE_LABELS[engine]}`
-    : MODE_LABELS[current];
+  const baseLabel = current === 'auto' ? `Auto · ${ENGINE_LABELS[engine]}` : MODE_LABELS[current];
   // (next) 仅在真没 active session（welcome screen）时显示——之前判 `!session` 会撞
   // session.list 替换 sessions[] 把 in-flight stub 短暂 stomp 掉的 race，让对话中也
   // 误显示 (next)。currentSessionId 是 true source of truth。
@@ -159,24 +157,26 @@ export function ModeSelector(): JSX.Element {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-[11px] px-2 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-zinc-800 flex items-center gap-1"
+        className="text-xs px-2 py-0.5 rounded bg-surface-2 border border-border-default text-fg-secondary hover:bg-hover-bg flex items-center gap-1"
         title={`Mode: ${statusLabel} (Ctrl+M)`}
       >
         <span>{statusLabel}</span>
-        <span className="text-zinc-400" aria-hidden>+</span>
+        <span className="text-fg-muted" aria-hidden>
+          +
+        </span>
       </button>
 
       {open && (
         <div
-          className="absolute left-0 bottom-full mb-1 w-64 bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 text-xs z-50"
+          className="absolute left-0 bottom-full mb-1 w-64 bg-surface-2 border border-border-default rounded shadow-xl py-1 text-xs z-50"
           onMouseLeave={() => setOpen(false)}
         >
-          <div className="px-3 py-1 flex justify-between items-center text-zinc-500 text-[10px] uppercase tracking-wider">
+          <div className="px-3 py-1 flex justify-between items-center text-fg-muted text-[11px] uppercase tracking-wider">
             <span>Mode</span>
-            <span className="font-mono text-zinc-400 flex items-center gap-1">
-              <kbd className="px-1 border border-zinc-700 rounded">⇧</kbd>
-              <kbd className="px-1 border border-zinc-700 rounded">Ctrl</kbd>
-              <kbd className="px-1 border border-zinc-700 rounded">M</kbd>
+            <span className="font-mono text-fg-muted flex items-center gap-1">
+              <kbd className="px-1 border border-border-strong rounded">⇧</kbd>
+              <kbd className="px-1 border border-border-strong rounded">Ctrl</kbd>
+              <kbd className="px-1 border border-border-strong rounded">M</kbd>
             </span>
           </div>
           {MODE_ORDER.map((m, idx) => (
@@ -184,20 +184,24 @@ export function ModeSelector(): JSX.Element {
               key={m}
               type="button"
               onClick={() => void setMode(m)}
-              className={`w-full text-left px-3 py-1 hover:bg-zinc-800 flex items-center gap-2 ${
-                current === m ? 'text-zinc-100' : 'text-zinc-300'
+              className={`w-full text-left px-3 py-1 hover:bg-hover-bg flex items-center gap-2 ${
+                current === m ? 'text-fg-primary' : 'text-fg-secondary'
               }`}
               title={MODE_DESCRIPTIONS[m]}
             >
               <span className="flex-1">{MODE_LABELS[m]}</span>
-              {current === m && <span className="text-emerald-500" aria-hidden>✓</span>}
-              <span className="text-zinc-500 text-[10px] font-mono w-3 text-right">{idx + 1}</span>
+              {current === m && (
+                <span className="text-emerald-500" aria-hidden>
+                  ✓
+                </span>
+              )}
+              <span className="text-fg-muted text-[11px] font-mono w-3 text-right">{idx + 1}</span>
             </button>
           ))}
 
           {current === 'auto' && (
-            <div className="border-t border-zinc-800 mt-1 pt-1">
-              <div className="px-3 py-1 text-zinc-500 text-[10px] uppercase tracking-wider">
+            <div className="border-t border-border-default mt-1 pt-1">
+              <div className="px-3 py-1 text-fg-muted text-[11px] uppercase tracking-wider">
                 Auto engine
               </div>
               {(['llm', 'rules'] as const).map((eng) => (
@@ -205,20 +209,24 @@ export function ModeSelector(): JSX.Element {
                   key={eng}
                   type="button"
                   onClick={() => void setEngine(eng)}
-                  className={`w-full text-left px-3 py-1 hover:bg-zinc-800 flex items-center gap-2 ${
-                    engine === eng ? 'text-zinc-100' : 'text-zinc-300'
+                  className={`w-full text-left px-3 py-1 hover:bg-hover-bg flex items-center gap-2 ${
+                    engine === eng ? 'text-fg-primary' : 'text-fg-secondary'
                   }`}
                   title={ENGINE_DESCRIPTIONS[eng]}
                 >
                   <span className="flex-1">{ENGINE_LABELS[eng]}</span>
-                  {engine === eng && <span className="text-emerald-500" aria-hidden>✓</span>}
+                  {engine === eng && (
+                    <span className="text-emerald-500" aria-hidden>
+                      ✓
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
           )}
 
           {/* 底部说明：Space Auto = KodaX guardrail；Claude Desktop "Bypass" 没有 1:1 对应 */}
-          <div className="border-t border-zinc-800 mt-1 pt-1 px-3 py-1 text-[10px] text-zinc-500 leading-tight">
+          <div className="border-t border-border-default mt-1 pt-1 px-3 py-1 text-[11px] text-fg-muted leading-tight">
             Auto 由 KodaX guardrail 接管 — 比 Claude Desktop 的 Bypass 更安全
           </div>
         </div>

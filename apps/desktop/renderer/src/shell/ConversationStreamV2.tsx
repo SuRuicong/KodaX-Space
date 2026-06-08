@@ -94,9 +94,7 @@ type ViewMessage =
 function summarizeTools(tools: readonly ToolCallMsg[]): string {
   const counts = new Map<string, number>();
   for (const t of tools) counts.set(t.toolName, (counts.get(t.toolName) ?? 0) + 1);
-  const parts = [...counts.entries()].map(
-    ([name, n]) => (n > 1 ? `${n} ${name}s` : `1 ${name}`),
-  );
+  const parts = [...counts.entries()].map(([name, n]) => (n > 1 ? `${n} ${name}s` : `1 ${name}`));
   return `Ran ${parts.join(' + ')}`;
 }
 
@@ -159,7 +157,12 @@ function groupTools(
           }
           // 复用现有 assistant_text view-kind —— AssistantBubble 已经会渲染 markdown + footer
           out.push({ kind: 'assistant_text', id: `${m.id}_text`, text: m.text, sentAt: m.sentAt });
-          pendingCluster.push({ id: m.id, title: summarizeTools(tools), tools, syntheticTitle: true });
+          pendingCluster.push({
+            id: m.id,
+            title: summarizeTools(tools),
+            tools,
+            syntheticTitle: true,
+          });
         } else if (hasThinking && foldThinking) {
           // thinking-only step（只想了一下就调工具）：**不打断**，推理折进 sub-cluster。
           // 连续的 thinking→cmd→thinking→cmd 就并成一个 "Ran N commands"。
@@ -176,7 +179,12 @@ function groupTools(
             flushCluster();
             out.push({ kind: 'thinking', id: `${m.id}_thinking`, thinking: m.thinking! });
           }
-          pendingCluster.push({ id: m.id, title: summarizeTools(tools), tools, syntheticTitle: true });
+          pendingCluster.push({
+            id: m.id,
+            title: summarizeTools(tools),
+            tools,
+            syntheticTitle: true,
+          });
         }
         i = j - 1; // 跳过 consumed tool_calls (for loop ++ 再 +1 到 j)
       } else {
@@ -204,10 +212,12 @@ function groupTools(
 export function ConversationStreamV2(): JSX.Element {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const events = useAppStore((s) =>
-    currentSessionId ? s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS : EMPTY_EVENTS,
+    currentSessionId ? (s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS) : EMPTY_EVENTS,
   );
   const userMessages = useAppStore((s) =>
-    currentSessionId ? s.userMessagesBySession[currentSessionId] ?? EMPTY_USER_MESSAGES : EMPTY_USER_MESSAGES,
+    currentSessionId
+      ? (s.userMessagesBySession[currentSessionId] ?? EMPTY_USER_MESSAGES)
+      : EMPTY_USER_MESSAGES,
   );
   // 用来判断 "is this session loading history?" — persisted session 在 SDK summary
   // 有 msgCount > 0,而 in-memory buffer 还是空的 → history.IPC 在 flight,显示骨架更友好
@@ -218,7 +228,8 @@ export function ConversationStreamV2(): JSX.Element {
   });
   const transcriptFontSize = useAppStore((s) => s.transcriptFontSize);
   // 字号映射 — TranscriptViewMenu 的 sm / base / lg → Tailwind class
-  const fontClass = transcriptFontSize === 'sm' ? 'text-xs' : transcriptFontSize === 'lg' ? 'text-base' : 'text-sm';
+  const fontClass =
+    transcriptFontSize === 'sm' ? 'text-xs' : transcriptFontSize === 'lg' ? 'text-base' : 'text-sm';
 
   // transcriptView 决定折叠策略（之前这个状态存了但渲染层从没读 → 4 个视图点了没反应）：
   //   normal   = 紧凑：thinking 折进工具组，cluster 默认折叠
@@ -228,7 +239,10 @@ export function ConversationStreamV2(): JSX.Element {
   const transcriptView = useAppStore((s) => s.transcriptView);
 
   const messages = useMemo(() => composeMessages({ events, userMessages }), [events, userMessages]);
-  const viewMessages = useMemo(() => groupTools(messages, transcriptView), [messages, transcriptView]);
+  const viewMessages = useMemo(
+    () => groupTools(messages, transcriptView),
+    [messages, transcriptView],
+  );
   // summary 视图：滤掉 thinking 行和工具组，只保留对话正文。其余视图原样渲染。
   const displayMessages = useMemo(
     () =>
@@ -300,7 +314,9 @@ export function ConversationStreamV2(): JSX.Element {
             .flatMap((sc) => [
               sc.title,
               sc.thinking ?? '',
-              ...sc.tools.map((t) => `${t.toolName} ${JSON.stringify(t.input ?? {})} ${t.result ?? ''}`),
+              ...sc.tools.map(
+                (t) => `${t.toolName} ${JSON.stringify(t.input ?? {})} ${t.result ?? ''}`,
+              ),
             ])
             .join(' ');
           break;
@@ -367,7 +383,8 @@ export function ConversationStreamV2(): JSX.Element {
   function handleScroll(e: React.UIEvent<HTMLDivElement>): void {
     // 守卫期内的 scroll 事件来自 ResizeObserver / smooth scroll 自己的 scrollTop 赋值，
     // 不视为用户上滚
-    if (performance.now() - lastProgrammaticScrollRef.current < PROGRAMMATIC_SCROLL_GUARD_MS) return;
+    if (performance.now() - lastProgrammaticScrollRef.current < PROGRAMMATIC_SCROLL_GUARD_MS)
+      return;
     const el = e.currentTarget;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     const atBottom = distanceFromBottom < 32;
@@ -439,84 +456,81 @@ export function ConversationStreamV2(): JSX.Element {
           {/* timeline 竖线 —— 仅有可见消息时画，避免空状态出现孤立竖线 */}
           {displayMessages.length > 0 && (
             <div
-              className="absolute left-[7px] top-2 bottom-2 w-px bg-border-default/70 dark:bg-zinc-800"
+              className="absolute left-[7px] top-2 bottom-2 w-px bg-border-default/70 dark:bg-surface-3"
               aria-hidden
             />
           )}
           <div className="space-y-4">
-        {displayMessages.length === 0 && (
-          currentSessionMsgCount > 0 ? (
-            // 有 SDK summary msgCount 但 buffer 空 → history IPC 正在 flight,显示骨架
-            // 比 "Send a prompt to start" 更准确,也免去用户盯着空白屏幕等几百毫秒
-            <HistoryRestoreSkeleton />
-          ) : (
-            <div className="text-zinc-600 italic text-sm">
-              Send a prompt below to start.
-            </div>
-          )
-        )}
-        {displayMessages.map((m) => {
-          const isMatch = matchSet.has(m.id);
-          const isCurrent = currentMatchId === m.id;
-          const ringClass = isCurrent
-            ? 'ring-2 ring-amber-500/80 rounded-md'
-            : isMatch
-            ? 'ring-1 ring-amber-500/40 rounded-md'
-            : '';
-          let inner: JSX.Element;
-          let markerTone: MarkerTone = 'assistant';
-          switch (m.kind) {
-            case 'user':
-              inner = <UserBubble content={m.content} sentAt={m.sentAt} />;
-              markerTone = 'user';
-              break;
-            case 'assistant_text':
-              inner = <AssistantBubble text={m.text} thinking={m.thinking} sentAt={m.sentAt} />;
-              markerTone = 'assistant';
-              break;
-            case 'system_notice':
-              inner = <SystemNotice {...m} />;
-              markerTone = 'system';
-              break;
-            case 'tool_cluster':
-              inner = (
-                <ToolCluster
-                  cluster={m}
-                  expanded={expanded.has(m.id) || clustersForceExpand}
-                  onToggle={() => toggleGroup(m.id)}
-                />
+            {displayMessages.length === 0 &&
+              (currentSessionMsgCount > 0 ? (
+                // 有 SDK summary msgCount 但 buffer 空 → history IPC 正在 flight,显示骨架
+                // 比 "Send a prompt to start" 更准确,也免去用户盯着空白屏幕等几百毫秒
+                <HistoryRestoreSkeleton />
+              ) : (
+                <div className="text-fg-faint italic text-sm">Send a prompt below to start.</div>
+              ))}
+            {displayMessages.map((m) => {
+              const isMatch = matchSet.has(m.id);
+              const isCurrent = currentMatchId === m.id;
+              const ringClass = isCurrent
+                ? 'ring-2 ring-amber-500/80 rounded-md'
+                : isMatch
+                  ? 'ring-1 ring-amber-500/40 rounded-md'
+                  : '';
+              let inner: JSX.Element;
+              let markerTone: MarkerTone = 'assistant';
+              switch (m.kind) {
+                case 'user':
+                  inner = <UserBubble content={m.content} sentAt={m.sentAt} />;
+                  markerTone = 'user';
+                  break;
+                case 'assistant_text':
+                  inner = <AssistantBubble text={m.text} thinking={m.thinking} sentAt={m.sentAt} />;
+                  markerTone = 'assistant';
+                  break;
+                case 'system_notice':
+                  inner = <SystemNotice {...m} />;
+                  markerTone = 'system';
+                  break;
+                case 'tool_cluster':
+                  inner = (
+                    <ToolCluster
+                      cluster={m}
+                      expanded={expanded.has(m.id) || clustersForceExpand}
+                      onToggle={() => toggleGroup(m.id)}
+                    />
+                  );
+                  markerTone = 'tool';
+                  break;
+                case 'thinking':
+                  inner = (
+                    <ThinkingBlock
+                      thinking={m.thinking}
+                      expanded={expanded.has(m.id) || thinkingForceExpand}
+                      onToggle={() => toggleGroup(m.id)}
+                    />
+                  );
+                  markerTone = 'thinking';
+                  break;
+              }
+              return (
+                <div key={m.id} data-msg-id={m.id} className={`relative ${ringClass}`}>
+                  <TimelineMarker tone={markerTone} />
+                  {inner}
+                </div>
               );
-              markerTone = 'tool';
-              break;
-            case 'thinking':
-              inner = (
-                <ThinkingBlock
-                  thinking={m.thinking}
-                  expanded={expanded.has(m.id) || thinkingForceExpand}
-                  onToggle={() => toggleGroup(m.id)}
-                />
-              );
-              markerTone = 'thinking';
-              break;
-          }
-          return (
-            <div key={m.id} data-msg-id={m.id} className={`relative ${ringClass}`}>
-              <TimelineMarker tone={markerTone} />
-              {inner}
-            </div>
-          );
-        })}
-        {/* 流式 spinner —— v0.1.4：从 BottomBar 搬到这里，对齐 VSCode Claude Code
+            })}
+            {/* 流式 spinner —— v0.1.4：从 BottomBar 搬到这里，对齐 VSCode Claude Code
             把"正在做什么"放在对话流末尾的位置感（更自然，能跟时间线 rail 衔接）。
             ActivitySpinner 自己 return null 时本块也不渲染 marker。 */}
-          <StreamingSpinnerRow />
+            <StreamingSpinnerRow />
           </div>
         </div>
       </div>
 
       {/* P4a 搜索框 — 右上角浮窗 */}
       {searchOpen && (
-        <div className="absolute top-2 right-4 z-30 flex items-center gap-1 bg-zinc-900 border border-zinc-700 rounded shadow-xl px-2 py-1">
+        <div className="absolute top-2 right-4 z-30 flex items-center gap-1 bg-surface-2 border border-border-strong rounded shadow-xl px-2 py-1">
           <input
             ref={searchInputRef}
             type="search"
@@ -533,9 +547,9 @@ export function ConversationStreamV2(): JSX.Element {
               }
             }}
             placeholder="Find in transcript…"
-            className="bg-transparent text-xs outline-none w-44 text-zinc-200 placeholder:text-zinc-500"
+            className="bg-transparent text-xs outline-none w-44 text-fg-primary placeholder:text-fg-muted"
           />
-          <span className="text-[10px] text-zinc-400 font-mono w-12 text-right select-none">
+          <span className="text-[11px] text-fg-muted font-mono w-12 text-right select-none">
             {searchQuery
               ? matchIds.length === 0
                 ? '0/0'
@@ -546,7 +560,7 @@ export function ConversationStreamV2(): JSX.Element {
             type="button"
             onClick={prevMatch}
             disabled={matchIds.length === 0}
-            className="text-zinc-400 hover:text-zinc-100 px-1 disabled:opacity-30"
+            className="text-fg-muted hover:text-fg-primary px-1 disabled:opacity-30"
             title="Previous match (Shift+Enter)"
             aria-label="Previous match"
           >
@@ -556,7 +570,7 @@ export function ConversationStreamV2(): JSX.Element {
             type="button"
             onClick={nextMatch}
             disabled={matchIds.length === 0}
-            className="text-zinc-400 hover:text-zinc-100 px-1 disabled:opacity-30"
+            className="text-fg-muted hover:text-fg-primary px-1 disabled:opacity-30"
             title="Next match (Enter)"
             aria-label="Next match"
           >
@@ -565,7 +579,7 @@ export function ConversationStreamV2(): JSX.Element {
           <button
             type="button"
             onClick={closeSearch}
-            className="text-zinc-400 hover:text-zinc-100 px-1"
+            className="text-fg-muted hover:text-fg-primary px-1"
             title="Close (Esc)"
             aria-label="Close search"
           >
@@ -578,7 +592,7 @@ export function ConversationStreamV2(): JSX.Element {
         <button
           type="button"
           onClick={jumpToBottom}
-          className="absolute bottom-3 right-4 text-xs px-2 py-1 rounded-full bg-zinc-800/90 border border-zinc-700 hover:bg-zinc-700 text-zinc-300 shadow-lg"
+          className="absolute bottom-3 right-4 text-xs px-2 py-1 rounded-full bg-surface-3/90 border border-border-strong hover:bg-hover-bg text-fg-secondary shadow-lg"
         >
           ↓ Jump to bottom
         </button>
@@ -595,7 +609,7 @@ const MARKER_TONE_CLASS: Record<MarkerTone, string> = {
   user: 'bg-sky-500 dark:bg-sky-400',
   assistant: 'bg-emerald-500 dark:bg-emerald-400',
   system: 'bg-amber-500 dark:bg-amber-400',
-  tool: 'bg-zinc-400 dark:bg-zinc-500',
+  tool: 'bg-fg-faint dark:bg-fg-muted',
   thinking: 'bg-purple-500 dark:bg-purple-400',
 };
 function TimelineMarker({ tone }: { tone: MarkerTone }): JSX.Element {
@@ -643,7 +657,7 @@ function ThinkingBlock({
         type="button"
         onClick={onToggle}
         className={[
-          'text-[11px] font-mono flex items-center gap-1.5',
+          'text-xs font-mono flex items-center gap-1.5',
           'dark:text-purple-400 dark:hover:text-purple-300',
           'text-purple-700 hover:text-purple-900',
         ].join(' ')}
@@ -690,16 +704,11 @@ function approxTokens(text: string): number {
  *
  * 历史：v0.1.0 起曾两层折叠（外+内 sub-cluster），用户 2026-06-02 反馈两层不直观，降回单层。
  */
-function ToolCluster({
-  cluster,
-  expanded,
-  onToggle,
-}: ToolClusterProps): JSX.Element {
+function ToolCluster({ cluster, expanded, onToggle }: ToolClusterProps): JSX.Element {
   const allTools = cluster.subClusters.flatMap((sc) => sc.tools);
   const allDone = allTools.every((t) => t.status === 'done');
   const running = allTools.find((t) => t.status === 'running');
-  const label =
-    cluster.totalTools === 1 ? 'Ran 1 command' : `Ran ${cluster.totalTools} commands`;
+  const label = cluster.totalTools === 1 ? 'Ran 1 command' : `Ran ${cluster.totalTools} commands`;
   const runningHint = running ? ` · running ${running.toolName}…` : '';
   // 组内折进来的 thinking 总 token —— header 给个量级提示，让用户知道"这组里藏了多少推理"。
   // 在 groupTools 里预算好（见 ToolClusterMessage.thinkingTokens），这里直接读。
@@ -720,7 +729,7 @@ function ToolCluster({
       <button
         type="button"
         onClick={onToggle}
-        className="dark:text-zinc-400 dark:hover:text-zinc-200 text-zinc-600 hover:text-zinc-900 flex items-center gap-1.5"
+        className="dark:text-fg-muted dark:hover:text-fg-primary text-fg-faint hover:text-fg-primary flex items-center gap-1.5"
       >
         <Caret open={expanded} />
         <span>{label}</span>
@@ -732,7 +741,7 @@ function ToolCluster({
         {!allDone && <span className="text-amber-500">{runningHint}</span>}
       </button>
       {expanded && (
-        <div className="mt-1.5 ml-3 space-y-2 border-l dark:border-zinc-800 border-zinc-200 pl-3">
+        <div className="mt-1.5 ml-3 space-y-2 border-l dark:border-border-default border-border-default pl-3">
           {cluster.subClusters.map((sc) => {
             const subRunning = sc.tools.find((t) => t.status === 'running');
             return (
@@ -750,10 +759,10 @@ function ToolCluster({
                   </div>
                 )}
                 {showStepLabel(sc) && (
-                  <div className="flex items-start gap-1.5 dark:text-zinc-300 text-zinc-700">
+                  <div className="flex items-start gap-1.5 dark:text-fg-secondary text-fg-faint">
                     <span className="whitespace-pre-wrap break-words">{sc.title}</span>
                     {subRunning && (
-                      <span className="text-amber-500 text-[10px] flex-shrink-0 mt-px">
+                      <span className="text-amber-500 text-[11px] flex-shrink-0 mt-px">
                         · {subRunning.toolName}…
                       </span>
                     )}
@@ -781,27 +790,27 @@ function HistoryRestoreSkeleton(): JSX.Element {
     <div className="space-y-4 animate-pulse" aria-label="Loading conversation history">
       {/* user 气泡 (右对齐) */}
       <div className="flex justify-end">
-        <div className="bg-zinc-800/60 rounded-lg px-3 py-2 max-w-[60%]">
-          <div className="h-3 w-48 bg-zinc-700/60 rounded" />
+        <div className="bg-surface-3/60 rounded-lg px-3 py-2 max-w-[60%]">
+          <div className="h-3 w-48 bg-surface-3/60 rounded" />
         </div>
       </div>
       {/* assistant 气泡 (左对齐,多行) */}
       <div className="space-y-2">
-        <div className="h-3 w-3/4 bg-zinc-800/60 rounded" />
-        <div className="h-3 w-2/3 bg-zinc-800/60 rounded" />
-        <div className="h-3 w-1/2 bg-zinc-800/60 rounded" />
+        <div className="h-3 w-3/4 bg-surface-3/60 rounded" />
+        <div className="h-3 w-2/3 bg-surface-3/60 rounded" />
+        <div className="h-3 w-1/2 bg-surface-3/60 rounded" />
       </div>
       {/* user 气泡 #2 */}
       <div className="flex justify-end">
-        <div className="bg-zinc-800/60 rounded-lg px-3 py-2 max-w-[40%]">
-          <div className="h-3 w-32 bg-zinc-700/60 rounded" />
+        <div className="bg-surface-3/60 rounded-lg px-3 py-2 max-w-[40%]">
+          <div className="h-3 w-32 bg-surface-3/60 rounded" />
         </div>
       </div>
       <div className="space-y-2">
-        <div className="h-3 w-5/6 bg-zinc-800/60 rounded" />
-        <div className="h-3 w-2/3 bg-zinc-800/60 rounded" />
+        <div className="h-3 w-5/6 bg-surface-3/60 rounded" />
+        <div className="h-3 w-2/3 bg-surface-3/60 rounded" />
       </div>
-      <div className="pt-2 text-[10px] text-zinc-600 italic">Loading conversation…</div>
+      <div className="pt-2 text-[11px] text-fg-faint italic">Loading conversation…</div>
     </div>
   );
 }

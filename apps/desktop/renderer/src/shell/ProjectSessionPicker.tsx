@@ -140,17 +140,20 @@ export function ProjectSessionPicker({
       aria-label={`Sessions in ${projectName}`}
     >
       <div
-        className="bg-zinc-950 border border-zinc-800 rounded-lg shadow-2xl w-[560px] max-w-[90vw] max-h-[70vh] flex flex-col overflow-hidden"
+        className="bg-surface border border-border-default rounded-lg shadow-2xl w-[560px] max-w-[90vw] max-h-[70vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="border-b border-zinc-800 px-3 py-2 flex items-center gap-2">
-          <span className="text-[11px] text-zinc-400 truncate">Sessions in</span>
-          <span className="text-[12px] text-zinc-100 font-semibold truncate flex-1" title={projectName}>
+        <div className="border-b border-border-default px-3 py-2 flex items-center gap-2">
+          <span className="text-xs text-fg-muted truncate">Sessions in</span>
+          <span
+            className="text-[12px] text-fg-primary font-semibold truncate flex-1"
+            title={projectName}
+          >
             {projectName}
           </span>
-          <span className="text-[10px] text-zinc-500 font-mono">{sessions.length}</span>
+          <span className="text-[11px] text-fg-muted font-mono">{sessions.length}</span>
         </div>
-        <div className="border-b border-zinc-800 px-3 py-2">
+        <div className="border-b border-border-default px-3 py-2">
           <input
             ref={inputRef}
             autoFocus
@@ -158,13 +161,13 @@ export function ProjectSessionPicker({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter by title…"
-            className="w-full bg-transparent text-zinc-100 placeholder:text-zinc-600 outline-none text-sm"
+            className="w-full bg-transparent text-fg-primary placeholder:text-fg-faint outline-none text-sm"
             aria-label="Session filter query"
           />
         </div>
         <ul ref={listRef} className="overflow-y-auto flex-1 text-[12px]">
           {filtered.length === 0 ? (
-            <li className="px-3 py-4 text-zinc-500 text-center">No matches</li>
+            <li className="px-3 py-4 text-fg-muted text-center">No matches</li>
           ) : (
             filtered.map(({ session }, idx) => {
               const isActive = idx === activeIdx;
@@ -179,14 +182,23 @@ export function ProjectSessionPicker({
                       onClose();
                     }}
                     className={`w-full text-left px-3 py-1.5 flex items-center gap-2 ${
-                      isActive ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-300 hover:bg-zinc-800/60'
+                      isActive
+                        ? 'bg-surface-3 text-fg-primary'
+                        : 'text-fg-secondary hover:bg-hover-bg'
                     }`}
                   >
-                    {isCurrent && <span className="text-emerald-400 text-[10px]" aria-hidden>●</span>}
+                    {isCurrent && (
+                      <span className="text-emerald-400 text-[11px]" aria-hidden>
+                        ●
+                      </span>
+                    )}
                     <span className="truncate flex-1" title={session.title || session.sessionId}>
                       {session.title || session.sessionId.slice(0, 8)}
                     </span>
-                    <span className="text-[10px] text-zinc-500 font-mono flex-shrink-0" title={new Date(session.lastActivityAt).toLocaleString()}>
+                    <span
+                      className="text-[11px] text-fg-muted font-mono flex-shrink-0"
+                      title={new Date(session.lastActivityAt).toLocaleString()}
+                    >
                       {formatAgo(session.lastActivityAt, now)}
                     </span>
                   </button>
@@ -195,7 +207,7 @@ export function ProjectSessionPicker({
             })
           )}
         </ul>
-        <div className="border-t border-zinc-800 px-3 py-1.5 text-[10px] text-zinc-500 flex gap-3">
+        <div className="border-t border-border-default px-3 py-1.5 text-[11px] text-fg-muted flex gap-3">
           <span>↑↓ navigate</span>
           <span>Enter to open</span>
           <span>Esc to close</span>

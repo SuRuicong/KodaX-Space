@@ -16,11 +16,34 @@ interface Props {
 }
 
 const ALLOWED_TAGS = new Set([
-  'P', 'BR', 'STRONG', 'EM', 'B', 'I', 'U',
-  'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
-  'UL', 'OL', 'LI',
-  'TABLE', 'THEAD', 'TBODY', 'TR', 'TD', 'TH',
-  'BLOCKQUOTE', 'CODE', 'PRE', 'A', 'SPAN', 'DIV',
+  'P',
+  'BR',
+  'STRONG',
+  'EM',
+  'B',
+  'I',
+  'U',
+  'H1',
+  'H2',
+  'H3',
+  'H4',
+  'H5',
+  'H6',
+  'UL',
+  'OL',
+  'LI',
+  'TABLE',
+  'THEAD',
+  'TBODY',
+  'TR',
+  'TD',
+  'TH',
+  'BLOCKQUOTE',
+  'CODE',
+  'PRE',
+  'A',
+  'SPAN',
+  'DIV',
 ]);
 
 const ALLOWED_ATTRS = new Set(['href', 'title', 'colspan', 'rowspan']);
@@ -94,7 +117,10 @@ export function DocxViewer({ base64 }: Props): JSX.Element {
     setErr(null);
 
     // mammoth 需要 ArrayBuffer
-    const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    const ab = bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength,
+    ) as ArrayBuffer;
     mammoth
       .convertToHtml({ arrayBuffer: ab })
       .then((result) => {
@@ -114,15 +140,12 @@ export function DocxViewer({ base64 }: Props): JSX.Element {
   }, [bytes]);
 
   if (err !== null) return <div className="p-3 text-xs text-red-400">{err}</div>;
-  if (busy) return <div className="p-3 text-xs text-zinc-500">Rendering .docx…</div>;
-  if (html === null) return <div className="p-3 text-xs text-zinc-500">Empty document.</div>;
+  if (busy) return <div className="p-3 text-xs text-fg-muted">Rendering .docx…</div>;
+  if (html === null) return <div className="p-3 text-xs text-fg-muted">Empty document.</div>;
 
   return (
-    <div className="h-full overflow-auto p-4 bg-zinc-950 text-zinc-200 text-sm leading-relaxed docx-preview">
-      <div
-        // eslint-disable-next-line react/no-danger
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+    <div className="h-full overflow-auto p-4 bg-surface text-fg-primary text-sm leading-relaxed docx-preview">
+      <div dangerouslySetInnerHTML={{ __html: html }} />
     </div>
   );
 }

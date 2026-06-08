@@ -71,7 +71,7 @@ export function AgentPicker({ insertAtCaret }: Props): JSX.Element | null {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-[10px] flex items-center gap-1 text-zinc-500 hover:text-zinc-300 px-1.5 py-0.5 rounded hover:bg-zinc-800"
+        className="text-[11px] flex items-center gap-1 text-fg-muted hover:text-fg-secondary px-1.5 py-0.5 rounded hover:bg-hover-bg"
         title="Insert @agent reference (markdown agents)"
         aria-label="Pick an agent"
       >
@@ -80,16 +80,17 @@ export function AgentPicker({ insertAtCaret }: Props): JSX.Element | null {
       </button>
 
       {open && (
-        <div className="absolute left-0 bottom-full mb-2 w-64 max-h-72 overflow-auto bg-zinc-900 border border-zinc-800 rounded shadow-xl p-2 text-xs z-50">
-          <div className="text-zinc-500 text-[10px] uppercase tracking-wider mb-1.5 px-1">
+        <div className="absolute left-0 bottom-full mb-2 w-64 max-h-72 overflow-auto bg-surface-2 border border-border-default rounded shadow-xl p-2 text-xs z-50">
+          <div className="text-fg-muted text-[11px] uppercase tracking-wider mb-1.5 px-1">
             Insert @agent reference
           </div>
           {loading ? (
-            <div className="text-zinc-500 italic px-1 py-2">Discovering…</div>
+            <div className="text-fg-muted italic px-1 py-2">Discovering…</div>
           ) : agents.length === 0 ? (
-            <div className="text-zinc-500 italic px-1 py-2">
-              No agents. Drop a markdown file into <code className="text-zinc-400">~/.kodax/agents/</code>
-              {' '}or <code className="text-zinc-400">{'<project>/.kodax/agents/'}</code>.
+            <div className="text-fg-muted italic px-1 py-2">
+              No agents. Drop a markdown file into{' '}
+              <code className="text-fg-muted">~/.kodax/agents/</code> or{' '}
+              <code className="text-fg-muted">{'<project>/.kodax/agents/'}</code>.
             </div>
           ) : (
             <ul className="space-y-0.5">
@@ -98,12 +99,14 @@ export function AgentPicker({ insertAtCaret }: Props): JSX.Element | null {
                   <button
                     type="button"
                     onClick={() => pickAgent(a.name)}
-                    className="w-full text-left px-2 py-1.5 rounded hover:bg-zinc-800 flex items-start gap-2"
+                    className="w-full text-left px-2 py-1.5 rounded hover:bg-hover-bg flex items-start gap-2"
                   >
-                    <span className={`${SOURCE_DOT_COLOR[a.source]} mt-0.5`} aria-hidden>●</span>
+                    <span className={`${SOURCE_DOT_COLOR[a.source]} mt-0.5`} aria-hidden>
+                      ●
+                    </span>
                     <div className="flex-1 min-w-0">
-                      <div className="text-zinc-200 font-mono truncate">{a.name}</div>
-                      <div className="text-zinc-500 text-[10px] truncate" title={a.description}>
+                      <div className="text-fg-primary font-mono truncate">{a.name}</div>
+                      <div className="text-fg-muted text-[11px] truncate" title={a.description}>
                         {a.description}
                       </div>
                     </div>

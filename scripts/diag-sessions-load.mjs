@@ -63,14 +63,21 @@ const dump = await page.evaluate(() => {
           let s = node.memoizedState;
           while (s) {
             const v = s.memoizedState;
-            if (v && typeof v === 'object' && Array.isArray(v.sessions) && Array.isArray(v.projects)) {
+            if (
+              v &&
+              typeof v === 'object' &&
+              Array.isArray(v.sessions) &&
+              Array.isArray(v.projects)
+            ) {
               found = v;
               return;
             }
             s = s.next;
           }
         }
-      } catch {}
+      } catch {
+        /* best-effort diag — ignore */
+      }
       walk(node.child, depth + 1);
       walk(node.sibling, depth + 1);
     }
@@ -133,7 +140,9 @@ const dump = await page.evaluate(() => {
           name: p.name,
         }));
       }
-    } catch {}
+    } catch {
+      /* best-effort diag — ignore */
+    }
 
     return out;
   })();

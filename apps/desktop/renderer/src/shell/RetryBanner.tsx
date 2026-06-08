@@ -39,7 +39,11 @@ function findActiveBannerRaw(events: readonly SessionEvent[]): BannerRaw | null 
   // retry/recovery 已经消化掉,不该显示。在边界之前如果有 retry_after / provider_recovery 就用最近一个。
   for (let i = events.length - 1; i >= 0; i--) {
     const ev = events[i];
-    if (ev.kind === 'iteration_start' || ev.kind === 'session_complete' || ev.kind === 'session_error') {
+    if (
+      ev.kind === 'iteration_start' ||
+      ev.kind === 'session_complete' ||
+      ev.kind === 'session_error'
+    ) {
       return null;
     }
     if (ev.kind === 'retry_after') {
@@ -70,7 +74,7 @@ function findActiveBannerRaw(events: readonly SessionEvent[]): BannerRaw | null 
 export function RetryBanner(): JSX.Element | null {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const events = useAppStore((s) =>
-    currentSessionId ? s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS : EMPTY_EVENTS,
+    currentSessionId ? (s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS) : EMPTY_EVENTS,
   );
   const raw = findActiveBannerRaw(events);
 
@@ -101,6 +105,8 @@ export function RetryBanner(): JSX.Element | null {
     if (!raw || raw.kind !== 'retry' || retryAt === undefined) return undefined;
     const id = setInterval(() => forceTick((n) => (n + 1) % 1000), 500);
     return () => clearInterval(id);
+    // 故意只依赖 raw?.kind：整个 raw 对象每条事件换引用，纳入会让心跳被反复重建。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raw?.kind, retryAt]);
 
   if (!raw) return null;
@@ -114,7 +120,7 @@ export function RetryBanner(): JSX.Element | null {
     return (
       <div
         className={[
-          'px-3 py-1 text-[11px] flex items-center gap-2 border-t border-b font-mono',
+          'px-3 py-1 text-xs flex items-center gap-2 border-t border-b font-mono',
           'text-amber-800 bg-amber-100/70 border-amber-300',
           'dark:text-amber-300/90 dark:bg-amber-900/15 dark:border-amber-900/30',
         ].join(' ')}
@@ -123,7 +129,8 @@ export function RetryBanner(): JSX.Element | null {
       >
         <span aria-hidden>⏱</span>
         <span>
-          {reasonLabel}{banner.provider ? ` by ${banner.provider}` : ''} · retrying in {remainSec}s
+          {reasonLabel}
+          {banner.provider ? ` by ${banner.provider}` : ''} · retrying in {remainSec}s
         </span>
         <span className="text-amber-700/80 dark:text-amber-300/60 ml-auto">
           attempt {banner.attempt}/{banner.maxAttempts}
@@ -136,7 +143,7 @@ export function RetryBanner(): JSX.Element | null {
   return (
     <div
       className={[
-        'px-3 py-1 text-[11px] flex items-center gap-2 border-t border-b font-mono',
+        'px-3 py-1 text-xs flex items-center gap-2 border-t border-b font-mono',
         'text-sky-800 bg-sky-100/70 border-sky-300',
         'dark:text-sky-300/90 dark:bg-sky-900/15 dark:border-sky-900/30',
       ].join(' ')}

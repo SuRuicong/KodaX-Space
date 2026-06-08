@@ -15,7 +15,7 @@ import { TopBar } from '../code/TopBar.js';
 export function EventStream(): JSX.Element {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const session = useAppStore((s) =>
-    currentSessionId ? s.sessions.find((x) => x.sessionId === currentSessionId) ?? null : null,
+    currentSessionId ? (s.sessions.find((x) => x.sessionId === currentSessionId) ?? null) : null,
   );
   const appendUserMessage = useAppStore((s) => s.appendUserMessage);
 
@@ -25,7 +25,7 @@ export function EventStream(): JSX.Element {
 
   if (currentSessionId === null || session === null) {
     return (
-      <div className="flex-1 flex items-center justify-center text-zinc-600 text-sm">
+      <div className="flex-1 flex items-center justify-center text-fg-faint text-sm">
         Select or create a session in the left drawer.
       </div>
     );
@@ -58,9 +58,14 @@ export function EventStream(): JSX.Element {
 
   return (
     <div className="flex-1 flex flex-col min-w-0">
-      <div className="border-b border-zinc-800 px-4 py-2 flex items-center gap-2 text-sm flex-shrink-0">
-        <span className="font-medium text-zinc-200 truncate">{session.title ?? 'Untitled session'}</span>
-        <code className="ml-auto text-[10px] text-zinc-600 font-mono truncate max-w-[280px]" title={session.sessionId}>
+      <div className="border-b border-border-default px-4 py-2 flex items-center gap-2 text-sm flex-shrink-0">
+        <span className="font-medium text-fg-primary truncate">
+          {session.title ?? 'Untitled session'}
+        </span>
+        <code
+          className="ml-auto text-[11px] text-fg-faint font-mono truncate max-w-[280px]"
+          title={session.sessionId}
+        >
           {session.sessionId}
         </code>
       </div>
@@ -71,7 +76,7 @@ export function EventStream(): JSX.Element {
 
       <ConversationStream sessionId={currentSessionId} />
 
-      <div className="border-t border-zinc-800 p-3 space-y-2 flex-shrink-0">
+      <div className="border-t border-border-default p-3 space-y-2 flex-shrink-0">
         {err && <div className="text-red-400 text-xs font-mono">{err}</div>}
         <InputBox
           value={prompt}

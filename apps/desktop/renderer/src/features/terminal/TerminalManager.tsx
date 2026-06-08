@@ -35,24 +35,24 @@ export function TerminalManager(): JSX.Element {
   const activateTab = useCallback((tabId: string) => dispatch({ type: 'ACTIVATE', tabId }), []);
 
   return (
-    <div className="h-full flex flex-col bg-zinc-950">
+    <div className="h-full flex flex-col bg-surface">
       {/* Tab bar */}
-      <div className="flex items-stretch border-b border-zinc-800/60 bg-zinc-950 text-[11px] flex-shrink-0">
+      <div className="flex items-stretch border-b border-border-default/60 bg-surface text-xs flex-shrink-0">
         <div className="flex flex-1 overflow-x-auto">
           {state.tabs.map((tab) => {
             const isActive = tab.id === state.activeId;
             return (
               <div
                 key={tab.id}
-                className={`flex items-center gap-1 px-2 py-1 border-r border-zinc-800/60 cursor-pointer ${
-                  isActive ? 'bg-zinc-900 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-900/40'
+                className={`flex items-center gap-1 px-2 py-1 border-r border-border-default/60 cursor-pointer ${
+                  isActive ? 'bg-surface-2 text-fg-primary' : 'text-fg-muted hover:bg-hover-bg'
                 }`}
                 onClick={() => activateTab(tab.id)}
               >
                 <span className="select-none">{tab.label}</span>
                 <button
                   type="button"
-                  className="ml-1 px-1 text-zinc-500 hover:text-zinc-200"
+                  className="ml-1 px-1 text-fg-muted hover:text-fg-primary"
                   onClick={(e) => {
                     e.stopPropagation();
                     closeTab(tab.id);
@@ -68,7 +68,7 @@ export function TerminalManager(): JSX.Element {
         </div>
         <button
           type="button"
-          className="px-2 py-1 border-l border-zinc-800/60 text-zinc-400 hover:text-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="px-2 py-1 border-l border-border-default/60 text-fg-muted hover:text-fg-primary disabled:opacity-30 disabled:cursor-not-allowed"
           onClick={addTab}
           disabled={!canAddMore}
           aria-label="New terminal tab"

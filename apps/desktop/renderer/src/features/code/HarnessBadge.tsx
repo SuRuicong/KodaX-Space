@@ -19,8 +19,8 @@ export function HarnessBadge({ profile }: HarnessBadgeProps): JSX.Element {
 
   const styles = {
     H0_DIRECT: {
-      bg: 'bg-zinc-800',
-      text: 'text-zinc-400',
+      bg: 'bg-surface-3',
+      text: 'text-fg-muted',
       label: 'DIRECT',
       title: 'H0: single-step direct execution',
     },
@@ -40,7 +40,7 @@ export function HarnessBadge({ profile }: HarnessBadgeProps): JSX.Element {
 
   return (
     <span
-      className={`px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded ${styles.bg} ${styles.text}`}
+      className={`px-1.5 py-0.5 text-[11px] font-mono font-semibold rounded ${styles.bg} ${styles.text}`}
       title={styles.title}
     >
       {styles.label}

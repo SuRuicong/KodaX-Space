@@ -35,9 +35,9 @@ function kindDotClass(kind: ManagedLiveKind, isActive: boolean): string {
     case 'notification':
       return 'bg-sky-500';
     case 'progress':
-      return 'bg-zinc-400';
+      return 'bg-fg-faint';
     default:
-      return 'bg-zinc-600';
+      return 'bg-fg-muted';
   }
 }
 
@@ -53,32 +53,32 @@ export function TasksPanel(): JSX.Element {
     currentSessionId ? s.harnessProfileBySession[currentSessionId] : undefined,
   );
 
+  // F037 reviewer MEDIUM-3: memoize 防 managed_task_status 高频更新时反复跑 grouping + sort。
+  // ⚠️ 必须在任何 early return 之前调用 —— 否则 currentSessionId 在 null/非 null 间切换时
+  //    hook 调用顺序变化，违反 Rules of Hooks（F054 lint 修复时发现的真实潜在 bug）。
+  const workers = useMemo(() => buildWorkerTree(status), [status]);
+
   if (!currentSessionId) {
     return (
-      <div className="h-full flex items-center justify-center text-zinc-600 text-xs">
+      <div className="h-full flex items-center justify-center text-fg-faint text-xs">
         No active session.
       </div>
     );
   }
 
-  // F037 reviewer MEDIUM-3: memoize 防 managed_task_status 高频更新时反复跑 grouping + sort。
-  const workers = useMemo(() => buildWorkerTree(status), [status]);
-
   return (
     <div className="h-full overflow-y-auto p-3 space-y-4 text-xs">
       <section>
-        <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1.5">
-          Work budget
-        </div>
+        <div className="text-[11px] uppercase tracking-wider text-fg-muted mb-1.5">Work budget</div>
         {budget ? (
           <div className="space-y-1">
-            <div className="text-zinc-300 font-mono">
+            <div className="text-fg-secondary font-mono">
               {budget.used} / {budget.cap}
               {status?.budgetApprovalRequired && (
                 <span className="ml-2 text-amber-400">· approval required</span>
               )}
             </div>
-            <div className="h-1.5 bg-zinc-900 rounded overflow-hidden">
+            <div className="h-1.5 bg-surface-2 rounded overflow-hidden">
               <div
                 className="h-full bg-emerald-600"
                 style={{
@@ -88,54 +88,56 @@ export function TasksPanel(): JSX.Element {
             </div>
           </div>
         ) : (
-          <div className="text-zinc-600">No data yet — start a session run.</div>
+          <div className="text-fg-faint">No data yet — start a session run.</div>
         )}
       </section>
 
       <section>
-        <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1.5">
+        <div className="text-[11px] uppercase tracking-wider text-fg-muted mb-1.5">
           Harness profile
         </div>
         {harness ? (
-          <div className="text-zinc-300 font-mono">
+          <div className="text-fg-secondary font-mono">
             {harness.profile}
             {harness.round !== undefined && (
-              <span className="text-zinc-500"> · round {harness.round}</span>
+              <span className="text-fg-muted"> · round {harness.round}</span>
             )}
             {status?.upgradeCeiling && status.upgradeCeiling !== harness.profile && (
-              <span className="text-zinc-500"> · ceiling {status.upgradeCeiling}</span>
+              <span className="text-fg-muted"> · ceiling {status.upgradeCeiling}</span>
             )}
           </div>
         ) : status?.harnessProfile ? (
-          <div className="text-zinc-300 font-mono">
+          <div className="text-fg-secondary font-mono">
             {status.harnessProfile}
             {status.currentRound !== undefined && (
-              <span className="text-zinc-500"> · round {status.currentRound}</span>
+              <span className="text-fg-muted"> · round {status.currentRound}</span>
             )}
           </div>
         ) : (
-          <div className="text-zinc-600">Unknown — defaults to H0_DIRECT.</div>
+          <div className="text-fg-faint">Unknown — defaults to H0_DIRECT.</div>
         )}
       </section>
 
       {/* FEATURE_037: Worker tree —— 替代原 "Subagents" + "Recent events" */}
       <section>
-        <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1.5 flex items-center justify-between">
+        <div className="text-[11px] uppercase tracking-wider text-fg-muted mb-1.5 flex items-center justify-between">
           <span>Workers</span>
           {status?.idleWaiting && (
-            <span className="text-zinc-500 normal-case">
+            <span className="text-fg-muted normal-case">
               idle · waiting {status.idleWaitingPendingCount ?? 0}
             </span>
           )}
-          {!status?.idleWaiting && status?.childFanoutCount !== undefined && status.childFanoutCount > 0 && (
-            <span className="text-zinc-500 normal-case">
-              {status.childFanoutCount} active
-              {status.childFanoutClass ? ` · ${status.childFanoutClass}` : ''}
-            </span>
-          )}
+          {!status?.idleWaiting &&
+            status?.childFanoutCount !== undefined &&
+            status.childFanoutCount > 0 && (
+              <span className="text-fg-muted normal-case">
+                {status.childFanoutCount} active
+                {status.childFanoutClass ? ` · ${status.childFanoutClass}` : ''}
+              </span>
+            )}
         </div>
         {workers.length === 0 ? (
-          <div className="text-zinc-600">No workers yet.</div>
+          <div className="text-fg-faint">No workers yet.</div>
         ) : (
           <ul className="space-y-0.5">
             {workers.map((w) => (
@@ -164,7 +166,7 @@ function WorkerRow({ node }: { node: WorkerNode }): JSX.Element {
         type="button"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
-        className={`w-full text-left px-2 py-1 rounded flex items-center gap-2 hover:bg-zinc-900 ${
+        className={`w-full text-left px-2 py-1 rounded flex items-center gap-2 hover:bg-hover-bg ${
           node.isActive ? 'bg-sky-950/30' : ''
         }`}
       >
@@ -175,19 +177,19 @@ function WorkerRow({ node }: { node: WorkerNode }): JSX.Element {
           )}`}
           aria-label={`status: ${node.latestKind ?? 'pending'}`}
         />
-        <span className="text-zinc-300 truncate flex-1">
+        <span className="text-fg-secondary truncate flex-1">
           {node.workerTitle}
           {node.events.length > 0 && (
-            <span className="text-zinc-600 ml-1.5">({node.events.length})</span>
+            <span className="text-fg-faint ml-1.5">({node.events.length})</span>
           )}
         </span>
         {node.latestPhase && (
-          <span className="text-[10px] text-zinc-500 font-mono">{node.latestPhase}</span>
+          <span className="text-[11px] text-fg-muted font-mono">{node.latestPhase}</span>
         )}
-        <Caret open={expanded} className="text-zinc-600" />
+        <Caret open={expanded} className="text-fg-faint" />
       </button>
       {expanded && node.events.length > 0 && (
-        <ul className="ml-3 mt-0.5 mb-1 border-l border-zinc-800/60 pl-2 space-y-1">
+        <ul className="ml-3 mt-0.5 mb-1 border-l border-border-default/60 pl-2 space-y-1">
           {node.events.map((ev) => (
             <li key={ev.key} className="flex gap-2 items-start">
               <span
@@ -197,19 +199,17 @@ function WorkerRow({ node }: { node: WorkerNode }): JSX.Element {
                 )}`}
               />
               <div className="flex-1 min-w-0">
-                <div className="text-zinc-300 truncate" title={ev.summary}>
+                <div className="text-fg-secondary truncate" title={ev.summary}>
                   {ev.summary}
                 </div>
-                {ev.phase && <div className="text-[10px] text-zinc-600">{ev.phase}</div>}
+                {ev.phase && <div className="text-[11px] text-fg-faint">{ev.phase}</div>}
               </div>
             </li>
           ))}
         </ul>
       )}
       {expanded && node.events.length === 0 && (
-        <div className="ml-5 mt-0.5 mb-1 text-[10px] text-zinc-600">
-          No events yet.
-        </div>
+        <div className="ml-5 mt-0.5 mb-1 text-[11px] text-fg-faint">No events yet.</div>
       )}
     </li>
   );

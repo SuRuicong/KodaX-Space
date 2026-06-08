@@ -22,11 +22,11 @@ import { useAppStore } from '../../store/appStore.js';
 import { pushToast } from '../../store/toastStore.js';
 
 const STATUS_COLOR: Record<McpRuntimeStatusT, string> = {
-  idle: 'text-zinc-500',
+  idle: 'text-fg-muted',
   connecting: 'text-amber-400',
   ready: 'text-emerald-400',
   error: 'text-red-400',
-  disabled: 'text-zinc-600',
+  disabled: 'text-fg-faint',
 };
 const STATUS_ICON: Record<McpRuntimeStatusT, string> = {
   idle: '○',
@@ -53,7 +53,9 @@ export function McpPanel(): JSX.Element {
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const [statusList, setStatusList] = useState<readonly McpServerStatusT[]>([]);
   const [meta, setMeta] = useState<readonly McpServerMeta[]>([]);
-  const [discoverErrors, setDiscoverErrors] = useState<ReadonlyArray<{ path: string; error: string }>>([]);
+  const [discoverErrors, setDiscoverErrors] = useState<
+    ReadonlyArray<{ path: string; error: string }>
+  >([]);
   const [loading, setLoading] = useState(false);
   const [topErr, setTopErr] = useState<string | null>(null);
   // 操作中的 serverId (start/stop 期间禁按钮)
@@ -62,12 +64,16 @@ export function McpPanel(): JSX.Element {
   const [extensions, setExtensions] = useState<readonly McpbExtensionT[]>([]);
   const [installing, setInstalling] = useState(false);
   // 哪些 server 当前展开 tools 列表 (Map<serverId, ToolItem[] | 'loading'>)
-  const [expandedTools, setExpandedTools] = useState<Record<string, ToolItem[] | 'loading' | 'error'>>({});
+  const [expandedTools, setExpandedTools] = useState<
+    Record<string, ToolItem[] | 'loading' | 'error'>
+  >({});
   // F039 v0.1.7：每个 server 的 diagnostic snapshot（mcp.logs IPC）展开态。
   // 'loading' = IPC in-flight；object = 实际 diag；'error' = IPC 失败。
   // SDK 当前 surface 比较保守（status + lastError + cachedAt + connect mode），
   // 比 stdout/stderr 滚动简单 —— 等 SDK 暴露日志流后再升级成滚动 tab。
-  const [diagState, setDiagState] = useState<Record<string, DiagSnapshot | 'loading' | 'error'>>({});
+  const [diagState, setDiagState] = useState<Record<string, DiagSnapshot | 'loading' | 'error'>>(
+    {},
+  );
 
   async function refresh(): Promise<void> {
     if (!window.kodaxSpace) return;
@@ -133,7 +139,10 @@ export function McpPanel(): JSX.Element {
       }
       if ('cancelled' in r.data && r.data.cancelled) return;
       if ('extension' in r.data) {
-        pushToast(`Installed ${r.data.extension.displayName} v${r.data.extension.version}`, 'success');
+        pushToast(
+          `Installed ${r.data.extension.displayName} v${r.data.extension.version}`,
+          'success',
+        );
       }
     } finally {
       setInstalling(false);
@@ -270,17 +279,16 @@ export function McpPanel(): JSX.Element {
 
   return (
     <div className="h-full flex flex-col text-xs">
-      <header className="px-3 py-2 border-b border-zinc-800/60 flex items-center justify-between flex-shrink-0">
-        <div className="text-zinc-300 font-medium">
-          MCP servers{' '}
-          <span className="text-zinc-500 font-normal">({merged.length})</span>
+      <header className="px-3 py-2 border-b border-border-default/60 flex items-center justify-between flex-shrink-0">
+        <div className="text-fg-secondary font-medium">
+          MCP servers <span className="text-fg-muted font-normal">({merged.length})</span>
         </div>
         <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => void refresh()}
             disabled={loading}
-            className="px-2 py-0.5 text-[10px] rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
+            className="px-2 py-0.5 text-[11px] rounded text-fg-muted hover:text-fg-primary hover:bg-hover-bg disabled:opacity-50"
             title="Refresh status"
           >
             ↻ Refresh
@@ -289,7 +297,7 @@ export function McpPanel(): JSX.Element {
             type="button"
             onClick={() => void reload()}
             disabled={loading}
-            className="px-2 py-0.5 text-[10px] rounded bg-amber-600/40 text-amber-200 hover:bg-amber-600/60 disabled:opacity-50"
+            className="px-2 py-0.5 text-[11px] rounded bg-amber-600/40 text-amber-200 hover:bg-amber-600/60 disabled:opacity-50"
             title="Reload config + reconstruct manager (call after editing ~/.kodax/config.json)"
           >
             ⟲ Reload config
@@ -298,7 +306,7 @@ export function McpPanel(): JSX.Element {
             type="button"
             onClick={() => void installExtension()}
             disabled={installing}
-            className="px-2 py-0.5 text-[10px] rounded bg-emerald-600/40 text-emerald-200 hover:bg-emerald-600/60 disabled:opacity-50"
+            className="px-2 py-0.5 text-[11px] rounded bg-emerald-600/40 text-emerald-200 hover:bg-emerald-600/60 disabled:opacity-50"
             title="Install a .mcpb / .dxt bundle"
           >
             {installing ? '…' : '+ Install ext'}
@@ -307,17 +315,17 @@ export function McpPanel(): JSX.Element {
       </header>
 
       {topErr !== null && (
-        <div className="px-3 py-1 text-[11px] text-red-400 font-mono border-b border-zinc-900">
+        <div className="px-3 py-1 text-xs text-red-400 font-mono border-b border-border-default">
           {topErr}
         </div>
       )}
 
       <div className="flex-1 overflow-auto px-2 py-2 space-y-1.5">
         {merged.length === 0 && !loading && (
-          <div className="text-zinc-600 text-center py-8 text-[11px]">
+          <div className="text-fg-faint text-center py-8 text-xs">
             No MCP servers configured. Add{' '}
-            <code className="text-zinc-400 bg-zinc-900 px-1 rounded">mcpServers</code> to{' '}
-            <code className="text-zinc-400 bg-zinc-900 px-1 rounded">~/.kodax/config.json</code>.
+            <code className="text-fg-muted bg-surface-2 px-1 rounded">mcpServers</code> to{' '}
+            <code className="text-fg-muted bg-surface-2 px-1 rounded">~/.kodax/config.json</code>.
           </div>
         )}
 
@@ -329,7 +337,10 @@ export function McpPanel(): JSX.Element {
           const isBusy = busyServer === row.serverId;
           const toolsState = expandedTools[row.serverId];
           return (
-            <div key={row.serverId} className="border border-zinc-800/60 rounded bg-zinc-900/30">
+            <div
+              key={row.serverId}
+              className="border border-border-default/60 rounded bg-surface-2/30"
+            >
               <div className="px-2 py-1.5">
                 <div className="flex items-center gap-2">
                   <span
@@ -339,27 +350,32 @@ export function McpPanel(): JSX.Element {
                   >
                     {STATUS_ICON[sStatus]}
                   </span>
-                  <span className="font-mono text-zinc-200 truncate flex-1">{row.serverId}</span>
-                  <span className={`text-[10px] font-mono ${STATUS_COLOR[sStatus]}`}>{sStatus}</span>
+                  <span className="font-mono text-fg-primary truncate flex-1">{row.serverId}</span>
+                  <span className={`text-[11px] font-mono ${STATUS_COLOR[sStatus]}`}>
+                    {sStatus}
+                  </span>
                   {tools > 0 && (
-                    <span className="text-[10px] text-zinc-500 font-mono">{tools} tools</span>
+                    <span className="text-[11px] text-fg-muted font-mono">{tools} tools</span>
                   )}
                   {status === undefined && (
-                    <span className="text-[10px] text-zinc-600 italic">not in manager</span>
+                    <span className="text-[11px] text-fg-faint italic">not in manager</span>
                   )}
                 </div>
                 {m && m.transport === 'stdio' && (
-                  <div className="mt-1 text-zinc-500 font-mono text-[10px] truncate" title={`${m.command ?? ''} ${(m.args ?? []).join(' ')}`}>
+                  <div
+                    className="mt-1 text-fg-muted font-mono text-[11px] truncate"
+                    title={`${m.command ?? ''} ${(m.args ?? []).join(' ')}`}
+                  >
                     {m.command} {(m.args ?? []).join(' ')}
                   </div>
                 )}
                 {m && m.transport === 'http' && (
-                  <div className="mt-1 text-zinc-500 font-mono text-[10px] truncate" title={m.url}>
+                  <div className="mt-1 text-fg-muted font-mono text-[11px] truncate" title={m.url}>
                     {m.url}
                   </div>
                 )}
                 {status?.lastError && (
-                  <div className="mt-1 text-red-400/80 text-[10px] font-mono break-words">
+                  <div className="mt-1 text-red-400/80 text-[11px] font-mono break-words">
                     {status.lastError}
                   </div>
                 )}
@@ -369,7 +385,7 @@ export function McpPanel(): JSX.Element {
                       type="button"
                       onClick={() => void startServer(row.serverId)}
                       disabled={isBusy}
-                      className="px-2 py-0.5 text-[10px] rounded bg-emerald-600/30 text-emerald-200 hover:bg-emerald-600/50 disabled:opacity-50"
+                      className="px-2 py-0.5 text-[11px] rounded bg-emerald-600/30 text-emerald-200 hover:bg-emerald-600/50 disabled:opacity-50"
                     >
                       {isBusy ? '…' : 'Start'}
                     </button>
@@ -379,7 +395,7 @@ export function McpPanel(): JSX.Element {
                       type="button"
                       onClick={() => void stopServer(row.serverId)}
                       disabled={isBusy}
-                      className="px-2 py-0.5 text-[10px] rounded bg-zinc-700/60 text-zinc-200 hover:bg-zinc-700 disabled:opacity-50"
+                      className="px-2 py-0.5 text-[11px] rounded bg-surface-3/60 text-fg-primary hover:bg-hover-bg disabled:opacity-50"
                     >
                       {isBusy ? '…' : 'Stop'}
                     </button>
@@ -388,7 +404,7 @@ export function McpPanel(): JSX.Element {
                     <button
                       type="button"
                       onClick={() => void toggleTools(row.serverId)}
-                      className="px-2 py-0.5 text-[10px] rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+                      className="px-2 py-0.5 text-[11px] rounded text-fg-muted hover:text-fg-primary hover:bg-hover-bg"
                     >
                       {toolsState ? '▾ Tools' : '▸ Tools'}
                     </button>
@@ -398,22 +414,22 @@ export function McpPanel(): JSX.Element {
                   <button
                     type="button"
                     onClick={() => void toggleDiag(row.serverId)}
-                    className="px-2 py-0.5 text-[10px] rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+                    className="px-2 py-0.5 text-[11px] rounded text-fg-muted hover:text-fg-primary hover:bg-hover-bg"
                   >
                     {diagState[row.serverId] ? '▾ Diag' : '▸ Diag'}
                   </button>
                 </div>
               </div>
               {Array.isArray(toolsState) && (
-                <div className="border-t border-zinc-800 px-2 py-1.5 space-y-0.5">
+                <div className="border-t border-border-default px-2 py-1.5 space-y-0.5">
                   {toolsState.length === 0 ? (
-                    <div className="text-zinc-500 italic text-[10px]">No tools.</div>
+                    <div className="text-fg-muted italic text-[11px]">No tools.</div>
                   ) : (
                     toolsState.map((t) => (
-                      <div key={t.id} className="text-[10px]">
-                        <span className="font-mono text-zinc-300">{t.name}</span>
+                      <div key={t.id} className="text-[11px]">
+                        <span className="font-mono text-fg-secondary">{t.name}</span>
                         {t.description && (
-                          <span className="text-zinc-500 ml-2">{t.description}</span>
+                          <span className="text-fg-muted ml-2">{t.description}</span>
                         )}
                       </div>
                     ))
@@ -421,90 +437,96 @@ export function McpPanel(): JSX.Element {
                 </div>
               )}
               {toolsState === 'loading' && (
-                <div className="border-t border-zinc-800 px-2 py-1 text-zinc-500 italic text-[10px]">
+                <div className="border-t border-border-default px-2 py-1 text-fg-muted italic text-[11px]">
                   Loading tools…
                 </div>
               )}
               {toolsState === 'error' && (
-                <div className="border-t border-zinc-800 px-2 py-1 text-red-400/80 text-[10px]">
+                <div className="border-t border-border-default px-2 py-1 text-red-400/80 text-[11px]">
                   Failed to load tools.
                 </div>
               )}
               {/* F039 Diag panel —— mcp.logs IPC 拿到的 diagnostic envelope。
                   字段都是 string，列表式渲染足够。lastError 是关键 debug 信息，单独大段显示。 */}
               {diagState[row.serverId] === 'loading' && (
-                <div className="border-t border-zinc-800 px-2 py-1 text-zinc-500 italic text-[10px]">
+                <div className="border-t border-border-default px-2 py-1 text-fg-muted italic text-[11px]">
                   Loading diagnostics…
                 </div>
               )}
               {diagState[row.serverId] === 'error' && (
-                <div className="border-t border-zinc-800 px-2 py-1 text-red-400/80 text-[10px]">
+                <div className="border-t border-border-default px-2 py-1 text-red-400/80 text-[11px]">
                   Failed to load diagnostics.
                 </div>
               )}
-              {typeof diagState[row.serverId] === 'object' && diagState[row.serverId] !== null && (() => {
-                const diag = diagState[row.serverId] as DiagSnapshot;
-                return (
-                  <div className="border-t border-zinc-800 px-2 py-1.5 space-y-1 text-[10px]">
-                    <div className="grid grid-cols-[80px_1fr] gap-x-2 gap-y-0.5">
-                      <span className="text-zinc-500">connect</span>
-                      <span className="font-mono text-zinc-300">{diag.connect}</span>
-                      <span className="text-zinc-500">status</span>
-                      <span className="font-mono text-zinc-300">{diag.status}</span>
-                      {diag.cachedAt && (
-                        <>
-                          <span className="text-zinc-500">cachedAt</span>
-                          <span className="font-mono text-zinc-400">{diag.cachedAt}</span>
-                        </>
+              {typeof diagState[row.serverId] === 'object' &&
+                diagState[row.serverId] !== null &&
+                (() => {
+                  const diag = diagState[row.serverId] as DiagSnapshot;
+                  return (
+                    <div className="border-t border-border-default px-2 py-1.5 space-y-1 text-[11px]">
+                      <div className="grid grid-cols-[80px_1fr] gap-x-2 gap-y-0.5">
+                        <span className="text-fg-muted">connect</span>
+                        <span className="font-mono text-fg-secondary">{diag.connect}</span>
+                        <span className="text-fg-muted">status</span>
+                        <span className="font-mono text-fg-secondary">{diag.status}</span>
+                        {diag.cachedAt && (
+                          <>
+                            <span className="text-fg-muted">cachedAt</span>
+                            <span className="font-mono text-fg-muted">{diag.cachedAt}</span>
+                          </>
+                        )}
+                      </div>
+                      {diag.lastError && (
+                        <div>
+                          <div className="text-fg-muted uppercase tracking-wider mt-1">
+                            last error
+                          </div>
+                          <pre className="mt-0.5 text-red-400/80 whitespace-pre-wrap break-words font-mono">
+                            {diag.lastError}
+                          </pre>
+                        </div>
                       )}
                     </div>
-                    {diag.lastError && (
-                      <div>
-                        <div className="text-zinc-500 uppercase tracking-wider mt-1">last error</div>
-                        <pre className="mt-0.5 text-red-400/80 whitespace-pre-wrap break-words font-mono">
-                          {diag.lastError}
-                        </pre>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
+                  );
+                })()}
             </div>
           );
         })}
 
         {extensions.length > 0 && (
           <div className="mt-3">
-            <div className="text-[10px] uppercase tracking-wider text-zinc-400 mb-1.5">
+            <div className="text-[11px] uppercase tracking-wider text-fg-muted mb-1.5">
               Installed extensions ({extensions.length})
             </div>
             <ul className="space-y-1">
               {extensions.map((ext) => (
                 <li
                   key={ext.extensionId}
-                  className="border border-zinc-800/60 rounded bg-zinc-900/30 px-2 py-1.5"
+                  className="border border-border-default/60 rounded bg-surface-2/30 px-2 py-1.5"
                 >
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-zinc-200 truncate flex-1">
-                      {ext.displayName}{' '}
-                      <span className="text-zinc-500">v{ext.version}</span>
+                    <span className="font-mono text-fg-primary truncate flex-1">
+                      {ext.displayName} <span className="text-fg-muted">v{ext.version}</span>
                     </span>
                     {ext.toolCount > 0 && (
-                      <span className="text-[10px] text-zinc-500 font-mono">
+                      <span className="text-[11px] text-fg-muted font-mono">
                         {ext.toolCount} tools
                       </span>
                     )}
                     <button
                       type="button"
                       onClick={() => void uninstallExtension(ext.extensionId, ext.displayName)}
-                      className="px-1.5 py-0.5 text-[10px] rounded text-zinc-400 hover:text-red-300 hover:bg-zinc-800"
+                      className="px-1.5 py-0.5 text-[11px] rounded text-fg-muted hover:text-red-300 hover:bg-hover-bg"
                       title="Uninstall"
                     >
                       Remove
                     </button>
                   </div>
                   {ext.description && (
-                    <div className="mt-0.5 text-[10px] text-zinc-500 truncate" title={ext.description}>
+                    <div
+                      className="mt-0.5 text-[11px] text-fg-muted truncate"
+                      title={ext.description}
+                    >
                       {ext.description}
                     </div>
                   )}
@@ -516,14 +538,18 @@ export function McpPanel(): JSX.Element {
 
         {discoverErrors.length > 0 && (
           <div className="mt-3">
-            <div className="text-[10px] uppercase tracking-wider text-amber-400 mb-1.5">
+            <div className="text-[11px] uppercase tracking-wider text-amber-400 mb-1.5">
               Config errors ({discoverErrors.length})
             </div>
             <ul className="space-y-1">
               {discoverErrors.map((e, idx) => (
-                <li key={`${e.path}:${idx}`} className="text-[10px] text-amber-400/70 font-mono">
-                  <div className="truncate" title={e.path}>{e.path}</div>
-                  <div className="text-amber-400/50 pl-2 truncate" title={e.error}>{e.error}</div>
+                <li key={`${e.path}:${idx}`} className="text-[11px] text-amber-400/70 font-mono">
+                  <div className="truncate" title={e.path}>
+                    {e.path}
+                  </div>
+                  <div className="text-amber-400/50 pl-2 truncate" title={e.error}>
+                    {e.error}
+                  </div>
                 </li>
               ))}
             </ul>

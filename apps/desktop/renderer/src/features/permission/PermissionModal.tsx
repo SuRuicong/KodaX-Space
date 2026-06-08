@@ -167,36 +167,36 @@ export function PermissionModal(): JSX.Element | null {
       aria-labelledby="permission-modal-title"
     >
       <div
-        className={`w-[520px] max-w-[95vw] max-h-[90vh] flex flex-col bg-zinc-900 border ${style.border} rounded-lg shadow-xl`}
+        className={`w-[520px] max-w-[95vw] max-h-[90vh] flex flex-col bg-surface-2 border ${style.border} rounded-lg shadow-xl`}
       >
-        <div className="px-5 py-3 border-b border-zinc-800 flex items-center gap-3 flex-shrink-0">
-          <span className={`px-2 py-0.5 text-[10px] font-mono font-semibold rounded ${style.badge}`}>
+        <div className="px-5 py-3 border-b border-border-default flex items-center gap-3 flex-shrink-0">
+          <span
+            className={`px-2 py-0.5 text-[11px] font-mono font-semibold rounded ${style.badge}`}
+          >
             {style.label}
           </span>
-          <h2 id="permission-modal-title" className="text-sm font-semibold text-zinc-100">
+          <h2 id="permission-modal-title" className="text-sm font-semibold text-fg-primary">
             Tool 调用授权请求
           </h2>
           {queue.length > 1 && (
-            <span className="ml-auto text-[10px] font-mono text-zinc-500">
+            <span className="ml-auto text-[11px] font-mono text-fg-muted">
               +{queue.length - 1} pending
             </span>
           )}
         </div>
 
         <div className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
-          <div className="text-xs text-zinc-400 leading-relaxed">
-            {truncate(head.reason, 256)}
-          </div>
+          <div className="text-xs text-fg-muted leading-relaxed">{truncate(head.reason, 256)}</div>
 
           <div className="space-y-1">
-            <div className="text-[10px] font-mono uppercase text-zinc-500">Tool</div>
+            <div className="text-[11px] font-mono uppercase text-fg-muted">Tool</div>
             <div className="text-sm font-mono text-amber-300">{head.toolCall.toolName}</div>
           </div>
 
           {inputPreview && (
             <div className="space-y-1">
-              <div className="text-[10px] font-mono uppercase text-zinc-500">Input</div>
-              <pre className="text-[11px] font-mono bg-zinc-950 border border-zinc-800 rounded p-2 overflow-x-auto max-h-48">
+              <div className="text-[11px] font-mono uppercase text-fg-muted">Input</div>
+              <pre className="text-xs font-mono bg-surface border border-border-default rounded p-2 overflow-x-auto max-h-48">
                 {inputPreview}
               </pre>
             </div>
@@ -204,7 +204,7 @@ export function PermissionModal(): JSX.Element | null {
 
           {isDanger && (
             <div className="space-y-1 border-t border-red-900 pt-3">
-              <label className="text-[10px] font-mono uppercase text-red-300 block">
+              <label className="text-[11px] font-mono uppercase text-red-300 block">
                 Type "{DANGER_CONFIRM_PHRASE}" to enable allow
               </label>
               <input
@@ -213,9 +213,9 @@ export function PermissionModal(): JSX.Element | null {
                 value={confirmText}
                 onChange={(e) => setConfirmText(e.target.value)}
                 placeholder={DANGER_CONFIRM_PHRASE}
-                className="w-full bg-zinc-950 border border-red-800 rounded px-2 py-1 text-sm font-mono text-zinc-100 outline-none focus:border-red-500"
+                className="w-full bg-surface border border-red-800 rounded px-2 py-1 text-sm font-mono text-fg-primary outline-none focus:border-red-500"
               />
-              <div className="text-[10px] text-red-400">
+              <div className="text-[11px] text-red-400">
                 检测到危险操作。必须键入确认字符串才能批准。
               </div>
             </div>
@@ -224,12 +224,12 @@ export function PermissionModal(): JSX.Element | null {
           {err && <div className="text-xs text-red-400 font-mono">{err}</div>}
         </div>
 
-        <div className="px-5 py-3 border-t border-zinc-800 dark:bg-transparent bg-zinc-50 flex items-center justify-end gap-2 flex-shrink-0 flex-wrap">
+        <div className="px-5 py-3 border-t border-border-default dark:bg-transparent bg-surface flex items-center justify-end gap-2 flex-shrink-0 flex-wrap">
           <button
             type="button"
             disabled={busy}
             onClick={() => void answer('deny')}
-            className="px-3 py-1.5 text-xs rounded dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 bg-zinc-200 text-zinc-800 hover:bg-zinc-300 disabled:opacity-50"
+            className="px-3 py-1.5 text-xs rounded dark:bg-surface-3 dark:text-fg-primary dark:hover:bg-hover-bg bg-surface-3 text-fg-faint hover:bg-hover-bg disabled:opacity-50"
           >
             Deny (Esc)
           </button>
@@ -243,7 +243,7 @@ export function PermissionModal(): JSX.Element | null {
               className="px-3 py-1.5 text-xs rounded font-medium border dark:border-emerald-700 dark:text-emerald-200 dark:hover:bg-emerald-900/30 border-emerald-600 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Always allow{' '}
-              <code className="font-mono text-[11px] dark:text-amber-300 text-amber-700">
+              <code className="font-mono text-xs dark:text-amber-300 text-amber-700">
                 {head.suggestedPattern}
               </code>
             </button>
@@ -254,7 +254,7 @@ export function PermissionModal(): JSX.Element | null {
             onClick={() => void answer('allow_once')}
             className={`px-3 py-1.5 text-xs rounded font-medium ${
               isDanger
-                ? 'bg-red-700 text-zinc-100 hover:bg-red-600'
+                ? 'bg-red-700 text-fg-primary hover:bg-red-600'
                 : 'bg-emerald-600 text-white hover:bg-emerald-500 dark:bg-emerald-700 dark:hover:bg-emerald-600'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
@@ -277,7 +277,11 @@ interface PermissionBatchViewProps {
   readonly dequeue: (reqId: string) => void;
 }
 
-function PermissionBatchView({ items, askUserActive, dequeue }: PermissionBatchViewProps): JSX.Element {
+function PermissionBatchView({
+  items,
+  askUserActive,
+  dequeue,
+}: PermissionBatchViewProps): JSX.Element {
   // 用 items 里 highest risk 决定外层 badge 颜色
   const maxRisk: PermissionRisk = useMemo(() => {
     const order: PermissionRisk[] = ['low', 'medium', 'high'];
@@ -347,13 +351,15 @@ function PermissionBatchView({ items, askUserActive, dequeue }: PermissionBatchV
       aria-labelledby="permission-batch-title"
     >
       <div
-        className={`w-[620px] max-w-[95vw] max-h-[90vh] flex flex-col bg-zinc-900 border ${style.border} rounded-lg shadow-xl`}
+        className={`w-[620px] max-w-[95vw] max-h-[90vh] flex flex-col bg-surface-2 border ${style.border} rounded-lg shadow-xl`}
       >
-        <div className="px-5 py-3 border-b border-zinc-800 flex items-center gap-3 flex-shrink-0">
-          <span className={`px-2 py-0.5 text-[10px] font-mono font-semibold rounded ${style.badge}`}>
+        <div className="px-5 py-3 border-b border-border-default flex items-center gap-3 flex-shrink-0">
+          <span
+            className={`px-2 py-0.5 text-[11px] font-mono font-semibold rounded ${style.badge}`}
+          >
             {style.label}
           </span>
-          <h2 id="permission-batch-title" className="text-sm font-semibold text-zinc-100">
+          <h2 id="permission-batch-title" className="text-sm font-semibold text-fg-primary">
             {items.length} tool calls pending — batch decision
           </h2>
         </div>
@@ -362,7 +368,7 @@ function PermissionBatchView({ items, askUserActive, dequeue }: PermissionBatchV
           {items.map((it) => (
             <div
               key={it.reqId}
-              className="flex items-center gap-2 border border-zinc-800 rounded px-3 py-2 hover:bg-zinc-800/40"
+              className="flex items-center gap-2 border border-border-default rounded px-3 py-2 hover:bg-hover-bg"
             >
               <span
                 className={`px-1.5 py-0.5 text-[9px] font-mono font-semibold rounded ${RISK_STYLE[it.risk].badge}`}
@@ -370,15 +376,17 @@ function PermissionBatchView({ items, askUserActive, dequeue }: PermissionBatchV
               >
                 {RISK_STYLE[it.risk].label}
               </span>
-              <span className="text-xs font-mono text-amber-300 flex-shrink-0">{it.toolCall.toolName}</span>
-              <span className="text-[11px] text-zinc-400 truncate flex-1" title={it.reason}>
+              <span className="text-xs font-mono text-amber-300 flex-shrink-0">
+                {it.toolCall.toolName}
+              </span>
+              <span className="text-xs text-fg-muted truncate flex-1" title={it.reason}>
                 {truncate(it.reason, 100)}
               </span>
               <button
                 type="button"
                 disabled={busy}
                 onClick={() => void answerOne(it.reqId, 'deny')}
-                className="px-2 py-0.5 text-[11px] rounded dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 bg-zinc-200 text-zinc-800 hover:bg-zinc-300 disabled:opacity-50"
+                className="px-2 py-0.5 text-xs rounded dark:bg-surface-3 dark:text-fg-primary dark:hover:bg-hover-bg bg-surface-3 text-fg-faint hover:bg-hover-bg disabled:opacity-50"
               >
                 Deny
               </button>
@@ -386,7 +394,7 @@ function PermissionBatchView({ items, askUserActive, dequeue }: PermissionBatchV
                 type="button"
                 disabled={busy}
                 onClick={() => void answerOne(it.reqId, 'allow_once')}
-                className="px-2 py-0.5 text-[11px] rounded font-medium bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50"
+                className="px-2 py-0.5 text-xs rounded font-medium bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50"
               >
                 Allow
               </button>
@@ -395,14 +403,14 @@ function PermissionBatchView({ items, askUserActive, dequeue }: PermissionBatchV
           {err && <div className="text-xs text-red-400 font-mono">{err}</div>}
         </div>
 
-        <div className="px-5 py-3 border-t border-zinc-800 dark:bg-transparent bg-zinc-50 flex items-center justify-end gap-2 flex-shrink-0">
+        <div className="px-5 py-3 border-t border-border-default dark:bg-transparent bg-surface flex items-center justify-end gap-2 flex-shrink-0">
           <button
             type="button"
             disabled={busy}
             onClick={() => void answerAll('deny')}
-            className="px-3 py-1.5 text-xs rounded dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 bg-zinc-200 text-zinc-800 hover:bg-zinc-300 disabled:opacity-50"
+            className="px-3 py-1.5 text-xs rounded dark:bg-surface-3 dark:text-fg-primary dark:hover:bg-hover-bg bg-surface-3 text-fg-faint hover:bg-hover-bg disabled:opacity-50"
           >
-            Deny all ({items.length}) <span className="ml-1 text-zinc-500">Esc</span>
+            Deny all ({items.length}) <span className="ml-1 text-fg-muted">Esc</span>
           </button>
           <button
             type="button"

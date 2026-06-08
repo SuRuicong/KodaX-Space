@@ -105,19 +105,19 @@ export function SessionLineagePanel({
   // 单 session 树（没人 fork、也不是 fork 出来的）→ 没什么可看
   if (flatTree.length <= 1) {
     return (
-      <div className="px-3 py-2 text-[11px] dark:text-zinc-500 text-zinc-500 italic">
+      <div className="px-3 py-2 text-xs dark:text-fg-muted text-fg-muted italic">
         No fork lineage yet. Use{' '}
-        <span className="font-mono dark:text-zinc-300 text-zinc-800">Fork</span> in the
-        session menu to branch the conversation.
+        <span className="font-mono dark:text-fg-secondary text-fg-faint">Fork</span> in the session
+        menu to branch the conversation.
       </div>
     );
   }
 
   return (
     <div className="py-1 max-h-72 overflow-y-auto">
-      <div className="px-3 py-1 text-[10px] uppercase tracking-wider dark:text-zinc-500 text-zinc-500 flex items-center justify-between">
+      <div className="px-3 py-1 text-[11px] uppercase tracking-wider dark:text-fg-muted text-fg-muted flex items-center justify-between">
         <span>Lineage · {flatTree.length} session(s)</span>
-        <span className="font-mono normal-case tracking-normal dark:text-zinc-600 text-zinc-400">
+        <span className="font-mono normal-case tracking-normal dark:text-fg-faint text-fg-muted">
           ⑂ fork
         </span>
       </div>
@@ -133,16 +133,16 @@ export function SessionLineagePanel({
             onClick={() => onPickSession(s.sessionId)}
             disabled={isCurrent}
             className={[
-              'w-full text-left px-3 py-1 flex items-center gap-2 text-[11px]',
-              'dark:hover:bg-zinc-800 hover:bg-zinc-100',
+              'w-full text-left px-3 py-1 flex items-center gap-2 text-xs',
+              'dark:hover:bg-hover-bg hover:bg-hover-bg',
               isCurrent
                 ? 'dark:bg-blue-900/30 bg-blue-50 dark:text-blue-200 text-blue-900 cursor-default'
-                : 'dark:text-zinc-300 text-zinc-700',
+                : 'dark:text-fg-secondary text-fg-faint',
             ].join(' ')}
             title={isCurrent ? `${s.sessionId} (current)` : `Switch to ${s.sessionId}`}
           >
             <span
-              className="font-mono dark:text-zinc-600 text-zinc-400 flex-shrink-0"
+              className="font-mono dark:text-fg-faint text-fg-muted flex-shrink-0"
               aria-hidden
               style={{ paddingLeft: `${node.depth * 12}px` }}
             >
@@ -150,12 +150,12 @@ export function SessionLineagePanel({
             </span>
             <span className="truncate flex-1">{title}</span>
             {s.forkPointTurnIdx !== undefined && (
-              <span className="text-[9px] dark:text-zinc-500 text-zinc-500 font-mono flex-shrink-0">
+              <span className="text-[9px] dark:text-fg-muted text-fg-muted font-mono flex-shrink-0">
                 @turn {s.forkPointTurnIdx}
               </span>
             )}
             {isAnchor && !isCurrent && (
-              <span className="text-[9px] dark:text-zinc-600 text-zinc-400">anchor</span>
+              <span className="text-[9px] dark:text-fg-faint text-fg-muted">anchor</span>
             )}
           </button>
         );

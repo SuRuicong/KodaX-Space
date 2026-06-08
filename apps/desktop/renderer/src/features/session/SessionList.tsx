@@ -33,8 +33,18 @@ export function SessionList(): JSX.Element {
     const unconfigured = providers.filter((p) => !p.configured);
     return [
       { id: MOCK_PROVIDER, displayName: 'Mock (no key needed)', configured: true, isCustom: false },
-      ...configured.map((p) => ({ id: p.id, displayName: p.displayName, configured: true, isCustom: p.isCustom })),
-      ...unconfigured.map((p) => ({ id: p.id, displayName: `${p.displayName} (not configured)`, configured: false, isCustom: p.isCustom })),
+      ...configured.map((p) => ({
+        id: p.id,
+        displayName: p.displayName,
+        configured: true,
+        isCustom: p.isCustom,
+      })),
+      ...unconfigured.map((p) => ({
+        id: p.id,
+        displayName: `${p.displayName} (not configured)`,
+        configured: false,
+        isCustom: p.isCustom,
+      })),
     ];
   }, [providers]);
 
@@ -158,12 +168,12 @@ export function SessionList(): JSX.Element {
   return (
     <div className="flex flex-col gap-2 p-3 flex-1 min-h-0">
       <div className="flex items-center justify-between">
-        <h2 className="text-xs uppercase tracking-wider text-zinc-500 font-semibold">Sessions</h2>
+        <h2 className="text-xs uppercase tracking-wider text-fg-muted font-semibold">Sessions</h2>
         <div className="flex items-center gap-1">
           <select
             value={provider}
             onChange={(e) => setProvider(e.target.value)}
-            className="text-xs bg-zinc-800 border border-zinc-700 text-zinc-300 rounded px-1 py-0.5 max-w-[160px]"
+            className="text-xs bg-surface-3 border border-border-strong text-fg-secondary rounded px-1 py-0.5 max-w-[160px]"
             disabled={!currentProjectPath}
             title="Provider for new sessions"
           >
@@ -187,10 +197,12 @@ export function SessionList(): JSX.Element {
 
       <div className="flex flex-col gap-1 overflow-y-auto flex-1 min-h-0">
         {!currentProjectPath && (
-          <div className="text-xs text-zinc-600 italic px-1">Pick a project above to see its sessions.</div>
+          <div className="text-xs text-fg-faint italic px-1">
+            Pick a project above to see its sessions.
+          </div>
         )}
         {currentProjectPath && sessions.length === 0 && (
-          <div className="text-xs text-zinc-600 italic px-1">
+          <div className="text-xs text-fg-faint italic px-1">
             No sessions yet. Click + to create one.
           </div>
         )}
@@ -213,7 +225,7 @@ export function SessionList(): JSX.Element {
               className={`group cursor-pointer text-left px-2 py-2 rounded text-sm flex flex-col gap-0.5 ${
                 isActive
                   ? 'dark:bg-blue-900/30 dark:border-blue-800/50 dark:text-blue-100 bg-blue-100 border-blue-300 text-blue-900 border'
-                  : 'hover:bg-zinc-800 text-zinc-300 border border-transparent'
+                  : 'hover:bg-hover-bg text-fg-secondary border border-transparent'
               }`}
               title={s.sessionId}
             >
@@ -232,17 +244,19 @@ export function SessionList(): JSX.Element {
                       else if (e.key === 'Escape') cancelRename();
                     }}
                     maxLength={256}
-                    className="flex-1 min-w-0 bg-zinc-950 border border-zinc-700 rounded px-1.5 py-0.5 text-sm font-medium text-zinc-100"
+                    className="flex-1 min-w-0 bg-surface border border-border-strong rounded px-1.5 py-0.5 text-sm font-medium text-fg-primary"
                     aria-label="New session title"
                   />
                 ) : (
-                  <span className="flex-1 truncate font-medium">{s.title ?? 'Untitled session'}</span>
+                  <span className="flex-1 truncate font-medium">
+                    {s.title ?? 'Untitled session'}
+                  </span>
                 )}
                 <span className="opacity-0 group-hover:opacity-100 flex gap-1 text-xs">
                   <button
                     type="button"
                     onClick={(e) => startRename(e, s.sessionId, s.title)}
-                    className="text-zinc-500 hover:text-zinc-200 px-1"
+                    className="text-fg-muted hover:text-fg-primary px-1"
                     aria-label="Rename session"
                   >
                     ✎
@@ -250,14 +264,14 @@ export function SessionList(): JSX.Element {
                   <button
                     type="button"
                     onClick={(e) => void handleDelete(e, s.sessionId)}
-                    className="text-zinc-500 hover:text-red-400 px-1"
+                    className="text-fg-muted hover:text-red-400 px-1"
                     aria-label="Delete session"
                   >
                     ×
                   </button>
                 </span>
               </div>
-              <div className="flex items-center gap-2 text-[10px] text-zinc-500">
+              <div className="flex items-center gap-2 text-[11px] text-fg-muted">
                 <span>{s.provider}</span>
                 <span>·</span>
                 <span>{s.reasoningMode}</span>

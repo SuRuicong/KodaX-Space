@@ -54,20 +54,22 @@ export function ProjectPicker(): JSX.Element {
   }
 
   return (
-    <div className="flex flex-col gap-2 p-3 border-b border-zinc-800">
+    <div className="flex flex-col gap-2 p-3 border-b border-border-default">
       <div className="flex items-center justify-between">
-        <h2 className="text-xs uppercase tracking-wider text-zinc-500 font-semibold">Projects</h2>
+        <h2 className="text-xs uppercase tracking-wider text-fg-muted font-semibold">Projects</h2>
         <button
           type="button"
           onClick={handleOpenDialog}
-          className="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+          className="text-xs px-2 py-1 rounded bg-surface-3 hover:bg-hover-bg text-fg-primary"
         >
           Open…
         </button>
       </div>
       <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
         {projects.length === 0 && (
-          <div className="text-xs text-zinc-600 italic px-1">No recent projects. Click "Open…" to start.</div>
+          <div className="text-xs text-fg-faint italic px-1">
+            No recent projects. Click "Open…" to start.
+          </div>
         )}
         {projects.map((p) => {
           const isActive = p.path === currentPath;
@@ -79,7 +81,7 @@ export function ProjectPicker(): JSX.Element {
               className={`group text-left px-2 py-1.5 rounded text-sm flex items-center gap-2 ${
                 isActive
                   ? 'bg-emerald-900/30 border border-emerald-800/50 text-emerald-100'
-                  : 'hover:bg-zinc-800 text-zinc-300'
+                  : 'hover:bg-hover-bg text-fg-secondary'
               }`}
               title={p.path}
             >
@@ -94,7 +96,7 @@ export function ProjectPicker(): JSX.Element {
                     void handleRemove(e as unknown as React.MouseEvent, p.path);
                   }
                 }}
-                className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 px-1 cursor-pointer"
+                className="opacity-0 group-hover:opacity-100 text-fg-muted hover:text-red-400 px-1 cursor-pointer"
                 aria-label={`Remove ${p.name} from recent`}
               >
                 ×
@@ -107,7 +109,9 @@ export function ProjectPicker(): JSX.Element {
   );
 }
 
-async function refreshProjects(setProjects: (p: readonly import('@kodax-space/space-ipc-schema').Project[]) => void): Promise<void> {
+async function refreshProjects(
+  setProjects: (p: readonly import('@kodax-space/space-ipc-schema').Project[]) => void,
+): Promise<void> {
   const bridge = window.kodaxSpace;
   if (!bridge) return;
   const result = await bridge.invoke('project.list', undefined);

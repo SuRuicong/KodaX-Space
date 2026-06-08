@@ -107,7 +107,7 @@ export function MonacoDiffViewer({ path, before, after }: MonacoDiffViewerProps)
         // 折叠未改动段，焦点放在 diff
         hideUnchangedRegions: { enabled: true },
       }}
-      loading={<div className="text-xs text-zinc-500 p-2">loading diff…</div>}
+      loading={<div className="text-xs text-fg-muted p-2">loading diff…</div>}
     />
   );
 }

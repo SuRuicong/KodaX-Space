@@ -90,7 +90,7 @@ export function UpdateBanner(): JSX.Element | null {
         type="button"
         onClick={install}
         disabled={installing}
-        className="ml-2 px-2 py-0.5 text-[11px] rounded bg-emerald-700/90 text-white hover:bg-emerald-700 border border-emerald-600 disabled:opacity-60 disabled:cursor-not-allowed"
+        className="ml-2 px-2 py-0.5 text-xs rounded bg-emerald-700/90 text-white hover:bg-emerald-700 border border-emerald-600 disabled:opacity-60 disabled:cursor-not-allowed"
       >
         {installing ? 'Installing…' : 'Restart & install'}
       </button>
@@ -105,9 +105,11 @@ interface BannerShellProps {
 }
 
 const TONE_CLASS: Record<BannerShellProps['tone'], string> = {
-  info: 'dark:bg-zinc-800/95 dark:border-zinc-700 dark:text-zinc-100 bg-zinc-100 border-zinc-300 text-zinc-900',
-  success: 'dark:bg-emerald-900/90 dark:border-emerald-700 dark:text-emerald-100 bg-emerald-50 border-emerald-300 text-emerald-900',
-  error: 'dark:bg-red-900/90 dark:border-red-700 dark:text-red-100 bg-red-50 border-red-300 text-red-900',
+  info: 'dark:bg-surface-3/95 dark:border-border-strong dark:text-fg-primary bg-surface-2 border-border-strong text-fg-primary',
+  success:
+    'dark:bg-emerald-900/90 dark:border-emerald-700 dark:text-emerald-100 bg-emerald-50 border-emerald-300 text-emerald-900',
+  error:
+    'dark:bg-red-900/90 dark:border-red-700 dark:text-red-100 bg-red-50 border-red-300 text-red-900',
 };
 
 function BannerShell(props: BannerShellProps): JSX.Element {
@@ -122,7 +124,7 @@ function BannerShell(props: BannerShellProps): JSX.Element {
         <button
           type="button"
           onClick={props.onDismiss}
-          className="ml-1 dark:text-zinc-400 dark:hover:text-white text-zinc-500 hover:text-zinc-900 px-0.5 leading-none"
+          className="ml-1 dark:text-fg-muted dark:hover:text-white text-fg-muted hover:text-fg-primary px-0.5 leading-none"
           aria-label="Dismiss"
         >
           ×

@@ -89,24 +89,24 @@ export function XlsxViewer({ base64 }: Props): JSX.Element {
   }, [bytes]);
 
   if (err !== null) return <div className="p-3 text-xs text-red-400">{err}</div>;
-  if (busy) return <div className="p-3 text-xs text-zinc-500">Parsing spreadsheet…</div>;
-  if (sheets.length === 0) return <div className="p-3 text-xs text-zinc-500">Empty workbook.</div>;
+  if (busy) return <div className="p-3 text-xs text-fg-muted">Parsing spreadsheet…</div>;
+  if (sheets.length === 0) return <div className="p-3 text-xs text-fg-muted">Empty workbook.</div>;
 
   const current = sheets[activeSheet];
-  if (current === undefined) return <div className="p-3 text-xs text-zinc-500">No sheet.</div>;
+  if (current === undefined) return <div className="p-3 text-xs text-fg-muted">No sheet.</div>;
 
   return (
     <div className="h-full flex flex-col">
       {sheets.length > 1 && (
-        <div className="flex items-stretch border-b border-zinc-800/60 bg-zinc-950 text-[11px] flex-shrink-0 overflow-x-auto">
+        <div className="flex items-stretch border-b border-border-default/60 bg-surface text-xs flex-shrink-0 overflow-x-auto">
           {sheets.map((s, i) => {
             const isActive = i === activeSheet;
             return (
               <button
                 key={s.name + i}
                 type="button"
-                className={`px-2 py-1 border-r border-zinc-800/60 whitespace-nowrap ${
-                  isActive ? 'bg-zinc-900 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-900/40'
+                className={`px-2 py-1 border-r border-border-default/60 whitespace-nowrap ${
+                  isActive ? 'bg-surface-2 text-fg-primary' : 'text-fg-muted hover:bg-hover-bg'
                 }`}
                 onClick={() => setActiveSheet(i)}
               >
@@ -117,17 +117,17 @@ export function XlsxViewer({ base64 }: Props): JSX.Element {
         </div>
       )}
       <div className="flex-1 min-h-0 overflow-auto">
-        <table className="text-[11px] font-mono border-collapse">
+        <table className="text-xs font-mono border-collapse">
           <tbody>
             {current.rows.map((row, ri) => (
               <tr key={ri}>
-                <th className="bg-zinc-900 text-zinc-500 px-2 border border-zinc-800 sticky left-0">
+                <th className="bg-surface-2 text-fg-muted px-2 border border-border-default sticky left-0">
                   {ri + 1}
                 </th>
                 {row.map((cell, ci) => (
                   <td
                     key={ci}
-                    className="px-2 py-0.5 border border-zinc-800 text-zinc-300 max-w-[240px] truncate"
+                    className="px-2 py-0.5 border border-border-default text-fg-secondary max-w-[240px] truncate"
                     title={cell}
                   >
                     {cell}

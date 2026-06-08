@@ -17,6 +17,7 @@
 // Diff / Preview / Terminal / Agents / MCP 保留。
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Check, ChevronRight, Folder } from 'lucide-react';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 import { Caret } from '../components/Caret.js';
@@ -65,7 +66,7 @@ function Section({ title, defaultOpen = true, popoutKind, children }: SectionPro
   const isThisPopoutActive = popoutKind !== undefined && activePopoutKind === popoutKind;
   return (
     <section className="border-b border-border-default/60">
-      <div className="w-full px-3 py-2 flex items-center justify-between text-[11px] uppercase tracking-wider text-fg-muted">
+      <div className="w-full px-3 py-2 flex items-center justify-between text-xs uppercase tracking-wider text-fg-muted">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -98,12 +99,32 @@ function Section({ title, defaultOpen = true, popoutKind, children }: SectionPro
             >
               {isThisPopoutActive ? (
                 // X icon (close)
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
                   <path d="M18 6L6 18M6 6l12 12" />
                 </svg>
               ) : (
                 // Expand-corner icon (popout)
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
                   <path d="M15 3h6v6" />
                   <path d="M10 14L21 3" />
                   <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
@@ -146,14 +167,14 @@ function PlanSection(): JSX.Element | null {
   return (
     <Section title={`Plan (${done}/${total})`} popoutKind="plan">
       {running?.activeForm && (
-        <div className="text-[11px] text-fg-muted mb-2 truncate" title={running.activeForm}>
+        <div className="text-xs text-fg-muted mb-2 truncate" title={running.activeForm}>
           → {running.activeForm}
         </div>
       )}
-      <ol className="space-y-1 text-[11px]">
+      <ol className="space-y-1 text-xs">
         {todos.map((t, idx) => (
           <li key={t.id} className="flex items-start gap-2">
-            <span className="flex-shrink-0 text-fg-muted font-mono text-[10px] w-5 text-right mt-0.5 tabular-nums">
+            <span className="flex-shrink-0 text-fg-muted font-mono text-[11px] w-5 text-right mt-0.5 tabular-nums">
               {idx + 1}.
             </span>
             <span className="flex-shrink-0 mt-0.5" aria-hidden>
@@ -205,30 +226,33 @@ function WorkersSection(): JSX.Element | null {
   return (
     <Section title={`Workers (${workers.length})`} popoutKind="tasks">
       {budget && (
-        <div className="mb-2 text-[10px]">
+        <div className="mb-2 text-[11px]">
           <div className="text-fg-secondary font-mono">
             budget {budget.used}/{budget.cap}
           </div>
-          <div className="h-1 bg-surface-2 rounded overflow-hidden mt-0.5">
+          <div className="h-1 bg-surface-3 rounded overflow-hidden mt-0.5">
             <div
-              className="h-full bg-emerald-600"
+              className="h-full bg-ok"
               style={{ width: `${Math.min(100, (budget.used / budget.cap) * 100)}%` }}
             />
           </div>
         </div>
       )}
       {active.length === 0 ? (
-        <div className="text-[11px] text-fg-muted">All workers idle.</div>
+        <div className="text-xs text-fg-muted">All workers idle.</div>
       ) : (
-        <ul className="text-[11px] space-y-1">
+        <ul className="text-xs space-y-1">
           {active.slice(0, 5).map((w) => (
             <li key={w.workerId} className="flex items-center gap-1.5 truncate">
-              <span className="text-emerald-400 text-[8px] flex-shrink-0" aria-hidden>●</span>
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-run flex-shrink-0 animate-pulse"
+                aria-hidden
+              />
               <span className="text-fg-secondary truncate" title={w.workerTitle}>
                 {w.workerTitle}
               </span>
               {w.latestPhase && (
-                <span className="text-fg-muted text-[10px] flex-shrink-0" aria-hidden>
+                <span className="text-fg-muted text-[11px] flex-shrink-0" aria-hidden>
                   · {w.latestPhase}
                 </span>
               )}
@@ -285,6 +309,26 @@ function ChangesSection(): JSX.Element | null {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlightRef = useRef<boolean>(false);
 
+  // F054: 改动量大时按目录树折叠。collapsed = 已折叠目录的 path 集合（默认全展开）。
+  // 跨 refetch 持久（keyed by dir path），30s 刷新不会重置用户的折叠态。
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleDir = useCallback((dirPath: string): void => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(dirPath)) next.delete(dirPath);
+      else next.add(dirPath);
+      return next;
+    });
+  }, []);
+  const pickFile = useCallback(
+    (filePath: string): void => {
+      useAppStore.getState().setLastDiffPath(filePath);
+      requestPopout('diff');
+    },
+    [requestPopout],
+  );
+  const tree = useMemo(() => buildChangeTree(snapshot?.files ?? []), [snapshot?.files]);
+
   const fetchChanges = useCallback((path: string): void => {
     if (!window.kodaxSpace) return;
     if (inFlightRef.current) return;
@@ -319,7 +363,10 @@ function ChangesSection(): JSX.Element | null {
   useEffect(() => {
     if (!currentProjectPath || lastToolResultMarker === 0) return;
     if (debounceRef.current !== null) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchChanges(currentProjectPath), CHANGES_REFRESH_DEBOUNCE_MS);
+    debounceRef.current = setTimeout(
+      () => fetchChanges(currentProjectPath),
+      CHANGES_REFRESH_DEBOUNCE_MS,
+    );
     return () => {
       if (debounceRef.current !== null) clearTimeout(debounceRef.current);
     };
@@ -348,45 +395,182 @@ function ChangesSection(): JSX.Element | null {
   return (
     <Section title={`Changes (${snapshot.files.length}${snapshot.truncated ? '+' : ''})`}>
       {snapshot.branch && (
-        <div className="text-[10px] text-fg-muted mb-1.5 font-mono">on {snapshot.branch}</div>
+        <div className="text-[11px] text-fg-muted mb-1.5 font-mono">on {snapshot.branch}</div>
       )}
       {snapshot.files.length === 0 ? (
-        <div className="text-[11px] text-fg-muted">working tree clean</div>
+        <div className="text-xs text-fg-muted">working tree clean</div>
       ) : (
-        <ul className="text-[11px] font-mono space-y-0.5">
-          {snapshot.files.map((f) => (
-            <li key={`${f.path}_${f.status}_${f.staged ? 'S' : 'U'}`}>
-              <button
-                type="button"
-                onClick={() => {
-                  // 把 path 塞进 lastDiffPath 让 DiffPanel 接住；同时弹 popout
-                  useAppStore.getState().setLastDiffPath(f.path);
-                  requestPopout('diff');
-                }}
-                className="w-full text-left flex items-start gap-1.5 hover:bg-hover-bg rounded px-1 py-0.5 text-fg-secondary hover:text-fg-primary"
-                title={f.path}
-              >
-                <StatusBadge status={f.status} staged={f.staged} />
-                <span className="truncate flex-1">{f.path}</span>
-              </button>
-            </li>
-          ))}
-          {snapshot.truncated && (
-            <li className="text-fg-muted px-1">+ more (truncated at 200)</li>
-          )}
+        <ul className="text-xs font-mono space-y-0.5">
+          <ChangeTreeView
+            node={tree}
+            depth={0}
+            collapsed={collapsed}
+            onToggle={toggleDir}
+            onPick={pickFile}
+          />
+          {snapshot.truncated && <li className="text-fg-muted px-1">+ more (truncated at 200)</li>}
         </ul>
       )}
     </Section>
   );
 }
 
-function StatusBadge({ status, staged }: { status: GitChange['status']; staged: boolean }): JSX.Element {
+// ---- Changes 目录树（F054：改动量大时按目录折叠，含单链目录压缩）----
+
+interface ChangeTreeNode {
+  /** 显示用段名（压缩后可能是 "a/b/c"）。root 为空串。 */
+  name: string;
+  /** 目录全路径（折叠状态的 key）。 */
+  path: string;
+  dirs: ChangeTreeNode[];
+  files: GitChange[];
+  /** 该子树下变动文件总数。 */
+  count: number;
+}
+
+function basename(p: string): string {
+  const i = p.lastIndexOf('/');
+  return i >= 0 ? p.slice(i + 1) : p;
+}
+
+/**
+ * 把扁平文件列表建成目录树。两步：
+ *   1) 按 '/' 分段建嵌套目录 + 把文件挂到所在目录
+ *   2) finalize：算 count、排序、压缩单链目录（无文件且仅 1 子目录 → 并成 "a/b/c"，VS Code 同款）
+ */
+function buildChangeTree(files: readonly GitChange[]): ChangeTreeNode {
+  const root: ChangeTreeNode = { name: '', path: '', dirs: [], files: [], count: 0 };
+  const dirMap = new Map<string, ChangeTreeNode>([['', root]]);
+
+  function ensureDir(dirPath: string): ChangeTreeNode {
+    const existing = dirMap.get(dirPath);
+    if (existing) return existing;
+    const slash = dirPath.lastIndexOf('/');
+    const parentPath = slash >= 0 ? dirPath.slice(0, slash) : '';
+    const name = slash >= 0 ? dirPath.slice(slash + 1) : dirPath;
+    const parent = ensureDir(parentPath);
+    const node: ChangeTreeNode = { name, path: dirPath, dirs: [], files: [], count: 0 };
+    parent.dirs.push(node);
+    dirMap.set(dirPath, node);
+    return node;
+  }
+
+  for (const f of files) {
+    const slash = f.path.lastIndexOf('/');
+    const dirPath = slash >= 0 ? f.path.slice(0, slash) : '';
+    ensureDir(dirPath).files.push(f);
+  }
+
+  function finalize(node: ChangeTreeNode): number {
+    let c = node.files.length;
+    for (const d of node.dirs) c += finalize(d);
+    node.count = c;
+    node.dirs.sort((a, b) => a.name.localeCompare(b.name));
+    node.files.sort((a, b) => a.path.localeCompare(b.path));
+    // 压缩单链：无直属文件且仅 1 子目录的节点与子合并
+    node.dirs = node.dirs.map((d) => {
+      let cur = d;
+      while (cur.files.length === 0 && cur.dirs.length === 1) {
+        const child = cur.dirs[0];
+        cur = {
+          name: `${cur.name}/${child.name}`,
+          path: child.path,
+          dirs: child.dirs,
+          files: child.files,
+          count: child.count,
+        };
+      }
+      return cur;
+    });
+    return c;
+  }
+  finalize(root);
+  return root;
+}
+
+interface ChangeTreeViewProps {
+  node: ChangeTreeNode;
+  depth: number;
+  collapsed: ReadonlySet<string>;
+  onToggle: (dirPath: string) => void;
+  onPick: (filePath: string) => void;
+}
+
+/** 递归渲染目录树：目录行可折叠（chevron + folder + count），文件行 → 点开 diff。 */
+function ChangeTreeView({
+  node,
+  depth,
+  collapsed,
+  onToggle,
+  onPick,
+}: ChangeTreeViewProps): JSX.Element {
+  const pad = (d: number): React.CSSProperties => ({ paddingLeft: `${d * 11 + 4}px` });
+  return (
+    <>
+      {node.dirs.map((d) => {
+        const isCollapsed = collapsed.has(d.path);
+        return (
+          <li key={`d:${d.path}`}>
+            <button
+              type="button"
+              onClick={() => onToggle(d.path)}
+              style={pad(depth)}
+              className="w-full text-left flex items-center gap-1 pr-1 py-0.5 rounded hover:bg-hover-bg text-fg-secondary hover:text-fg-primary"
+              aria-expanded={!isCollapsed}
+              title={d.path}
+            >
+              <ChevronRight
+                className={`w-3 h-3 flex-shrink-0 text-fg-faint transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+                strokeWidth={2}
+              />
+              <Folder className="w-3 h-3 flex-shrink-0 text-fg-muted" strokeWidth={1.75} />
+              <span className="truncate flex-1">{d.name}</span>
+              <span className="text-fg-faint tabular-nums">{d.count}</span>
+            </button>
+            {!isCollapsed && (
+              <ul className="space-y-0.5">
+                <ChangeTreeView
+                  node={d}
+                  depth={depth + 1}
+                  collapsed={collapsed}
+                  onToggle={onToggle}
+                  onPick={onPick}
+                />
+              </ul>
+            )}
+          </li>
+        );
+      })}
+      {node.files.map((f) => (
+        <li key={`f:${f.path}_${f.status}_${f.staged ? 'S' : 'U'}`}>
+          <button
+            type="button"
+            onClick={() => onPick(f.path)}
+            style={pad(depth)}
+            className="w-full text-left flex items-center gap-1.5 pr-1 py-0.5 rounded hover:bg-hover-bg text-fg-secondary hover:text-fg-primary"
+            title={f.path}
+          >
+            <StatusBadge status={f.status} staged={f.staged} />
+            <span className="truncate flex-1">{basename(f.path)}</span>
+          </button>
+        </li>
+      ))}
+    </>
+  );
+}
+
+function StatusBadge({
+  status,
+  staged,
+}: {
+  status: GitChange['status'];
+  staged: boolean;
+}): JSX.Element {
   // 颜色：staged 绿 / worktree-only 琥珀 / untracked 灰；字母 = 状态首字
-  const color =
-    status === 'U' ? 'text-zinc-500' : staged ? 'text-emerald-400' : 'text-amber-400';
+  const color = status === 'U' ? 'text-fg-muted' : staged ? 'text-ok' : 'text-warn';
   return (
     <span
-      className={`flex-shrink-0 w-4 text-[10px] font-bold text-center ${color}`}
+      className={`flex-shrink-0 w-4 text-[11px] font-bold text-center ${color}`}
       title={`${status === 'U' ? 'Untracked' : status === 'M' ? 'Modified' : status === 'A' ? 'Added' : status === 'D' ? 'Deleted' : 'Renamed'}${staged ? ' (staged)' : ''}`}
       aria-hidden
     >
@@ -404,17 +588,21 @@ function WorkingFolderSection(): JSX.Element {
   return (
     <Section title="Working folder" defaultOpen={false}>
       {projectPath ? (
-        <div className="text-[11px] text-fg-secondary space-y-1">
+        <div className="text-xs text-fg-secondary space-y-1">
           <div className="flex items-center gap-1.5">
-            <span aria-hidden>📁</span>
+            <Folder
+              className="w-3.5 h-3.5 text-accent-ink flex-shrink-0"
+              strokeWidth={1.75}
+              aria-hidden
+            />
             <span className="font-medium text-fg-primary truncate" title={projectPath}>
               {projectName}
             </span>
           </div>
-          <div className="text-fg-muted text-[10px] font-mono break-all">{projectPath}</div>
+          <div className="text-fg-muted text-[11px] font-mono break-all">{projectPath}</div>
         </div>
       ) : (
-        <div className="text-[11px] text-fg-muted">No project open.</div>
+        <div className="text-xs text-fg-muted">No project open.</div>
       )}
     </Section>
   );
@@ -425,7 +613,7 @@ function WorkingFolderSection(): JSX.Element {
 function ContextSection(): JSX.Element {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const events = useAppStore((s) =>
-    currentSessionId ? s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS : EMPTY_EVENTS,
+    currentSessionId ? (s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS) : EMPTY_EVENTS,
   );
 
   const refs = useMemo(() => collectContextRefs(events), [events]);
@@ -433,7 +621,7 @@ function ContextSection(): JSX.Element {
   if (refs.tools.length === 0 && refs.files.length === 0) {
     return (
       <Section title="Context" defaultOpen={false}>
-        <div className="text-[11px] text-fg-muted leading-relaxed">
+        <div className="text-xs text-fg-muted leading-relaxed">
           Track tools and referenced files used in this task.
         </div>
       </Section>
@@ -444,12 +632,12 @@ function ContextSection(): JSX.Element {
     <Section title="Context" defaultOpen={false}>
       {refs.tools.length > 0 && (
         <div className="mb-3">
-          <div className="text-[10px] uppercase tracking-wider text-fg-muted mb-1">Tools used</div>
+          <div className="text-[11px] uppercase tracking-wider text-fg-muted mb-1">Tools used</div>
           <div className="flex flex-wrap gap-1">
             {refs.tools.map((t) => (
               <span
                 key={t.name}
-                className="text-[10px] px-1.5 py-0.5 rounded bg-surface-2 text-fg-secondary"
+                className="text-[11px] px-1.5 py-0.5 rounded bg-surface-2 text-fg-secondary"
                 title={`${t.count}× ${t.name}`}
               >
                 {t.name}
@@ -461,8 +649,10 @@ function ContextSection(): JSX.Element {
       )}
       {refs.files.length > 0 && (
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-fg-muted mb-1">Files referenced</div>
-          <ul className="space-y-0.5 text-[11px] font-mono">
+          <div className="text-[11px] uppercase tracking-wider text-fg-muted mb-1">
+            Files referenced
+          </div>
+          <ul className="space-y-0.5 text-xs font-mono">
             {refs.files.slice(0, 20).map((f) => (
               <li key={f} className="truncate text-fg-secondary" title={f}>
                 {f}
@@ -494,8 +684,9 @@ function collectContextRefs(events: readonly SessionEvent[]): ContextRefs {
       }
       const input = (ev as { input?: unknown }).input;
       if (input && typeof input === 'object') {
-        const path = (input as { path?: unknown; file_path?: unknown }).path
-          ?? (input as { file_path?: unknown }).file_path;
+        const path =
+          (input as { path?: unknown; file_path?: unknown }).path ??
+          (input as { file_path?: unknown }).file_path;
         if (typeof path === 'string' && path.length > 0 && path.length < 512) {
           files.add(path);
         }
@@ -513,13 +704,13 @@ function collectContextRefs(events: readonly SessionEvent[]): ContextRefs {
 // ---- 圆点 svg-free 实现 ----
 
 function CircleDone({ tiny = true }: { tiny?: boolean } = {}): JSX.Element {
-  const size = tiny ? 'w-3 h-3 text-[8px]' : 'w-4 h-4 text-[10px]';
+  const size = tiny ? 'w-3 h-3' : 'w-4 h-4';
   return (
     <span
-      className={`${size} rounded-full bg-emerald-500/80 text-zinc-900 flex items-center justify-center font-bold`}
+      className={`${size} rounded-full bg-ok text-white flex items-center justify-center`}
       aria-hidden
     >
-      ✓
+      <Check className={tiny ? 'w-2 h-2' : 'w-2.5 h-2.5'} strokeWidth={3.5} />
     </span>
   );
 }
@@ -527,7 +718,7 @@ function CircleActive({ tiny = true }: { tiny?: boolean } = {}): JSX.Element {
   const size = tiny ? 'w-3 h-3' : 'w-4 h-4';
   return (
     <span
-      className={`${size} rounded-full border-2 border-sky-400 bg-sky-500/30 animate-pulse`}
+      className={`${size} rounded-full border-2 border-run bg-run/30 animate-pulse`}
       aria-hidden
     />
   );

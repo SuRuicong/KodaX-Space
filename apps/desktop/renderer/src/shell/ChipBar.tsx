@@ -20,7 +20,7 @@ export function ChipBar(): JSX.Element | null {
   const projectName = projectPath.split(/[\\/]/).filter(Boolean).pop() ?? projectPath;
 
   return (
-    <div className="flex items-center gap-1.5 text-[10px] text-zinc-300">
+    <div className="flex items-center gap-1.5 text-[11px] text-fg-secondary">
       <LocalChip />
       <ProjectChip projectName={projectName} projectPath={projectPath} />
       <BranchChip />
@@ -49,21 +49,27 @@ function LocalChip(): JSX.Element {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 hover:bg-zinc-800"
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-2 border border-border-default hover:bg-hover-bg"
         title="Execution location"
       >
         <span aria-hidden>📍</span>
         <span>Local</span>
       </button>
       {open && (
-        <div className="absolute left-0 bottom-full mb-1 w-48 bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 z-50">
-          <div className="px-3 py-1.5 hover:bg-zinc-800 flex items-center gap-2 text-xs text-zinc-200">
+        <div className="absolute left-0 bottom-full mb-1 w-48 bg-surface-2 border border-border-default rounded shadow-xl py-1 z-50">
+          <div className="px-3 py-1.5 hover:bg-hover-bg flex items-center gap-2 text-xs text-fg-primary">
             <span>Local</span>
-            <span className="text-emerald-500 ml-auto" aria-hidden>✓</span>
+            <span className="text-emerald-500 ml-auto" aria-hidden>
+              ✓
+            </span>
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); setSettingsOpen(true); setOpen(false); }}
-              className="text-zinc-400 hover:text-zinc-200 ml-1"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSettingsOpen(true);
+                setOpen(false);
+              }}
+              className="text-fg-muted hover:text-fg-primary ml-1"
               title="Settings — change default workspace"
               aria-label="Open settings"
             >
@@ -80,7 +86,13 @@ function LocalChip(): JSX.Element {
 }
 
 /** Project chip — Recent + Open folder. 截图 2 同款。 */
-function ProjectChip({ projectName, projectPath }: { projectName: string; projectPath: string }): JSX.Element {
+function ProjectChip({
+  projectName,
+  projectPath,
+}: {
+  projectName: string;
+  projectPath: string;
+}): JSX.Element {
   const [open, setOpen] = useState(false);
   const projects = useAppStore((s) => s.projects);
   const setCurrentProject = useAppStore((s) => s.setCurrentProject);
@@ -126,17 +138,17 @@ function ProjectChip({ projectName, projectPath }: { projectName: string; projec
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 max-w-[200px]"
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-2 border border-border-default hover:bg-hover-bg max-w-[200px]"
         title={projectPath}
       >
         <span aria-hidden>📁</span>
         <span className="truncate">{projectName}</span>
       </button>
       {open && (
-        <div className="absolute left-0 bottom-full mb-1 w-56 bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 z-50">
-          <div className="px-3 py-1 text-zinc-500 text-[10px] uppercase tracking-wider">Recent</div>
+        <div className="absolute left-0 bottom-full mb-1 w-56 bg-surface-2 border border-border-default rounded shadow-xl py-1 z-50">
+          <div className="px-3 py-1 text-fg-muted text-[11px] uppercase tracking-wider">Recent</div>
           {projects.length === 0 ? (
-            <div className="px-3 py-1 text-[10px] text-zinc-500">No recent projects yet.</div>
+            <div className="px-3 py-1 text-[11px] text-fg-muted">No recent projects yet.</div>
           ) : (
             projects.slice(0, 8).map((p) => {
               const isCurrent = p.path === projectPath;
@@ -145,22 +157,26 @@ function ProjectChip({ projectName, projectPath }: { projectName: string; projec
                   key={p.path}
                   type="button"
                   onClick={() => void pickPath(p.path)}
-                  className={`w-full text-left px-3 py-1 hover:bg-zinc-800 flex items-center gap-2 text-xs ${
-                    isCurrent ? 'text-zinc-100' : 'text-zinc-300'
+                  className={`w-full text-left px-3 py-1 hover:bg-hover-bg flex items-center gap-2 text-xs ${
+                    isCurrent ? 'text-fg-primary' : 'text-fg-secondary'
                   }`}
                   title={p.path}
                 >
                   <span className="truncate flex-1">{p.name}</span>
-                  {isCurrent && <span className="text-emerald-500" aria-hidden>✓</span>}
+                  {isCurrent && (
+                    <span className="text-emerald-500" aria-hidden>
+                      ✓
+                    </span>
+                  )}
                 </button>
               );
             })
           )}
-          <div className="border-t border-zinc-800 my-1" />
+          <div className="border-t border-border-default my-1" />
           <button
             type="button"
             onClick={() => void openDialog()}
-            className="w-full text-left px-3 py-1 hover:bg-zinc-800 text-xs text-zinc-200"
+            className="w-full text-left px-3 py-1 hover:bg-hover-bg text-xs text-fg-primary"
           >
             Open folder…
           </button>
@@ -174,7 +190,7 @@ function ProjectChip({ projectName, projectPath }: { projectName: string; projec
 function BranchChip(): JSX.Element {
   return (
     <span
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800"
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-2 border border-border-default"
       title="Branch detection — v0.1.x (git branches dropdown)"
     >
       <span aria-hidden>🌿</span>
@@ -247,48 +263,61 @@ function RepointelChip(): JSX.Element | null {
   const mode = latest?.mode;
   const modeLabel = mode ? (REPOINTEL_MODE_LABEL[mode] ?? mode) : 'idle';
   const dotColor =
-    mode === undefined ? 'bg-zinc-600' :
-    mode === 'off' ? 'bg-zinc-500' :
-    mode === 'oss' ? 'bg-emerald-500' :
-    mode === 'premium-shared' || mode === 'premium-native' ? 'bg-blue-500' :
-    'bg-amber-500';
+    mode === undefined
+      ? 'bg-fg-muted'
+      : mode === 'off'
+        ? 'bg-fg-muted'
+        : mode === 'oss'
+          ? 'bg-emerald-500'
+          : mode === 'premium-shared' || mode === 'premium-native'
+            ? 'bg-blue-500'
+            : 'bg-amber-500';
 
   return (
     <div className="relative" ref={ref}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 hover:bg-zinc-800"
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-2 border border-border-default hover:bg-hover-bg"
         title={`Repo-intelligence: ${modeLabel}${latest?.status ? ` · ${latest.status}` : ''}`}
       >
         <span aria-hidden className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
         <span className="font-mono">Repointel</span>
-        <span className="text-zinc-500">·</span>
+        <span className="text-fg-muted">·</span>
         <span className="font-mono">{modeLabel}</span>
       </button>
       {open && (
-        <div className="absolute right-0 bottom-full mb-1 w-72 bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 z-50">
-          <div className="px-3 py-1 text-zinc-500 text-[10px] uppercase tracking-wider flex justify-between">
+        <div className="absolute right-0 bottom-full mb-1 w-72 bg-surface-2 border border-border-default rounded shadow-xl py-1 z-50">
+          <div className="px-3 py-1 text-fg-muted text-[11px] uppercase tracking-wider flex justify-between">
             <span>Repointel · {modeLabel}</span>
-            <span className="text-zinc-600 normal-case tracking-normal">latest 3 traces</span>
+            <span className="text-fg-faint normal-case tracking-normal">latest 3 traces</span>
           </div>
           {latestTraces.length === 0 ? (
-            <div className="px-3 py-1.5 text-[10px] text-zinc-500 italic">
+            <div className="px-3 py-1.5 text-[11px] text-fg-muted italic">
               No traces yet — repo-intel runs on first send.
             </div>
           ) : (
             latestTraces.map((t, i) => (
-              <div key={i} className="px-3 py-1 border-t border-zinc-800/60 text-[10px] font-mono">
+              <div
+                key={i}
+                className="px-3 py-1 border-t border-border-default/60 text-[11px] font-mono"
+              >
                 <div className="flex justify-between gap-2">
-                  <span className="text-zinc-300 truncate">{t.kind}</span>
+                  <span className="text-fg-secondary truncate">{t.kind}</span>
                   {t.latencyMs !== undefined && (
-                    <span className="text-zinc-500 flex-shrink-0">{t.latencyMs}ms</span>
+                    <span className="text-fg-muted flex-shrink-0">{t.latencyMs}ms</span>
                   )}
                 </div>
                 {(t.status || t.engine || t.bridge !== undefined) && (
-                  <div className="text-zinc-500 truncate">
-                    {[t.status, t.engine, t.bridge ? `bridge:${t.bridge}` : null, t.cacheHit ? 'cache-hit' : null]
-                      .filter(Boolean).join(' · ')}
+                  <div className="text-fg-muted truncate">
+                    {[
+                      t.status,
+                      t.engine,
+                      t.bridge ? `bridge:${t.bridge}` : null,
+                      t.cacheHit ? 'cache-hit' : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </div>
                 )}
               </div>

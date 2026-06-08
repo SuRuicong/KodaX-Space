@@ -200,7 +200,9 @@ async function extractAllSequential(opts: ExtractAllOptions): Promise<ExtractAll
       throw new Error(`unsafe archive entry "${entry.fileName}": ${slip.reason}`);
     }
     if (isSymlinkEntry(entry)) {
-      throw new Error(`archive entry "${entry.fileName}" is a symlink — refusing (symlink escape guard)`);
+      throw new Error(
+        `archive entry "${entry.fileName}" is a symlink — refusing (symlink escape guard)`,
+      );
     }
     const destPath = slip.destPath!;
 
@@ -236,7 +238,9 @@ async function extractAllSequential(opts: ExtractAllOptions): Promise<ExtractAll
       entryBytes += chunk.length;
       if (entryBytes > u + 1024 || totalBytes + entryBytes > MAX_TOTAL_BYTES) {
         // 头声明的 u 是上限；超 1KB tolerance 表示头被伪造 (zip-bomb 伎俩) → kill
-        stream.destroy(new Error(`archive entry "${entry.fileName}" exceeds declared uncompressedSize`));
+        stream.destroy(
+          new Error(`archive entry "${entry.fileName}" exceeds declared uncompressedSize`),
+        );
       }
     });
     await pipeline(stream, createWriteStream(destPath));
@@ -312,7 +316,7 @@ export async function installMcpb(
     // 2) 读 manifest（在副本上 — 没 TOCTOU 风险）
     const manifest = await readManifestOnly(tmpPath);
 
-    const slug = `${manifest.name}@${manifest.version}`.replace(/[^A-Za-z0-9._@\-]/g, '_');
+    const slug = `${manifest.name}@${manifest.version}`.replace(/[^A-Za-z0-9._@-]/g, '_');
     const installDir = path.join(baseDir, slug);
 
     // 3) 升级 / 重装 —— 旧目录先删

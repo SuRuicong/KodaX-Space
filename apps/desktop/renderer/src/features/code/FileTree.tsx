@@ -88,18 +88,18 @@ export function FileTree({ projectRoot, selectedPath, onSelect }: FileTreeProps)
   }
 
   if (loading) {
-    return <div className="text-xs text-zinc-500 p-3">loading tree…</div>;
+    return <div className="text-xs text-fg-muted p-3">loading tree…</div>;
   }
   if (err) {
     return <div className="text-xs text-red-400 p-3 font-mono">{err}</div>;
   }
   if (rootNodes.length === 0) {
-    return <div className="text-xs text-zinc-600 p-3">empty project</div>;
+    return <div className="text-xs text-fg-faint p-3">empty project</div>;
   }
   return (
     <div className="text-[12px] font-mono select-none">
       {truncated && (
-        <div className="text-[10px] text-amber-500 px-2 py-1 border-b border-zinc-800">
+        <div className="text-[11px] text-amber-500 px-2 py-1 border-b border-border-default">
           tree truncated (&gt;5000 nodes)
         </div>
       )}
@@ -175,7 +175,7 @@ function FileTreeNode({
   const isDir = node.kind === 'dir';
   const isExpanded = isDir && expanded.has(node.path);
   // dir 子节点优先用 cache（lazy load 后的）；否则用 node.children（initial depth=1 时为空）
-  const dirChildren = isDir ? childrenCache[node.path] ?? node.children ?? [] : [];
+  const dirChildren = isDir ? (childrenCache[node.path] ?? node.children ?? []) : [];
   const isSelected = !isDir && node.path === selectedPath;
   const padLeft = depth * 12 + 6;
 
@@ -184,13 +184,13 @@ function FileTreeNode({
       <button
         type="button"
         onClick={() => (isDir ? onToggle(node.path) : onSelect(node.path))}
-        className={`w-full text-left flex items-center gap-1 px-1 py-0.5 hover:bg-zinc-900 ${
-          isSelected ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400'
+        className={`w-full text-left flex items-center gap-1 px-1 py-0.5 hover:bg-hover-bg ${
+          isSelected ? 'bg-surface-3 text-fg-primary' : 'text-fg-muted'
         }`}
         style={{ paddingLeft: padLeft }}
         title={node.path}
       >
-        <span className="w-4 text-zinc-500 inline-flex justify-center" aria-hidden>
+        <span className="w-4 text-fg-muted inline-flex justify-center" aria-hidden>
           {isDir ? <Caret open={isExpanded} /> : null}
         </span>
         <span className="truncate">{node.name}</span>

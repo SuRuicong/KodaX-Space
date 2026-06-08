@@ -73,27 +73,20 @@ export function ModelEffortSelector(): JSX.Element {
 
   // 当前 active provider/model/effort（用 session > pending > defaults）
   const activeProviderId =
-    session?.provider ??
-    pendingProviderId ??
-    defaultProviderId ??
-    kodaxDefaults?.provider ??
-    null;
+    session?.provider ?? pendingProviderId ?? defaultProviderId ?? kodaxDefaults?.provider ?? null;
   const activeProvider: ProviderInfo | undefined = activeProviderId
     ? providers.find((p) => p.id === activeProviderId)
     : undefined;
   const activeModel: string =
-    pendingModel ??
-    kodaxDefaults?.model ??
-    activeProvider?.defaultModel ??
-    '—';
+    pendingModel ?? kodaxDefaults?.model ?? activeProvider?.defaultModel ?? '—';
   const activeEffort: ReasoningMode =
     session?.reasoningMode ?? pendingReasoningMode ?? kodaxDefaults?.reasoningMode ?? 'auto';
 
   // 右列正在预览的 provider — 打开时初始化为 active；用户左列点别的就更新 preview
-  const previewProvider = providers.find(
-    (p) => p.id === (previewProviderId ?? activeProviderId),
-  );
-  const previewModels = previewProvider?.models ?? (previewProvider?.defaultModel ? [previewProvider.defaultModel] : []);
+  const previewProvider = providers.find((p) => p.id === (previewProviderId ?? activeProviderId));
+  const previewModels =
+    previewProvider?.models ??
+    (previewProvider?.defaultModel ? [previewProvider.defaultModel] : []);
 
   const configuredProviders = providers
     .filter((p) => p.configured)
@@ -128,11 +121,13 @@ export function ModelEffortSelector(): JSX.Element {
         }
         // 切 model — 通过 /model slash 命令 (KodaX REPL 内置)
         if (model !== activeModel) {
-          await window.kodaxSpace.invoke('slash.exec', {
-            sessionId: session.sessionId,
-            name: 'model',
-            args: [model],
-          }).catch(() => {});
+          await window.kodaxSpace
+            .invoke('slash.exec', {
+              sessionId: session.sessionId,
+              name: 'model',
+              args: [model],
+            })
+            .catch(() => {});
           setPendingModel(model);
         }
       } else {
@@ -202,35 +197,39 @@ export function ModelEffortSelector(): JSX.Element {
       <button
         type="button"
         onClick={openPicker}
-        className="font-mono text-[10px] hover:text-zinc-100 flex items-center gap-1.5"
-        title={session ? 'Change provider/model/effort' : 'Pick provider/model/effort for next session'}
+        className="font-mono text-[11px] hover:text-fg-primary flex items-center gap-1.5"
+        title={
+          session ? 'Change provider/model/effort' : 'Pick provider/model/effort for next session'
+        }
       >
         {/* 两行：上行 provider displayName（强调），下行 model · effort（次要） */}
         <span className="flex flex-col items-end leading-tight text-right">
-          <span className="text-zinc-200 truncate max-w-[260px]">{providerLabel}</span>
-          <span className="text-zinc-400 truncate max-w-[260px]">{modelEffortLine}</span>
+          <span className="text-fg-primary truncate max-w-[260px]">{providerLabel}</span>
+          <span className="text-fg-muted truncate max-w-[260px]">{modelEffortLine}</span>
         </span>
-        <span className="text-zinc-500" aria-hidden>▿</span>
+        <span className="text-fg-muted" aria-hidden>
+          ▿
+        </span>
       </button>
 
       {open && (
         <div
-          className="absolute right-0 bottom-full mb-2 w-[460px] bg-zinc-900 border border-zinc-800 rounded shadow-xl text-xs z-50"
+          className="absolute right-0 bottom-full mb-2 w-[460px] bg-surface-2 border border-border-default rounded shadow-xl text-xs z-50"
           onMouseLeave={() => setOpen(false)}
         >
           {/* 2 列：Provider | Model */}
           <div className="grid grid-cols-2 gap-0">
-            <div className="border-r border-zinc-800">
-              <div className="px-3 py-1 flex justify-between items-center text-zinc-500 text-[10px] uppercase tracking-wider">
+            <div className="border-r border-border-default">
+              <div className="px-3 py-1 flex justify-between items-center text-fg-muted text-[11px] uppercase tracking-wider">
                 <span>Provider</span>
-                <span className="font-mono text-zinc-400 flex items-center gap-1">
-                  <kbd className="px-1 border border-zinc-700 rounded">Ctrl</kbd>
-                  <kbd className="px-1 border border-zinc-700 rounded">I</kbd>
+                <span className="font-mono text-fg-muted flex items-center gap-1">
+                  <kbd className="px-1 border border-border-strong rounded">Ctrl</kbd>
+                  <kbd className="px-1 border border-border-strong rounded">I</kbd>
                 </span>
               </div>
               <div className="max-h-64 overflow-y-auto">
                 {configuredProviders.length === 0 ? (
-                  <div className="px-3 py-1 text-zinc-400 text-[10px]">
+                  <div className="px-3 py-1 text-fg-muted text-[11px]">
                     No configured providers — open Settings to add key
                   </div>
                 ) : (
@@ -242,15 +241,21 @@ export function ModelEffortSelector(): JSX.Element {
                         key={p.id}
                         type="button"
                         onClick={() => setPreviewProviderId(p.id)}
-                        className={`w-full text-left px-3 py-1 hover:bg-zinc-800 flex items-center gap-2 ${
-                          isPreviewing ? 'bg-zinc-800/60 text-zinc-100' : 'text-zinc-300'
+                        className={`w-full text-left px-3 py-1 hover:bg-hover-bg flex items-center gap-2 ${
+                          isPreviewing ? 'bg-surface-3/60 text-fg-primary' : 'text-fg-secondary'
                         }`}
                         title={p.displayName}
                       >
                         <span className="truncate flex-1">{p.displayName}</span>
-                        {isActive && <span className="text-emerald-500" aria-hidden>✓</span>}
+                        {isActive && (
+                          <span className="text-emerald-500" aria-hidden>
+                            ✓
+                          </span>
+                        )}
                         {idx < 9 && (
-                          <span className="text-zinc-500 text-[10px] font-mono w-3 text-right">{idx + 1}</span>
+                          <span className="text-fg-muted text-[11px] font-mono w-3 text-right">
+                            {idx + 1}
+                          </span>
                         )}
                       </button>
                     );
@@ -260,13 +265,13 @@ export function ModelEffortSelector(): JSX.Element {
             </div>
 
             <div>
-              <div className="px-3 py-1 flex justify-between items-center text-zinc-500 text-[10px] uppercase tracking-wider">
+              <div className="px-3 py-1 flex justify-between items-center text-fg-muted text-[11px] uppercase tracking-wider">
                 <span>Model</span>
                 {!session && <span className="text-amber-500 normal-case">for next session</span>}
               </div>
               <div className="max-h-64 overflow-y-auto">
                 {previewModels.length === 0 ? (
-                  <div className="px-3 py-1 text-zinc-400 text-[10px]">No models</div>
+                  <div className="px-3 py-1 text-fg-muted text-[11px]">No models</div>
                 ) : (
                   previewModels.map((m) => {
                     const isActive = activeProviderId === previewProvider?.id && activeModel === m;
@@ -276,12 +281,16 @@ export function ModelEffortSelector(): JSX.Element {
                         type="button"
                         onClick={() => void commitProviderAndModel(previewProvider?.id ?? '', m)}
                         disabled={!previewProvider}
-                        className={`w-full text-left px-3 py-1 hover:bg-zinc-800 flex items-center gap-2 ${
-                          isActive ? 'text-zinc-100' : 'text-zinc-300'
+                        className={`w-full text-left px-3 py-1 hover:bg-hover-bg flex items-center gap-2 ${
+                          isActive ? 'text-fg-primary' : 'text-fg-secondary'
                         }`}
                       >
                         <span className="truncate flex-1 font-mono">{m}</span>
-                        {isActive && <span className="text-emerald-500" aria-hidden>✓</span>}
+                        {isActive && (
+                          <span className="text-emerald-500" aria-hidden>
+                            ✓
+                          </span>
+                        )}
                       </button>
                     );
                   })
@@ -291,13 +300,13 @@ export function ModelEffortSelector(): JSX.Element {
           </div>
 
           {/* Effort 行（横跨 2 列底部） */}
-          <div className="border-t border-zinc-800 pt-1">
-            <div className="px-3 py-1 flex justify-between items-center text-zinc-500 text-[10px] uppercase tracking-wider">
+          <div className="border-t border-border-default pt-1">
+            <div className="px-3 py-1 flex justify-between items-center text-fg-muted text-[11px] uppercase tracking-wider">
               <span>Effort</span>
-              <span className="font-mono text-zinc-400 flex items-center gap-1">
-                <kbd className="px-1 border border-zinc-700 rounded">⇧</kbd>
-                <kbd className="px-1 border border-zinc-700 rounded">Ctrl</kbd>
-                <kbd className="px-1 border border-zinc-700 rounded">E</kbd>
+              <span className="font-mono text-fg-muted flex items-center gap-1">
+                <kbd className="px-1 border border-border-strong rounded">⇧</kbd>
+                <kbd className="px-1 border border-border-strong rounded">Ctrl</kbd>
+                <kbd className="px-1 border border-border-strong rounded">E</kbd>
               </span>
             </div>
             <div className="grid grid-cols-5 px-2 pb-1 gap-1">
@@ -308,12 +317,16 @@ export function ModelEffortSelector(): JSX.Element {
                     key={m}
                     type="button"
                     onClick={() => void pickEffort(m)}
-                    className={`text-center px-1 py-1 rounded hover:bg-zinc-800 ${
-                      selected ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-300'
+                    className={`text-center px-1 py-1 rounded hover:bg-hover-bg ${
+                      selected ? 'bg-surface-3 text-fg-primary' : 'text-fg-secondary'
                     }`}
                   >
                     {EFFORT_LABEL[m]}
-                    {selected && <span className="ml-0.5 text-emerald-500" aria-hidden>✓</span>}
+                    {selected && (
+                      <span className="ml-0.5 text-emerald-500" aria-hidden>
+                        ✓
+                      </span>
+                    )}
                   </button>
                 );
               })}

@@ -53,15 +53,15 @@ export function AmaWorkStrip(): JSX.Element | null {
 
   return (
     <div
-      className="px-3 text-[10px] font-mono text-zinc-500 flex items-center gap-1.5 select-none"
+      className="px-3 text-[11px] font-mono text-fg-muted flex items-center gap-1.5 select-none"
       role="status"
       aria-label="AMA work status"
     >
       <span className="text-purple-400" aria-hidden>
         ✦
       </span>
-      <span className="text-zinc-400">AMA</span>
-      <span className="text-zinc-600">·</span>
+      <span className="text-fg-muted">AMA</span>
+      <span className="text-fg-faint">·</span>
       <span className="truncate">{parts.join(' · ')}</span>
     </div>
   );

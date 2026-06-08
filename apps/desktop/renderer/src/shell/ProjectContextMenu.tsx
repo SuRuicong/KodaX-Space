@@ -115,18 +115,24 @@ export function ProjectContextMenu({
     <div
       ref={ref}
       // z-[100] 对齐 SessionContextMenu (一致 z-stack 减少未来万一双 menu 同屏时的层级 bug)
-      className="fixed z-[100] min-w-[180px] bg-zinc-950 border border-zinc-800 rounded shadow-2xl text-xs py-1"
+      className="fixed z-[100] min-w-[180px] bg-surface border border-border-default rounded shadow-2xl text-xs py-1"
       style={{ left, top }}
       role="menu"
       aria-label={`${project.name} actions`}
     >
-      <MenuRow label="Rename" hint="R" onClick={() => { onStartRename(); }} />
+      <MenuRow
+        label="Rename"
+        hint="R"
+        onClick={() => {
+          onStartRename();
+        }}
+      />
       <MenuRow
         label={isArchived ? 'Unarchive' : 'Archive'}
         hint="A"
         onClick={() => void onToggleArchive()}
       />
-      <div className="my-1 border-t border-zinc-800/60" />
+      <div className="my-1 border-t border-border-default/60" />
       <MenuRow label="Remove from Space" hint="D" danger onClick={() => void onRemove()} />
     </div>
   );
@@ -145,12 +151,12 @@ function MenuRow({ label, hint, onClick, danger }: MenuRowProps): JSX.Element {
       type="button"
       onClick={onClick}
       role="menuitem"
-      className={`w-full text-left px-3 py-1 flex items-center justify-between hover:bg-zinc-800 ${
-        danger ? 'text-red-400' : 'text-zinc-200'
+      className={`w-full text-left px-3 py-1 flex items-center justify-between hover:bg-hover-bg ${
+        danger ? 'text-red-400' : 'text-fg-primary'
       }`}
     >
       <span>{label}</span>
-      {hint && <span className="text-zinc-500 text-[10px] ml-3">{hint}</span>}
+      {hint && <span className="text-fg-muted text-[11px] ml-3">{hint}</span>}
     </button>
   );
 }

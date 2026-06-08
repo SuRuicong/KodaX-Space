@@ -76,7 +76,7 @@ export function CustomProviderForm({ onAdded, onCancel }: CustomProviderFormProp
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
           placeholder="My Internal Gateway"
-          className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-100"
+          className="w-full bg-surface border border-border-strong rounded px-2 py-1 text-xs text-fg-primary"
           required
         />
       </Field>
@@ -85,7 +85,7 @@ export function CustomProviderForm({ onAdded, onCancel }: CustomProviderFormProp
         <select
           value={protocol}
           onChange={(e) => setProtocol(e.target.value as 'openai' | 'anthropic')}
-          className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-100"
+          className="w-full bg-surface border border-border-strong rounded px-2 py-1 text-xs text-fg-primary"
         >
           <option value="openai">OpenAI-compatible</option>
           <option value="anthropic">Anthropic-compatible</option>
@@ -98,7 +98,7 @@ export function CustomProviderForm({ onAdded, onCancel }: CustomProviderFormProp
           value={baseUrl}
           onChange={(e) => setBaseUrl(e.target.value)}
           placeholder="https://api.example.com/v1"
-          className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs font-mono text-zinc-100"
+          className="w-full bg-surface border border-border-strong rounded px-2 py-1 text-xs font-mono text-fg-primary"
           required
         />
       </Field>
@@ -109,7 +109,7 @@ export function CustomProviderForm({ onAdded, onCancel }: CustomProviderFormProp
           value={apiKeyEnv}
           onChange={(e) => setApiKeyEnv(e.target.value)}
           placeholder="CUSTOM_GW_API_KEY"
-          className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs font-mono text-zinc-100"
+          className="w-full bg-surface border border-border-strong rounded px-2 py-1 text-xs font-mono text-fg-primary"
           required
         />
       </Field>
@@ -120,7 +120,7 @@ export function CustomProviderForm({ onAdded, onCancel }: CustomProviderFormProp
           value={defaultModel}
           onChange={(e) => setDefaultModel(e.target.value)}
           placeholder="gpt-4o"
-          className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs font-mono text-zinc-100"
+          className="w-full bg-surface border border-border-strong rounded px-2 py-1 text-xs font-mono text-fg-primary"
           required
         />
       </Field>
@@ -131,17 +131,17 @@ export function CustomProviderForm({ onAdded, onCancel }: CustomProviderFormProp
           value={modelsCsv}
           onChange={(e) => setModelsCsv(e.target.value)}
           placeholder="gpt-4o, gpt-4o-mini"
-          className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs font-mono text-zinc-100"
+          className="w-full bg-surface border border-border-strong rounded px-2 py-1 text-xs font-mono text-fg-primary"
         />
       </Field>
 
-      {err && <div className="text-[10px] font-mono text-red-300">{err}</div>}
+      {err && <div className="text-[11px] font-mono text-red-300">{err}</div>}
 
       <div className="flex items-center gap-2 pt-1">
         <button
           type="submit"
           disabled={!valid || busy}
-          className="px-3 py-1 text-xs rounded bg-violet-700 text-zinc-100 hover:bg-violet-600 disabled:opacity-50"
+          className="px-3 py-1 text-xs rounded bg-violet-700 text-fg-primary hover:bg-violet-600 disabled:opacity-50"
         >
           {busy ? 'Adding…' : 'Add provider'}
         </button>
@@ -149,7 +149,7 @@ export function CustomProviderForm({ onAdded, onCancel }: CustomProviderFormProp
           type="button"
           onClick={onCancel}
           disabled={busy}
-          className="px-3 py-1 text-xs rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
+          className="px-3 py-1 text-xs rounded bg-surface-3 text-fg-secondary hover:bg-hover-bg disabled:opacity-50"
         >
           Cancel
         </button>
@@ -161,7 +161,7 @@ export function CustomProviderForm({ onAdded, onCancel }: CustomProviderFormProp
 function Field({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
   return (
     <label className="block">
-      <div className="text-[10px] font-mono uppercase text-zinc-500 mb-0.5">{label}</div>
+      <div className="text-[11px] font-mono uppercase text-fg-muted mb-0.5">{label}</div>
       {children}
     </label>
   );

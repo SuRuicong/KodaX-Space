@@ -114,15 +114,15 @@ export function PdfViewer({ base64 }: Props): JSX.Element {
     return <div className="p-3 text-xs text-red-400">{err}</div>;
   }
   if (busy) {
-    return <div className="p-3 text-xs text-zinc-500">Loading PDF…</div>;
+    return <div className="p-3 text-xs text-fg-muted">Loading PDF…</div>;
   }
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-3 py-1 border-b border-zinc-800/60 flex items-center gap-2 text-[11px] text-zinc-400 flex-shrink-0">
+      <div className="px-3 py-1 border-b border-border-default/60 flex items-center gap-2 text-xs text-fg-muted flex-shrink-0">
         <button
           type="button"
-          className="px-2 py-0.5 rounded hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="px-2 py-0.5 rounded hover:bg-hover-bg disabled:opacity-30 disabled:cursor-not-allowed"
           onClick={() => setPageNum((n) => Math.max(1, n - 1))}
           disabled={pageNum <= 1}
         >
@@ -133,14 +133,14 @@ export function PdfViewer({ base64 }: Props): JSX.Element {
         </span>
         <button
           type="button"
-          className="px-2 py-0.5 rounded hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="px-2 py-0.5 rounded hover:bg-hover-bg disabled:opacity-30 disabled:cursor-not-allowed"
           onClick={() => setPageNum((n) => Math.min(totalPages, n + 1))}
           disabled={pageNum >= totalPages}
         >
           →
         </button>
       </div>
-      <div className="flex-1 min-h-0 overflow-auto p-3 flex items-start justify-center bg-zinc-900">
+      <div className="flex-1 min-h-0 overflow-auto p-3 flex items-start justify-center bg-surface-2">
         <canvas ref={canvasRef} className="shadow-lg" />
       </div>
     </div>

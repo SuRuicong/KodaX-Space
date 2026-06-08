@@ -92,19 +92,21 @@ export function AgentModeSelector(): JSX.Element {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-[11px] px-2 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-zinc-800 flex items-center gap-1"
+        className="text-xs px-2 py-0.5 rounded bg-surface-2 border border-border-default text-fg-secondary hover:bg-hover-bg flex items-center gap-1"
         title={`Agent: ${FULL_NAMES[current]}`}
       >
         <span>{labelText}</span>
-        <span className="text-zinc-400" aria-hidden>+</span>
+        <span className="text-fg-muted" aria-hidden>
+          +
+        </span>
       </button>
 
       {open && (
         <div
-          className="absolute left-0 bottom-full mb-1 w-72 bg-zinc-900 border border-zinc-800 rounded shadow-xl py-1 text-xs z-50"
+          className="absolute left-0 bottom-full mb-1 w-72 bg-surface-2 border border-border-default rounded shadow-xl py-1 text-xs z-50"
           onMouseLeave={() => setOpen(false)}
         >
-          <div className="px-3 py-1 text-zinc-500 text-[10px] uppercase tracking-wider">
+          <div className="px-3 py-1 text-fg-muted text-[11px] uppercase tracking-wider">
             Agent mode
           </div>
           {(['ama', 'sa'] as const).map((m) => (
@@ -112,20 +114,24 @@ export function AgentModeSelector(): JSX.Element {
               key={m}
               type="button"
               onClick={() => void pick(m)}
-              className={`w-full text-left px-3 py-1.5 hover:bg-zinc-800 ${
-                current === m ? 'text-zinc-100' : 'text-zinc-300'
+              className={`w-full text-left px-3 py-1.5 hover:bg-hover-bg ${
+                current === m ? 'text-fg-primary' : 'text-fg-secondary'
               }`}
               title={DESCRIPTIONS[m]}
             >
               <div className="flex items-center gap-2">
                 <span className="font-mono w-9">{LABELS[m]}</span>
-                <span className="flex-1 text-[11px]">{FULL_NAMES[m]}</span>
-                {current === m && <span className="text-emerald-500" aria-hidden>✓</span>}
+                <span className="flex-1 text-xs">{FULL_NAMES[m]}</span>
+                {current === m && (
+                  <span className="text-emerald-500" aria-hidden>
+                    ✓
+                  </span>
+                )}
               </div>
-              <div className="ml-9 text-[10px] text-zinc-500 leading-tight">{DESCRIPTIONS[m]}</div>
+              <div className="ml-9 text-[11px] text-fg-muted leading-tight">{DESCRIPTIONS[m]}</div>
             </button>
           ))}
-          <div className="border-t border-zinc-800 mt-1 pt-1 px-3 py-1 text-[10px] text-zinc-500 leading-tight">
+          <div className="border-t border-border-default mt-1 pt-1 px-3 py-1 text-[11px] text-fg-muted leading-tight">
             默认 AMA；接口并发受限时切到 SA 降级
           </div>
         </div>

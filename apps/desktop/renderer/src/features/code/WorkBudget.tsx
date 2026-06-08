@@ -14,9 +14,9 @@ interface WorkBudgetProps {
 export function WorkBudget({ budget }: WorkBudgetProps): JSX.Element {
   if (!budget) {
     return (
-      <div className="flex items-center gap-2 text-xs text-zinc-500 font-mono">
+      <div className="flex items-center gap-2 text-xs text-fg-muted font-mono">
         <span>Work —</span>
-        <div className="w-24 h-1.5 rounded-full bg-zinc-800" />
+        <div className="w-24 h-1.5 rounded-full bg-surface-3" />
       </div>
     );
   }
@@ -27,7 +27,7 @@ export function WorkBudget({ budget }: WorkBudgetProps): JSX.Element {
 
   // 进度条颜色 + 文字颜色随使用率渐变——红色出现说明该考虑 cancel
   const barColor = isCritical ? 'bg-red-500' : isWarn ? 'bg-amber-400' : 'bg-emerald-500';
-  const textColor = isCritical ? 'text-red-400' : isWarn ? 'text-amber-300' : 'text-zinc-300';
+  const textColor = isCritical ? 'text-red-400' : isWarn ? 'text-amber-300' : 'text-fg-secondary';
 
   return (
     <div
@@ -37,7 +37,7 @@ export function WorkBudget({ budget }: WorkBudgetProps): JSX.Element {
       <span className={textColor}>
         Work {budget.used}/{budget.cap}
       </span>
-      <div className="w-24 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+      <div className="w-24 h-1.5 rounded-full bg-surface-3 overflow-hidden">
         <div
           className={`h-full ${barColor} transition-all duration-200`}
           style={{ width: `${pct}%` }}

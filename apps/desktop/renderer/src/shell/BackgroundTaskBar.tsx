@@ -56,7 +56,7 @@ const KIND_ICON: Record<ManagedLiveEvent['kind'], string> = {
 const KIND_COLOR: Record<ManagedLiveEvent['kind'], string> = {
   progress: 'text-sky-400/90 border-sky-400/30',
   completed: 'text-emerald-400/90 border-emerald-400/30',
-  notification: 'text-zinc-400 border-zinc-500/40',
+  notification: 'text-fg-muted border-border-strong/40',
   warning: 'text-amber-400/90 border-amber-400/40',
 };
 
@@ -75,7 +75,7 @@ export function BackgroundTaskBar(): JSX.Element | null {
 
   return (
     <div
-      className="px-3 py-1 flex items-center gap-1.5 flex-wrap text-[10px] font-mono"
+      className="px-3 py-1 flex items-center gap-1.5 flex-wrap text-[11px] font-mono"
       role="status"
       aria-label="Background subagent tasks"
     >
@@ -90,7 +90,7 @@ export function BackgroundTaskBar(): JSX.Element | null {
         </span>
       ))}
       {overflow > 0 && (
-        <span className="px-1.5 py-0.5 rounded border border-zinc-700 text-zinc-500">
+        <span className="px-1.5 py-0.5 rounded border border-border-strong text-fg-muted">
           +{overflow} more
         </span>
       )}

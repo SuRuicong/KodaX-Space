@@ -23,7 +23,7 @@ const semverSchema = z
   .string()
   .min(1)
   .max(64)
-  .regex(/^[0-9A-Za-z.+\-]+$/, 'invalid semver');
+  .regex(/^[0-9A-Za-z.+-]+$/, 'invalid semver');
 
 const mcpbExtensionSchema = z.object({
   /** main 派的 id：`${name}@${version}`，用作 uninstall key */

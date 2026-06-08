@@ -9,10 +9,13 @@ import { useToastStore } from '../store/toastStore.js';
 // Dark：深色 bg + 浅色 text；Light：浅色 bg + 深色 text。
 // 之前只写 dark-only，文字经全局反转后跟 bg 同深 → 看不清 (用户反馈：Stop 后弹窗黑乎乎)。
 const TONE_CLASS: Record<ToastTone, string> = {
-  info: 'dark:bg-zinc-800/95 dark:border-zinc-700 dark:text-zinc-100 bg-zinc-100 border-zinc-300 text-zinc-900',
-  success: 'dark:bg-emerald-900/90 dark:border-emerald-700 dark:text-emerald-100 bg-emerald-50 border-emerald-300 text-emerald-900',
-  warning: 'dark:bg-amber-900/90 dark:border-amber-700 dark:text-amber-100 bg-amber-50 border-amber-300 text-amber-900',
-  error: 'dark:bg-red-900/90 dark:border-red-700 dark:text-red-100 bg-red-50 border-red-300 text-red-900',
+  info: 'dark:bg-surface-3/95 dark:border-border-strong dark:text-fg-primary bg-surface-2 border-border-strong text-fg-primary',
+  success:
+    'dark:bg-emerald-900/90 dark:border-emerald-700 dark:text-emerald-100 bg-emerald-50 border-emerald-300 text-emerald-900',
+  warning:
+    'dark:bg-amber-900/90 dark:border-amber-700 dark:text-amber-100 bg-amber-50 border-amber-300 text-amber-900',
+  error:
+    'dark:bg-red-900/90 dark:border-red-700 dark:text-red-100 bg-red-50 border-red-300 text-red-900',
 };
 
 const TONE_ICON: Record<ToastTone, string> = {
@@ -43,7 +46,7 @@ export function ToastContainer(): JSX.Element | null {
           <button
             type="button"
             onClick={() => dismiss(t.id)}
-            className="dark:text-zinc-400 dark:hover:text-white text-zinc-500 hover:text-zinc-900 px-0.5 leading-none"
+            className="dark:text-fg-muted dark:hover:text-white text-fg-muted hover:text-fg-primary px-0.5 leading-none"
             aria-label="Dismiss"
           >
             ×
