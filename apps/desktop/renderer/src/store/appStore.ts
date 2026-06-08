@@ -777,6 +777,20 @@ export const useAppStore = create<AppState>((set) => ({
       flushTurnIfNeeded();
       const currentMsgs = state.userMessagesBySession[sessionId] ?? [];
       const currentEvents = state.eventsBySession[sessionId] ?? [];
+      // v0.1.9 fix: 历史 events 已经发生过,director 不应该再"自动展开"那些信号触发的
+       // popout (用户点已有 session 不该弹 worker/diff/plan popout)。 扫一遍 histEvents,
+       // 提前 mark 该 session 已经"促发"过的 SmartPopoutKind,让 director 视为 already
+       // promoted = 不触发。逻辑跟 popout-director/rules.ts decideAutoPromote 同构,
+       // 但避免跨模块循环 import (store 不能 import rules.ts,rules.ts 已 import 不了 store)。
+      const FILE_MUTATION_TOOLS = new Set([
+        'write', 'edit', 'multi_edit', 'str_replace', 'insert_after_anchor',
+      ]);
+      const histPromoted = new Set<string>(state.promotedPopoutsBySession[sessionId] ?? []);
+      for (const ev of histEvents) {
+        if (ev.kind === 'tool_start' && FILE_MUTATION_TOOLS.has(ev.toolName)) histPromoted.add('diff');
+        else if (ev.kind === 'todo_update' && ev.items.length > 0) histPromoted.add('plan');
+        else if (ev.kind === 'managed_task_status' && ev.status.activeWorkerId) histPromoted.add('tasks');
+      }
       return {
         userMessagesBySession: {
           ...state.userMessagesBySession,
@@ -786,6 +800,10 @@ export const useAppStore = create<AppState>((set) => ({
         eventsBySession: {
           ...state.eventsBySession,
           [sessionId]: [...histEvents, ...currentEvents],
+        },
+        promotedPopoutsBySession: {
+          ...state.promotedPopoutsBySession,
+          [sessionId]: histPromoted,
         },
       };
     }),
