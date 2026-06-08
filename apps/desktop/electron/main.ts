@@ -35,6 +35,7 @@ import { registerUpdaterChannels, initAutoUpdater } from './ipc/updater.js';
 import { registerMcpbChannels, installMcpbFromOsHandoff } from './ipc/mcpb.js';
 import { registerTerminalChannels } from './ipc/terminal.js';
 import { registerClipboardChannels } from './ipc/clipboard.js';
+import { cleanupOrphanKodaxSpaceDirWithLog } from './kodax/cleanup-orphan-kodax-space.js';
 import { getPtyHost } from './terminal/ptyHost.js';
 import { settingsStore } from './settings/store.js';
 import { setRendererTarget } from './ipc/push.js';
@@ -293,6 +294,10 @@ app.whenReady().then(async () => {
     probeKodaxSdk(),
     probeSkillRegistry(),
   ]);
+  // v0.1.10 chore: best-effort 清理早期残留的 ~/.kodax_space 孤儿目录。
+  // fire-and-forget,never throws,不阻塞 UI 启动;详见 cleanup-orphan-kodax-space.ts。
+  void cleanupOrphanKodaxSpaceDirWithLog();
+
   // IPC handlers 必须在窗口创建前注册——否则 renderer 启动后立刻调 invoke 会撞上 "No handler registered"
   registerVersionChannel();
   registerSessionChannels();
