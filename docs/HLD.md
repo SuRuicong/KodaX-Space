@@ -432,12 +432,42 @@ type RootState = {
 
 ### 9.4 Surface 抽象
 
+> Partner surface 的完整决策见 [ADR-007](ADR/ADR-007-partner-surface-model.md)：Partner = 同一 KodaX runtime 上的**画像组合**（surface spec + skill packs + artifact），不等独立内核。本节给数据形态。
+
 ```typescript
 type Surface = 'code' | 'partner';
 
+interface SurfaceSpec {
+  sessionKind: 'code' | 'partner';
+  // 工具白名单：理想态由 SDK 工具能力维度元数据驱动（依赖 R3），
+  // 交付前 Space 侧按名单裁剪（参照 plan-mode blocklist 先例）。
+  tools: ToolPolicy;
+  layout: 'code-workspace' | 'doc-workspace';
+  // Partner 专属：作用域不限 git，artifact 为一等产物
+  scope?: 'git-root' | 'any-dir';        // partner = any-dir（含 Documents/Downloads）
+  artifacts?: boolean;                    // partner = true
+  // Partner 的自定义画像（instructions + 工具子集 + faithfulness reasoning），
+  // 经 SDK「自定义画像 + 完整 harness」入口下发（依赖 R1/R2）。
+  agentProfile?: 'coding-default' | 'partner';
+}
+
 const SURFACES: Record<Surface, SurfaceSpec> = {
-  code:    { sessionKind: 'code',    tools: 'all-coding',      layout: 'code-workspace' },
-  partner: { sessionKind: 'partner', tools: 'non-bash-subset', layout: 'doc-workspace' },
+  code: {
+    sessionKind: 'code',
+    tools: 'all-coding',
+    layout: 'code-workspace',
+    scope: 'git-root',
+    artifacts: false,
+    agentProfile: 'coding-default',
+  },
+  partner: {
+    sessionKind: 'partner',
+    tools: 'non-bash-subset',   // read/grep/glob + 富格式 IO + web；默认无 bash
+    layout: 'doc-workspace',    // 三栏：Sources | 对话+任务进度 | Artifact 预览
+    scope: 'any-dir',
+    artifacts: true,
+    agentProfile: 'partner',
+  },
 };
 
 // Quick Ask 不是 Surface，是 transient popover：
@@ -450,9 +480,14 @@ type QuickAskParams = {
 };
 ```
 
+**`agentProfile='partner'` 的下发路径**：不是 KodaX 预置的内核画像，而是 Space 用 `createAgent({ instructions, tools, reasoning })` 构造、经 SDK「自定义画像走完整 harness」入口（R1/R2）运行——与 Coder 共用同一 substrate 管线。SDK 入口就绪前，该层用 Space 侧 workaround / 降级（参 [ADR-007](ADR/ADR-007-partner-surface-model.md) 依赖段）。
+
+**Artifact 模型**：Partner 产出（report/slides/sheet/doc）登记为可预览、可迭代（带版本）、可导出的 artifact 对象，由 renderer 在右栏 `doc-workspace` 预览；底层可复用 SDK 已有的 artifact / `KodaXInputArtifact` 概念。
+
 - M0：renderer 只渲染 Code surface，顶部无 tab 切换器
 - M1：加 Quick Ask popover（独立 frameless `BrowserWindow`）
-- M2：Partner surface 上线，顶部 `[Coder] [Partner]` tab
+- M2：Partner surface（spec + doc-workspace + skill packs + artifact 三件套先行）上线，顶部 `[Coder] [Partner]` tab；隐式入口（拖文件 / 非 git 目录自动判定）作主入口，tab 作锚点
+- 后续：H1-Partner 完整 harness 随 SDK R1/R2 接通
 
 ### 9.5 三个 BrowserWindow
 

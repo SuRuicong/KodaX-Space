@@ -10,6 +10,7 @@
 | [ADR-004](ADR-004-panel-model.md) | 面板模型：双面板 + Quick Ask | Accepted |
 | [ADR-005](ADR-005-permission-mode-canonical.md) | Permission Mode 对齐 KodaX REPL canonical 3 + Auto engine 子档 | Accepted |
 | [ADR-006](ADR-006-positioning-vs-opencode.md) | 相对 opencode 的定位 + 5 gap cluster + OC-XX backlog（planning） | Accepted |
+| [ADR-007](ADR-007-partner-surface-model.md) | Partner Surface Model：同一 runtime 的画像组合（surface + skill + artifact），不等独立内核 | Accepted |
 
 ## 写 ADR 的约束
 

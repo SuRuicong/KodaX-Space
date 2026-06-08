@@ -18,6 +18,8 @@
 >
 > **2026-05-29 opencode 对标批次**：对标 `sst/opencode`（Electron 同形态、商业模式相反）产出 **50 个 OC-feature**（OC-01~50）+ **9 个 KX-I 智能 feature**（KX-I-01~09），并经「极简且智能」哲学复核（砍配置面、提自动化：21 项瘦身/重塑、8 条设计准则、8 条反复杂度规则）。完整设计 + 35 项明确拒绝 + 30 项 SDK 需求见 [features/opencode-benchmark.md](features/opencode-benchmark.md)。新增 **v0.1.8 / v0.1.9** 两个小版本承载净新增能力集群；OC/KX-I 的 Index 见本文末「opencode 对标批次」段。哲学：**opencode 用配置回答能力，KodaX-Space 用智能回答——对用户极简，对内很智能。**
 
+> **2026-06-08 Partner 批次**：按 [ADR-007](ADR/ADR-007-partner-surface-model.md) 把 Partner 从"等 KodaX 独立内核"reframe 为"同一 runtime 上的画像组合（surface spec + skill packs + artifact 三件套）"。产出 **F045–F053** 排进 v0.1.11–v0.1.14。三件套先行、内核无关；唯一依赖 KodaX 的「自定义画像走完整 harness」(SDK R1/R2) 放到 F053 并标 **Blocked**，不阻塞 F045–F052。**有头浏览器（F050）= Space 自有 in-process `registerTool` 工具，不劳内核**，服务 Coder + Partner 双 surface。全场景见 [PRD §2.3](PRD.md#23-partner-全场景--全功能)。
+
 ## Index
 
 | ID | Title | Category | Priority | Version | Status | Design |
@@ -52,6 +54,15 @@
 | 042 | NAPI native-helpers（合并 F014 tokenizer + F025 diff + F026b fuzzy） | Refactor | Low | v0.1.x+ | Deferred | [v0.1.4.md#042](features/v0.1.4.md#feature_042-napi-native-helpers合并版) |
 | 043 | 项目级 contextmenu（rename / archive / remove from Space） — codex 形态对齐 | New | High | v0.1.8 | Completed | [v0.1.8.md#043](features/v0.1.8.md#feature_043-项目级-contextmenu) |
 | 044 | 右侧 Changes 点文件打开 git working-tree diff popout | Enhancement | High | v0.1.10 | Planned | [v0.1.10.md#feature_044](features/v0.1.10.md#feature_044-右侧-changes-点文件打开-git-working-tree-diff-popout) |
+| 045 | Surface 抽象落地 + `[Coder][Partner]` tab + 隐式入口判定 | New | Critical | v0.1.11 | Planned | [v0.1.11.md#feature_045](features/v0.1.11.md#feature_045-surface-抽象落地--coderpartner-tab--隐式入口判定) |
+| 046 | Partner doc-workspace 三栏布局骨架 | New | High | v0.1.11 | Planned | [v0.1.11.md#feature_046](features/v0.1.11.md#feature_046-partner-doc-workspace-三栏布局骨架) |
+| 047 | Partner 工具白名单（non-bash-subset）+ 非 git 文件作用域 | New | High | v0.1.11 | Planned | [v0.1.11.md#feature_047](features/v0.1.11.md#feature_047-partner-工具白名单non-bash-subset-非-git-文件作用域) |
+| 048 | Artifact 一等概念（登记 / 富预览 / 迭代版本 / 导出） | New | High | v0.1.12 | Planned | [v0.1.12.md#feature_048](features/v0.1.12.md#feature_048-artifact-一等概念) |
+| 049 | Partner skill pack：代码相关知识工作（复用 Repointel） | New | High | v0.1.12 | Planned | [v0.1.12.md#feature_049](features/v0.1.12.md#feature_049-partner-skill-pack代码相关知识工作) |
+| 050 | Space 有头浏览器能力（in-process registerTool，双 surface） | New | High | v0.1.13 | Planned | [v0.1.13.md#feature_050](features/v0.1.13.md#feature_050-space-有头浏览器能力) |
+| 051 | Partner skill pack：文档事务（PDF 抽表 / 总结 / slides 生成） | New | Medium | v0.1.13 | Planned | [v0.1.13.md#feature_051](features/v0.1.13.md#feature_051-partner-skill-pack文档事务) |
+| 052 | Partner skill pack：研究（deep-research 内化 + web 知识源） | New | Medium | v0.1.14 | Planned | [v0.1.14.md#feature_052](features/v0.1.14.md#feature_052-partner-skill-pack研究) |
+| 053 | Partner 自定义画像 + H1-Partner 完整 harness（依赖 SDK R1/R2） | New | High | v0.1.14 | Blocked | [v0.1.14.md#feature_053](features/v0.1.14.md#feature_053-partner-自定义画像--h1-partner-完整-harness) |
 | ~~027~~ | ~~代码签名 + notarize~~ — 2026-06-05 移除，KodaX Space 不走"陌生人公开 Beta"路径 | ~~Internal~~ | — | — | Dropped | — |
 | ~~028~~ | ~~隐私政策 + 文档站~~ — 同上 | ~~Internal~~ | — | — | Dropped | — |
 | 029 | Permission Mode canonical 3 + Auto engine 子档 | Refactor | Critical | v0.1.0-alpha.1 | Completed | [v0.1.0.md#029](features/v0.1.0.md#feature_029-permission-mode-canonical-3--auto-engine-子档) |

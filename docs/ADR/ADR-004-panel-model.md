@@ -1,8 +1,8 @@
 # ADR-004: 面板模型 — 双面板 + Quick Ask
 
-- **Status**: Accepted
+- **Status**: Accepted（Partner 内核依赖部分被 [ADR-007](ADR-007-partner-surface-model.md) 修订，2026-06-08）
 - **Date**: 2026-05-16
-- **Companion**: [PRD §1.1](../PRD.md#11-一句话定位), [PRD §5.1.1–§5.1.2](../PRD.md#51-must-havem0---m1)
+- **Companion**: [PRD §1.1](../PRD.md#11-一句话定位), [PRD §5.1.1–§5.1.2](../PRD.md#51-must-havem0---m1), [ADR-007](ADR-007-partner-surface-model.md)
 
 ## Context
 
@@ -69,7 +69,7 @@ KodaX Space 对标 Claude Desktop（Chat / Cowork / Code 三面板）与 Codex D
 
 - 用户期望"Space 也能 chat"时需引导到 Quick Ask 或 Coder 面板新 session
 - Quick Ask 是 M1 工作量
-- Partner tab 上线时机紧绑 KodaX Partner 内核
+- ~~Partner tab 上线时机紧绑 KodaX Partner 内核~~ —— **已由 [ADR-007](ADR-007-partner-surface-model.md) 修订**：Partner = 同一 runtime 的画像组合（surface + skill + artifact 三件套），前两件内核无关、可先行；只有"完整 faithfulness 判官"层依赖 SDK 入口（R1/R2），且不阻塞 surface 上线
 
 ### 获得
 
@@ -79,7 +79,7 @@ KodaX Space 对标 Claude Desktop（Chat / Cowork / Code 三面板）与 Codex D
 
 ## Reconsider When
 
-- KodaX Partner 决定不做——Partner 面板需求消失，可能退化为单面板 + Quick Ask
+- ~~KodaX Partner 决定不做——Partner 面板需求消失，可能退化为单面板 + Quick Ask~~ —— **条款松绑（[ADR-007](ADR-007-partner-surface-model.md)）**：Partner 不再依赖"KodaX 出独立内核"；退化条件改为「SDK 的自定义画像全-harness 入口（R1/R2）长期无法交付」时，Partner 退为"Coder 内的 skill 集合 + 富预览"
 - 用户工单中"找不到 chat tab"占比 > 10%——可能需要更显眼的"Continue in Coder panel"引导
 - 未来 KodaX 出现第三类 surface（如 BI / 数据分析 agent）——可能扩展到 3 面板
 

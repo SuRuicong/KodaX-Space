@@ -121,19 +121,60 @@ KodaX Space **不是 IDE 替代品**。它的设计哲学是：
 - 内置的文件查看/diff 面板**为 agent 行为审计而存在**，不是编辑工作流
 - 鼓励用户继续用主力 IDE 写代码、用 KodaX Space 跑 agent 与对话
 
-### 2.3 关于 Claude Cowork 的对标取舍
+### 2.3 Partner 全场景 / 全功能
 
-Cowork 的核心承诺是：**面向非开发者知识工作者**，能完成"读邮件—合并 PDF—填表—生成报告"这类多步事务。
+> **定位修订（2026-06-08）**：早期 PRD 把 Partner 限定为"Phase 1 不直接对标 Cowork 全场景、只做 preview"，并把它绑死在"等 KodaX 出独立 Partner 内核"上。复核 KodaX SDK 后确认该内核不存在且未排期。现按 [ADR-007](ADR/ADR-007-partner-surface-model.md) 重新定位：**Partner 是 Space 在同一 KodaX runtime 上组合出来的知识工作 surface（surface spec + skill packs + artifact 三件套），不等独立内核。** 本节先列全场景全功能（不预设哪些不做），分阶段见 §9 里程碑与 [ADR-007](ADR/ADR-007-partner-surface-model.md)。
 
-KodaX Space Phase 1 **不直接对标 Cowork 的全场景**。原因：
+Partner 与 Coder 共用同一引擎，差异只在四件事：
 
-1. KodaX 本体是 coding agent，迁移到通用知识工作需要新的工具集与 prompt 包（即 KodaX Partner）。
-2. 但 Space 必须**预留 Partner 面板的接入点**——这样 Partner 一旦准备好，可以以 plugin 形式插入 Space，而不是另起一个 app。
+| | **Coder** | **Partner** |
+|---|---|---|
+| 工作对象 | 代码库（git repo） | 任意知识源（本地文档 + 网络 + Connector） |
+| 主工具 | edit / bash / test / Repointel | read / synthesize / generate / 富格式 IO / 强 web |
+| 证据标准 | diff / 测试 / verifier | **引用与来源核验**（不杜撰、有出处） |
+| 产出物 | 代码变更（落进 repo） | **Artifact**（报告 / slides / 表格 / 文档） |
+| Harness 目标 | correctness | **completeness + faithfulness** |
 
-Phase 1 的 Partner 面板呈现为：
-- 一个 "Knowledge Work (preview)" tab
-- 内置 2–3 个非编码 skill（如 *summarize-docs*、*refactor-meeting-notes*、*draft-rfc*）
-- 文件作用域可锁定到非 git 工作区目录（Documents / Downloads）
+按"一份知识工作从输入到交付"的链路拆成 6 层，每层列全功能：
+
+**1️⃣ 知识输入层（Sources）**
+- 本地文件 / 文件夹作用域：任意目录（含非 git 的 Documents / Downloads），多目录混合
+- 富格式读取：PDF、docx、pptx、xlsx、csv、md、图片
+- 图像 / 扫描件理解：图表解读、UI 截图、OCR
+- Web 研究：联网搜索 + 网页抓取 + 引用留存；并向**浏览器引擎级 web 能力**演进（JS 渲染 / 导航 / 交互 / 截图 / 结构化抽取）——由 **Space 自有 in-process 有头浏览器工具**（Electron Chromium，经 `registerTool` 注册，不走 MCP、不劳内核）提供，服务 Coder + Partner 双 surface，见 [ADR-007](ADR/ADR-007-partner-surface-model.md)
+- Connector 知识源：邮件、Slack、Notion、Drive、GitHub Issues / PR（与 Connector 路线合流）
+- 多源汇聚：把上述来源聚成一个带出处的"研究上下文"
+
+**2️⃣ 任务 / 能力层（Skill Packs）—— Partner 的"应用面"**
+- 总结类：folder/doc 摘要、会议纪要整理、长文档压缩
+- 研究类：deep-research（多源对抗核验报告）、竞品 / 文献调研
+- 生成类：draft-RFC、写 PRD、周报 / 状态更新、邮件起草、生成 slides
+- 抽取 / 转换类：PDF 抽表、文档格式互转、数据清洗
+- 数据分析类：Excel 分析 + 图表 / 数据可视化
+- 代码相关知识工作（近场，复用 Repointel）：架构文档、API 文档、changelog、PR 描述、需求拆解、评审摘要 —— **Partner 与 Coder 的天然交界，也是最先吃的差异化场景**
+
+**3️⃣ 产出 / Artifact 层**
+- Artifact 一等概念：生成的 docx/pptx/xlsx/md/报告作为可预览、可迭代、可导出的产物
+- 富预览（只读渲染 PDF/docx/xlsx/pptx）
+- 迭代："再改一版" —— artifact 带版本，不是一次性输出
+- 导出：到指定格式 / 目录 / 直接贴进 PR、Issue、Slack
+
+**4️⃣ 执行 / Harness 层（engine concern，依赖 KodaX）**
+- H1-Partner harness：以 completeness + faithfulness 为判官目标，区别于 Coder 的 H1
+- 来源核验：deep-research 那套"对抗验证 + 引用"内化进 harness
+- 工具白名单：`non-bash-subset`，默认不开 bash；受控放开转换工具
+- Oversight：文档写盘 / web 外呼 / Connector 访问各自的权限确认（复用 Space 现有 permission UX）
+
+**5️⃣ 交互 / UI 层（doc-workspace 布局）**
+- 三栏：`Sources（左）| 对话 + 任务进度（中）| Artifact 预览（右）`，去掉 Coder 的 Subagent/Terminal 抽屉
+- 隐式入口（极简且智能）：拖一个 PDF/docx 进来、或在非 git 目录开 session → 自动判定为知识工作并切到 doc-workspace，tab 只作锚点不作唯一入口
+- 任务进度：面向多步文档事务的进度（"读 3 个源 → 抽表 → 生成报告"），对应 Work 但语义不同
+
+**6️⃣ 复用层（不重造）**
+- 直接复用 Space 已有：provider 切换、permission UX、observability、session lineage、cross-surface 漂移
+- 直接复用已存在的 skill / MCP：docx / pdf / pptx / xlsx / deep-research / frontend-slides / web-search / 图像理解 —— Partner 的"引擎"其实已经散落存在，缺的是把它们**组织成一个 surface**
+
+**与 Cowork 的边界**：不使用 "Cowork" 商标；术语用 "Partner" / "Knowledge Work"。Partner 的人群从近场（代码相关知识工作者 P2）起步，向远场（非编码知识工作者 P4）扩展。
 
 ---
 
@@ -320,10 +361,14 @@ Repointel 的核心调用契约（`status / warm / preturn / context-pack / impa
 - 文件富预览：PDF / docx / xlsx / pptx 只读渲染（对标 Codex Desktop）
 - 远端 KodaX runner（用户自部 SSH / Docker exec 后端，ACP over SSH）
 - Connector：GitHub / GitLab / Slack 三件套（可选 OAuth）
+- **Partner surface（升格自 Could-have，2026-06-08）** —— 见 [ADR-007](ADR/ADR-007-partner-surface-model.md)。按"三件套"分层落地，**前两件内核无关、可先行**：
+  - *Surface spec + doc-workspace 布局*（Should-have）：Surface 抽象真实化、三栏布局、`non-bash-subset` 工具白名单、非 git 作用域、隐式入口
+  - *Skill packs + Artifact 层*（Should-have）：复用已存在的 docx/pdf/pptx/xlsx/deep-research/web 能力组织成 surface；artifact 预览 / 迭代 / 导出
+  - *H1-Partner 完整 harness*（依赖 SDK R1/R2，见 [ADR-007](ADR/ADR-007-partner-surface-model.md) 依赖段）：faithfulness 判官；交付前用 workaround / 降级
+  - 全场景全功能见 [§2.3](#23-partner-全场景--全功能)
 
 ### 5.3 Could-have（M2 - M3）
 
-- Partner 面板（KodaX Partner preview）
 - Skill 市场（社区 skill 浏览/安装）
 - Hooks 编辑器（PreToolUse / PostToolUse）
 - Automatic Review Agent（高风险动作经审阅子 agent，对标 Codex Desktop）
