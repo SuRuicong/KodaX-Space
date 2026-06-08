@@ -2,6 +2,7 @@
 // 单文件聚合：每个组件 < 80 行，共享 ConversationMessage 类型，拆分反而提高复杂度。
 
 import { useEffect, useMemo, useState } from 'react';
+import { Check } from 'lucide-react';
 import type { ConversationMessage } from '../composeMessages.js';
 import { Markdown } from './Markdown.js';
 import { Caret } from '../../../components/Caret.js';
@@ -125,7 +126,9 @@ function MessageFooter({ text, sentAt }: { text: string; sentAt?: number }): JSX
         aria-label="Copy message"
       >
         {copied ? (
-          <span className="text-emerald-400">✓ copied</span>
+          <span className="text-ok inline-flex items-center gap-1">
+            <Check className="w-3 h-3" strokeWidth={2.5} aria-hidden /> copied
+          </span>
         ) : (
           <>
             {/* Lucide-style copy icon — 之前用的 Unicode ⎘ (U+2398) 在多数字体里
@@ -306,7 +309,7 @@ export function ToolCallCard({
   // showFullInput / inputPretty / inputCollapse 状态已搬进 ToolEditInputView —
   // OC-21 之后 raw-JSON fallback 由那边统一处理
   const colorClass = TOOL_STATUS_COLOR[status] ?? 'border-border-strong bg-surface-2/50';
-  const toolNameColor = TOOL_NAME_COLOR[toolName] ?? 'dark:text-fg-primary text-fg-faint';
+  const toolNameColor = TOOL_NAME_COLOR[toolName] ?? 'text-fg-secondary';
   const argSummary = summarizeInput(input);
 
   // P4c: result 走行级折叠（diff middle-collapse / 极端守门）

@@ -80,7 +80,7 @@ export function TasksPanel(): JSX.Element {
             </div>
             <div className="h-1.5 bg-surface-2 rounded overflow-hidden">
               <div
-                className="h-full bg-emerald-600"
+                className="h-full bg-ok"
                 style={{
                   width: `${Math.min(100, (budget.used / budget.cap) * 100)}%`,
                 }}

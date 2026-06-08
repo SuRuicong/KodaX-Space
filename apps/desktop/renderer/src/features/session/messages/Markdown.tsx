@@ -94,7 +94,7 @@ function CopyCodeButton({ getText }: { getText: () => string }): JSX.Element {
         // dark: zinc-700 衬 zinc-950 pre，对比够；border 给轮廓
         'dark:bg-surface-3/80 dark:hover:bg-hover-bg dark:text-fg-primary dark:border dark:border-border-strong',
         // light: zinc-200 衬白底 pre
-        'bg-surface-3 hover:bg-hover-bg text-fg-faint border border-border-strong',
+        'bg-surface-3 hover:bg-hover-bg text-fg-secondary border border-border-strong',
       ].join(' ')}
       title={copied ? 'Copied' : 'Copy code'}
       aria-label={copied ? 'Code copied to clipboard' : 'Copy code to clipboard'}

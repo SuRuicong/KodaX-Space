@@ -106,9 +106,8 @@ export function SessionLineagePanel({
   if (flatTree.length <= 1) {
     return (
       <div className="px-3 py-2 text-xs dark:text-fg-muted text-fg-muted italic">
-        No fork lineage yet. Use{' '}
-        <span className="font-mono dark:text-fg-secondary text-fg-faint">Fork</span> in the session
-        menu to branch the conversation.
+        No fork lineage yet. Use <span className="font-mono text-fg-secondary">Fork</span> in the
+        session menu to branch the conversation.
       </div>
     );
   }
@@ -137,7 +136,7 @@ export function SessionLineagePanel({
               'dark:hover:bg-hover-bg hover:bg-hover-bg',
               isCurrent
                 ? 'dark:bg-blue-900/30 bg-blue-50 dark:text-blue-200 text-blue-900 cursor-default'
-                : 'dark:text-fg-secondary text-fg-faint',
+                : 'text-fg-secondary',
             ].join(' ')}
             title={isCurrent ? `${s.sessionId} (current)` : `Switch to ${s.sessionId}`}
           >

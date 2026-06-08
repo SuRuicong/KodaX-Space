@@ -10,6 +10,7 @@
 //
 // 视觉：font-mono、zinc-500、紫色 ✦ 前缀；点击预留 TasksPanel popout (TODO 接 CommandToolbar)。
 
+import { Sparkles } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
 
 export function AmaWorkStrip(): JSX.Element | null {
@@ -57,9 +58,7 @@ export function AmaWorkStrip(): JSX.Element | null {
       role="status"
       aria-label="AMA work status"
     >
-      <span className="text-purple-400" aria-hidden>
-        ✦
-      </span>
+      <Sparkles className="w-3 h-3 text-purple-400 flex-shrink-0" strokeWidth={2} aria-hidden />
       <span className="text-fg-muted">AMA</span>
       <span className="text-fg-faint">·</span>
       <span className="truncate">{parts.join(' · ')}</span>

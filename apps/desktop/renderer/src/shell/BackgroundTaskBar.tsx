@@ -13,6 +13,7 @@
 //   - completed 的 worker 在 [done + 6s] 后淡出 (UX: 让用户能看到刚完成的 worker)
 //   - 同一 turn 内最多 12 个 worker (剩余折叠成 "+N more")
 
+import { Loader2, Check, Circle, AlertTriangle, type LucideIcon } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 
@@ -47,11 +48,11 @@ function aggregateWorkers(events: readonly ManagedLiveEvent[]): WorkerState[] {
   return Array.from(byId.values());
 }
 
-const KIND_ICON: Record<ManagedLiveEvent['kind'], string> = {
-  progress: '⟳',
-  completed: '✓',
-  notification: '•',
-  warning: '⚠',
+const KIND_ICON: Record<ManagedLiveEvent['kind'], LucideIcon> = {
+  progress: Loader2,
+  completed: Check,
+  notification: Circle,
+  warning: AlertTriangle,
 };
 const KIND_COLOR: Record<ManagedLiveEvent['kind'], string> = {
   progress: 'text-sky-400/90 border-sky-400/30',
@@ -79,16 +80,23 @@ export function BackgroundTaskBar(): JSX.Element | null {
       role="status"
       aria-label="Background subagent tasks"
     >
-      {shown.map((w) => (
-        <span
-          key={w.workerId}
-          className={`px-1.5 py-0.5 rounded border ${KIND_COLOR[w.latestKind]} flex items-center gap-1`}
-          title={`${w.title}\n${w.latestSummary}${w.latestDetail ? `\n${w.latestDetail}` : ''}`}
-        >
-          <span aria-hidden>{KIND_ICON[w.latestKind]}</span>
-          <span className="max-w-[120px] truncate">{w.title}</span>
-        </span>
-      ))}
+      {shown.map((w) => {
+        const Icon = KIND_ICON[w.latestKind];
+        return (
+          <span
+            key={w.workerId}
+            className={`px-1.5 py-0.5 rounded border ${KIND_COLOR[w.latestKind]} flex items-center gap-1`}
+            title={`${w.title}\n${w.latestSummary}${w.latestDetail ? `\n${w.latestDetail}` : ''}`}
+          >
+            <Icon
+              className={`w-3 h-3 flex-shrink-0 ${w.latestKind === 'progress' ? 'animate-spin' : ''}`}
+              strokeWidth={2}
+              aria-hidden
+            />
+            <span className="max-w-[120px] truncate">{w.title}</span>
+          </span>
+        );
+      })}
       {overflow > 0 && (
         <span className="px-1.5 py-0.5 rounded border border-border-strong text-fg-muted">
           +{overflow} more

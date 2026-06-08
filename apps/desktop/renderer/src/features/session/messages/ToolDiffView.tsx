@@ -74,7 +74,7 @@ export function ToolDiffView(props: ToolDiffViewProps): JSX.Element {
         className={[
           'w-full px-2.5 py-1.5 flex items-center gap-2 text-left text-xs font-mono',
           'dark:bg-surface-2/50 dark:hover:bg-hover-bg bg-surface hover:bg-hover-bg',
-          'dark:text-fg-secondary text-fg-faint',
+          'text-fg-secondary',
         ].join(' ')}
         aria-expanded={expanded}
       >

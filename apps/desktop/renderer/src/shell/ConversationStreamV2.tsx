@@ -456,7 +456,7 @@ export function ConversationStreamV2(): JSX.Element {
           {/* timeline 竖线 —— 仅有可见消息时画，避免空状态出现孤立竖线 */}
           {displayMessages.length > 0 && (
             <div
-              className="absolute left-[7px] top-2 bottom-2 w-px bg-border-default/70 dark:bg-surface-3"
+              className="absolute left-[7px] top-2 bottom-2 w-px bg-border-default/70"
               aria-hidden
             />
           )}
@@ -729,7 +729,7 @@ function ToolCluster({ cluster, expanded, onToggle }: ToolClusterProps): JSX.Ele
       <button
         type="button"
         onClick={onToggle}
-        className="dark:text-fg-muted dark:hover:text-fg-primary text-fg-faint hover:text-fg-primary flex items-center gap-1.5"
+        className="text-fg-muted hover:text-fg-primary flex items-center gap-1.5"
       >
         <Caret open={expanded} />
         <span>{label}</span>
@@ -759,7 +759,7 @@ function ToolCluster({ cluster, expanded, onToggle }: ToolClusterProps): JSX.Ele
                   </div>
                 )}
                 {showStepLabel(sc) && (
-                  <div className="flex items-start gap-1.5 dark:text-fg-secondary text-fg-faint">
+                  <div className="flex items-start gap-1.5 text-fg-secondary">
                     <span className="whitespace-pre-wrap break-words">{sc.title}</span>
                     {subRunning && (
                       <span className="text-amber-500 text-[11px] flex-shrink-0 mt-px">

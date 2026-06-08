@@ -18,8 +18,10 @@ import type {
   McpRuntimeStatusT,
   McpbExtensionT,
 } from '@kodax-space/space-ipc-schema';
+import { RefreshCw } from 'lucide-react';
 import { useAppStore } from '../../store/appStore.js';
 import { pushToast } from '../../store/toastStore.js';
+import { Caret } from '../../components/Caret.js';
 
 const STATUS_COLOR: Record<McpRuntimeStatusT, string> = {
   idle: 'text-fg-muted',
@@ -288,10 +290,15 @@ export function McpPanel(): JSX.Element {
             type="button"
             onClick={() => void refresh()}
             disabled={loading}
-            className="px-2 py-0.5 text-[11px] rounded text-fg-muted hover:text-fg-primary hover:bg-hover-bg disabled:opacity-50"
+            className="px-2 py-0.5 text-[11px] rounded text-fg-muted hover:text-fg-primary hover:bg-hover-bg disabled:opacity-50 inline-flex items-center gap-1"
             title="Refresh status"
           >
-            ↻ Refresh
+            <RefreshCw
+              className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`}
+              strokeWidth={2}
+              aria-hidden
+            />
+            Refresh
           </button>
           <button
             type="button"
@@ -404,9 +411,9 @@ export function McpPanel(): JSX.Element {
                     <button
                       type="button"
                       onClick={() => void toggleTools(row.serverId)}
-                      className="px-2 py-0.5 text-[11px] rounded text-fg-muted hover:text-fg-primary hover:bg-hover-bg"
+                      className="px-2 py-0.5 text-[11px] rounded text-fg-muted hover:text-fg-primary hover:bg-hover-bg inline-flex items-center gap-1"
                     >
-                      {toolsState ? '▾ Tools' : '▸ Tools'}
+                      <Caret open={!!toolsState} /> Tools
                     </button>
                   )}
                   {/* F039：Diag 按钮拉 mcp.logs，展示 connect mode / status / lastError / cachedAt。
@@ -414,9 +421,9 @@ export function McpPanel(): JSX.Element {
                   <button
                     type="button"
                     onClick={() => void toggleDiag(row.serverId)}
-                    className="px-2 py-0.5 text-[11px] rounded text-fg-muted hover:text-fg-primary hover:bg-hover-bg"
+                    className="px-2 py-0.5 text-[11px] rounded text-fg-muted hover:text-fg-primary hover:bg-hover-bg inline-flex items-center gap-1"
                   >
-                    {diagState[row.serverId] ? '▾ Diag' : '▸ Diag'}
+                    <Caret open={!!diagState[row.serverId]} /> Diag
                   </button>
                 </div>
               </div>

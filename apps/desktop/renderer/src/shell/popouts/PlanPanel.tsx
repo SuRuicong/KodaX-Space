@@ -4,6 +4,7 @@
 // 列表是 Scout phase 决定的多步任务，Worker 跑步骤时 status 在 pending/in_progress/completed 间流转。
 // 列表全量替换（每次 onTodoUpdate 都发完整列表），渲染不需要 reducer 合并。
 
+import { ListChecks } from 'lucide-react';
 import { useAppStore } from '../../store/appStore.js';
 
 export function PlanPanel(): JSX.Element {
@@ -23,9 +24,7 @@ export function PlanPanel(): JSX.Element {
   if (!todos || todos.length === 0) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-fg-faint text-xs p-4 gap-2">
-        <span aria-hidden className="text-2xl">
-          ☰
-        </span>
+        <ListChecks className="w-7 h-7 text-fg-faint" strokeWidth={1.5} aria-hidden />
         <div className="text-fg-muted">No plan yet</div>
         <div className="text-center max-w-[260px]">
           Send a multi-step request. KodaX Scout will seed the todo list when planning is needed.

@@ -229,7 +229,7 @@ export function PermissionModal(): JSX.Element | null {
             type="button"
             disabled={busy}
             onClick={() => void answer('deny')}
-            className="px-3 py-1.5 text-xs rounded dark:bg-surface-3 dark:text-fg-primary dark:hover:bg-hover-bg bg-surface-3 text-fg-faint hover:bg-hover-bg disabled:opacity-50"
+            className="px-3 py-1.5 text-xs rounded dark:bg-surface-3 dark:text-fg-primary dark:hover:bg-hover-bg bg-surface-3 text-fg-secondary hover:bg-hover-bg disabled:opacity-50"
           >
             Deny (Esc)
           </button>
@@ -386,7 +386,7 @@ function PermissionBatchView({
                 type="button"
                 disabled={busy}
                 onClick={() => void answerOne(it.reqId, 'deny')}
-                className="px-2 py-0.5 text-xs rounded dark:bg-surface-3 dark:text-fg-primary dark:hover:bg-hover-bg bg-surface-3 text-fg-faint hover:bg-hover-bg disabled:opacity-50"
+                className="px-2 py-0.5 text-xs rounded dark:bg-surface-3 dark:text-fg-primary dark:hover:bg-hover-bg bg-surface-3 text-fg-secondary hover:bg-hover-bg disabled:opacity-50"
               >
                 Deny
               </button>
@@ -408,7 +408,7 @@ function PermissionBatchView({
             type="button"
             disabled={busy}
             onClick={() => void answerAll('deny')}
-            className="px-3 py-1.5 text-xs rounded dark:bg-surface-3 dark:text-fg-primary dark:hover:bg-hover-bg bg-surface-3 text-fg-faint hover:bg-hover-bg disabled:opacity-50"
+            className="px-3 py-1.5 text-xs rounded dark:bg-surface-3 dark:text-fg-primary dark:hover:bg-hover-bg bg-surface-3 text-fg-secondary hover:bg-hover-bg disabled:opacity-50"
           >
             Deny all ({items.length}) <span className="ml-1 text-fg-muted">Esc</span>
           </button>

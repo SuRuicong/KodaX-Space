@@ -17,6 +17,7 @@
 //     残留一条 session 在 Recents（acceptable for v1 — 后续 v2 改用真 sideQuery）
 
 import { useEffect, useRef, useState } from 'react';
+import { Zap } from 'lucide-react';
 import { useAppStore } from '../../store/appStore.js';
 import { resolveSessionCreateInputs } from '../../shell/createSession.js';
 import { Markdown } from '../session/messages/Markdown.js';
@@ -198,9 +199,7 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-4 py-3 border-b dark:border-border-default border-border-default flex items-center gap-2 flex-shrink-0">
-          <span aria-hidden className="dark:text-amber-400 text-amber-600">
-            ⚡
-          </span>
+          <Zap className="w-4 h-4 text-accent-ink flex-shrink-0" strokeWidth={2} aria-hidden />
           <h2
             id="quick-ask-title"
             className="text-sm font-semibold dark:text-fg-primary text-fg-primary"
@@ -213,7 +212,7 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
           <button
             type="button"
             onClick={() => void closeAndCleanup()}
-            className="ml-auto text-[11px] dark:text-fg-muted dark:hover:text-fg-secondary text-fg-muted hover:text-fg-faint"
+            className="ml-auto text-[11px] text-fg-muted hover:text-fg-secondary"
             aria-label="Close Quick Ask"
             title="Esc to close"
           >

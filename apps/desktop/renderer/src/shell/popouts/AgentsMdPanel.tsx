@@ -8,6 +8,7 @@
 // 数据每次 popout 打开或 session/项目切换都重拉，与磁盘保持同步。
 
 import { useEffect, useRef, useState } from 'react';
+import { FileText, Bot } from 'lucide-react';
 import type { AgentsFileMeta, AgentMeta, AgentFailure } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
 
@@ -255,9 +256,7 @@ function ContextTab(): JSX.Element {
   if (files.length === 0) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-fg-faint text-xs p-4 gap-2">
-        <span aria-hidden className="text-2xl">
-          ⌬
-        </span>
+        <FileText className="w-7 h-7 text-fg-faint" strokeWidth={1.5} aria-hidden />
         <div className="text-fg-muted">No AGENTS.md loaded</div>
         <div className="text-center max-w-[300px]">
           Add <code className="text-fg-muted bg-surface-2 px-1 rounded">~/.kodax/AGENTS.md</code>{' '}
@@ -437,9 +436,7 @@ function CustomAgentsTab(): JSX.Element {
   if (agents.length === 0 && failed.length === 0) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-fg-faint text-xs p-4 gap-2">
-        <span aria-hidden className="text-2xl">
-          ✦
-        </span>
+        <Bot className="w-7 h-7 text-fg-faint" strokeWidth={1.5} aria-hidden />
         <div className="text-fg-muted">No custom agents</div>
         <div className="text-center max-w-[320px]">
           Drop a markdown file into{' '}
