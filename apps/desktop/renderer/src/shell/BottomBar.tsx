@@ -789,10 +789,12 @@ export function BottomBar(): JSX.Element {
     if (trimmed.startsWith('/')) {
       const head = trimmed.slice(1);
       const spaceIdx = head.search(/\s/);
-      const name = (spaceIdx === -1 ? head : head.slice(0, spaceIdx)).trim();
+      const token = (spaceIdx === -1 ? head : head.slice(0, spaceIdx)).trim();
       const rest = spaceIdx === -1 ? '' : head.slice(spaceIdx + 1).trim();
       const args = rest === '' ? [] : tokenizeArgs(rest);
-      // Slash 命令必带 sessionId；若无 session 自动建一个再执行
+      // v0.1.10 fix: 解析 `/skill:<name>` namespace, 跟 KodaX REPL 对齐。
+      // 命中时直接走 invokeSkill 不走 slash.exec → unknownCommand → fallback 二跳。
+      const skillNamespaceMatch = token.match(/^skill:(.+)$/);
       setBusy(true);
       let sid: string | null = null;
       try {
@@ -802,7 +804,19 @@ export function BottomBar(): JSX.Element {
       }
       if (!sid) return; // err 已 setErr
       setPrompt('');
-      await execSlashOrSkill(sid, name, args);
+      if (skillNamespaceMatch) {
+        // 已是 /skill:name 显式 namespace, 直接走 invokeSkill
+        setBusy(true);
+        setErr(null);
+        try {
+          await invokeSkill(sid, skillNamespaceMatch[1]!, args);
+        } finally {
+          setBusy(false);
+        }
+      } else {
+        // 兼容旧 /<name>: slash command 走 slash.exec, unknownCommand 内部 fallback skill
+        await execSlashOrSkill(sid, token, args);
+      }
       return;
     }
     setErr(null);
@@ -908,9 +922,13 @@ export function BottomBar(): JSX.Element {
         }
       })();
     } else {
-      // 有参数 → 把 "/name " 放回输入框等用户继续输入。Enter 后 handleSend → execSlashOrSkill；
-      // 自动按 unknownCommand 信号 fallback 到 skill.invoke，行为对用户一致。
-      setPrompt(`/${item.meta.name} `);
+      // 有参数 → 把 token 放回输入框等用户继续输入。Enter 后 handleSend 解析。
+      // v0.1.10 fix: 跟 KodaX REPL 对齐, skill 走 `/skill:<name>` namespace, slash 仍 `/<name>`。
+      // handleSend 已经认识 `/skill:` 前缀直接走 invokeSkill, 不走 slash.exec → unknownCommand
+      // → fallback 这条二跳。
+      const insertText =
+        item.kind === 'skill' ? `/skill:${item.meta.name} ` : `/${item.meta.name} `;
+      setPrompt(insertText);
     }
   }
 

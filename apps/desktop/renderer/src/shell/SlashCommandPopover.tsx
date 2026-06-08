@@ -44,12 +44,21 @@ async function loadCommandsOnce(): Promise<SlashCommandMeta[]> {
   return cachedCommands;
 }
 
-async function loadSkillsForProject(projectRoot: string): Promise<SkillMeta[]> {
-  if (cachedSkills && cachedSkills.projectRoot === projectRoot) return cachedSkills.list;
+async function loadSkillsForProject(
+  projectRoot: string,
+  forceReload: boolean,
+): Promise<SkillMeta[]> {
+  if (!forceReload && cachedSkills && cachedSkills.projectRoot === projectRoot) {
+    return cachedSkills.list;
+  }
   if (!window.kodaxSpace) return [];
-  const result = await window.kodaxSpace.invoke('skill.discover', { projectRoot });
+  // v0.1.10 fix: 用户跑 skill-creator 生成新 skill 后, 之前要重启 Space 才能 / 补全;
+  // 现在 popover mount 都 forceReload, IPC main 端清 wrapper cache 重 scan 磁盘。
+  const result = await window.kodaxSpace.invoke('skill.discover', {
+    projectRoot,
+    ...(forceReload ? { forceReload: true } : {}),
+  });
   if (!result.ok) {
-    // skill.discover 失败不阻塞 slash 命令——返回空列表即可
     cachedSkills = { projectRoot, list: [] };
     return [];
   }
@@ -80,7 +89,9 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
       return;
     }
     let cancelled = false;
-    void Promise.all([loadCommandsOnce(), loadSkillsForProject(projectRoot)]).then(
+    // v0.1.10 fix: forceReload=true 让用户跑 skill-creator 后立即可见 (跳 60s cache TTL)。
+    // Popover mount 是用户主动按 `/` 触发, 每次 force scan 用户体感无延迟 (SDK discover ~10ms)。
+    void Promise.all([loadCommandsOnce(), loadSkillsForProject(projectRoot, true)]).then(
       ([cmds, skills]) => {
         if (cancelled) return;
         const merged: SlashPickerItem[] = [
@@ -101,10 +112,19 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
     setSelectedIdx(0);
   }, [props.query]);
 
-  // 过滤：去掉 leading `/`，前缀匹配条目 name (case-insensitive)。
-  // KodaX REPL 用 starts-with 不用 fuzzy——简单可预测，符合 user 直觉。
-  const prefix = props.query.replace(/^\//, '').toLowerCase();
-  const filtered = items.filter((c) => c.meta.name.startsWith(prefix));
+  // v0.1.10 fix: 跟 KodaX REPL 对齐 — `/skill:<name>` 显式 namespace skill。
+  // Filter 模式两条:
+  //   - 用户输入 `/skill:<前缀>` → 只列 skills, 前缀匹配 skill name
+  //   - 用户输入 `/<前缀>`        → 同时列 slash commands + skills (前缀匹配 name)
+  // 这样 KodaX 老用户的 `/skill:foo` muscle memory work, Space 用户的 `/foo` 也 work。
+  const queryLower = props.query.toLowerCase();
+  const skillNamespaceMatch = queryLower.match(/^\/skill:(.*)$/);
+  const skillOnlyMode = skillNamespaceMatch !== null;
+  const prefix = skillOnlyMode ? skillNamespaceMatch[1]! : queryLower.replace(/^\//, '');
+  const filtered = items.filter((c) => {
+    if (skillOnlyMode && c.kind !== 'skill') return false;
+    return c.meta.name.startsWith(prefix);
+  });
 
   // 上下键 / 回车 / Esc 键盘处理
   useEffect(() => {
@@ -168,11 +188,13 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
             }`}
           >
             <span
-              className={`font-mono min-w-[110px] ${
+              className={`font-mono min-w-[140px] ${
                 item.kind === 'skill' ? 'text-sky-300' : 'text-amber-300'
               }`}
             >
-              /{m.name}
+              {/* v0.1.10 fix: skill 显示成 `/skill:<name>` 对齐 KodaX REPL namespace;
+                  slash command 仍 `/<name>` 紧凑显示 */}
+              {item.kind === 'skill' ? `/skill:${m.name}` : `/${m.name}`}
             </span>
             {argsHint && (
               <span className="text-[10px] text-zinc-600 font-mono">{argsHint}</span>

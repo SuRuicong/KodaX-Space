@@ -42,6 +42,12 @@ export const skillDiscoverChannel = {
   direction: 'invoke',
   input: z.object({
     projectRoot: z.string().min(1).max(4096),
+    /**
+     * v0.1.10: 强制重 scan 磁盘 (清 main 端 wrapper cache, 让 SDK 创新 SkillRegistry +
+     * 跑 discover())。用户跑 skill-creator 生成新 skill 后, renderer 第一次刷可见。
+     * 默认 false 走 60s TTL cache 避免高频 popover 重复扫盘。
+     */
+    forceReload: z.boolean().optional(),
   }),
   output: z.object({
     /** 最多 256 个 skill / project root—— 防 path traversal 误注册大量产物。*/

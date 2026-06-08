@@ -4,7 +4,7 @@
 
 import { registerChannel } from './register.js';
 import { kodaxHost } from '../kodax/host.js';
-import { getSkillRegistry, toSkillMeta } from '../skill/registry.js';
+import { getSkillRegistry, invalidateSkillCache, toSkillMeta } from '../skill/registry.js';
 import { createSkillDynamicContextExecutor } from '../skill/dynamic-context-executor.js';
 
 /**
@@ -36,6 +36,13 @@ export function registerSkillChannels(): void {
   // 输入 projectRoot —— 不依赖 live SDK session：用户从 Recents 恢复历史会话时
   // UI 有 sessionId 但 kodaxHost 没对应 session；discover 是只读操作不需要 live session。
   registerChannel('skill.discover', async (input) => {
+    // v0.1.10: forceReload=true 时清掉 wrapper cache, 让下次 getSkillRegistry new 一个
+    // SkillRegistry instance + 触发 SDK discover() 重 scan 磁盘。
+    // 用户 dogfood 报: skill-creator 生成新 skill 后必须重启 Space 才能 / 补全, 因为
+    // wrapper cache TTL 60s + SDK 单 instance 不 re-scan。
+    if (input.forceReload) {
+      invalidateSkillCache(input.projectRoot);
+    }
     const registry = await getSkillRegistry(input.projectRoot);
     const skills = registry.listUserInvocable().map(toSkillMeta);
     return { skills };
@@ -55,9 +62,19 @@ export function registerSkillChannels(): void {
   // 不再传 SAFE_ENV={} (改成 {}+session env)，而是: SDK 解析 ${VAR} 时如果 environment
   // 是空对象,${ANTHROPIC_API_KEY} 等都 resolve 成空串,密钥不会进 resolvedPrompt。维持原 secure stance。
   registerChannel('skill.invoke', async (input) => {
-    const session = kodaxHost.get(input.sessionId);
+    let session = kodaxHost.get(input.sessionId);
     if (!session) {
-      throw new Error(`session not found: ${input.sessionId}`);
+      // v0.1.10 fix: 同 session.send 的 lazy resume 路径 — sessionId 不在 in-flight
+      // 但磁盘 persisted (重启后历史 session,用户报 "session not found" bug)。
+      // 否则用户重启 Space → 从 Recents 点击 → 输入 /skill-name 立刻 HANDLER_ERROR。
+      const resumed = await kodaxHost.tryResume(input.sessionId);
+      if (!resumed) {
+        throw new Error(`session not found: ${input.sessionId}`);
+      }
+      session = kodaxHost.get(input.sessionId);
+      if (!session) {
+        throw new Error(`session resume failed: ${input.sessionId}`);
+      }
     }
     const registry = await getSkillRegistry(session.projectRoot);
 
