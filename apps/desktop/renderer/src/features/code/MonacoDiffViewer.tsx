@@ -94,6 +94,11 @@ export function MonacoDiffViewer({ path, before, after }: MonacoDiffViewerProps)
       options={{
         readOnly: true,
         renderSideBySide: true,
+        // F044 v0.1.10 fix: Monaco DiffEditor 默认在容器 < ~700px 时自动 fallback 到
+        // inline (上下叠加),违背用户对"左右对比"的预期。我们把 PopoutOverlay 的 diff
+        // 容器加宽到 880px (够 side-by-side),并显式禁用 limited-space 自动 fallback
+        // 强制保持左右两列。
+        useInlineViewWhenSpaceIsLimited: false,
         minimap: { enabled: false },
         scrollBeyondLastLine: false,
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',

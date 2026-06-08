@@ -2,8 +2,18 @@
 //
 // 右上 toolbar 5 个 popout 的容器。当 active popout 切换时渲染对应面板。
 //
-// 形态：右侧 panel slide-in（440px 宽），覆盖主区右侧；半透明遮罩可关闭。
+// 形态：右侧 panel slide-in，覆盖主区右侧；半透明遮罩可关闭。
 // 不全屏覆盖——保留主对话流可见，让用户能在 popout 操作时仍看到对话上下文。
+//
+// **v0.1.10 fix**: 按 kind 决定宽度。Viewer 类 (diff / preview / terminal) 走宽容器
+// (880px) 让 Monaco DiffEditor side-by-side / Preview render / Terminal 80 列都够看;
+// List 类 (tasks / plan / agents / mcp) 保持 480px 紧凑列表风。
+const POPOUT_WIDTH: Record<string, string> = {
+  diff: 'w-[880px]',
+  preview: 'w-[880px]',
+  terminal: 'w-[800px]',
+};
+const DEFAULT_POPOUT_WIDTH = 'w-[480px]';
 
 import { Suspense, lazy } from 'react';
 import type { PopoutKind } from '../CommandToolbar.js';
@@ -34,7 +44,7 @@ export function PopoutOverlay({ kind, onClose }: PopoutOverlayProps): JSX.Elemen
         onClick={onClose}
         aria-hidden
       />
-      <aside className="absolute right-0 top-10 bottom-0 w-[480px] bg-zinc-950 border-l border-zinc-900 z-40 flex flex-col">
+      <aside className={`absolute right-0 top-10 bottom-0 ${POPOUT_WIDTH[kind] ?? DEFAULT_POPOUT_WIDTH} max-w-[95vw] bg-zinc-950 border-l border-zinc-900 z-40 flex flex-col`}>
         <div className="px-3 py-2 border-b border-zinc-900 flex items-center text-xs text-zinc-400 flex-shrink-0">
           <span className="capitalize">{kind}</span>
           <button

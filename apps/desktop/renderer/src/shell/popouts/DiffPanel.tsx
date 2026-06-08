@@ -36,49 +36,57 @@ export function DiffPanel(): JSX.Element {
     if (!path || !projectRoot || !window.kodaxSpace) return;
     let cancelled = false;
 
-    // F044: 优先 tool-call cache (现有,语义最精确"AI 改那一瞬"),miss 时 fallback 到 git working tree diff
+    // F044: 优先 tool-call cache (现有,语义最精确"AI 改那一瞬"),miss 时 fallback 到 git working tree diff。
+    // v0.1.10 fix: 整个 fetch 包 try/catch — 之前 invoke 抛同步错误 (preload 没 allowlist
+    // 该 channel / handler 还没注册 / 网络层异常) 时 Promise reject 不被处理,UI 卡在
+    // null/null 永远显示 "loading…"。catch 后 setErr 让用户看到具体错误。
     const fetchDiff = async (): Promise<void> => {
       setErr(null);
       setDiff(null);
-
-      const cacheR = await window.kodaxSpace!.invoke('files.diff', { projectRoot, path });
-      if (cancelled) return;
-      if (cacheR.ok && cacheR.data.available) {
-        setDiff({ before: cacheR.data.before, after: cacheR.data.after, source: 'tool-call' });
-        return;
-      }
-
-      // fallback: git working tree diff
-      const gitR = await window.kodaxSpace!.invoke('project.gitFileDiff', { projectRoot, path });
-      if (cancelled) return;
-      if (gitR.ok && gitR.data.available) {
-        setDiff({
-          before: gitR.data.before,
-          after: gitR.data.after,
-          source: gitR.data.isUntracked ? 'git-untracked' : 'git-tracked',
-        });
-        return;
-      }
-      // 两条路径都 miss,显示 reason 友好文案
-      if (gitR.ok) {
-        switch (gitR.data.reason) {
-          case 'is-binary':
-            setErr('Binary file — inline diff not available');
-            break;
-          case 'file-too-large':
-            setErr('File too large for inline diff (> 1 MB)');
-            break;
-          case 'not-a-git-repo':
-            setErr('Not a git repository — no working-tree diff to show');
-            break;
-          case 'no-such-file':
-            setErr('File not found in working tree');
-            break;
-          default:
-            setErr('No diff available');
+      try {
+        const cacheR = await window.kodaxSpace!.invoke('files.diff', { projectRoot, path });
+        if (cancelled) return;
+        if (cacheR.ok && cacheR.data.available) {
+          setDiff({ before: cacheR.data.before, after: cacheR.data.after, source: 'tool-call' });
+          return;
         }
-      } else {
-        setErr(`${gitR.error?.code ?? 'ERR_UNKNOWN'}: ${gitR.error?.message ?? 'unknown'}`);
+
+        // fallback: git working tree diff
+        const gitR = await window.kodaxSpace!.invoke('project.gitFileDiff', { projectRoot, path });
+        if (cancelled) return;
+        if (gitR.ok && gitR.data.available) {
+          setDiff({
+            before: gitR.data.before,
+            after: gitR.data.after,
+            source: gitR.data.isUntracked ? 'git-untracked' : 'git-tracked',
+          });
+          return;
+        }
+        // 两条路径都 miss,显示 reason 友好文案
+        if (gitR.ok) {
+          switch (gitR.data.reason) {
+            case 'is-binary':
+              setErr('Binary file — inline diff not available');
+              break;
+            case 'file-too-large':
+              setErr('File too large for inline diff (> 1 MB)');
+              break;
+            case 'not-a-git-repo':
+              setErr('Not a git repository — no working-tree diff to show');
+              break;
+            case 'no-such-file':
+              setErr('File not found in working tree');
+              break;
+            default:
+              setErr('No diff available');
+          }
+        } else {
+          setErr(`${gitR.error?.code ?? 'ERR_UNKNOWN'}: ${gitR.error?.message ?? 'unknown'}`);
+        }
+      } catch (e) {
+        if (cancelled) return;
+        const msg = e instanceof Error ? e.message : String(e);
+        setErr(`Failed to load diff: ${msg}`);
       }
     };
     void fetchDiff();
