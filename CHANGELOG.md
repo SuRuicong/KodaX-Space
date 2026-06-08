@@ -49,6 +49,13 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 - **Release review HIGH** ([69ed136](https://github.com/icetomoyo/KodaX-Space/commit/69ed136)):
   - removeSession 漏清 `inputHistoryBySession / pendingSendBySession / sessionFlags`, long-lived 累积
   - ResizeHandle 拖动中 unmount, 3 个 window listener 不 detach → closure leak
+- **setCurrentSession 不同步 currentProjectPath** ([f2310c9](https://github.com/icetomoyo/KodaX-Space/commit/f2310c9)) — 用户报: 在 KodaX 项目打开下点 KodaX-Space session, RightSidebar Changes/Working folder/ChipBar 仍指着 KodaX 显示错的 git changes。
+  - Store action 兜底: 找 session 对应 projectRoot canonProjectRoot 比较, 不一致就同步 + 写 LS
+  - 6 个新单测覆盖 sid race / projectRoot 空 / canon trailing slash 等边界
+- **文件修改 tool 卡默认折叠 + RightSidebar 按钮太小** ([dd0b119](https://github.com/icetomoyo/KodaX-Space/commit/dd0b119)):
+  - write/edit/multi_edit/str_replace/insert_after_anchor 默认 expanded=true, 卡片打开即看 diff 摘要;Monaco 大块保留二级折叠不影响性能
+  - RightSidebar Section ⤢ 改 toggle: active 时换 × icon 再点关闭;w-5 h-5 大点击区 + hover 反馈;Unicode ⤢/⌃/⌄ 换 Lucide-style SVG (popout / X / chevron) 易辨
+  - Shell 本地 activePopout ↔ store activePopoutKind 双向同步, 守门防回路
 
 ### SDK 升级
 
