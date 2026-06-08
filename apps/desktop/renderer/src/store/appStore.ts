@@ -641,7 +641,28 @@ export const useAppStore = create<AppState>((set) => ({
     set({ currentProjectPath: path });
   },
   setSessions: (sessions) => set({ sessions }),
-  setCurrentSession: (sessionId) => set({ currentSessionId: sessionId }),
+  setCurrentSession: (sessionId) =>
+    set((state) => {
+      // v0.1.9 fix: 切 session 时同步把 currentProjectPath 调到该 session 的 projectRoot。
+      // 否则 ChangesSection / WorkingFolderSection / ChipBar / BottomBar 在多项目 sidebar
+      // 下"用户从 KodaX 项目点 KodaX-Space 的 session" 时仍指着 KodaX,显示错的 git changes /
+      // 错的发送目录。
+      // sessionId=null → 回 dashboard,不动 currentProjectPath (用户还能继续看当前项目)。
+      if (sessionId === null) return { currentSessionId: null };
+      const found = state.sessions.find((s) => s.sessionId === sessionId);
+      if (!found || !found.projectRoot) return { currentSessionId: sessionId };
+      const targetCanon = canonProjectRootShared(found.projectRoot, IS_WIN_RENDERER);
+      const currentCanon = state.currentProjectPath
+        ? canonProjectRootShared(state.currentProjectPath, IS_WIN_RENDERER)
+        : null;
+      if (targetCanon === currentCanon) return { currentSessionId: sessionId };
+      // 跟 setCurrentProject 同款 LS 持久化 — 重启后 sidebar 仍在该项目
+      lsSet(LS_KEY_PROJECT, found.projectRoot);
+      return {
+        currentSessionId: sessionId,
+        currentProjectPath: found.projectRoot,
+      };
+    }),
 
   appendUserMessage: (sessionId, content, sentAt) =>
     set((state) => {
