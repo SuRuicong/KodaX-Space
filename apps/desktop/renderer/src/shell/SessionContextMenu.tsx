@@ -25,6 +25,7 @@
 import { useEffect, useRef } from 'react';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
+import { Caret } from '../components/Caret.js';
 
 interface SessionContextMenuProps {
   readonly session: SessionMeta;
@@ -188,7 +189,7 @@ function MenuRow({
       }`}
     >
       <span className="flex-1">{label}</span>
-      {chevron && <span className="text-zinc-500" aria-hidden>›</span>}
+      {chevron && <Caret open={false} className="text-zinc-500" />}
       {hint && <span className="text-zinc-500 text-[10px] font-mono">{hint}</span>}
     </button>
   );

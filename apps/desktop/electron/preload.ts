@@ -3,7 +3,7 @@
 // 通过 contextBridge 暴露最小、白名单化的 IPC API 到 renderer。
 // 后续 feature 在 packages/space-ipc-schema 注册 channel 时，preload 这里加 allowlist。
 
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webFrame } from 'electron';
 import { INVOKE_CHANNEL_NAMES, PUSH_CHANNEL_NAMES } from '@kodax-space/space-ipc-schema';
 
 // channel allowlist 直接从 schema 包派生——单一真理源，preload 不再手维护副本。
@@ -44,6 +44,20 @@ contextBridge.exposeInMainWorld('kodaxSpace', {
    * 平台元信息，便于 renderer 做平台相关 UI 适配。值在 preload 启动时已经被冻结为字符串。
    */
   platform: platformValue,
+
+  /**
+   * 浏览器式整窗缩放（Chromium webFrame zoom，和地址栏 Ctrl+滚轮一回事——文字+布局整体缩放）。
+   * renderer 侧自己管 Ctrl+滚轮 / Ctrl+± / Ctrl+0 + 持久化系数；这里只暴露读/写两个同步原语。
+   * 不走 IPC channel（webFrame 在 preload 进程即可调），不污染 schema allowlist。
+   */
+  zoom: {
+    get: (): number => webFrame.getZoomFactor(),
+    // 兜底 clamp [0.25, 5]：renderer 已限 [0.5, 3]，这里防御一手非法值把 UI 缩到不可用。
+    set: (factor: number): void => {
+      const safe = Number.isFinite(factor) ? Math.min(5, Math.max(0.25, factor)) : 1;
+      webFrame.setZoomFactor(safe);
+    },
+  },
 });
 
 // TypeScript: renderer 那侧的全局类型声明在 apps/desktop/renderer/src/types/global.d.ts

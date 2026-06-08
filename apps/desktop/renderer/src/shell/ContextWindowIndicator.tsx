@@ -12,6 +12,7 @@
 
 import { useEffect, useState } from 'react';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
+import { Caret } from '../components/Caret.js';
 import { useAppStore, type UserMessage } from '../store/appStore.js';
 import { getModelContextCap } from './modelContextCaps.js';
 
@@ -190,7 +191,7 @@ export function ContextWindowIndicator(): JSX.Element | null {
           {tokenStr} / {capStr}
         </span>
         <span>({percent.toFixed(0)}%)</span>
-        <span className="text-zinc-400" aria-hidden>›</span>
+        <Caret open={false} className="text-zinc-400" />
       </button>
 
       {open && (

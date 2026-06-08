@@ -21,6 +21,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../../store/appStore.js';
 import { buildWorkerTree, type WorkerNode } from './worker-tree.js';
+import { Caret } from '../../components/Caret.js';
 
 type ManagedLiveKind = WorkerNode['latestKind'];
 
@@ -183,9 +184,7 @@ function WorkerRow({ node }: { node: WorkerNode }): JSX.Element {
         {node.latestPhase && (
           <span className="text-[10px] text-zinc-500 font-mono">{node.latestPhase}</span>
         )}
-        <span className="text-zinc-600 text-[10px]" aria-hidden>
-          {expanded ? '▾' : '▸'}
-        </span>
+        <Caret open={expanded} className="text-zinc-600" />
       </button>
       {expanded && node.events.length > 0 && (
         <ul className="ml-3 mt-0.5 mb-1 border-l border-zinc-800/60 pl-2 space-y-1">

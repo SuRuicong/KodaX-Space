@@ -13,6 +13,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useAppStore } from '../store/appStore.js';
+import { Caret } from '../components/Caret.js';
 import type { RecentsFilter } from '../store/appStore.js';
 
 interface RecentsFilterMenuProps {
@@ -140,7 +141,7 @@ function FilterRow<T extends string>({
     >
       <span className="flex-1">{label}</span>
       <span className="text-zinc-400 text-[10px]">{value}</span>
-      <span className="text-zinc-500" aria-hidden>›</span>
+      <Caret open={false} className="text-zinc-500" />
     </button>
   );
 }

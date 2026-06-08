@@ -257,17 +257,57 @@ app.whenReady().then(async () => {
   // 不构造菜单避免视觉噪音。
   //
   // Mac 上 macOS 强制顶部 menubar；Windows / Linux 上呈现为窗口顶部菜单条。
+  const isMac = process.platform === 'darwin';
   const menu = Menu.buildFromTemplate([
+    // macOS 习惯首项为 app 菜单（含 Quit / Hide 等系统 role）。
+    ...(isMac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about' as const },
+              { type: 'separator' as const },
+              { role: 'hide' as const },
+              { role: 'hideOthers' as const },
+              { role: 'unhide' as const },
+              { type: 'separator' as const },
+              { role: 'quit' as const },
+            ],
+          },
+        ]
+      : []),
+    // Edit 菜单：macOS 上 Cmd+C/V/X/A/Z 等标准编辑快捷键是经由这些 role 分发的，
+    // 没有 Edit 菜单则这些快捷键在 mac 上完全失效（Win/Linux 由 Chromium 原生处理，不依赖菜单）。
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' as const },
+        { role: 'redo' as const },
+        { type: 'separator' as const },
+        { role: 'cut' as const },
+        { role: 'copy' as const },
+        { role: 'paste' as const },
+        ...(isMac
+          ? [
+              { role: 'pasteAndMatchStyle' as const },
+              { role: 'delete' as const },
+              { role: 'selectAll' as const },
+            ]
+          : [
+              { role: 'delete' as const },
+              { type: 'separator' as const },
+              { role: 'selectAll' as const },
+            ]),
+      ],
+    },
     {
       label: 'View',
+      // Zoom 不放菜单 role —— 缩放由 renderer 的 ZoomController 统一接管（Ctrl+滚轮 / Ctrl+± /
+      // Ctrl+0 + 持久化系数 + 角标）。菜单 role 与 renderer keydown 会双触发导致一次按两档，故移除。
       submenu: [
         { role: 'reload' },
         { role: 'forceReload' },
         { role: 'toggleDevTools' },
-        { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
         { type: 'separator' },
         { role: 'togglefullscreen' },
       ],

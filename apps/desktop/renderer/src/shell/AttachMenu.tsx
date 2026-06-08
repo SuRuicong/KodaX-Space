@@ -23,6 +23,7 @@
 import { useEffect, useState } from 'react';
 import type { McpServerMeta, SkillMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
+import { Caret } from '../components/Caret.js';
 
 interface AttachMenuProps {
   open: boolean;
@@ -267,7 +268,7 @@ function AttachRow({
     >
       <span className="w-4" aria-hidden>{icon}</span>
       <span className="flex-1">{label}</span>
-      {chevron && <span className="text-zinc-600" aria-hidden>›</span>}
+      {chevron && <Caret open={false} className="text-zinc-600" />}
     </button>
   );
 }

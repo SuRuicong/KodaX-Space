@@ -9,6 +9,7 @@
 // 默认全部 collapsed 不烧资源。
 
 import { useMemo, useState, lazy, Suspense } from 'react';
+import { Caret } from '../../../components/Caret.js';
 
 // 仅在展开时才动态加载 Monaco（Suspense fallback 给出"loading diff"提示）。
 // MonacoDiffViewer 本身 import @monaco-editor/react + 完整 monaco-editor，
@@ -74,9 +75,7 @@ export function ToolDiffView(props: ToolDiffViewProps): JSX.Element {
         ].join(' ')}
         aria-expanded={expanded}
       >
-        <span aria-hidden className="dark:text-zinc-500 text-zinc-400">
-          {expanded ? '⌄' : '›'}
-        </span>
+        <Caret open={expanded} />
         <span className="truncate flex-1" title={props.path}>
           {name}
         </span>

@@ -5,7 +5,8 @@
 //   - 用户气泡 / assistant markdown / system notice 复用原 bubbles
 //   - 滚动跟进逻辑复用 ConversationStream v1
 //
-// 聚合规则：连续的 tool_call 折成一组；assistant_text / user / system_notice / iteration end 都打断聚合。
+// 聚合规则：连续的 tool_call 折成一组；assistant_text(带正文) / user / system_notice 打断聚合。
+// normal/summary 视图下 thinking-only step 不打断（推理折进工具组）；thinking/verbose 视图下 thinking 独立成行。
 // 一组内 N >= 1 时显示 "Ran N commands ›"（N=1 时仍折叠，统一形态）。
 // 点击聚合行展开 = 显示组里每个 tool 的细节卡。
 
@@ -27,6 +28,7 @@ import {
 } from '../features/session/messages/bubbles.js';
 import { WelcomeDashboard } from './WelcomeDashboard.js';
 import { ActivitySpinner, useIsStreaming } from './ActivitySpinner.js';
+import { Caret } from '../components/Caret.js';
 
 // 聚合后的 view-only message kind —— 两层折叠对齐 Claude Desktop "Ran 6 commands ⌄":
 //
@@ -48,12 +50,19 @@ type SubCluster = {
    *  synthetic=true 时 UI 可以选择性隐藏 title 避免噪音；synthetic=false 时**必须**
    *  显示，否则 assistant 的真实回复内容会从对话流里消失。 */
   syntheticTitle: boolean;
+  /** thinking-only step（只想了一下就调工具、没说正文）的推理文本，**折进**本 sub-cluster
+   *  而不是单独成一行。这样连续的 thinking→cmd→thinking→cmd 收敛成一个 "Ran N commands"。
+   *  仅在 normal/summary 视图（foldThinking）下填充；thinking/verbose 视图保留独立 thinking 行。 */
+  thinking?: string;
 };
 type ToolClusterMessage = {
   kind: 'tool_cluster';
   id: string;
   subClusters: SubCluster[];
   totalTools: number;
+  /** 组内折进来的 thinking 估算 token 总量（4 chars ≈ 1 token）。groupTools 里预算一次，
+   *  避免 ToolCluster 每次 render 都 reduce 全部 thinking 字符串。0 = 没折进任何推理。 */
+  thinkingTokens: number;
 };
 
 /**
@@ -91,7 +100,13 @@ function summarizeTools(tools: readonly ToolCallMsg[]): string {
   return `Ran ${parts.join(' + ')}`;
 }
 
-function groupTools(messages: ConversationMessage[]): ViewMessage[] {
+function groupTools(
+  messages: ConversationMessage[],
+  view: 'normal' | 'thinking' | 'verbose' | 'summary',
+): ViewMessage[] {
+  // normal/summary = 紧凑：thinking-only step 的推理折进工具组，连续 thinking→cmd 收敛成一个 cluster。
+  // thinking/verbose = 摊开：thinking 仍是独立可读行，每个 step 各自成组（看清每一步在想什么）。
+  const foldThinking = view === 'normal' || view === 'summary';
   const out: ViewMessage[] = [];
   let pendingCluster: SubCluster[] = [];
   let clusterCounter = 0;
@@ -99,11 +114,16 @@ function groupTools(messages: ConversationMessage[]): ViewMessage[] {
   const flushCluster = (): void => {
     if (pendingCluster.length === 0) return;
     const totalTools = pendingCluster.reduce((acc, sc) => acc + sc.tools.length, 0);
+    const thinkingTokens = pendingCluster.reduce(
+      (acc, sc) => acc + (sc.thinking ? approxTokens(sc.thinking) : 0),
+      0,
+    );
     out.push({
       kind: 'tool_cluster',
       id: `cluster_${clusterCounter++}_${pendingCluster[0].id}`,
       subClusters: pendingCluster,
       totalTools,
+      thinkingTokens,
     });
     pendingCluster = [];
   };
@@ -129,33 +149,35 @@ function groupTools(messages: ConversationMessage[]): ViewMessage[] {
       if (tools.length > 0) {
         // v0.1.4 修复：thinking 和 text 之前都被 sub-cluster 吸进 title 只剩首句 80 char。
         // assistant 真说了 200 字也只剩第一句 —— 用户报告"正常输出，过一会消失了"就是这。
-        // 现在两者都拆出来当独立 view-message 在 cluster 前 flush。
         const hasThinking = Boolean(m.thinking && m.thinking.length > 0);
         const hasText = m.text.length > 0;
-        if (hasThinking || hasText) {
-          flushCluster();
-        }
-        if (hasThinking) {
-          out.push({ kind: 'thinking', id: `${m.id}_thinking`, thinking: m.thinking! });
-        }
         if (hasText) {
+          // 有正文 = 一段有意义的 assistant 回复，**打断**工具组单独渲染（thinking 在其前一行）。
+          flushCluster();
+          if (hasThinking) {
+            out.push({ kind: 'thinking', id: `${m.id}_thinking`, thinking: m.thinking! });
+          }
           // 复用现有 assistant_text view-kind —— AssistantBubble 已经会渲染 markdown + footer
-          out.push({
-            kind: 'assistant_text',
-            id: `${m.id}_text`,
-            text: m.text,
-            sentAt: m.sentAt,
-            // thinking 不带 —— 已在上方独立行渲染了
+          out.push({ kind: 'assistant_text', id: `${m.id}_text`, text: m.text, sentAt: m.sentAt });
+          pendingCluster.push({ id: m.id, title: summarizeTools(tools), tools, syntheticTitle: true });
+        } else if (hasThinking && foldThinking) {
+          // thinking-only step（只想了一下就调工具）：**不打断**，推理折进 sub-cluster。
+          // 连续的 thinking→cmd→thinking→cmd 就并成一个 "Ran N commands"。
+          pendingCluster.push({
+            id: m.id,
+            title: summarizeTools(tools),
+            tools,
+            syntheticTitle: true,
+            thinking: m.thinking!,
           });
+        } else {
+          // thinking/verbose 视图：thinking 仍独立成行（默认展开），每个 step 各自成组。
+          if (hasThinking) {
+            flushCluster();
+            out.push({ kind: 'thinking', id: `${m.id}_thinking`, thinking: m.thinking! });
+          }
+          pendingCluster.push({ id: m.id, title: summarizeTools(tools), tools, syntheticTitle: true });
         }
-        // text/thinking 全已 flush 完独立显示，sub-cluster title 直接走工具汇总。
-        // syntheticTitle=true：单 sub-cluster 时 UI 省略 title 行（跟外层 "Ran N" 重复）
-        pendingCluster.push({
-          id: m.id,
-          title: summarizeTools(tools),
-          tools,
-          syntheticTitle: true,
-        });
         i = j - 1; // 跳过 consumed tool_calls (for loop ++ 再 +1 到 j)
       } else {
         flushCluster();
@@ -198,8 +220,26 @@ export function ConversationStreamV2(): JSX.Element {
   // 字号映射 — TranscriptViewMenu 的 sm / base / lg → Tailwind class
   const fontClass = transcriptFontSize === 'sm' ? 'text-xs' : transcriptFontSize === 'lg' ? 'text-base' : 'text-sm';
 
+  // transcriptView 决定折叠策略（之前这个状态存了但渲染层从没读 → 4 个视图点了没反应）：
+  //   normal   = 紧凑：thinking 折进工具组，cluster 默认折叠
+  //   thinking = 突出推理：thinking 独立成行且默认展开，cluster 折叠
+  //   verbose  = 全摊开：thinking + 工具卡全默认展开
+  //   summary  = 只看结论：thinking / 工具组全部隐藏，只留 user / assistant 正文
+  const transcriptView = useAppStore((s) => s.transcriptView);
+
   const messages = useMemo(() => composeMessages({ events, userMessages }), [events, userMessages]);
-  const viewMessages = useMemo(() => groupTools(messages), [messages]);
+  const viewMessages = useMemo(() => groupTools(messages, transcriptView), [messages, transcriptView]);
+  // summary 视图：滤掉 thinking 行和工具组，只保留对话正文。其余视图原样渲染。
+  const displayMessages = useMemo(
+    () =>
+      transcriptView === 'summary'
+        ? viewMessages.filter((m) => m.kind !== 'thinking' && m.kind !== 'tool_cluster')
+        : viewMessages,
+    [viewMessages, transcriptView],
+  );
+  // verbose 全展开工具组；thinking/verbose 默认展开独立 thinking 行。
+  const clustersForceExpand = transcriptView === 'verbose';
+  const thinkingForceExpand = transcriptView === 'thinking' || transcriptView === 'verbose';
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -235,13 +275,15 @@ export function ConversationStreamV2(): JSX.Element {
     return () => window.removeEventListener('keydown', onKey);
   }, [searchOpen]);
 
-  // 计算匹配的 message id 列表（按 viewMessages 顺序），用于 ring 高亮 + nav。
+  // 计算匹配的 message id 列表（按 displayMessages 顺序），用于 ring 高亮 + nav。
+  // 必须用 displayMessages 而非 viewMessages：summary 视图滤掉了 thinking / tool_cluster，
+  // 若仍按 viewMessages 索引会数到屏幕上根本不存在的 DOM 节点（计数虚高、跳转/高亮失效）。
   // 大小写不敏感；空 query → 空数组。
   const matchIds = useMemo<readonly string[]>(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return [];
     const ids: string[] = [];
-    for (const m of viewMessages) {
+    for (const m of displayMessages) {
       let txt = '';
       switch (m.kind) {
         case 'user':
@@ -257,6 +299,7 @@ export function ConversationStreamV2(): JSX.Element {
           txt = m.subClusters
             .flatMap((sc) => [
               sc.title,
+              sc.thinking ?? '',
               ...sc.tools.map((t) => `${t.toolName} ${JSON.stringify(t.input ?? {})} ${t.result ?? ''}`),
             ])
             .join(' ');
@@ -265,7 +308,7 @@ export function ConversationStreamV2(): JSX.Element {
       if (txt.toLowerCase().includes(q)) ids.push(m.id);
     }
     return ids;
-  }, [searchQuery, viewMessages]);
+  }, [searchQuery, displayMessages]);
 
   // query 变化时重置当前位置
   useEffect(() => {
@@ -393,15 +436,15 @@ export function ConversationStreamV2(): JSX.Element {
         {/* 左右只留几个字符的 padding，不限宽 —— 用户反馈 max-w-3xl 在宽屏留太多空白。
             左侧时间线 rail = 绝对定位竖线 + 每条消息圆点 marker；`pl-6` 给 marker 让位。*/}
         <div ref={contentRef} className="relative pl-6">
-          {/* timeline 竖线 —— 仅 viewMessages 长度 > 0 时画，避免空状态出现孤立竖线 */}
-          {viewMessages.length > 0 && (
+          {/* timeline 竖线 —— 仅有可见消息时画，避免空状态出现孤立竖线 */}
+          {displayMessages.length > 0 && (
             <div
               className="absolute left-[7px] top-2 bottom-2 w-px bg-border-default/70 dark:bg-zinc-800"
               aria-hidden
             />
           )}
           <div className="space-y-4">
-        {viewMessages.length === 0 && (
+        {displayMessages.length === 0 && (
           currentSessionMsgCount > 0 ? (
             // 有 SDK summary msgCount 但 buffer 空 → history IPC 正在 flight,显示骨架
             // 比 "Send a prompt to start" 更准确,也免去用户盯着空白屏幕等几百毫秒
@@ -412,7 +455,7 @@ export function ConversationStreamV2(): JSX.Element {
             </div>
           )
         )}
-        {viewMessages.map((m) => {
+        {displayMessages.map((m) => {
           const isMatch = matchSet.has(m.id);
           const isCurrent = currentMatchId === m.id;
           const ringClass = isCurrent
@@ -439,10 +482,8 @@ export function ConversationStreamV2(): JSX.Element {
               inner = (
                 <ToolCluster
                   cluster={m}
-                  expanded={expanded.has(m.id)}
+                  expanded={expanded.has(m.id) || clustersForceExpand}
                   onToggle={() => toggleGroup(m.id)}
-                  expandedSubs={expanded}
-                  toggleSub={toggleGroup}
                 />
               );
               markerTone = 'tool';
@@ -451,7 +492,7 @@ export function ConversationStreamV2(): JSX.Element {
               inner = (
                 <ThinkingBlock
                   thinking={m.thinking}
-                  expanded={expanded.has(m.id)}
+                  expanded={expanded.has(m.id) || thinkingForceExpand}
                   onToggle={() => toggleGroup(m.id)}
                 />
               );
@@ -608,9 +649,7 @@ function ThinkingBlock({
         ].join(' ')}
         aria-expanded={expanded}
       >
-        <span aria-hidden className="dark:text-zinc-600 text-zinc-400">
-          {expanded ? '⌄' : '›'}
-        </span>
+        <Caret open={expanded} />
         <span>Thinking · ~{tokens} tokens</span>
       </button>
       {expanded && (
@@ -632,20 +671,24 @@ interface ToolClusterProps {
   cluster: ToolClusterMessage;
   expanded: boolean;
   onToggle: () => void;
-  expandedSubs: Set<string>;
-  toggleSub: (id: string) => void;
+}
+
+/** 4 chars ≈ 1 token —— 跟 ThinkingBlock 同一套估算（避免引 bubbles 造成循环依赖）。 */
+function approxTokens(text: string): number {
+  return Math.max(1, Math.round(text.length / 4));
 }
 
 /**
- * 单层折叠 cluster（v0.1.4 简化）：
- *   外层 "Ran 6 commands · 12s ⌄" → 展开后直接看到所有 ToolCallCard
- *   原来的内层 sub-cluster ▸/⌄ 移除，sub-cluster 标题降级为不可点击的上方一行文字标签
- *   （保留"这一步 LLM 在做什么"的上下文，但不再要求第二次点击才能看到 tools）
- * 状态用 expanded Set<id> 管：只有外层 id（cluster.id）。
+ * 单层折叠 cluster：一次点击 = 全部展开（thinking + 所有 ToolCallCard），不再有内层 ▸/⌄。
  *
- * 历史：v0.1.0 起两层折叠（外+内），灵感来自 Claude Desktop 的 "Ran N commands ⌄ →
- * sub-cluster → tool cards" 形态。用户 2026-06-02 反馈两层不直观（"展开2次才能看到具体跑了什么命令"），
- * 降回单层。如果未来 cluster 巨大（>20 tools）再考虑加回 sub-cluster 折叠。
+ *   折叠态：`› Ran 6 commands · 💭 ~826 tokens`   ← 💭 段是组内折进来的推理总量，没有 thinking 则不显示
+ *   展开态：按 step 顺序，每步先一段紫色 thinking（若有）再该步的工具卡，全部直接可见。
+ *
+ * 设计取舍（2026-06-08 用户反馈）：连续的 thinking→cmd→thinking→cmd 在 normal 视图下太占地方，
+ *   把 thinking 折进工具组收敛成一个 cluster；展开逻辑保持"一次点开看全部"最简单，
+ *   thinking 用整组 token 总量在 header 给个量级提示。
+ *
+ * 历史：v0.1.0 起曾两层折叠（外+内 sub-cluster），用户 2026-06-02 反馈两层不直观，降回单层。
  */
 function ToolCluster({
   cluster,
@@ -658,6 +701,9 @@ function ToolCluster({
   const label =
     cluster.totalTools === 1 ? 'Ran 1 command' : `Ran ${cluster.totalTools} commands`;
   const runningHint = running ? ` · running ${running.toolName}…` : '';
+  // 组内折进来的 thinking 总 token —— header 给个量级提示，让用户知道"这组里藏了多少推理"。
+  // 在 groupTools 里预算好（见 ToolClusterMessage.thinkingTokens），这里直接读。
+  const thinkingTokens = cluster.thinkingTokens;
   // step 标签是否展示：
   //   - syntheticTitle=true ("1 read" 这种 summarizeTools 兜底) 且单 sub-cluster
   //     时省略 —— 跟外层 "Ran 1 command" 信息重复
@@ -676,10 +722,13 @@ function ToolCluster({
         onClick={onToggle}
         className="dark:text-zinc-400 dark:hover:text-zinc-200 text-zinc-600 hover:text-zinc-900 flex items-center gap-1.5"
       >
-        <span aria-hidden className="dark:text-zinc-600 text-zinc-400">
-          {expanded ? '⌄' : '›'}
-        </span>
+        <Caret open={expanded} />
         <span>{label}</span>
+        {thinkingTokens > 0 && (
+          <span className="dark:text-purple-400 text-purple-700">
+            · 💭 ~{thinkingTokens} tokens
+          </span>
+        )}
         {!allDone && <span className="text-amber-500">{runningHint}</span>}
       </button>
       {expanded && (
@@ -688,6 +737,18 @@ function ToolCluster({
             const subRunning = sc.tools.find((t) => t.status === 'running');
             return (
               <div key={sc.id} className="space-y-1.5">
+                {/* 折进来的 thinking：随 cluster 一起展开，无需二次点击。紫色 quote 块对齐 ThinkingBlock 配色。 */}
+                {sc.thinking && (
+                  <div
+                    className={[
+                      'pl-2 border-l text-xs whitespace-pre-wrap',
+                      'dark:border-purple-900/60 dark:text-purple-300/80',
+                      'border-purple-200 text-purple-800',
+                    ].join(' ')}
+                  >
+                    {sc.thinking}
+                  </div>
+                )}
                 {showStepLabel(sc) && (
                   <div className="flex items-start gap-1.5 dark:text-zinc-300 text-zinc-700">
                     <span className="whitespace-pre-wrap break-words">{sc.title}</span>

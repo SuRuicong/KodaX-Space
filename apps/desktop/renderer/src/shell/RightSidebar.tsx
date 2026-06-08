@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
+import { Caret } from '../components/Caret.js';
 import { buildWorkerTree } from './popouts/worker-tree.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
@@ -118,10 +119,8 @@ function Section({ title, defaultOpen = true, popoutKind, children }: SectionPro
             aria-label={open ? `Collapse ${title}` : `Expand ${title}`}
             aria-expanded={open}
           >
-            {/* Chevron up/down — 比 ⌃/⌄ 易辨 */}
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              {open ? <path d="M18 15l-6-6-6 6" /> : <path d="M6 9l6 6 6-6" />}
-            </svg>
+            {/* 统一走 Caret（chevron-right 旋转）：collapsed 指右、expanded 朝下 */}
+            <Caret open={open} />
           </button>
         </div>
       </div>

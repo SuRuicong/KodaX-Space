@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Mode } from './Shell.js';
 import { useAppStore } from '../store/appStore.js';
+import { Caret } from '../components/Caret.js';
 import { canonProjectRoot, type SessionMeta, type RunningSessionInfoT } from '@kodax-space/space-ipc-schema';
 import { SessionContextMenu } from './SessionContextMenu.js';
 import { ProjectContextMenu } from './ProjectContextMenu.js';
@@ -395,10 +396,10 @@ function ProjectTree({
           <button
             type="button"
             onClick={() => toggleProjectExpanded(proj.path, defaultExpanded)}
-            className="text-zinc-500 w-3 flex-shrink-0"
+            className="text-zinc-500 flex-shrink-0"
             aria-label={isExpanded ? 'Collapse project' : 'Expand project'}
           >
-            {isExpanded ? '▾' : '▸'}
+            <Caret open={isExpanded} />
           </button>
           {isRenaming ? (
             <input
@@ -524,7 +525,7 @@ function ProjectTree({
             className="w-full text-left text-[10px] uppercase tracking-wider text-zinc-500 hover:text-zinc-300 px-2 py-1 flex items-center gap-1.5"
             aria-expanded={archivedExpanded}
           >
-            <span aria-hidden>{archivedExpanded ? '▾' : '▸'}</span>
+            <Caret open={archivedExpanded} />
             Archived ({archived.length})
           </button>
           {archivedExpanded && (
@@ -699,10 +700,13 @@ function SessionTree({
         <button
           type="button"
           onClick={onShowMore}
-          className="w-full text-left text-[10px] text-zinc-500 hover:text-zinc-200 italic px-3 py-1"
+          className="w-full text-left text-xs text-zinc-500 hover:text-zinc-200 px-3 py-1 flex items-center gap-1.5"
           aria-label={`Browse all ${rendered.length} sessions in this project`}
         >
-          + {overflowCount} more session{overflowCount === 1 ? '' : 's'}…
+          <span className="w-3 flex items-center justify-center flex-shrink-0 text-base leading-none text-zinc-400" aria-hidden>
+            +
+          </span>
+          <span className="italic">{overflowCount} more session{overflowCount === 1 ? '' : 's'}…</span>
         </button>
       )}
       {ctxMenu && (
@@ -766,6 +770,25 @@ export function buildSessionTreeOrder(
   return out;
 }
 
+/**
+ * SessionRow 行首标识。之前用文字 `·`（fork 用 `⑂`），渲染只有 ~3px 且基线偏移、很难看清
+ * （用户反馈太小，2026-06-08）。改成实心圆点（fork 仍用放大的 `⑂` 字形），尺寸放大到 7px。
+ */
+function SessionBullet({ isFork }: { isFork: boolean }): JSX.Element {
+  if (isFork) {
+    return (
+      <span className="text-zinc-500 text-[13px] leading-none w-3 text-center flex-shrink-0" aria-hidden>
+        ⑂
+      </span>
+    );
+  }
+  return (
+    <span className="w-3 flex items-center justify-center flex-shrink-0" aria-hidden>
+      <span className="w-[7px] h-[7px] rounded-full bg-zinc-500" />
+    </span>
+  );
+}
+
 function SessionRow({
   session,
   depth,
@@ -813,7 +836,7 @@ function SessionRow({
         className={`flex items-center gap-1 text-xs px-2 py-1 rounded bg-surface-3 text-fg-primary`}
         style={{ paddingLeft: padLeft }}
       >
-        <span className="text-zinc-500" aria-hidden>{isFork ? '⑂' : '·'}</span>
+        <SessionBullet isFork={isFork} />
         <RenameInput
           initial={session.title ?? ''}
           onCommit={(v) => void commitRename(v)}
@@ -839,7 +862,7 @@ function SessionRow({
       style={{ paddingLeft: padLeft }}
       title={`${session.title ?? session.sessionId} (double-click to rename)`}
     >
-      <span className="text-zinc-500" aria-hidden>{isFork ? '⑂' : '·'}</span>
+      <SessionBullet isFork={isFork} />
       {flags?.pinned && <span className="text-amber-400 text-[10px]" aria-hidden title="Pinned">📌</span>}
       <span className="truncate flex-1">{session.title ?? 'Untitled session'}</span>
       {flags?.unread && <span className="text-emerald-400 text-[10px]" aria-hidden title="Unread">●</span>}

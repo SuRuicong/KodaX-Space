@@ -11,6 +11,7 @@
 
 import { useState } from 'react';
 import { useAppStore } from '../store/appStore.js';
+import { Caret } from '../components/Caret.js';
 import type { QueuedMessageT, MessageModeT } from '@kodax-space/space-ipc-schema';
 
 const PRIORITY_COLOR: Record<QueuedMessageT['priority'], string> = {
@@ -61,7 +62,7 @@ export function QueueIndicator(): JSX.Element | null {
       >
         <span aria-hidden>⌛</span>
         <span>Queue {total}</span>
-        <span className="text-zinc-500" aria-hidden>›</span>
+        <Caret open={false} className="text-zinc-500" />
       </button>
 
       {open && (

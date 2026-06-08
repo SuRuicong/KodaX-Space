@@ -14,6 +14,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/appStore.js';
+import { useZoomStore, ZOOM_STEP } from '../store/zoomStore.js';
 
 const VIEW_OPTIONS = [
   { key: 'normal' as const, label: 'Normal' },
@@ -33,6 +34,9 @@ export function TranscriptViewMenu(): JSX.Element {
   const setView = useAppStore((s) => s.setTranscriptView);
   const fontSize = useAppStore((s) => s.transcriptFontSize);
   const setFont = useAppStore((s) => s.setTranscriptFontSize);
+  const zoomFactor = useZoomStore((s) => s.factor);
+  const stepZoom = useZoomStore((s) => s.stepZoom);
+  const resetZoom = useZoomStore((s) => s.resetZoom);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
@@ -107,6 +111,41 @@ export function TranscriptViewMenu(): JSX.Element {
                 <span className={f.cls}>{f.label}</span>
               </button>
             ))}
+          </div>
+          {/* 整窗缩放 — 浏览器式 −/百分比/+。点百分比复位 100%。系数全局持久；
+              与 Ctrl+滚轮 / Ctrl+± / Ctrl+0 同源（zoomStore）。注意：这跟上面只缩放
+              transcript 的字号 [Aa] 是两回事——这里是整个 app 缩放。 */}
+          <div className="border-t border-zinc-800 mt-1 pt-1.5 px-3 py-1.5 flex items-center justify-between gap-2">
+            <span className="text-zinc-400">Zoom</span>
+            <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={() => stepZoom(-ZOOM_STEP)}
+                className="w-6 h-6 rounded border border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 flex items-center justify-center text-sm leading-none"
+                title="缩小 (Ctrl+-)"
+                aria-label="Zoom out"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                onClick={resetZoom}
+                className="min-w-[3.25rem] px-1 py-0.5 rounded text-zinc-200 hover:bg-zinc-800 tabular-nums text-center"
+                title="复位 100% (Ctrl+0)"
+                aria-label="Reset zoom to 100%"
+              >
+                {Math.round(zoomFactor * 100)}%
+              </button>
+              <button
+                type="button"
+                onClick={() => stepZoom(ZOOM_STEP)}
+                className="w-6 h-6 rounded border border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 flex items-center justify-center text-sm leading-none"
+                title="放大 (Ctrl+=)"
+                aria-label="Zoom in"
+              >
+                +
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -38,6 +38,7 @@ import { RightSidebar } from './RightSidebar.js';
 import { HelpOverlayController } from './HelpOverlay.js';
 import { CommandPaletteController } from './CommandPalette.js';
 import { ToastContainer } from './ToastContainer.js';
+import { ZoomController } from './ZoomController.js';
 import { UpdateBanner } from '../features/updater/UpdateBanner.js';
 import { useAppStore } from '../store/appStore.js';
 
@@ -315,6 +316,7 @@ export function Shell(): JSX.Element {
         <CommandPaletteController />
       </div>
       <ToastContainer />
+      <ZoomController />
       <UpdateBanner />
     </div>
   );

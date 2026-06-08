@@ -9,6 +9,7 @@
 
 import { useEffect, useState } from 'react';
 import type { FileNodeT } from '@kodax-space/space-ipc-schema';
+import { Caret } from '../../components/Caret.js';
 
 interface FileTreeProps {
   projectRoot: string;
@@ -189,8 +190,8 @@ function FileTreeNode({
         style={{ paddingLeft: padLeft }}
         title={node.path}
       >
-        <span className="w-3 text-zinc-600 text-[10px] inline-block" aria-hidden>
-          {isDir ? (isExpanded ? '▾' : '▸') : ''}
+        <span className="w-4 text-zinc-500 inline-flex justify-center" aria-hidden>
+          {isDir ? <Caret open={isExpanded} /> : null}
         </span>
         <span className="truncate">{node.name}</span>
       </button>

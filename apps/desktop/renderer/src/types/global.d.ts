@@ -34,6 +34,15 @@ declare global {
     ): () => void;
 
     platform: NodeJS.Platform;
+
+    /**
+     * 浏览器式整窗缩放（Chromium webFrame zoom）。get/set 缩放系数（1 = 100%）。
+     * Ctrl+滚轮 / Ctrl+± / Ctrl+0 的交互与持久化在 renderer 的 ZoomController 里。
+     */
+    zoom: {
+      get(): number;
+      set(factor: number): void;
+    };
   }
 
   interface Window {
