@@ -290,7 +290,14 @@ export const projectGitFileDiffChannel = {
   direction: 'invoke',
   input: z.object({
     projectRoot: z.string().min(1).max(4096),
-    path: z.string().min(1).max(4096),
+    // F044 security review HIGH-1: 拒 NUL byte。Linux/macOS libc 把 path 在 NUL 处截断,
+    // 让 isPathInside 检查的字符串跟 fs.open 实际打开的文件不一致 → 可能读到不同文件。
+    // 同 validateProjectRoot:25 的防御。
+    path: z
+      .string()
+      .min(1)
+      .max(4096)
+      .refine((s) => !s.includes('\x00'), { message: 'path must not contain NUL byte' }),
   }),
   output: z.object({
     /** false = 无可显示的 diff;前端显示 reason 文案。*/

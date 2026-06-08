@@ -172,6 +172,16 @@ test('not a git repo: rev-parse --git-dir fails', async () => {
   assert.equal(probe.ok, false);
 });
 
+test('review HIGH-1: schema rejects NUL byte in path', async () => {
+  // 跑 schema parse 验证 zod refine 触发 (不需要真 fs 操作)
+  const { projectGitFileDiffChannel } = await import('@kodax-space/space-ipc-schema');
+  const r = projectGitFileDiffChannel.input.safeParse({
+    projectRoot: '/proj/x',
+    path: 'src/foo\x00bar.ts',
+  });
+  assert.equal(r.success, false, 'NUL byte should be rejected');
+});
+
 test('git autocrlf=false ensures cross-platform deterministic before content', async () => {
   // Windows CI git 默认 autocrlf=true 会把 LF 转 CRLF on checkout 而 commit 时存 LF。
   // 我们的 fixture 在 gitInit 里强制 false,验证 commit 后 git show 返 LF。

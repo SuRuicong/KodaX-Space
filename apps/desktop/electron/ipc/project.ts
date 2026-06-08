@@ -10,7 +10,7 @@ import path from 'node:path';
 import { registerChannel } from './register.js';
 import { validateProjectRoot } from './validate.js';
 import { projectStore } from '../projects/store.js';
-import { isPathInside, toPosixRelative, truncate } from './files-core.js';
+import { resolveInsideProject, toPosixRelative } from './files-core.js';
 import type { ProjectGitStatsDaily } from '@kodax-space/space-ipc-schema';
 
 export function registerProjectChannels(): void {
@@ -435,11 +435,23 @@ export function registerProjectChannels(): void {
     const root = await projectStore.assertAllowed(input.projectRoot);
     const realRoot = await fs.realpath(root);
 
-    // path 进 fs 边界前先校验在 projectRoot 内
-    const trimmedPath = input.path.replace(/^[\\/]+/, '').replace(/[\\/]+$/, '');
-    const target = path.resolve(realRoot, trimmedPath);
-    if (!isPathInside(target, realRoot)) {
-      throw new Error(`path escapes projectRoot: ${truncate(input.path)}`);
+    // F044 review MEDIUM-1 fix: resolveInsideProject 做双 realpath 检查 (lexical +
+    // symlink-resolved 两轮 isPathInside),防 symlink-escape 读 projectRoot 外文件。
+    // 之前 inline 只做 lexical 检查,attacker 在 projectRoot 内放 symlink 指向外面
+    // 任意文件就能让 handler readFile 那个文件返给 renderer。
+    // ENOENT 时 resolveInsideProject return target (尚未存在),deleted file 路径走这条。
+    let target: string;
+    try {
+      target = await resolveInsideProject(root, input.path);
+    } catch (err) {
+      // path escapes / NUL byte 等 → 不暴露原始 path,统一返 no-such-file
+      // (review LOW-1 顺手 fix: 不再回显 input.path 让 caller 反射)
+      return {
+        available: false,
+        before: '',
+        after: '',
+        reason: 'no-such-file' as const,
+      };
     }
     const relPosix = toPosixRelative(target, realRoot);
 
@@ -508,9 +520,10 @@ export function registerProjectChannels(): void {
       };
     }
 
-    // HEAD:<relPosix> 内容. file 在 HEAD 不存在 = untracked. spawn git show 显式拼
-    // git 路径前缀 (`:` 让 git 知道是 file 不是 ref-only)。
-    const showRes = await runGit(realRoot, ['show', `HEAD:${relPosix}`]);
+    // HEAD:<relPosix> 内容. file 在 HEAD 不存在 = untracked.
+    // F044 review MEDIUM-2 fix: relPosix 含 colon 的合法文件名 (e.g. build:output.ts) 让 git
+    // 把 'HEAD:a:b' 当成 revision expression 错误解析。`./` 前缀强制 tree-path 语义。
+    const showRes = await runGit(realRoot, ['show', `HEAD:./${relPosix}`]);
     let before = '';
     let isUntracked = false;
     if (showRes.ok) {

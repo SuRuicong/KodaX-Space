@@ -99,6 +99,17 @@ export async function cleanupOrphanKodaxSpaceDir(
   }
 }
 
+// F044 review MEDIUM-3 fix: log 不能直接打 raw filesystem entry name,因为用户机器上
+// `~/.kodax_space` 可能含敏感命名的文件 (派生自 API key / 凭据 vault 名称)。
+// KODAX_DATA_MARKERS 列表里的字符串是 well-known 安全 (sessions / config.json 等),
+// 直接打 OK; 但 `kept-unknown` 的 sample 来源是用户文件,需脱敏。
+function redactName(name: string): string {
+  // 保留 [A-Za-z0-9._-],其余替成 '?',截到 24 字符;空名兜底
+  if (!name) return '<empty>';
+  const sanitized = name.replace(/[^A-Za-z0-9._-]/g, '?');
+  return sanitized.length > 24 ? sanitized.slice(0, 21) + '...' : sanitized;
+}
+
 /** 给 main.ts 的 wrapper: 跑清理,console 输出结果。Never throws。 */
 export async function cleanupOrphanKodaxSpaceDirWithLog(): Promise<void> {
   const result = await cleanupOrphanKodaxSpaceDir();
@@ -111,13 +122,17 @@ export async function cleanupOrphanKodaxSpaceDirWithLog(): Promise<void> {
       );
       return;
     case 'kept-kodax-data':
+      // matched 来自 KODAX_DATA_MARKERS hardcoded 白名单,安全可直打
       console.warn(
         `[startup] ~/.kodax_space contains KodaX SDK data (${result.matched.join(', ')}); leaving alone.`,
       );
       return;
     case 'kept-unknown':
+      // sample 来自用户文件系统,**脱敏**后打 (review MEDIUM-3)
       console.warn(
-        `[startup] ~/.kodax_space exists but content unrecognized (${result.entries} entries, sample: ${result.sample.join(', ')}); leaving alone.`,
+        `[startup] ~/.kodax_space exists but content unrecognized (${result.entries} entries, sample: ${result.sample
+          .map(redactName)
+          .join(', ')}); leaving alone.`,
       );
       return;
     case 'error':
