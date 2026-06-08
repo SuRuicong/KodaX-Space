@@ -76,6 +76,7 @@ export {
   projectGitStatsChannel,
   projectGitStatusChannel,
   projectGitChangesChannel,
+  projectGitFileDiffChannel,
   projectFileSearchChannel,
   projectGitDiffChannel,
   type Project,

@@ -10,6 +10,7 @@ import path from 'node:path';
 import { registerChannel } from './register.js';
 import { validateProjectRoot } from './validate.js';
 import { projectStore } from '../projects/store.js';
+import { isPathInside, toPosixRelative, truncate } from './files-core.js';
 import type { ProjectGitStatsDaily } from '@kodax-space/space-ipc-schema';
 
 export function registerProjectChannels(): void {
@@ -415,6 +416,122 @@ export function registerProjectChannels(): void {
       };
     }
     return { isGitRepo: true, diff: diffResult.stdout, truncated: false, error: null };
+  });
+
+  // F044 (v0.1.10): project.gitFileDiff — 单文件 working tree vs HEAD diff。
+  //
+  // 跟 files.diff (tool-call cache) 是两条独立语义:tool-call 是"AI 改那一瞬"
+  // 的瞬时 before/after, gitFileDiff 是"当前 working tree vs HEAD". DiffPanel
+  // 优先 tool-call, miss 时 fallback 到本 IPC. 历史 session 永远 fall through
+  // 到本 IPC (cache 不在本进程)。
+  //
+  // 安全:
+  //   - projectStore.assertAllowed 验 projectRoot allowlist
+  //   - resolveInsideProject 同 files.read,防 path traversal
+  //   - spawn git 用 shell:false + 数组 args,不走 shell
+  //   - 1 MB 单 file cap (Monaco diff super-long file 没意义)
+  //   - Binary detection: 读前 8KB 看 NUL byte,跟 git 自己 heuristic 一致
+  registerChannel('project.gitFileDiff', async (input) => {
+    const root = await projectStore.assertAllowed(input.projectRoot);
+    const realRoot = await fs.realpath(root);
+
+    // path 进 fs 边界前先校验在 projectRoot 内
+    const trimmedPath = input.path.replace(/^[\\/]+/, '').replace(/[\\/]+$/, '');
+    const target = path.resolve(realRoot, trimmedPath);
+    if (!isPathInside(target, realRoot)) {
+      throw new Error(`path escapes projectRoot: ${truncate(input.path)}`);
+    }
+    const relPosix = toPosixRelative(target, realRoot);
+
+    // 是 git repo 吗?
+    const isRepoCheck = await runGit(realRoot, ['rev-parse', '--git-dir']);
+    if (!isRepoCheck.ok) {
+      return {
+        available: false,
+        before: '',
+        after: '',
+        reason: 'not-a-git-repo' as const,
+      };
+    }
+
+    // working tree 当前内容 (binary detect 前先读 head 字节)
+    let after = '';
+    let isBinaryDetected = false;
+    let workingTreeExists = true;
+    try {
+      const handle = await fs.open(target, 'r');
+      try {
+        // Binary heuristic: 前 8KB 含 NUL byte = binary
+        const headBuf = Buffer.allocUnsafe(8192);
+        const { bytesRead } = await handle.read(headBuf, 0, 8192, 0);
+        const head = headBuf.subarray(0, bytesRead);
+        if (head.includes(0)) {
+          isBinaryDetected = true;
+        }
+      } finally {
+        await handle.close();
+      }
+      if (!isBinaryDetected) {
+        // 大文件 cap: 超 1 MB 拒绝 (跟 schema MAX 一致)
+        const stat = await fs.stat(target);
+        if (stat.size > 1_048_576) {
+          return {
+            available: false,
+            before: '',
+            after: '',
+            reason: 'file-too-large' as const,
+          };
+        }
+        after = await fs.readFile(target, 'utf-8');
+      }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') {
+        workingTreeExists = false;
+      } else {
+        return {
+          available: false,
+          before: '',
+          after: '',
+          reason: 'no-such-file' as const,
+        };
+      }
+    }
+
+    if (isBinaryDetected) {
+      return {
+        available: false,
+        before: '',
+        after: '',
+        isBinary: true,
+        reason: 'is-binary' as const,
+      };
+    }
+
+    // HEAD:<relPosix> 内容. file 在 HEAD 不存在 = untracked. spawn git show 显式拼
+    // git 路径前缀 (`:` 让 git 知道是 file 不是 ref-only)。
+    const showRes = await runGit(realRoot, ['show', `HEAD:${relPosix}`]);
+    let before = '';
+    let isUntracked = false;
+    if (showRes.ok) {
+      before = showRes.stdout;
+      // git show 返出的 trailing newline 跟文件 raw 一致,不动
+    } else {
+      // 失败的原因可能多种:HEAD 不存在 (空 repo) / file 不在 HEAD (untracked)
+      isUntracked = true;
+    }
+
+    if (!workingTreeExists && !isUntracked) {
+      // deleted file: working tree 没了,HEAD 还在 → before=HEAD,after=''
+    }
+
+    return {
+      available: true,
+      before,
+      after,
+      ...(isUntracked ? { isUntracked: true } : {}),
+      reason: 'ok' as const,
+    };
   });
 
   // project.fileSearch — @path autocomplete 后端

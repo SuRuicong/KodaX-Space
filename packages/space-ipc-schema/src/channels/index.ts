@@ -44,6 +44,7 @@ import {
   projectFileSearchChannel,
   projectGitDiffChannel,
   projectGitChangesChannel,
+  projectGitFileDiffChannel,
 } from './project.js';
 import {
   permissionRequestChannel,
@@ -142,6 +143,7 @@ export const invokeChannels = {
   [projectFileSearchChannel.name]: projectFileSearchChannel,
   [projectGitDiffChannel.name]: projectGitDiffChannel,
   [projectGitChangesChannel.name]: projectGitChangesChannel,
+  [projectGitFileDiffChannel.name]: projectGitFileDiffChannel,
   [permissionAnswerChannel.name]: permissionAnswerChannel,
   [permissionListChannel.name]: permissionListChannel,
   [permissionRevokeChannel.name]: permissionRevokeChannel,

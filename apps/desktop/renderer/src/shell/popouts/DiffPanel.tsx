@@ -7,13 +7,21 @@ import { useEffect, useState } from 'react';
 import { useAppStore } from '../../store/appStore.js';
 import { MonacoDiffViewer } from '../../features/code/MonacoDiffViewer.js';
 
+// F044 (v0.1.10): diff 数据来源标记。
+//   - tool-call: AI write/edit 那一瞬的 before/after (现有 cache 路径,实时 session)
+//   - git-tracked: working tree vs HEAD,已 tracked 文件
+//   - git-untracked: 新加但未 commit (before='')
+type DiffSource = 'tool-call' | 'git-tracked' | 'git-untracked';
+
 export function DiffPanel(): JSX.Element {
   const projectRoot = useAppStore((s) => s.currentProjectPath);
   const lastDiffPath = useAppStore((s) => s.lastDiffPath);
   const clearLastDiffPath = useAppStore((s) => s.clearLastDiffPath);
 
   const [path, setPath] = useState<string | null>(null);
-  const [diff, setDiff] = useState<{ before: string; after: string } | null>(null);
+  const [diff, setDiff] = useState<{ before: string; after: string; source: DiffSource } | null>(
+    null,
+  );
   const [err, setErr] = useState<string | null>(null);
 
   // 接住 store 的 lastDiffPath（tool_call 自动注入）
@@ -27,18 +35,53 @@ export function DiffPanel(): JSX.Element {
   useEffect(() => {
     if (!path || !projectRoot || !window.kodaxSpace) return;
     let cancelled = false;
-    void window.kodaxSpace.invoke('files.diff', { projectRoot, path }).then((r) => {
+
+    // F044: 优先 tool-call cache (现有,语义最精确"AI 改那一瞬"),miss 时 fallback 到 git working tree diff
+    const fetchDiff = async (): Promise<void> => {
+      setErr(null);
+      setDiff(null);
+
+      const cacheR = await window.kodaxSpace!.invoke('files.diff', { projectRoot, path });
       if (cancelled) return;
-      if (r.ok && r.data.available) {
-        setDiff({ before: r.data.before, after: r.data.after });
-        setErr(null);
-      } else if (r.ok) {
-        setDiff(null);
-        setErr('No diff available — tool call cache miss');
-      } else {
-        setErr(`${r.error.code}: ${r.error.message}`);
+      if (cacheR.ok && cacheR.data.available) {
+        setDiff({ before: cacheR.data.before, after: cacheR.data.after, source: 'tool-call' });
+        return;
       }
-    });
+
+      // fallback: git working tree diff
+      const gitR = await window.kodaxSpace!.invoke('project.gitFileDiff', { projectRoot, path });
+      if (cancelled) return;
+      if (gitR.ok && gitR.data.available) {
+        setDiff({
+          before: gitR.data.before,
+          after: gitR.data.after,
+          source: gitR.data.isUntracked ? 'git-untracked' : 'git-tracked',
+        });
+        return;
+      }
+      // 两条路径都 miss,显示 reason 友好文案
+      if (gitR.ok) {
+        switch (gitR.data.reason) {
+          case 'is-binary':
+            setErr('Binary file — inline diff not available');
+            break;
+          case 'file-too-large':
+            setErr('File too large for inline diff (> 1 MB)');
+            break;
+          case 'not-a-git-repo':
+            setErr('Not a git repository — no working-tree diff to show');
+            break;
+          case 'no-such-file':
+            setErr('File not found in working tree');
+            break;
+          default:
+            setErr('No diff available');
+        }
+      } else {
+        setErr(`${gitR.error?.code ?? 'ERR_UNKNOWN'}: ${gitR.error?.message ?? 'unknown'}`);
+      }
+    };
+    void fetchDiff();
     return () => {
       cancelled = true;
     };
@@ -57,10 +100,24 @@ export function DiffPanel(): JSX.Element {
   if (!diff) {
     return <div className="p-3 text-xs text-zinc-500">loading…</div>;
   }
+  // F044: 头部加 source pill 让用户分辨数据来源
+  const sourcePill = (() => {
+    switch (diff.source) {
+      case 'tool-call':
+        return { text: 'Tool call', cls: 'bg-amber-900/40 text-amber-300' };
+      case 'git-tracked':
+        return { text: 'Working tree', cls: 'bg-blue-900/40 text-blue-300' };
+      case 'git-untracked':
+        return { text: 'Untracked', cls: 'bg-emerald-900/40 text-emerald-300' };
+    }
+  })();
   return (
     <div className="h-full flex flex-col">
-      <div className="px-3 py-1 border-b border-zinc-900 text-[11px] text-zinc-500 font-mono truncate flex-shrink-0">
-        {path}
+      <div className="px-3 py-1 border-b border-zinc-900 text-[11px] text-zinc-500 font-mono truncate flex-shrink-0 flex items-center gap-2">
+        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${sourcePill.cls}`}>
+          {sourcePill.text}
+        </span>
+        <span className="truncate">{path}</span>
       </div>
       <div className="flex-1 min-h-0">
         <MonacoDiffViewer path={path} before={diff.before} after={diff.after} />

@@ -273,3 +273,46 @@ export const projectGitChangesChannel = {
     truncated: z.boolean(),
   }),
 } as const;
+
+// F044 (v0.1.10) — git working-tree diff for a single file.
+//
+// 跟 files.diff (tool-call write/edit 缓存的 before/after) 是两条独立语义:
+//   - files.diff:        "AI 改文件那一瞬"的快照, in-memory cache only
+//   - project.gitFileDiff: "当前 working tree vs HEAD"的 git 状态
+//
+// 历史 session 切回去时 files.diff 永远 miss (cache 不在本进程),DiffPanel
+// fallback 到这条;实时 tool-call 仍优先 files.diff (语义更精确)。
+//
+// 上限 1 MB / file —— Monaco diff render 超大文件没意义,提前拒。
+// Binary file 检测 (前 8KB 含 NUL byte) → 拒绝 inline diff,UI 显示"Binary"。
+export const projectGitFileDiffChannel = {
+  name: 'project.gitFileDiff',
+  direction: 'invoke',
+  input: z.object({
+    projectRoot: z.string().min(1).max(4096),
+    path: z.string().min(1).max(4096),
+  }),
+  output: z.object({
+    /** false = 无可显示的 diff;前端显示 reason 文案。*/
+    available: z.boolean(),
+    /** HEAD 上的内容;untracked file → ''。 */
+    before: z.string().max(1_048_576),
+    /** working tree 当前内容;deleted file → ''。 */
+    after: z.string().max(1_048_576),
+    /** true = file 在 working tree 存在但不在 HEAD (新加未 commit)。 */
+    isUntracked: z.boolean().optional(),
+    /** true = binary file (含 NUL byte 等)。available 同步 false。 */
+    isBinary: z.boolean().optional(),
+    /** available=false 时给前端精准文案的 hint。 */
+    reason: z
+      .enum([
+        'ok',
+        'file-too-large',
+        'is-binary',
+        'not-a-git-repo',
+        'no-such-file',
+        'git-error',
+      ])
+      .optional(),
+  }),
+} as const;
