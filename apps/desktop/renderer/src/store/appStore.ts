@@ -225,6 +225,12 @@ interface AppState {
   leftSidebarWidth: number;
   rightSidebarWidth: number;
   /**
+   * v0.1.9 fix — Shell.tsx activePopout state 的 mirror (string | null)。
+   * RightSidebar Section 的 ⤢ 按钮读它,当前 kind 跟 active 一致就显 "Close popout" 否则
+   * "Open in full panel" — 实现 toggle 行为。不持久化(临时 UI state)。
+   */
+  activePopoutKind: string | null;
+  /**
    * KX-I-02 Smart Popout Director — 是否启用"根据 session event 自动展开 plan/diff/tasks
    * popout"。默认开;用户在 Preferences 里可关。持久化 localStorage。
    */
@@ -392,6 +398,8 @@ interface AppState {
   setLeftSidebarWidth(px: number): void;
   setRightSidebarWidth(px: number): void;
 
+  /** v0.1.9: Shell 同步 active popout 字符串到 store, 给 RightSidebar Section 用。 */
+  setActivePopoutKind(kind: string | null): void;
   /** KX-I-02: 切 smart popout director 总开关。立即写 localStorage。 */
   setSmartPopoutEnabled(enabled: boolean): void;
   /** KX-I-02: 标记某 (session, kind) 已被 promote 过(或用户主动开/关过),不再 auto。 */
@@ -607,6 +615,8 @@ export const useAppStore = create<AppState>((set) => ({
   // 2026-06: 默认对齐 Codex 桌面端 — 左 260, 右 320。坏值（NaN / <100 / >800）退回默认。
   leftSidebarWidth: clampSidebarWidth(parseInt(lsGet('kodax-space.leftSidebarWidth') ?? '', 10), 260),
   rightSidebarWidth: clampSidebarWidth(parseInt(lsGet('kodax-space.rightSidebarWidth') ?? '', 10), 320),
+  // v0.1.9 fix: Shell activePopout 镜像 (临时 UI state,不持久化)
+  activePopoutKind: null,
   // KX-I-02: smart director 默认 on。"0" 表示用户主动关过。
   smartPopoutEnabled: lsGet('kodax-space.smartPopoutEnabled') !== '0',
   promotedPopoutsBySession: {},
@@ -1085,6 +1095,8 @@ export const useAppStore = create<AppState>((set) => ({
     lsSet('kodax-space.rightSidebarWidth', String(clamped));
     set({ rightSidebarWidth: clamped });
   },
+
+  setActivePopoutKind: (kind) => set({ activePopoutKind: kind }),
 
   setSmartPopoutEnabled: (enabled) => {
     lsSet('kodax-space.smartPopoutEnabled', enabled ? '1' : '0');

@@ -58,6 +58,10 @@ interface SectionProps {
 function Section({ title, defaultOpen = true, popoutKind, children }: SectionProps): JSX.Element {
   const [open, setOpen] = useState(defaultOpen);
   const requestPopout = useAppStore((s) => s.requestPopout);
+  // v0.1.9 fix: ⤢ 改 toggle —— 当前 popout 已经是 popoutKind 时再点关掉,否则打开。
+  const activePopoutKind = useAppStore((s) => s.activePopoutKind);
+  const setActivePopoutKind = useAppStore((s) => s.setActivePopoutKind);
+  const isThisPopoutActive = popoutKind !== undefined && activePopoutKind === popoutKind;
   return (
     <section className="border-b border-border-default/60">
       <div className="w-full px-3 py-2 flex items-center justify-between text-[11px] uppercase tracking-wider text-fg-muted">
@@ -69,29 +73,55 @@ function Section({ title, defaultOpen = true, popoutKind, children }: SectionPro
         >
           <span>{title}</span>
         </button>
-        <div className="flex items-center gap-1">
+        {/* v0.1.9 fix: 按钮加大点击区 (w/h 22px) + 间距,换 Lucide-style SVG icon 取代
+            难辨的 ⤢ / ⌃ / ⌄ Unicode 字符。activePopout 当前已经是本 kind 时 ⤢ 切到 ×
+            实现"再点关闭"行为。 */}
+        <div className="flex items-center gap-0.5 -mr-1">
           {popoutKind && (
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                requestPopout(popoutKind);
+                if (isThisPopoutActive) {
+                  // Shell 监听 store 不太顺手关 popout (它是 useState), 这里走 setActivePopoutKind(null)
+                  // + Shell.tsx 加 useEffect 监听 store 同步关。下面 Shell 改动: 双向同步。
+                  setActivePopoutKind(null);
+                } else {
+                  requestPopout(popoutKind);
+                }
               }}
-              className="text-fg-muted hover:text-fg-primary text-[12px]"
-              title="Open in full panel"
-              aria-label={`Open ${title} in popout`}
+              className="w-5 h-5 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
+              title={isThisPopoutActive ? 'Close popout' : 'Open in full panel'}
+              aria-label={isThisPopoutActive ? `Close ${title} popout` : `Open ${title} in popout`}
+              aria-pressed={isThisPopoutActive}
             >
-              ⤢
+              {isThisPopoutActive ? (
+                // X icon (close)
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              ) : (
+                // Expand-corner icon (popout)
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M15 3h6v6" />
+                  <path d="M10 14L21 3" />
+                  <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
+                </svg>
+              )}
             </button>
           )}
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="text-fg-muted hover:text-fg-primary text-[10px]"
-            aria-hidden
-            tabIndex={-1}
+            className="w-5 h-5 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
+            title={open ? 'Collapse section' : 'Expand section'}
+            aria-label={open ? `Collapse ${title}` : `Expand ${title}`}
+            aria-expanded={open}
           >
-            {open ? '⌃' : '⌄'}
+            {/* Chevron up/down — 比 ⌃/⌄ 易辨 */}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              {open ? <path d="M18 15l-6-6-6 6" /> : <path d="M6 9l6 6 6-6" />}
+            </svg>
           </button>
         </div>
       </div>

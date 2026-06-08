@@ -141,8 +141,23 @@ export function Shell(): JSX.Element {
     document.body.classList.add(cls);
     return () => document.body.classList.remove(cls);
   }, []);
-  // popout：null 表示无 popout，按右上按钮切换
+  // popout：null 表示无 popout，按右上按钮切换。
+  // v0.1.9 fix: 同步到 store activePopoutKind,让 RightSidebar Section 的 ⤢ 按钮能判断
+  // 当前是否已激活 → 实现 "再点关闭" toggle 行为 (用户反馈 ⤢ 应当 toggle 不是 one-way)。
   const [activePopout, setActivePopoutRaw] = useState<PopoutKind | null>(null);
+  const setActivePopoutKindInStore = useAppStore((s) => s.setActivePopoutKind);
+  const activePopoutKindFromStore = useAppStore((s) => s.activePopoutKind);
+  useEffect(() => {
+    setActivePopoutKindInStore(activePopout);
+  }, [activePopout, setActivePopoutKindInStore]);
+  // 双向同步: 其它组件 (RightSidebar Section ⤢) setActivePopoutKind(null) → 关 popout。
+  // 守门: 仅当 store 跟本地 state 不一致时切,避免上面那个 effect 写 store 后立刻被读回触发再 set。
+  useEffect(() => {
+    if (activePopoutKindFromStore !== activePopout) {
+      setActivePopoutRaw(activePopoutKindFromStore as PopoutKind | null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePopoutKindFromStore]);
 
   // KX-I-02: 用户手动切 popout (CommandToolbar / RightSidebar ⤢ / slash command) 时,
   // **顺手**把该 (session, kind) 标 promoted —— 让 director 不会下一秒再"自动"打开同一个

@@ -291,6 +291,17 @@ const TOOL_NAME_COLOR: Record<string, string> = {
   glob:  'dark:text-emerald-300 text-emerald-700',
 };
 
+// v0.1.9 fix: 文件修改类工具默认展开 — 用户期望对话流里直接看到 diff 摘要 (path + ±N),
+// 不用再点一次卡片才看到。其它工具 (bash / grep / read 等) 保持默认折叠避免噪音。
+// ToolDiffView 自己还有第二层折叠 — Monaco 大块 viewer 仍点开才加载,不影响性能。
+const FILE_MUTATION_TOOLS_DEFAULT_EXPANDED: ReadonlySet<string> = new Set([
+  'write',
+  'edit',
+  'multi_edit',
+  'str_replace',
+  'insert_after_anchor',
+]);
+
 export function ToolCallCard({
   toolName,
   input,
@@ -298,7 +309,9 @@ export function ToolCallCard({
   progress,
   status,
 }: Extract<ConversationMessage, { kind: 'tool_call' }>): JSX.Element {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(() =>
+    FILE_MUTATION_TOOLS_DEFAULT_EXPANDED.has(toolName),
+  );
   const [showFullResult, setShowFullResult] = useState(false);
   // showFullInput / inputPretty / inputCollapse 状态已搬进 ToolEditInputView —
   // OC-21 之后 raw-JSON fallback 由那边统一处理
