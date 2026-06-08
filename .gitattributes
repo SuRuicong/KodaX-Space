@@ -1,0 +1,15 @@
+# v0.1.9 release-gate fix: index.html 强制 LF 跨平台。
+#
+# CSP drift guard test (apps/desktop/electron/test/csp-inline-hash.test.ts) 把
+# index.html 的 inline <script> innerHTML sha256-base64 算出来跟 main.ts 的
+# THEME_BOOTSTRAP_INLINE_HASH 常量比对。如果 Windows checkout 时 git 把 LF 转 CRLF,
+# hash 算出来跟 Linux/macOS 不一样 → 测试挂 + **更危险**: prod electron-builder
+# 在 Windows leg 上打包的 index.html 也是 CRLF → Chromium 用 \r\n 内容算 CSP hash
+# 但 main.ts 注入的 hash 是 LF 算的 → CSP "Refused to execute inline script"
+# → renderer 白屏 (v0.1.7 同类回归).
+#
+# Force LF 在所有平台的 checkout / build 中,跟 hash 计算口径一致。
+apps/desktop/index.html text eol=lf
+
+# 同理: 任何 CSP / hash 类源也锁 LF (没有就保持默认 git autocrlf 行为)
+apps/desktop/electron/csp-config.ts text eol=lf
