@@ -252,9 +252,10 @@ app.on('open-file', (event, filePath) => {
 });
 
 app.whenReady().then(async () => {
-  // Minimal application menu — 仅 View / Window，保留 DevTools / Reload / Zoom /
-  // Fullscreen 等开发与可访问性入口。其它（File / Edit / Help 等）我们没有真实操作可放，
-  // 不构造菜单避免视觉噪音。
+  // Minimal application menu — App(mac) / Edit / View / Window。
+  // Edit 菜单是 macOS 上 Cmd+C/V/X/A/Z 等编辑快捷键能工作的必要条件（经 role 分发），
+  // 不构造则这些快捷键在 mac 上完全失效；Win/Linux 由 Chromium 原生处理，菜单仅作展示。
+  // File / Help 等没有真实操作，不构造避免视觉噪音。
   //
   // Mac 上 macOS 强制顶部 menubar；Windows / Linux 上呈现为窗口顶部菜单条。
   const isMac = process.platform === 'darwin';
