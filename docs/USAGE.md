@@ -1,11 +1,17 @@
-# KodaX Space — 使用指南 (v0.1.6 alpha)
+# KodaX Space — 使用指南 (v0.1.9)
 
+> 文档对齐 v0.1.9 release（2026-06-08）。v0.1.10 in planning：F044 git working-tree diff popout + chore 清理 `~/.kodax_space` 孤儿目录。
 
 KodaX Space 是 KodaX SDK 的桌面客户端。设计目标：**不要让用户在 Space 和 KodaX CLI 之间重复配置**。绝大多数 KodaX CLI 已经配好的东西，Space 启动后会自动认。
 
 ## 1. 启动
 
-目前没有打好的安装包，开发期请从源码起：
+GitHub Release 已有打好的 unsigned installer（Win NSIS .exe / macOS .dmg / Linux AppImage + deb）：
+<https://github.com/icetomoyo/KodaX-Space/releases/latest>
+
+首启 SmartScreen / Gatekeeper 警告需手动 Open 接受（Space 不走公开签名 Beta 路径）。
+
+开发期从源码起：
 
 ```bash
 git clone https://github.com/icetomoyo/KodaX-Space.git
@@ -104,7 +110,33 @@ SDK 0.7.42 的 `/session` 模块统一管理持久化。KodaX CLI 跑过的 sess
    - `/mode auto` — 走 `auto-rules.jsonc` 自动判
    - `/mode plan` — 只读
 
-## 4. v0.1.7 新功能速览
+## 4. v0.1.9 新功能速览
+
+### 4.0 图片粘贴（多模态输入）
+
+输入框直接 Ctrl+V 粘贴 PNG/JPEG/WEBP 截图。缩略图 chip 显示在 textarea 上方,× 可删,8 张/turn × 6 MiB/张 上限。发送时 SDK `KodaXContextOptions.inputArtifacts` 自动拼成 multimodal content block 喂给 provider。
+
+落盘位置: `app.getPath('temp')/kodax-space/clipboard/<sessionId>/<ts>.png`,session 删除时 best-effort 清理。
+
+### 4.0.1 Smart Popout Director
+
+Session 首次出现下列信号时,右侧对应 popout **自动展开一次** (per session × per kind 只一次,不打扰):
+
+| 信号 | 自动开 |
+|--|--|
+| `todo_update`(items > 0) | Plan popout |
+| `tool_start` 是 write/edit/multi_edit/str_replace/insert_after_anchor | Diff popout |
+| `managed_task_status.activeWorkerId` | Tasks popout |
+
+优先级 tasks > plan > diff (一帧多触发取一个)。用户已开别的 popout 不抢,手动开/关也算"已处理"不再 auto-open。Preferences 里可关 director 总开关。
+
+### 4.0.2 项目拖排 + 可调侧栏 (Codex parity)
+
+- 左侧栏项目 row HTML5 DnD 拖排,顺序持久化 lsKey;current project 仍 pin 顶
+- "Archived (N)" 折叠状态持久化
+- 左右侧栏 1px 视觉/4px 命中区 ResizeHandle 可拖,默认 260/320px,上下限 180-520,双击 reset / Esc 取消
+- aside 默认基础字号 [13px] 对齐 Codex 视觉
+- 项目 session 默认显示 8 条,超出 "+N more" 弹 ProjectSessionPicker overlay 全量搜索
 
 ### 4.1 内置终端（多 tab）
 
@@ -145,7 +177,7 @@ Preview popout（右上 Toolbar 第 1 个图标）输入文件路径自动按 ex
 
 3 个 viewer 都是 **lazy 加载** — 不点开对应文件就不下载依赖；main bundle 不受影响。
 
-## 5. Slash 命令清单 (v0.1.7 builtin)
+## 5. Slash 命令清单 (v0.1.9 builtin)
 
 | 命令 | 作用 |
 |---|---|
@@ -160,16 +192,19 @@ Preview popout（右上 Toolbar 第 1 个图标）输入文件路径自动按 ex
 
 除此之外 `/` 触发命令搜索 popover — F035 已经把 SDK skills 也合到这个 picker 里，可以同时搜内建命令 + skill。
 
-## 6. 已知限制 (v0.1.7)
+## 6. 已知限制 (v0.1.9)
 
+- **历史 session 右侧 Changes 点文件**: 当前只查 tool-call cache,历史 session 永远 "No diff available" → **v0.1.10 F044 加 git working-tree fallback**
+- **图片粘贴 + queued path**: SDK MessageQueue 当前只接 prompt string,turn 跑中粘图发送会 fail-loud,需等 turn 完。SDK 暴露 enqueueWithArtifacts 后改通
+- **图片拖拽 / "+attach image" 按钮**: 当前 OC-31 只接 clipboard.paste,drag-drop / file picker 后续 polish
 - **自定义 provider UI 不显示**: KodaX `customProviders[]` 已在 SDK runtime 注册（用 `/provider <name>` 切），但 Providers 面板没列出它们。原因：SDK shape 与 Space schema 不兼容，UI 同步需 schema breaking + 数据迁移 (deferred)
 - **User commands**: KodaX `~/.kodax/commands/` 暂不在 Space 显示。需要适配 SlashCommandDef ↔ KodaXCommand 两个 shape (deferred)
 - **MCP 启停**: v0.1.5 起已支持（F039 完整版），如不工作请检查 KodaX SDK 版本 ≥ 0.7.45
 - **model 默认值不读 KodaX config**: 因为跨 provider 时 model 名通常对不上，session 创建后手动 `/model` 切。后续可能做 provider×model 映射
 - **打包安装**: 不签名（KodaX Space 是自家工具不走公开 Beta）；OS 首启 Gatekeeper / SmartScreen 警告需手动 Open 接受
-- **F015 Repointel warm API**: chip 显示 trace OK，但 standalone warm 入口未实现（留 v0.1.8）
+- **F015 Repointel warm API**: chip 显示 trace OK，但 standalone warm 入口未实现（留待 SDK 暴露 warm API）
 - **F017 CLI ↔ Space teleport**: 没实现（等 KodaX SDK 暴露 session handoff API）
-- **F018 Quick Ask 不完全符合 PRD**: 当前实现走临时 session + plan mode，PRD 期望 sideQuery API（不留任何痕迹）；留 v0.1.8 重做
+- **F018 Quick Ask vs PRD**: 当前实现走临时 session + plan mode，PRD 期望 sideQuery API（不留任何痕迹）；等 SDK sideQuery 改通
 
 ## 7. 报问题
 
