@@ -1,6 +1,7 @@
 # KodaX Space Feature List
 
-> Last Updated: 2026-06-07 (v0.1.8 work-in-progress：7 项已 ship 到 main，等 KodaX SDK 0.7.46 publish 后 bump + tag。
+> Last Updated: 2026-06-08 (v0.1.9 released as合并 release; v0.1.10 planning: F044 git diff popout + chore: 清理 ~/.kodax_space 孤儿目录。
+> 2026-06-07 (v0.1.8 work-in-progress：7 项已 ship 到 main，等 KodaX SDK 0.7.46 publish 后 bump + tag。
 > v0.1.8 内容：CSP inline-script hash 修复 / HelpOverlay 跨平台快捷键显示 / OC-25 代码块复制 (已存在) /
 > release pipeline renderer-boot last gate / F043 项目级 contextmenu (rename/archive/remove) /
 > OC-21 ToolRegistry tool 卡可扩展渲染 / KX-I-05 智能权限批处理 modal。)
@@ -50,6 +51,7 @@
 | 026 | ⌘Shift+P 命令面板（JS fuzzy MVP） | New | High | v0.1.7 | Completed | [v0.1.4.md#026](features/v0.1.4.md#feature_026-shiftp-命令面板js-fuzzy-mvp) |
 | 042 | NAPI native-helpers（合并 F014 tokenizer + F025 diff + F026b fuzzy） | Refactor | Low | v0.1.x+ | Deferred | [v0.1.4.md#042](features/v0.1.4.md#feature_042-napi-native-helpers合并版) |
 | 043 | 项目级 contextmenu（rename / archive / remove from Space） — codex 形态对齐 | New | High | v0.1.8 | Completed | [v0.1.8.md#043](features/v0.1.8.md#feature_043-项目级-contextmenu) |
+| 044 | 右侧 Changes 点文件打开 git working-tree diff popout | Enhancement | High | v0.1.10 | Planned | [v0.1.10.md#feature_044](features/v0.1.10.md#feature_044-右侧-changes-点文件打开-git-working-tree-diff-popout) |
 | ~~027~~ | ~~代码签名 + notarize~~ — 2026-06-05 移除，KodaX Space 不走"陌生人公开 Beta"路径 | ~~Internal~~ | — | — | Dropped | — |
 | ~~028~~ | ~~隐私政策 + 文档站~~ — 同上 | ~~Internal~~ | — | — | Dropped | — |
 | 029 | Permission Mode canonical 3 + Auto engine 子档 | Refactor | Critical | v0.1.0-alpha.1 | Completed | [v0.1.0.md#029](features/v0.1.0.md#feature_029-permission-mode-canonical-3--auto-engine-子档) |
