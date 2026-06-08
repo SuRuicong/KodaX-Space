@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ConversationMessage } from '../composeMessages.js';
 import { Markdown } from './Markdown.js';
+import { Caret } from '../../../components/Caret.js';
 // OC-21: side-effect import 让内置 tool renderers (write/edit/multi_edit) 注册到 registry
 import './toolRenderers.js';
 import { getToolInputRenderer, getToolResultRenderer } from './toolRegistry.js';
@@ -240,9 +241,7 @@ export function AssistantBubble({
             'text-purple-700 hover:text-purple-900',
           ].join(' ')}
         >
-          <span aria-hidden className="dark:text-zinc-600 text-zinc-400">
-            {showThinking ? '⌄' : '›'}
-          </span>
+          <Caret open={showThinking} />
           <span>Thinking (~{approxTokens(thinking)} tokens)</span>
         </button>
       )}
@@ -332,7 +331,7 @@ export function ToolCallCard({
         onClick={() => setExpanded((v) => !v)}
         className="w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-zinc-900/40 rounded"
       >
-        <span className="text-zinc-500">{expanded ? '▼' : '▶'}</span>
+        <Caret open={expanded} className="text-zinc-500" />
         <span className={`font-semibold ${toolNameColor}`}>{toolName}</span>
         <span className="text-zinc-400 truncate flex-1">{argSummary}</span>
         <StatusBadge status={status} />

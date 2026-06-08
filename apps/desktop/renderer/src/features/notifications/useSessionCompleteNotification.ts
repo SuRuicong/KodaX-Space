@@ -53,13 +53,28 @@ export function useSessionCompleteNotification(): void {
     }
   }, [userMessagesBySession]);
 
-  // 2) 监听 events 末尾 → 发现 session_complete / session_error 时计算
+  // 2) 监听 events 末尾 → 发现 session_complete / session_error 时计算。
+  //
+  // v0.1.10 bug fix: 用户打开已有 session 时不停弹 "Session done · 46h 6m" 通知。
+  // 根因: session.history IPC 拉历史 → prependSessionHistory 把 N 条历史 events
+  // (含若干 session_complete) 全塞 eventsBySession[sid]。lastNotifiedEventIdxRef 是
+  // in-memory ref, 进程重启就丢 → 首次见到 sid 时 lastIdx=-1 → 从 0 扫所有 events →
+  // **每条历史 session_complete 都触发通知** (用 history user msg.sentAt 算 elapsed,
+  // 跟 Date.now() 差很大 → 远超 60s threshold → 通过 → 弹通知)。
+  //
+  // 修法: 首次见到该 sid 时把 cursor 调到末尾, 跳过 history 回放阶段产生的所有 events,
+  // 只对后续真正新增的 events 触发通知。
   useEffect(() => {
     for (const [sid, events] of Object.entries(eventsBySession)) {
       if (events.length === 0) continue;
+      if (!lastNotifiedEventIdxRef.current.has(sid)) {
+        // 首次见到 sid: 把 cursor 直接调到末尾, 跳过 history replay (和首屏已有的
+        // in-flight events)。后续 events 增长才会被检测。
+        lastNotifiedEventIdxRef.current.set(sid, events.length - 1);
+        continue;
+      }
       const lastNotifiedIdx = lastNotifiedEventIdxRef.current.get(sid) ?? -1;
-      // 从上次通知的位置向后扫，避免历史 complete 也被推通知
-      for (let i = Math.max(0, lastNotifiedIdx + 1); i < events.length; i++) {
+      for (let i = lastNotifiedIdx + 1; i < events.length; i++) {
         const ev = events[i];
         if (ev.kind !== 'session_complete' && ev.kind !== 'session_error') continue;
         lastNotifiedEventIdxRef.current.set(sid, i);

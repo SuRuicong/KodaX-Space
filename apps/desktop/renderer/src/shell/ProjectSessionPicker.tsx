@@ -124,6 +124,17 @@ export function ProjectSessionPicker({
     <div
       className="fixed inset-0 z-[60] flex items-start justify-center pt-24 bg-black/40 backdrop-blur-sm"
       onClick={onClose}
+      // v0.1.10 fix: window-level keydown 在某些状态下可能被其他 modal 抢走或卸载竞争,
+      // 直接给 overlay 容器加 div 级 onKeyDown 兜底 — 用户在 picker 内部按 Esc 永远 work。
+      // tabIndex 让 div 可接收 keyboard event (即便用户点 list 让 input 失焦也行)。
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          onClose();
+        }
+      }}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-label={`Sessions in ${projectName}`}
