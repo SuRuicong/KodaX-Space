@@ -14,6 +14,7 @@
 // (KodaX 已经恢复正常 retry 后继续了)。
 
 import { useEffect, useRef, useState } from 'react';
+import { Timer, RotateCw } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 
@@ -127,7 +128,7 @@ export function RetryBanner(): JSX.Element | null {
         role="status"
         aria-live="polite"
       >
-        <span aria-hidden>⏱</span>
+        <Timer className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} aria-hidden />
         <span>
           {reasonLabel}
           {banner.provider ? ` by ${banner.provider}` : ''} · retrying in {remainSec}s
@@ -150,7 +151,7 @@ export function RetryBanner(): JSX.Element | null {
       role="status"
       aria-live="polite"
     >
-      <span aria-hidden>↻</span>
+      <RotateCw className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} aria-hidden />
       <span>Provider recovery: {banner.recoveryAction}</span>
       <span className="text-sky-700/80 dark:text-sky-300/60 ml-auto">
         attempt {banner.attempt}/{banner.maxAttempts}

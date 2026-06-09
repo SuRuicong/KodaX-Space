@@ -211,7 +211,7 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
 
   return (
     <div
-      className="absolute left-0 bottom-full mb-1 w-60 bg-surface-2 border border-border-default rounded shadow-xl py-1 text-xs z-50"
+      className="absolute left-0 bottom-full mb-1 w-60 bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 text-xs z-50"
       onMouseLeave={onClose}
     >
       <AttachRow icon="📎" label="Add files or photos" onClick={() => void addFiles()} />
@@ -233,7 +233,7 @@ function SubMenuFrame({
   children: React.ReactNode;
 }): JSX.Element {
   return (
-    <div className="absolute left-0 bottom-full mb-1 w-72 bg-surface-2 border border-border-default rounded shadow-xl py-1 z-50 max-h-80 overflow-y-auto">
+    <div className="absolute left-0 bottom-full mb-1 w-72 bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 z-50 max-h-80 overflow-y-auto">
       <div className="px-3 py-1 text-[11px] uppercase tracking-wider text-fg-muted flex items-center gap-2 sticky top-0 bg-surface-2">
         <button
           type="button"

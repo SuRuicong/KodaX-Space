@@ -142,7 +142,7 @@ export function AtPathPopover({
   if (!open || matches.length === 0) return null;
 
   return (
-    <div className="absolute left-1 bottom-full mb-2 w-80 max-h-72 overflow-auto bg-surface-2 border border-border-default rounded shadow-xl text-[12px] z-50">
+    <div className="absolute left-1 bottom-full mb-2 w-80 max-h-72 overflow-auto bg-surface-4 border border-border-default rounded-lg shadow-xl text-[12px] z-50">
       <div className="px-2 py-1 text-[11px] text-fg-muted uppercase tracking-wider border-b border-border-default/60">
         @ Files {token?.query ? `· "${token.query}"` : ''}
       </div>

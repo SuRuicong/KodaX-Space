@@ -78,7 +78,7 @@ export function RecentsFilterMenu({
   return (
     <div
       ref={ref}
-      className="absolute left-2 top-8 w-56 bg-surface-2 border border-border-default rounded shadow-xl py-1 text-xs z-50"
+      className="absolute left-2 top-8 w-56 bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 text-xs z-50"
       role="menu"
     >
       <FilterRow

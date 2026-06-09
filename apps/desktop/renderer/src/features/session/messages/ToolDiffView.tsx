@@ -67,7 +67,7 @@ export function ToolDiffView(props: ToolDiffViewProps): JSX.Element {
   const name = basenameOf(props.path);
 
   return (
-    <div className="rounded border dark:border-border-default border-border-default overflow-hidden">
+    <div className="rounded border border-border-default overflow-hidden">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
@@ -90,21 +90,17 @@ export function ToolDiffView(props: ToolDiffViewProps): JSX.Element {
             重排了" —— 说 "no change" 会误导用户（Monaco 展开后会显示真实 diff）。
             用 ~reordered 跟"真没改"区分。 */}
         {summary.plus === 0 && summary.minus === 0 && props.before !== props.after && (
-          <span className="dark:text-fg-muted text-fg-muted">~reordered</span>
+          <span className="text-fg-muted">~reordered</span>
         )}
         {summary.plus === 0 && summary.minus === 0 && props.before === props.after && (
-          <span className="dark:text-fg-muted text-fg-muted">no change</span>
+          <span className="text-fg-muted">no change</span>
         )}
       </button>
       {expanded && (
         // 固定 maxHeight，内部滚动；DiffEditor height=100% 撑满父容器
         // Monaco 内部 horizontal scroll 也自带，长行不会撑爆 layout
         <div className="dark:bg-[#09090b] bg-white" style={{ height: '50vh', maxHeight: 480 }}>
-          <Suspense
-            fallback={
-              <div className="text-xs dark:text-fg-muted text-fg-muted p-2">loading diff…</div>
-            }
-          >
+          <Suspense fallback={<div className="text-xs text-fg-muted p-2">loading diff…</div>}>
             <MonacoDiffViewer path={props.path} before={props.before} after={props.after} />
           </Suspense>
         </div>

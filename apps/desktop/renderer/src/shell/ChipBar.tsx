@@ -10,6 +10,7 @@
 //   - Repointel chip (F015) → 当前 mode (auto/oss/premium-*) + 最近 traces 列表
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { MapPin, Folder, GitBranch, Check, Settings } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
 import { SettingsModal } from '../features/settings/SettingsModal.js';
 
@@ -52,16 +53,14 @@ function LocalChip(): JSX.Element {
         className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-2 border border-border-default hover:bg-hover-bg"
         title="Execution location"
       >
-        <span aria-hidden>📍</span>
+        <MapPin className="w-3 h-3 text-fg-muted" strokeWidth={2} aria-hidden />
         <span>Local</span>
       </button>
       {open && (
-        <div className="absolute left-0 bottom-full mb-1 w-48 bg-surface-2 border border-border-default rounded shadow-xl py-1 z-50">
+        <div className="absolute left-0 bottom-full mb-1 w-48 bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 z-50">
           <div className="px-3 py-1.5 hover:bg-hover-bg flex items-center gap-2 text-xs text-fg-primary">
             <span>Local</span>
-            <span className="text-emerald-500 ml-auto" aria-hidden>
-              ✓
-            </span>
+            <Check className="w-3.5 h-3.5 text-ok ml-auto" strokeWidth={2.5} aria-hidden />
             <button
               type="button"
               onClick={(e) => {
@@ -69,11 +68,11 @@ function LocalChip(): JSX.Element {
                 setSettingsOpen(true);
                 setOpen(false);
               }}
-              className="text-fg-muted hover:text-fg-primary ml-1"
+              className="text-fg-muted hover:text-fg-primary ml-1 inline-flex items-center"
               title="Settings — change default workspace"
               aria-label="Open settings"
             >
-              ⚙
+              <Settings className="w-3.5 h-3.5" strokeWidth={1.75} />
             </button>
           </div>
         </div>
@@ -141,11 +140,11 @@ function ProjectChip({
         className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-2 border border-border-default hover:bg-hover-bg max-w-[200px]"
         title={projectPath}
       >
-        <span aria-hidden>📁</span>
+        <Folder className="w-3 h-3 text-fg-muted" strokeWidth={2} aria-hidden />
         <span className="truncate">{projectName}</span>
       </button>
       {open && (
-        <div className="absolute left-0 bottom-full mb-1 w-56 bg-surface-2 border border-border-default rounded shadow-xl py-1 z-50">
+        <div className="absolute left-0 bottom-full mb-1 w-56 bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 z-50">
           <div className="px-3 py-1 text-fg-muted text-[11px] uppercase tracking-wider">Recent</div>
           {projects.length === 0 ? (
             <div className="px-3 py-1 text-[11px] text-fg-muted">No recent projects yet.</div>
@@ -164,9 +163,7 @@ function ProjectChip({
                 >
                   <span className="truncate flex-1">{p.name}</span>
                   {isCurrent && (
-                    <span className="text-emerald-500" aria-hidden>
-                      ✓
-                    </span>
+                    <Check className="w-3.5 h-3.5 text-ok" strokeWidth={2.5} aria-hidden />
                   )}
                 </button>
               );
@@ -193,7 +190,7 @@ function BranchChip(): JSX.Element {
       className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-2 border border-border-default"
       title="Branch detection — v0.1.x (git branches dropdown)"
     >
-      <span aria-hidden>🌿</span>
+      <GitBranch className="w-3 h-3 text-fg-muted" strokeWidth={2} aria-hidden />
       <span className="truncate max-w-[120px]">main</span>
     </span>
   );
@@ -287,7 +284,7 @@ function RepointelChip(): JSX.Element | null {
         <span className="font-mono">{modeLabel}</span>
       </button>
       {open && (
-        <div className="absolute right-0 bottom-full mb-1 w-72 bg-surface-2 border border-border-default rounded shadow-xl py-1 z-50">
+        <div className="absolute right-0 bottom-full mb-1 w-72 bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 z-50">
           <div className="px-3 py-1 text-fg-muted text-[11px] uppercase tracking-wider flex justify-between">
             <span>Repointel · {modeLabel}</span>
             <span className="text-fg-faint normal-case tracking-normal">latest 3 traces</span>

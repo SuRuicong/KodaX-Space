@@ -8,6 +8,7 @@
 // markdown agent (走默认的 coding agent)。
 
 import { useEffect, useRef, useState } from 'react';
+import { Bot } from 'lucide-react';
 import type { AgentMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 
@@ -75,12 +76,12 @@ export function AgentPicker({ insertAtCaret }: Props): JSX.Element | null {
         title="Insert @agent reference (markdown agents)"
         aria-label="Pick an agent"
       >
-        <span aria-hidden>⌬</span>
+        <Bot className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden />
         <span>Agent</span>
       </button>
 
       {open && (
-        <div className="absolute left-0 bottom-full mb-2 w-64 max-h-72 overflow-auto bg-surface-2 border border-border-default rounded shadow-xl p-2 text-xs z-50">
+        <div className="absolute left-0 bottom-full mb-2 w-64 max-h-72 overflow-auto bg-surface-4 border border-border-default rounded-lg shadow-xl p-2 text-xs z-50">
           <div className="text-fg-muted text-[11px] uppercase tracking-wider mb-1.5 px-1">
             Insert @agent reference
           </div>

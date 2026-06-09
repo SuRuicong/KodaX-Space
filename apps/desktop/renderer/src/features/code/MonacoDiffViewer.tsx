@@ -2,11 +2,10 @@
 //
 // 左 before / 右 after。Read-only。语言从 path 推断（两侧同 language——同一文件的版本对比）。
 
-import { useEffect, useState } from 'react';
 import { DiffEditor, type Monaco } from '@monaco-editor/react';
 import { initMonacoOnce } from './monaco-setup.js';
 import { languageFromPath } from './language-detect.js';
-import { useAppStore } from '../../store/appStore.js';
+import { useEffectiveDark } from './useEffectiveDark.js';
 
 // v0.1.4 review C3-HIGH-1: 必须在 @monaco-editor/react 的 loader 启动之前完成
 // loader.config({monaco})，否则会回退到默认 CDN 加载（CSP 禁止）。挪到 module
@@ -21,29 +20,6 @@ interface MonacoDiffViewerProps {
   path: string;
   before: string;
   after: string;
-}
-
-/**
- * v0.1.4 review C3-MED 修复：根据 app 主题（store.theme + system fallback）切 light/dark。
- * 'system' 走 prefers-color-scheme media query，跟主题变化实时联动。
- */
-function useEffectiveDark(): boolean {
-  const theme = useAppStore((s) => s.theme);
-  const [systemDark, setSystemDark] = useState(() =>
-    typeof window !== 'undefined' && window.matchMedia
-      ? window.matchMedia('(prefers-color-scheme: dark)').matches
-      : true,
-  );
-  useEffect(() => {
-    if (theme !== 'system' || !window.matchMedia) return;
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const listener = (): void => setSystemDark(mq.matches);
-    mq.addEventListener('change', listener);
-    return () => mq.removeEventListener('change', listener);
-  }, [theme]);
-  if (theme === 'dark') return true;
-  if (theme === 'light') return false;
-  return systemDark;
 }
 
 export function MonacoDiffViewer({ path, before, after }: MonacoDiffViewerProps): JSX.Element {

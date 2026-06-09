@@ -10,6 +10,7 @@
 // 队列为空 (totalSize === 0) → 不显示,免得占视觉位置。
 
 import { useState } from 'react';
+import { Hourglass } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
 import { Caret } from '../components/Caret.js';
 import type { QueuedMessageT, MessageModeT } from '@kodax-space/space-ipc-schema';
@@ -60,14 +61,14 @@ export function QueueIndicator(): JSX.Element | null {
         title={`KodaX message queue: ${total} item${total !== 1 ? 's' : ''}`}
         aria-label="View message queue"
       >
-        <span aria-hidden>⌛</span>
+        <Hourglass className="w-3 h-3" strokeWidth={2} aria-hidden />
         <span>Queue {total}</span>
         <Caret open={false} className="text-fg-muted" />
       </button>
 
       {open && (
         <div
-          className="absolute right-0 bottom-full mb-2 w-96 max-h-80 overflow-auto bg-surface-2 border border-border-default rounded shadow-xl p-3 text-xs z-50"
+          className="absolute right-0 bottom-full mb-2 w-96 max-h-80 overflow-auto bg-surface-4 border border-border-default rounded-lg shadow-xl p-3 text-xs z-50"
           onMouseLeave={() => setOpen(false)}
         >
           <div className="text-fg-muted text-[11px] uppercase tracking-wider mb-2 flex justify-between">

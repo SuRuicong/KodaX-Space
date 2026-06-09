@@ -195,20 +195,15 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
       }}
     >
       <div
-        className="w-[640px] max-w-[92vw] max-h-[80vh] flex flex-col dark:bg-surface-2 bg-surface border dark:border-border-default border-border-default rounded-lg shadow-2xl"
+        className="w-[640px] max-w-[92vw] max-h-[80vh] flex flex-col dark:bg-surface-2 bg-surface border border-border-default rounded-lg shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-4 py-3 border-b dark:border-border-default border-border-default flex items-center gap-2 flex-shrink-0">
+        <div className="px-4 py-3 border-b border-border-default flex items-center gap-2 flex-shrink-0">
           <Zap className="w-4 h-4 text-accent-ink flex-shrink-0" strokeWidth={2} aria-hidden />
-          <h2
-            id="quick-ask-title"
-            className="text-sm font-semibold dark:text-fg-primary text-fg-primary"
-          >
+          <h2 id="quick-ask-title" className="text-sm font-semibold text-fg-primary">
             Quick Ask
           </h2>
-          <span className="text-[11px] dark:text-fg-muted text-fg-muted font-mono">
-            plan mode · ephemeral
-          </span>
+          <span className="text-[11px] text-fg-muted font-mono">plan mode · ephemeral</span>
           <button
             type="button"
             onClick={() => void closeAndCleanup()}
@@ -233,15 +228,13 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
                 ? 'Ask anything about this project (no file edits)…'
                 : 'Open a project first to use Quick Ask'
             }
-            className="w-full resize-none bg-transparent dark:text-fg-primary text-fg-primary placeholder-fg-muted text-sm focus:outline-none disabled:opacity-50"
+            className="w-full resize-none bg-transparent text-fg-primary placeholder-fg-muted text-sm focus:outline-none disabled:opacity-50"
           />
           {(state.kind === 'streaming' || state.kind === 'done') && state.reply.length > 0 && (
-            <div className="mt-3 pt-3 border-t dark:border-border-default border-border-default">
+            <div className="mt-3 pt-3 border-t border-border-default">
               <Markdown content={state.reply} />
               {state.kind === 'streaming' && (
-                <span className="text-[11px] dark:text-fg-muted text-fg-muted font-mono">
-                  ●●● streaming…
-                </span>
+                <span className="text-[11px] text-fg-muted font-mono">●●● streaming…</span>
               )}
             </div>
           )}
@@ -251,13 +244,13 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
             </div>
           )}
           {state.kind === 'creating-session' && (
-            <div className="mt-3 pt-3 border-t dark:border-border-default border-border-default text-[11px] dark:text-fg-muted text-fg-muted font-mono">
+            <div className="mt-3 pt-3 border-t border-border-default text-[11px] text-fg-muted font-mono">
               creating session…
             </div>
           )}
         </div>
 
-        <div className="px-4 py-2 border-t dark:border-border-default border-border-default flex items-center justify-between text-[11px] dark:text-fg-muted text-fg-muted font-mono flex-shrink-0">
+        <div className="px-4 py-2 border-t border-border-default flex items-center justify-between text-[11px] text-fg-muted font-mono flex-shrink-0">
           <span>Enter to send · Shift+Enter newline · Esc close</span>
           <button
             type="button"

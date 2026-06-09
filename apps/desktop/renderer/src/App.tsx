@@ -18,6 +18,7 @@
 //   - feature 逻辑——拆进 features/{project,session}/*
 
 import { useEffect, useRef, useState } from 'react';
+import { Folder, Settings } from 'lucide-react';
 import type { SpaceVersionOutput } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from './store/appStore.js';
 import { ProjectPicker } from './features/project/ProjectPicker.js';
@@ -290,7 +291,7 @@ export default function App(): JSX.Element {
           }`}
           title="Toggle file panel"
         >
-          <span aria-hidden>📁</span>
+          <Folder className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden />
           <span>Files</span>
         </button>
         <button
@@ -299,7 +300,7 @@ export default function App(): JSX.Element {
           className="px-2 py-1 text-xs rounded bg-surface-2 border border-border-default text-fg-secondary hover:bg-hover-bg flex items-center gap-1.5"
           title="Provider settings"
         >
-          <span aria-hidden>⚙</span>
+          <Settings className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden />
           <span className="font-mono">
             {defaultProvider
               ? defaultProvider.displayName

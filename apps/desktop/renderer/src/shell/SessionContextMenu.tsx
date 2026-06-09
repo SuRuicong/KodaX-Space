@@ -144,7 +144,7 @@ export function SessionContextMenu({
   return (
     <div
       ref={ref}
-      className="fixed bg-surface-2 border border-border-default rounded shadow-xl py-1 text-xs z-[100] min-w-[12rem]"
+      className="fixed bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 text-xs z-[100] min-w-[12rem]"
       style={{ left, top }}
       role="menu"
     >

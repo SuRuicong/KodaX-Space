@@ -741,7 +741,7 @@ function ToolCluster({ cluster, expanded, onToggle }: ToolClusterProps): JSX.Ele
         {!allDone && <span className="text-amber-500">{runningHint}</span>}
       </button>
       {expanded && (
-        <div className="mt-1.5 ml-3 space-y-2 border-l dark:border-border-default border-border-default pl-3">
+        <div className="mt-1.5 ml-3 space-y-2 border-l border-border-default pl-3">
           {cluster.subClusters.map((sc) => {
             const subRunning = sc.tools.find((t) => t.status === 'running');
             return (

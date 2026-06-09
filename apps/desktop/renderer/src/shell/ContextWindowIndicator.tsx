@@ -197,7 +197,7 @@ export function ContextWindowIndicator(): JSX.Element | null {
 
       {open && (
         <div
-          className="absolute right-0 bottom-full mb-2 w-72 bg-surface-2 border border-border-default rounded shadow-xl p-3 text-xs z-50"
+          className="absolute right-0 bottom-full mb-2 w-72 bg-surface-4 border border-border-default rounded-lg shadow-xl p-3 text-xs z-50"
           onMouseLeave={() => setOpen(false)}
         >
           <div className="text-fg-muted text-[11px] uppercase tracking-wider mb-2">

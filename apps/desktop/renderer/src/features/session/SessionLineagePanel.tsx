@@ -105,7 +105,7 @@ export function SessionLineagePanel({
   // 单 session 树（没人 fork、也不是 fork 出来的）→ 没什么可看
   if (flatTree.length <= 1) {
     return (
-      <div className="px-3 py-2 text-xs dark:text-fg-muted text-fg-muted italic">
+      <div className="px-3 py-2 text-xs text-fg-muted italic">
         No fork lineage yet. Use <span className="font-mono text-fg-secondary">Fork</span> in the
         session menu to branch the conversation.
       </div>
@@ -114,7 +114,7 @@ export function SessionLineagePanel({
 
   return (
     <div className="py-1 max-h-72 overflow-y-auto">
-      <div className="px-3 py-1 text-[11px] uppercase tracking-wider dark:text-fg-muted text-fg-muted flex items-center justify-between">
+      <div className="px-3 py-1 text-[11px] uppercase tracking-wider text-fg-muted flex items-center justify-between">
         <span>Lineage · {flatTree.length} session(s)</span>
         <span className="font-mono normal-case tracking-normal dark:text-fg-faint text-fg-muted">
           ⑂ fork
@@ -133,7 +133,7 @@ export function SessionLineagePanel({
             disabled={isCurrent}
             className={[
               'w-full text-left px-3 py-1 flex items-center gap-2 text-xs',
-              'dark:hover:bg-hover-bg hover:bg-hover-bg',
+              'hover:bg-hover-bg',
               isCurrent
                 ? 'dark:bg-blue-900/30 bg-blue-50 dark:text-blue-200 text-blue-900 cursor-default'
                 : 'text-fg-secondary',
@@ -149,7 +149,7 @@ export function SessionLineagePanel({
             </span>
             <span className="truncate flex-1">{title}</span>
             {s.forkPointTurnIdx !== undefined && (
-              <span className="text-[9px] dark:text-fg-muted text-fg-muted font-mono flex-shrink-0">
+              <span className="text-[9px] text-fg-muted font-mono flex-shrink-0">
                 @turn {s.forkPointTurnIdx}
               </span>
             )}

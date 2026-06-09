@@ -13,6 +13,7 @@
 // main 内 100ms 后 quitAndInstall → renderer 此时已经 unmount，无需等待返回。
 
 import { useCallback, useEffect, useState } from 'react';
+import { Download } from 'lucide-react';
 import type { UpdaterStateT } from '@kodax-space/space-ipc-schema';
 
 export function UpdateBanner(): JSX.Element | null {
@@ -119,7 +120,7 @@ function BannerShell(props: BannerShellProps): JSX.Element {
         role="status"
         className={`pointer-events-auto flex items-center gap-2 px-3 py-2 rounded border text-xs shadow-lg ${TONE_CLASS[props.tone]}`}
       >
-        <span aria-hidden>⤓</span>
+        <Download className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} aria-hidden />
         {props.children}
         <button
           type="button"

@@ -110,7 +110,7 @@ export function ThemeToggle(): JSX.Element {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-44 bg-surface-2 border border-border-default rounded shadow-xl py-1 text-xs z-50">
+        <div className="absolute right-0 top-full mt-1 w-44 bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 text-xs z-50">
           <div className="px-3 py-1 flex justify-between items-center text-fg-muted text-[11px] uppercase tracking-wider">
             <span>Theme</span>
             <span className="font-mono text-fg-muted flex items-center gap-1">

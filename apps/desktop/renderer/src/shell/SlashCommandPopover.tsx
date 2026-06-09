@@ -164,7 +164,7 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
   return (
     <div
       ref={listRef}
-      className="absolute left-3 right-3 bottom-full mb-1 max-h-64 overflow-y-auto bg-surface-2 border border-border-default rounded shadow-xl text-xs z-40"
+      className="absolute left-3 right-3 bottom-full mb-1 max-h-64 overflow-y-auto bg-surface-4 border border-border-default rounded-lg shadow-xl text-xs z-40"
       role="listbox"
       aria-label="Slash commands and skills"
     >

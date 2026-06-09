@@ -214,7 +214,7 @@ export function ModelEffortSelector(): JSX.Element {
 
       {open && (
         <div
-          className="absolute right-0 bottom-full mb-2 w-[460px] bg-surface-2 border border-border-default rounded shadow-xl text-xs z-50"
+          className="absolute right-0 bottom-full mb-2 w-[460px] bg-surface-4 border border-border-default rounded-lg shadow-xl text-xs z-50"
           onMouseLeave={() => setOpen(false)}
         >
           {/* 2 列：Provider | Model */}

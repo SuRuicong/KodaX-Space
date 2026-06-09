@@ -199,7 +199,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
 
   if (renaming) {
     return (
-      <div className="absolute left-0 top-full mt-1 w-64 bg-surface-2 border border-border-default rounded shadow-xl p-2 z-50">
+      <div className="absolute left-0 top-full mt-1 w-64 bg-surface-4 border border-border-default rounded-lg shadow-xl p-2 z-50">
         <input
           type="text"
           value={newTitle}
@@ -240,7 +240,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
 
   return (
     <div
-      className={`absolute left-0 top-full mt-1 ${showLineage ? 'w-80' : 'w-52'} bg-surface-2 border border-border-default rounded shadow-xl py-1 text-xs z-50`}
+      className={`absolute left-0 top-full mt-1 ${showLineage ? 'w-80' : 'w-52'} bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 text-xs z-50`}
       onMouseLeave={onClose}
     >
       <MenuRow icon="↗" label="Open in" shortcut="" disabled hint="External app — v0.1.x" />

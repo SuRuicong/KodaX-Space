@@ -13,6 +13,7 @@
 // 4 个 transcript view 模式 + 3 档字号。Ctrl+O 切换打开。
 
 import { useEffect, useRef, useState } from 'react';
+import { ScrollText } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
 import { useZoomStore, ZOOM_STEP } from '../store/zoomStore.js';
 
@@ -72,10 +73,10 @@ export function TranscriptViewMenu(): JSX.Element {
         title="Transcript view (Ctrl+O)"
         aria-label="Transcript view"
       >
-        <span aria-hidden>▤</span>
+        <ScrollText className="w-4 h-4" strokeWidth={1.75} aria-hidden />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-56 bg-surface-2 border border-border-default rounded shadow-xl py-1 text-xs z-50">
+        <div className="absolute right-0 top-full mt-1 w-56 bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 text-xs z-50">
           <div className="px-3 py-1 flex justify-between items-center text-fg-muted text-[11px] uppercase tracking-wider">
             <span>Transcript view</span>
             <span className="font-mono text-fg-muted flex items-center gap-1">

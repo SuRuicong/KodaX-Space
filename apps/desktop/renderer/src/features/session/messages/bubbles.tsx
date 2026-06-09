@@ -250,7 +250,7 @@ export function AssistantBubble({
           {thinking}
         </div>
       )}
-      <div className="text-sm leading-relaxed dark:text-fg-primary text-fg-primary">
+      <div className="text-sm leading-relaxed text-fg-primary">
         {text.length > 0 ? (
           <Markdown content={text} />
         ) : (
