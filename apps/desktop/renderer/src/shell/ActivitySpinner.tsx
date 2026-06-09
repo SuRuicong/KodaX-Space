@@ -301,7 +301,7 @@ export function ActivitySpinner(): JSX.Element | null {
 
   return (
     <div className="flex items-center gap-2 text-xs text-fg-muted font-mono px-1 py-0.5">
-      <span className="text-amber-400 inline-block w-3 text-center" aria-hidden>
+      <span className="text-warn inline-block w-3 text-center" aria-hidden>
         {FRAMES[frame]}
       </span>
       <span className="text-fg-secondary">{statusBase}</span>

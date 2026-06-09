@@ -139,7 +139,7 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
             }}
             className="w-full text-left px-3 py-1.5 hover:bg-hover-bg flex items-center gap-2 text-xs"
           >
-            <code className="text-emerald-400 font-mono">{s.cmd}</code>
+            <code className="text-ok font-mono">{s.cmd}</code>
             <span className="text-fg-muted truncate">{s.desc}</span>
           </button>
         ))}
@@ -153,7 +153,7 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
   if (sub === 'connectors') {
     return (
       <SubMenuFrame title="Connectors (MCP)" onBack={() => setSub('root')}>
-        {discoverErr && <div className="px-3 py-1 text-[11px] text-amber-400">{discoverErr}</div>}
+        {discoverErr && <div className="px-3 py-1 text-[11px] text-warn">{discoverErr}</div>}
         {mcpServers === null && !discoverErr && (
           <div className="px-3 py-1 text-[11px] text-fg-muted">Loading…</div>
         )}
@@ -167,7 +167,7 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
             key={`${s.source}:${s.name}`}
             className="px-3 py-1.5 hover:bg-hover-bg text-xs flex items-center gap-2"
           >
-            <span className="text-emerald-400" aria-hidden>
+            <span className="text-ok" aria-hidden>
               ●
             </span>
             <span className="flex-1 truncate">{s.name}</span>
@@ -182,7 +182,7 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
   if (sub === 'skills') {
     return (
       <SubMenuFrame title="Skills" onBack={() => setSub('root')}>
-        {discoverErr && <div className="px-3 py-1 text-[11px] text-amber-400">{discoverErr}</div>}
+        {discoverErr && <div className="px-3 py-1 text-[11px] text-warn">{discoverErr}</div>}
         {skills === null && !discoverErr && (
           <div className="px-3 py-1 text-[11px] text-fg-muted">Loading…</div>
         )}
@@ -200,7 +200,7 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
             className="w-full text-left px-3 py-1.5 hover:bg-hover-bg flex items-center gap-2 text-xs"
             title={`${sk.path} (${sk.source})`}
           >
-            <code className="text-emerald-400 font-mono">/{sk.name}</code>
+            <code className="text-ok font-mono">/{sk.name}</code>
             <span className="text-fg-muted truncate flex-1">{sk.description}</span>
             <span className="text-[11px] text-fg-faint">{sk.source}</span>
           </button>

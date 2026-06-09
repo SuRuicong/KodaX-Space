@@ -297,7 +297,7 @@ export function WelcomeDashboard(): JSX.Element {
     <div className="flex-1 overflow-auto px-6 py-10 flex flex-col items-center">
       {/* 大标题 */}
       <h1 className="text-2xl text-fg-primary mb-8 flex items-center gap-2">
-        <span className="text-amber-400" aria-hidden>
+        <span className="text-warn" aria-hidden>
           ✱
         </span>
         What&apos;s up next, <span className="font-semibold">{userName}</span>?
@@ -387,10 +387,10 @@ export function WelcomeDashboard(): JSX.Element {
 // 0 用极淡 fill（不是全暗），让网格本身可读；1→4 蓝色从深到浅渐变
 const LEVEL_BG: Record<0 | 1 | 2 | 3 | 4, string> = {
   0: 'bg-surface-3/40',
-  1: 'bg-blue-900',
-  2: 'bg-blue-700',
-  3: 'bg-blue-500',
-  4: 'bg-blue-300',
+  1: 'bg-info',
+  2: 'bg-info',
+  3: 'bg-info',
+  4: 'bg-info',
 };
 
 const MONTH_SHORT = [
@@ -521,7 +521,7 @@ function FavoriteModelCell({
         Favorite model
       </div>
       <div className="flex items-start gap-1.5 min-w-0">
-        <span className="w-1.5 h-1.5 rounded-full bg-purple-400 flex-shrink-0 mt-1.5" aria-hidden />
+        <span className="w-1.5 h-1.5 rounded-full bg-thinking flex-shrink-0 mt-1.5" aria-hidden />
         <div className="min-w-0 flex-1">
           {/* 主名：有 model 时优先显示 model alias（更精确）；允许 break-words 多行 wrap */}
           <div
@@ -603,7 +603,7 @@ function ModelsView({
                 {displayName}
               </div>
               <div className="h-1 bg-surface-3 rounded overflow-hidden mt-1">
-                <div className="h-full bg-blue-500" style={{ width: `${pct}%` }} />
+                <div className="h-full bg-info" style={{ width: `${pct}%` }} />
               </div>
             </div>
             <span className="text-fg-secondary text-right font-mono">{formatNum(b.sessions)}</span>
@@ -691,7 +691,7 @@ function ProjectView({
                   title={`${b.date} · ${b.count} commit${b.count === 1 ? '' : 's'}`}
                 >
                   <div
-                    className="absolute bottom-0 left-0 right-0 bg-emerald-500"
+                    className="absolute bottom-0 left-0 right-0 bg-ok"
                     style={{ height: `${heightPct}%` }}
                   />
                 </div>

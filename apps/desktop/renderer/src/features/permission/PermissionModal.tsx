@@ -29,23 +29,23 @@ import { selectPermissionBatch } from './permissionBatching.js';
 // border 双主题: dark 用同色相 *-700 (深色边); light 用 *-400 (中浓边, 跟浅底有反差).
 const RISK_STYLE: Record<PermissionRisk, { badge: string; border: string; label: string }> = {
   low: {
-    badge: 'dark:bg-blue-900 dark:text-blue-200 bg-blue-100 text-blue-900',
-    border: 'dark:border-blue-700 border-blue-400',
+    badge: 'bg-info/12 text-info',
+    border: 'border-info/40',
     label: 'LOW',
   },
   medium: {
-    badge: 'dark:bg-amber-900 dark:text-amber-200 bg-amber-100 text-amber-900',
-    border: 'dark:border-amber-700 border-amber-400',
+    badge: 'bg-warn/12 text-warn',
+    border: 'border-warn/40',
     label: 'MEDIUM',
   },
   high: {
-    badge: 'dark:bg-orange-900 dark:text-orange-200 bg-orange-100 text-orange-900',
-    border: 'dark:border-orange-700 border-orange-400',
+    badge: 'bg-warn/12 text-warn',
+    border: 'border-warn/40',
     label: 'HIGH',
   },
   danger: {
-    badge: 'dark:bg-red-900 dark:text-red-100 bg-red-100 text-red-900',
-    border: 'dark:border-red-700 border-red-500',
+    badge: 'bg-danger/12 text-danger',
+    border: 'border-danger/40',
     label: 'DANGER',
   },
 };
@@ -190,7 +190,7 @@ export function PermissionModal(): JSX.Element | null {
 
           <div className="space-y-1">
             <div className="text-[11px] font-mono uppercase text-fg-muted">Tool</div>
-            <div className="text-sm font-mono text-amber-300">{head.toolCall.toolName}</div>
+            <div className="text-sm font-mono text-warn">{head.toolCall.toolName}</div>
           </div>
 
           {inputPreview && (
@@ -203,8 +203,8 @@ export function PermissionModal(): JSX.Element | null {
           )}
 
           {isDanger && (
-            <div className="space-y-1 border-t border-red-900 pt-3">
-              <label className="text-[11px] font-mono uppercase text-red-300 block">
+            <div className="space-y-1 border-t border-danger pt-3">
+              <label className="text-[11px] font-mono uppercase text-danger block">
                 Type "{DANGER_CONFIRM_PHRASE}" to enable allow
               </label>
               <input
@@ -213,15 +213,15 @@ export function PermissionModal(): JSX.Element | null {
                 value={confirmText}
                 onChange={(e) => setConfirmText(e.target.value)}
                 placeholder={DANGER_CONFIRM_PHRASE}
-                className="w-full bg-surface border border-red-800 rounded px-2 py-1 text-sm font-mono text-fg-primary outline-none focus:border-red-500"
+                className="w-full bg-surface border border-danger rounded px-2 py-1 text-sm font-mono text-fg-primary outline-none focus:border-danger"
               />
-              <div className="text-[11px] text-red-400">
+              <div className="text-[11px] text-danger">
                 检测到危险操作。必须键入确认字符串才能批准。
               </div>
             </div>
           )}
 
-          {err && <div className="text-xs text-red-400 font-mono">{err}</div>}
+          {err && <div className="text-xs text-danger font-mono">{err}</div>}
         </div>
 
         <div className="px-5 py-3 border-t border-border-default dark:bg-transparent bg-surface flex items-center justify-end gap-2 flex-shrink-0 flex-wrap">
@@ -240,10 +240,10 @@ export function PermissionModal(): JSX.Element | null {
               disabled={busy}
               onClick={() => void answer('allow_always')}
               title={`Add ${head.suggestedPattern} to allow-rules and skip prompt next time`}
-              className="px-3 py-1.5 text-xs rounded font-medium border dark:border-emerald-700 dark:text-emerald-200 dark:hover:bg-emerald-900/30 border-emerald-600 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 text-xs rounded font-medium border border-ok text-ok hover:bg-ok/15 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Always allow{' '}
-              <code className="font-mono text-xs dark:text-amber-300 text-amber-700">
+              <code className="font-mono text-xs dark:text-warn text-warn">
                 {head.suggestedPattern}
               </code>
             </button>
@@ -254,8 +254,8 @@ export function PermissionModal(): JSX.Element | null {
             onClick={() => void answer('allow_once')}
             className={`px-3 py-1.5 text-xs rounded font-medium ${
               isDanger
-                ? 'bg-red-700 text-fg-primary hover:bg-red-600'
-                : 'bg-emerald-600 text-white hover:bg-emerald-500 dark:bg-emerald-700 dark:hover:bg-emerald-600'
+                ? 'bg-danger/15 text-danger border border-danger/50 hover:bg-danger/25'
+                : 'bg-ok/15 text-ok border border-ok/50 hover:bg-ok/25'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             {isDanger ? 'Allow (danger)' : 'Allow once (Enter)'}
@@ -376,7 +376,7 @@ function PermissionBatchView({
               >
                 {RISK_STYLE[it.risk].label}
               </span>
-              <span className="text-xs font-mono text-amber-300 flex-shrink-0">
+              <span className="text-xs font-mono text-warn flex-shrink-0">
                 {it.toolCall.toolName}
               </span>
               <span className="text-xs text-fg-muted truncate flex-1" title={it.reason}>
@@ -394,13 +394,13 @@ function PermissionBatchView({
                 type="button"
                 disabled={busy}
                 onClick={() => void answerOne(it.reqId, 'allow_once')}
-                className="px-2 py-0.5 text-xs rounded font-medium bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50"
+                className="px-2 py-0.5 text-xs rounded font-medium bg-ok/15 text-ok border border-ok/50 hover:bg-ok/25 disabled:opacity-50"
               >
                 Allow
               </button>
             </div>
           ))}
-          {err && <div className="text-xs text-red-400 font-mono">{err}</div>}
+          {err && <div className="text-xs text-danger font-mono">{err}</div>}
         </div>
 
         <div className="px-5 py-3 border-t border-border-default dark:bg-transparent bg-surface flex items-center justify-end gap-2 flex-shrink-0">
@@ -416,9 +416,9 @@ function PermissionBatchView({
             type="button"
             disabled={busy}
             onClick={() => void answerAll('allow_once')}
-            className="px-3 py-1.5 text-xs rounded font-medium bg-emerald-600 text-white hover:bg-emerald-500 dark:bg-emerald-700 dark:hover:bg-emerald-600 disabled:opacity-50"
+            className="px-3 py-1.5 text-xs rounded font-medium bg-ok/15 text-ok border border-ok/50 hover:bg-ok/25 disabled:opacity-50"
           >
-            Allow all once ({items.length}) <span className="ml-1 text-emerald-200/70">Enter</span>
+            Allow all once ({items.length}) <span className="ml-1 text-ok/70">Enter</span>
           </button>
         </div>
       </div>

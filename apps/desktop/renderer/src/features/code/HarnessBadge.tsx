@@ -25,14 +25,14 @@ export function HarnessBadge({ profile }: HarnessBadgeProps): JSX.Element {
       title: 'H0: single-step direct execution',
     },
     H1_EXECUTE_EVAL: {
-      bg: 'bg-blue-900',
-      text: 'text-blue-200',
+      bg: 'bg-info/15',
+      text: 'text-info',
       label: profile?.round ? `H1 · Round ${profile.round}` : 'H1',
       title: 'H1: execute + self-evaluate',
     },
     H2_PLAN_EXECUTE_EVAL: {
-      bg: 'bg-violet-900',
-      text: 'text-violet-200',
+      bg: 'bg-thinking/15',
+      text: 'text-thinking',
       label: profile?.round ? `H2 · Round ${profile.round}` : 'H2',
       title: 'H2: plan + execute + evaluate',
     },

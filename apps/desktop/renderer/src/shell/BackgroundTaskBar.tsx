@@ -55,10 +55,10 @@ const KIND_ICON: Record<ManagedLiveEvent['kind'], LucideIcon> = {
   warning: AlertTriangle,
 };
 const KIND_COLOR: Record<ManagedLiveEvent['kind'], string> = {
-  progress: 'text-sky-400/90 border-sky-400/30',
-  completed: 'text-emerald-400/90 border-emerald-400/30',
+  progress: 'text-run/90 border-run/30',
+  completed: 'text-ok/90 border-ok/30',
   notification: 'text-fg-muted border-border-strong/40',
-  warning: 'text-amber-400/90 border-amber-400/40',
+  warning: 'text-warn/90 border-warn/40',
 };
 
 export function BackgroundTaskBar(): JSX.Element | null {

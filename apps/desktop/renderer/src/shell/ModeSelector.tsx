@@ -191,7 +191,7 @@ export function ModeSelector(): JSX.Element {
             >
               <span className="flex-1">{MODE_LABELS[m]}</span>
               {current === m && (
-                <span className="text-emerald-500" aria-hidden>
+                <span className="text-ok" aria-hidden>
                   ✓
                 </span>
               )}
@@ -216,7 +216,7 @@ export function ModeSelector(): JSX.Element {
                 >
                   <span className="flex-1">{ENGINE_LABELS[eng]}</span>
                   {engine === eng && (
-                    <span className="text-emerald-500" aria-hidden>
+                    <span className="text-ok" aria-hidden>
                       ✓
                     </span>
                   )}

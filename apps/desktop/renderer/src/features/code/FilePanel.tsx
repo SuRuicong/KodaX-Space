@@ -181,7 +181,7 @@ export function FilePanel(): JSX.Element | null {
             </div>
           )}
           {selectedPath !== null && err && (
-            <div className="p-3 text-xs text-red-400 font-mono whitespace-pre-wrap">{err}</div>
+            <div className="p-3 text-xs text-danger font-mono whitespace-pre-wrap">{err}</div>
           )}
           {selectedPath !== null && !busy && !err && fileContent?.truncated && (
             <FileTooLargePlaceholder size={fileContent.size} />

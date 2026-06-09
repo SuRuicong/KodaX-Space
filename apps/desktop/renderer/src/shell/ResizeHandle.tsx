@@ -149,7 +149,7 @@ export function ResizeHandle({
       className={[
         // 4px 宽命中区,中间 1px 实色边线 + hover 强化 — 视觉上跟现有 border 一致
         'flex-shrink-0 w-1 cursor-ew-resize relative select-none',
-        'hover:bg-blue-500/30 active:bg-blue-500/50 transition-colors',
+        'hover:bg-info/30 active:bg-info/50 transition-colors',
         // 拖动时整条变高亮（active 通过 mousedown 让 body cursor 变,实际样式靠 hover 类）
       ].join(' ')}
       title="Drag to resize · Double-click to reset · Esc to cancel"

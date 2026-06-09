@@ -43,9 +43,11 @@ module.exports = {
         accent: 'rgb(var(--accent) / <alpha-value>)',
         'accent-ink': 'rgb(var(--accent-ink) / <alpha-value>)',
         'accent-fg': 'rgb(var(--accent-fg) / <alpha-value>)',
-        // 语义状态色 (只做状态点) (F054)
+        // 语义调色板 (F054 #1：收编彩虹字面色，每色一义)
         ok: 'rgb(var(--ok) / <alpha-value>)',
         run: 'rgb(var(--run) / <alpha-value>)',
+        info: 'rgb(var(--info) / <alpha-value>)',
+        thinking: 'rgb(var(--thinking) / <alpha-value>)',
         warn: 'rgb(var(--warn) / <alpha-value>)',
         danger: 'rgb(var(--danger) / <alpha-value>)',
       },

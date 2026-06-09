@@ -94,9 +94,7 @@ export function PreviewPanel(): JSX.Element {
             loading…
           </div>
         )}
-        {richKind === null && err && (
-          <div className="p-3 text-xs text-red-400 font-mono">{err}</div>
-        )}
+        {richKind === null && err && <div className="p-3 text-xs text-danger font-mono">{err}</div>}
         {richKind === null && !busy && !err && file?.truncated && (
           <div className="flex items-center justify-center h-full text-xs text-fg-muted p-4 text-center">
             File too large ({(file.size / 1048576).toFixed(2)} MB) — viewer cap is 5 MB.

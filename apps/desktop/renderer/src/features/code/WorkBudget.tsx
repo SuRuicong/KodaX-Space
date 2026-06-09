@@ -26,8 +26,8 @@ export function WorkBudget({ budget }: WorkBudgetProps): JSX.Element {
   const isCritical = pct >= 90;
 
   // 进度条颜色 + 文字颜色随使用率渐变——红色出现说明该考虑 cancel
-  const barColor = isCritical ? 'bg-red-500' : isWarn ? 'bg-amber-400' : 'bg-emerald-500';
-  const textColor = isCritical ? 'text-red-400' : isWarn ? 'text-amber-300' : 'text-fg-secondary';
+  const barColor = isCritical ? 'bg-danger' : isWarn ? 'bg-warn' : 'bg-ok';
+  const textColor = isCritical ? 'text-danger' : isWarn ? 'text-warn' : 'text-fg-secondary';
 
   return (
     <div
@@ -45,7 +45,7 @@ export function WorkBudget({ budget }: WorkBudgetProps): JSX.Element {
       </div>
       {isCritical && (
         <span
-          className="w-2 h-2 rounded-full bg-red-500 animate-pulse"
+          className="w-2 h-2 rounded-full bg-danger animate-pulse"
           aria-label="budget critical"
           title="≥ 90% budget consumed — consider cancelling or wrapping up"
         />

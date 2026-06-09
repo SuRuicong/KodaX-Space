@@ -93,7 +93,7 @@ function MultiEditList({ path, edits }: MultiEditListProps): JSX.Element {
         <button
           type="button"
           onClick={() => setShowAllEdits(true)}
-          className="text-[11px] text-blue-400 hover:text-blue-300 px-2 py-0.5"
+          className="text-[11px] text-info hover:text-info px-2 py-0.5"
         >
           + {overflow} more edit{overflow === 1 ? '' : 's'}
         </button>

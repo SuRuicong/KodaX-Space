@@ -60,7 +60,7 @@ export function PlanPanel(): JSX.Element {
             className={
               'flex items-start gap-2 px-2 py-1.5 rounded ' +
               (todo.status === 'in_progress'
-                ? 'bg-sky-950/40'
+                ? 'bg-run/40'
                 : todo.status === 'completed'
                   ? 'opacity-60'
                   : '')
@@ -70,9 +70,9 @@ export function PlanPanel(): JSX.Element {
               className={
                 'flex-shrink-0 w-3 h-3 rounded-full mt-0.5 border ' +
                 (todo.status === 'completed'
-                  ? 'bg-emerald-500 border-emerald-400'
+                  ? 'bg-ok border-ok'
                   : todo.status === 'in_progress'
-                    ? 'border-sky-400 bg-sky-500/30 animate-pulse'
+                    ? 'border-run bg-run/30 animate-pulse'
                     : 'border-border-strong')
               }
               aria-label={`status: ${todo.status}`}

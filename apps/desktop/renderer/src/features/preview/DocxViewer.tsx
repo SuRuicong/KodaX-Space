@@ -139,7 +139,7 @@ export function DocxViewer({ base64 }: Props): JSX.Element {
     };
   }, [bytes]);
 
-  if (err !== null) return <div className="p-3 text-xs text-red-400">{err}</div>;
+  if (err !== null) return <div className="p-3 text-xs text-danger">{err}</div>;
   if (busy) return <div className="p-3 text-xs text-fg-muted">Rendering .docx…</div>;
   if (html === null) return <div className="p-3 text-xs text-fg-muted">Empty document.</div>;
 

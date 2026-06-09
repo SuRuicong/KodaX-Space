@@ -134,9 +134,7 @@ export function SessionLineagePanel({
             className={[
               'w-full text-left px-3 py-1 flex items-center gap-2 text-xs',
               'hover:bg-hover-bg',
-              isCurrent
-                ? 'dark:bg-blue-900/30 bg-blue-50 dark:text-blue-200 text-blue-900 cursor-default'
-                : 'text-fg-secondary',
+              isCurrent ? 'bg-info/15 text-info cursor-default' : 'text-fg-secondary',
             ].join(' ')}
             title={isCurrent ? `${s.sessionId} (current)` : `Switch to ${s.sessionId}`}
           >

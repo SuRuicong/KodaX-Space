@@ -334,7 +334,7 @@ function MenuRow({
         disabled
           ? 'text-fg-faint cursor-not-allowed'
           : danger
-            ? 'text-red-400 hover:bg-red-950/40'
+            ? 'text-danger hover:bg-danger/15'
             : 'text-fg-secondary hover:bg-hover-bg'
       }`}
     >

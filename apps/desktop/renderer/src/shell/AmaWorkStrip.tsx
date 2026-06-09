@@ -58,7 +58,7 @@ export function AmaWorkStrip(): JSX.Element | null {
       role="status"
       aria-label="AMA work status"
     >
-      <Sparkles className="w-3 h-3 text-purple-400 flex-shrink-0" strokeWidth={2} aria-hidden />
+      <Sparkles className="w-3 h-3 text-thinking flex-shrink-0" strokeWidth={2} aria-hidden />
       <span className="text-fg-muted">AMA</span>
       <span className="text-fg-faint">·</span>
       <span className="truncate">{parts.join(' · ')}</span>

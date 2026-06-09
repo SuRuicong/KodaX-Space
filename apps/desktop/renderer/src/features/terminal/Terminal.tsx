@@ -226,17 +226,17 @@ export function Terminal({ onClose: _onClose }: Props): JSX.Element {
         <span className="text-fg-muted">Terminal</span>
         {shellLabel && <span className="text-fg-faint">· {shellLabel}</span>}
         <span className="ml-auto">
-          {status === 'starting' && <span className="text-amber-400">starting…</span>}
-          {status === 'running' && <span className="text-emerald-400">●</span>}
+          {status === 'starting' && <span className="text-warn">starting…</span>}
+          {status === 'running' && <span className="text-ok">●</span>}
           {status === 'exited' && <span className="text-fg-faint">exited</span>}
-          {status === 'error' && <span className="text-red-400">error</span>}
+          {status === 'error' && <span className="text-danger">error</span>}
         </span>
       </div>
       {status === 'idle' && !currentProjectPath && (
         <div className="p-4 text-xs text-fg-muted">Open a project to start a terminal.</div>
       )}
       {errorMsg !== null && status === 'error' && (
-        <div className="px-3 py-1 text-xs text-red-400 bg-red-950/40 flex-shrink-0">{errorMsg}</div>
+        <div className="px-3 py-1 text-xs text-danger bg-danger/12 flex-shrink-0">{errorMsg}</div>
       )}
       <div ref={containerRef} className="flex-1 min-h-0 px-1 py-1 overflow-hidden" />
     </div>

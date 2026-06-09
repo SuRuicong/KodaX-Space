@@ -100,7 +100,7 @@ function CopyCodeButton({ getText }: { getText: () => string }): JSX.Element {
       aria-label={copied ? 'Code copied to clipboard' : 'Copy code to clipboard'}
     >
       {copied ? (
-        <span className="text-emerald-400 dark:text-emerald-400 font-medium">✓ Copied</span>
+        <span className="text-ok dark:text-ok font-medium">✓ Copied</span>
       ) : (
         <>
           <svg
@@ -182,7 +182,7 @@ function MarkdownInner({ content }: MarkdownProps): JSX.Element {
             // Inline code —— Claude Desktop 风格 rose pill：浅色背景 + 中浓饱和文字。
             // 双主题：dark = rose-300 字 + rose-950/40 衬底；light = rose-700 字 + rose-50 衬底。
             return (
-              <code className="dark:bg-rose-950/40 dark:text-rose-300 bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded text-[12px] font-mono">
+              <code className="bg-danger/12 text-danger px-1.5 py-0.5 rounded text-[12px] font-mono">
                 {children}
               </code>
             );
@@ -195,7 +195,7 @@ function MarkdownInner({ content }: MarkdownProps): JSX.Element {
               href={href}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-blue-400 hover:text-blue-300 underline decoration-blue-400/40 underline-offset-2"
+              className="text-info hover:text-info underline decoration-info/40 underline-offset-2"
             >
               {children}
             </a>
@@ -291,7 +291,7 @@ function MarkdownInner({ content }: MarkdownProps): JSX.Element {
                   checked={!!checked}
                   disabled={disabled ?? true}
                   readOnly
-                  className="mr-2 align-middle accent-emerald-500"
+                  className="mr-2 align-middle accent-ok"
                   {...rest}
                 />
               );

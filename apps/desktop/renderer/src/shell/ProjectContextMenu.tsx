@@ -152,7 +152,7 @@ function MenuRow({ label, hint, onClick, danger }: MenuRowProps): JSX.Element {
       onClick={onClick}
       role="menuitem"
       className={`w-full text-left px-3 py-1 flex items-center justify-between hover:bg-hover-bg ${
-        danger ? 'text-red-400' : 'text-fg-primary'
+        danger ? 'text-danger' : 'text-fg-primary'
       }`}
     >
       <span>{label}</span>

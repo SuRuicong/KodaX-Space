@@ -88,7 +88,7 @@ export function XlsxViewer({ base64 }: Props): JSX.Element {
     };
   }, [bytes]);
 
-  if (err !== null) return <div className="p-3 text-xs text-red-400">{err}</div>;
+  if (err !== null) return <div className="p-3 text-xs text-danger">{err}</div>;
   if (busy) return <div className="p-3 text-xs text-fg-muted">Parsing spreadsheet…</div>;
   if (sheets.length === 0) return <div className="p-3 text-xs text-fg-muted">Empty workbook.</div>;
 

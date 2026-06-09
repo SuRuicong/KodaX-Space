@@ -138,7 +138,7 @@ export function ThemeToggle(): JSX.Element {
                 </span>
                 <span className="flex-1">{o.label}</span>
                 {selected && (
-                  <span className="text-emerald-500" aria-hidden>
+                  <span className="text-ok" aria-hidden>
                     ✓
                   </span>
                 )}

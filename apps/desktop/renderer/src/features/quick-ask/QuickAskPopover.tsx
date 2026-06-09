@@ -239,7 +239,7 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
             </div>
           )}
           {state.kind === 'error' && (
-            <div className="mt-3 pt-3 border-t dark:border-red-900/60 border-red-200 text-xs dark:text-red-400 text-red-700">
+            <div className="mt-3 pt-3 border-t dark:border-danger/60 border-danger text-xs dark:text-danger text-danger">
               {state.message}
             </div>
           )}
@@ -256,7 +256,7 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
             type="button"
             disabled={isAsking || !prompt.trim() || !currentProjectPath}
             onClick={() => void handleSend()}
-            className="px-2 py-0.5 rounded dark:bg-emerald-700 dark:text-emerald-100 dark:hover:bg-emerald-600 bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-2 py-0.5 rounded bg-ok/15 text-ok border border-ok/50 hover:bg-ok/25 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isAsking ? 'Asking…' : 'Ask'}
           </button>

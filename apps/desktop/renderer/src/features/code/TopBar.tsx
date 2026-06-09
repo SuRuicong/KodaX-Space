@@ -161,7 +161,7 @@ export function TopBar({ sessionId }: TopBarProps): JSX.Element | null {
       </div>
 
       {err && (
-        <span className="text-[11px] text-red-400 font-mono" title={err}>
+        <span className="text-[11px] text-danger font-mono" title={err}>
           ⚠ {err.length > 40 ? `${err.slice(0, 40)}…` : err}
         </span>
       )}

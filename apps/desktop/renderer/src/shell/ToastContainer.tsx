@@ -9,13 +9,10 @@ import { useToastStore } from '../store/toastStore.js';
 // Dark：深色 bg + 浅色 text；Light：浅色 bg + 深色 text。
 // 之前只写 dark-only，文字经全局反转后跟 bg 同深 → 看不清 (用户反馈：Stop 后弹窗黑乎乎)。
 const TONE_CLASS: Record<ToastTone, string> = {
-  info: 'dark:bg-surface-3/95 dark:border-border-strong dark:text-fg-primary bg-surface-2 border-border-strong text-fg-primary',
-  success:
-    'dark:bg-emerald-900/90 dark:border-emerald-700 dark:text-emerald-100 bg-emerald-50 border-emerald-300 text-emerald-900',
-  warning:
-    'dark:bg-amber-900/90 dark:border-amber-700 dark:text-amber-100 bg-amber-50 border-amber-300 text-amber-900',
-  error:
-    'dark:bg-red-900/90 dark:border-red-700 dark:text-red-100 bg-red-50 border-red-300 text-red-900',
+  info: 'bg-surface-2 border-border-strong text-fg-primary',
+  success: 'bg-surface-2 border-ok/50 text-ok',
+  warning: 'bg-surface-2 border-warn/50 text-warn',
+  error: 'bg-surface-2 border-danger/50 text-danger',
 };
 
 const TONE_ICON: Record<ToastTone, string> = {

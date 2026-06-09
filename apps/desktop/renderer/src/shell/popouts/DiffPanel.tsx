@@ -112,11 +112,11 @@ export function DiffPanel(): JSX.Element {
   const sourcePill = (() => {
     switch (diff.source) {
       case 'tool-call':
-        return { text: 'Tool call', cls: 'bg-amber-900/40 text-amber-300' };
+        return { text: 'Tool call', cls: 'bg-warn/15 text-warn' };
       case 'git-tracked':
-        return { text: 'Working tree', cls: 'bg-blue-900/40 text-blue-300' };
+        return { text: 'Working tree', cls: 'bg-info/15 text-info' };
       case 'git-untracked':
-        return { text: 'Untracked', cls: 'bg-emerald-900/40 text-emerald-300' };
+        return { text: 'Untracked', cls: 'bg-ok/15 text-ok' };
     }
   })();
   return (

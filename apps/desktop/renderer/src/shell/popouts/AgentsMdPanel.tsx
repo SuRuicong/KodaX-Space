@@ -21,9 +21,9 @@ const SCOPE_LABELS: Record<AgentsFileMeta['scope'], string> = {
 };
 
 const SCOPE_COLORS: Record<AgentsFileMeta['scope'], string> = {
-  global: 'text-amber-400',
-  project: 'text-emerald-400',
-  directory: 'text-sky-400',
+  global: 'text-warn',
+  project: 'text-ok',
+  directory: 'text-run',
 };
 
 const AGENT_SOURCE_LABELS: Record<AgentMeta['source'], string> = {
@@ -32,8 +32,8 @@ const AGENT_SOURCE_LABELS: Record<AgentMeta['source'], string> = {
 };
 
 const AGENT_SOURCE_COLORS: Record<AgentMeta['source'], string> = {
-  'markdown:user': 'text-amber-400',
-  'markdown:project': 'text-emerald-400',
+  'markdown:user': 'text-warn',
+  'markdown:project': 'text-ok',
 };
 
 export function AgentsMdPanel(): JSX.Element {
@@ -210,9 +210,7 @@ function ContextTab(): JSX.Element {
               disabled={saving}
               className={[
                 'px-2 py-0.5 text-[11px] rounded disabled:opacity-50',
-                'dark:bg-emerald-600/40 dark:text-emerald-200 dark:hover:bg-emerald-600/60',
-                // Light: 实色绿 + 白字 — 是关键操作 (Save) 要明显
-                'bg-emerald-600 text-white hover:bg-emerald-500',
+                'bg-ok/15 text-ok border border-ok/50 hover:bg-ok/25 font-medium',
               ].join(' ')}
             >
               {saving ? 'Saving…' : 'Save'}
@@ -220,7 +218,7 @@ function ContextTab(): JSX.Element {
           </div>
         </header>
         {saveError !== null && (
-          <div className="px-3 py-1 text-xs text-red-400 font-mono border-b border-border-default">
+          <div className="px-3 py-1 text-xs text-danger font-mono border-b border-border-default">
             {saveError}
           </div>
         )}
@@ -250,7 +248,7 @@ function ContextTab(): JSX.Element {
   }
 
   if (error !== null) {
-    return <div className="h-full p-4 text-xs text-red-400 font-mono">Failed: {error}</div>;
+    return <div className="h-full p-4 text-xs text-danger font-mono">Failed: {error}</div>;
   }
 
   if (files.length === 0) {
@@ -270,9 +268,7 @@ function ContextTab(): JSX.Element {
             onClick={() => startEdit('global', '# AGENTS.md (global)\n\n')}
             className={[
               'px-2.5 py-1 text-xs rounded',
-              'dark:bg-amber-600/30 dark:text-amber-200 dark:hover:bg-amber-600/50',
-              // Light: 浅琥珀衬 + 深字 — 跟"global" scope 的 amber 色码呼应
-              'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200',
+              'bg-warn/15 text-warn border border-warn/30 hover:bg-warn/25',
             ].join(' ')}
           >
             Create global
@@ -282,9 +278,7 @@ function ContextTab(): JSX.Element {
             onClick={() => startEdit('project', '# AGENTS.md (project)\n\n')}
             className={[
               'px-2.5 py-1 text-xs rounded',
-              'dark:bg-emerald-600/30 dark:text-emerald-200 dark:hover:bg-emerald-600/50',
-              // Light: 浅翠衬 + 深字
-              'bg-emerald-100 text-emerald-900 border border-emerald-300 hover:bg-emerald-200',
+              'bg-ok/15 text-ok border border-ok/30 hover:bg-ok/25',
             ].join(' ')}
           >
             Create project
@@ -321,7 +315,7 @@ function ContextTab(): JSX.Element {
             <button
               type="button"
               onClick={() => startEdit('global', '# AGENTS.md (global)\n\n')}
-              className="px-2 py-0.5 text-[11px] rounded text-amber-400 hover:text-amber-200 hover:bg-amber-900/30"
+              className="px-2 py-0.5 text-[11px] rounded text-warn hover:text-warn hover:bg-warn/30"
               title="Create global AGENTS.md (~/.kodax/AGENTS.md)"
             >
               + Global
@@ -331,7 +325,7 @@ function ContextTab(): JSX.Element {
             <button
               type="button"
               onClick={() => startEdit('project', '# AGENTS.md (project)\n\n')}
-              className="px-2 py-0.5 text-[11px] rounded text-emerald-400 hover:text-emerald-200 hover:bg-emerald-900/30"
+              className="px-2 py-0.5 text-[11px] rounded text-ok hover:text-ok hover:bg-ok/30"
               title="Create project AGENTS.md"
             >
               + Project
@@ -430,7 +424,7 @@ function CustomAgentsTab(): JSX.Element {
   }
 
   if (error !== null) {
-    return <div className="h-full p-4 text-xs text-red-400 font-mono">Failed: {error}</div>;
+    return <div className="h-full p-4 text-xs text-danger font-mono">Failed: {error}</div>;
   }
 
   if (agents.length === 0 && failed.length === 0) {
@@ -463,13 +457,13 @@ function CustomAgentsTab(): JSX.Element {
 
       {failed.length > 0 && (
         <div
-          className="px-3 py-1.5 text-[11px] text-amber-400 bg-amber-950/30 border-b border-amber-900/40 flex-shrink-0"
+          className="px-3 py-1.5 text-[11px] text-warn bg-warn/15 border-b border-warn/40 flex-shrink-0"
           role="status"
           aria-label="agent load failures"
         >
           {failed.length} file{failed.length === 1 ? '' : 's'} failed to load.{' '}
           <span
-            className="text-amber-500"
+            className="text-warn"
             title={failed.map((f) => `${f.path}: ${f.reason}`).join('\n')}
           >
             Hover for details

@@ -80,7 +80,7 @@ export function ProjectPicker(): JSX.Element {
               onClick={() => void selectProject(p.path)}
               className={`group text-left px-2 py-1.5 rounded text-sm flex items-center gap-2 ${
                 isActive
-                  ? 'bg-emerald-900/30 border border-emerald-800/50 text-emerald-100'
+                  ? 'bg-ok/15 border border-ok/50 text-ok'
                   : 'hover:bg-hover-bg text-fg-secondary'
               }`}
               title={p.path}
@@ -96,7 +96,7 @@ export function ProjectPicker(): JSX.Element {
                     void handleRemove(e as unknown as React.MouseEvent, p.path);
                   }
                 }}
-                className="opacity-0 group-hover:opacity-100 text-fg-muted hover:text-red-400 px-1 cursor-pointer"
+                className="opacity-0 group-hover:opacity-100 text-fg-muted hover:text-danger px-1 cursor-pointer"
                 aria-label={`Remove ${p.name} from recent`}
               >
                 ×

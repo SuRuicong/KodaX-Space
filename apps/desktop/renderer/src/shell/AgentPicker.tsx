@@ -13,8 +13,8 @@ import type { AgentMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 
 const SOURCE_DOT_COLOR: Record<AgentMeta['source'], string> = {
-  'markdown:user': 'text-amber-400',
-  'markdown:project': 'text-emerald-400',
+  'markdown:user': 'text-warn',
+  'markdown:project': 'text-ok',
 };
 
 interface Props {

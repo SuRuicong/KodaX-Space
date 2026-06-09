@@ -49,7 +49,7 @@ export function InputBox({
         placeholder={placeholder}
         disabled={disabled}
         rows={MIN_ROWS}
-        className="flex-1 px-3 py-2 text-sm rounded bg-surface border border-border-default font-mono text-fg-primary resize-none focus:outline-none focus:border-blue-700 disabled:opacity-50"
+        className="flex-1 px-3 py-2 text-sm rounded bg-surface border border-border-default font-mono text-fg-primary resize-none focus:outline-none focus:border-info disabled:opacity-50"
         onKeyDown={(e) => {
           if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
             e.preventDefault();
@@ -64,7 +64,7 @@ export function InputBox({
         type="button"
         onClick={onSubmit}
         disabled={disabled || value.trim() === ''}
-        className="text-sm px-3 py-2 rounded bg-blue-700/80 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed text-white self-stretch"
+        className="text-sm px-3 py-2 rounded bg-info/80 hover:bg-info disabled:opacity-40 disabled:cursor-not-allowed text-white self-stretch"
       >
         Send
       </button>

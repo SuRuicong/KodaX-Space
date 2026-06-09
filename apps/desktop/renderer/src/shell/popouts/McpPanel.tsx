@@ -25,9 +25,9 @@ import { Caret } from '../../components/Caret.js';
 
 const STATUS_COLOR: Record<McpRuntimeStatusT, string> = {
   idle: 'text-fg-muted',
-  connecting: 'text-amber-400',
-  ready: 'text-emerald-400',
-  error: 'text-red-400',
+  connecting: 'text-warn',
+  ready: 'text-ok',
+  error: 'text-danger',
   disabled: 'text-fg-faint',
 };
 const STATUS_ICON: Record<McpRuntimeStatusT, string> = {
@@ -304,7 +304,7 @@ export function McpPanel(): JSX.Element {
             type="button"
             onClick={() => void reload()}
             disabled={loading}
-            className="px-2 py-0.5 text-[11px] rounded bg-amber-600/40 text-amber-200 hover:bg-amber-600/60 disabled:opacity-50"
+            className="px-2 py-0.5 text-[11px] rounded bg-warn/15 text-warn hover:bg-warn/25 disabled:opacity-50"
             title="Reload config + reconstruct manager (call after editing ~/.kodax/config.json)"
           >
             ⟲ Reload config
@@ -313,7 +313,7 @@ export function McpPanel(): JSX.Element {
             type="button"
             onClick={() => void installExtension()}
             disabled={installing}
-            className="px-2 py-0.5 text-[11px] rounded bg-emerald-600/40 text-emerald-200 hover:bg-emerald-600/60 disabled:opacity-50"
+            className="px-2 py-0.5 text-[11px] rounded bg-ok/15 text-ok hover:bg-ok/25 disabled:opacity-50"
             title="Install a .mcpb / .dxt bundle"
           >
             {installing ? '…' : '+ Install ext'}
@@ -322,7 +322,7 @@ export function McpPanel(): JSX.Element {
       </header>
 
       {topErr !== null && (
-        <div className="px-3 py-1 text-xs text-red-400 font-mono border-b border-border-default">
+        <div className="px-3 py-1 text-xs text-danger font-mono border-b border-border-default">
           {topErr}
         </div>
       )}
@@ -382,7 +382,7 @@ export function McpPanel(): JSX.Element {
                   </div>
                 )}
                 {status?.lastError && (
-                  <div className="mt-1 text-red-400/80 text-[11px] font-mono break-words">
+                  <div className="mt-1 text-danger/80 text-[11px] font-mono break-words">
                     {status.lastError}
                   </div>
                 )}
@@ -392,7 +392,7 @@ export function McpPanel(): JSX.Element {
                       type="button"
                       onClick={() => void startServer(row.serverId)}
                       disabled={isBusy}
-                      className="px-2 py-0.5 text-[11px] rounded bg-emerald-600/30 text-emerald-200 hover:bg-emerald-600/50 disabled:opacity-50"
+                      className="px-2 py-0.5 text-[11px] rounded bg-ok/15 text-ok hover:bg-ok/25 disabled:opacity-50"
                     >
                       {isBusy ? '…' : 'Start'}
                     </button>
@@ -449,7 +449,7 @@ export function McpPanel(): JSX.Element {
                 </div>
               )}
               {toolsState === 'error' && (
-                <div className="border-t border-border-default px-2 py-1 text-red-400/80 text-[11px]">
+                <div className="border-t border-border-default px-2 py-1 text-danger/80 text-[11px]">
                   Failed to load tools.
                 </div>
               )}
@@ -461,7 +461,7 @@ export function McpPanel(): JSX.Element {
                 </div>
               )}
               {diagState[row.serverId] === 'error' && (
-                <div className="border-t border-border-default px-2 py-1 text-red-400/80 text-[11px]">
+                <div className="border-t border-border-default px-2 py-1 text-danger/80 text-[11px]">
                   Failed to load diagnostics.
                 </div>
               )}
@@ -488,7 +488,7 @@ export function McpPanel(): JSX.Element {
                           <div className="text-fg-muted uppercase tracking-wider mt-1">
                             last error
                           </div>
-                          <pre className="mt-0.5 text-red-400/80 whitespace-pre-wrap break-words font-mono">
+                          <pre className="mt-0.5 text-danger/80 whitespace-pre-wrap break-words font-mono">
                             {diag.lastError}
                           </pre>
                         </div>
@@ -523,7 +523,7 @@ export function McpPanel(): JSX.Element {
                     <button
                       type="button"
                       onClick={() => void uninstallExtension(ext.extensionId, ext.displayName)}
-                      className="px-1.5 py-0.5 text-[11px] rounded text-fg-muted hover:text-red-300 hover:bg-hover-bg"
+                      className="px-1.5 py-0.5 text-[11px] rounded text-fg-muted hover:text-danger hover:bg-hover-bg"
                       title="Uninstall"
                     >
                       Remove
@@ -545,16 +545,16 @@ export function McpPanel(): JSX.Element {
 
         {discoverErrors.length > 0 && (
           <div className="mt-3">
-            <div className="text-[11px] uppercase tracking-wider text-amber-400 mb-1.5">
+            <div className="text-[11px] uppercase tracking-wider text-warn mb-1.5">
               Config errors ({discoverErrors.length})
             </div>
             <ul className="space-y-1">
               {discoverErrors.map((e, idx) => (
-                <li key={`${e.path}:${idx}`} className="text-[11px] text-amber-400/70 font-mono">
+                <li key={`${e.path}:${idx}`} className="text-[11px] text-warn/70 font-mono">
                   <div className="truncate" title={e.path}>
                     {e.path}
                   </div>
-                  <div className="text-amber-400/50 pl-2 truncate" title={e.error}>
+                  <div className="text-warn/50 pl-2 truncate" title={e.error}>
                     {e.error}
                   </div>
                 </li>

@@ -16,7 +16,7 @@ import { Caret } from '../components/Caret.js';
 import type { QueuedMessageT, MessageModeT } from '@kodax-space/space-ipc-schema';
 
 const PRIORITY_COLOR: Record<QueuedMessageT['priority'], string> = {
-  user: 'text-amber-300',
+  user: 'text-warn',
   background: 'text-fg-muted',
 };
 const MODE_LABEL: Record<QueuedMessageT['mode'], string> = {

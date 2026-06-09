@@ -175,9 +175,8 @@ export function ContextWindowIndicator(): JSX.Element | null {
   const tokenStr = `${isEstimate ? '~' : ''}${formatTokens(tokenCount)}`;
   const capStr = formatTokens(cap);
 
-  const color =
-    percent < 50 ? 'text-fg-secondary' : percent < 80 ? 'text-amber-400' : 'text-red-400';
-  const barColor = percent < 50 ? 'bg-fg-faint' : percent < 80 ? 'bg-amber-500' : 'bg-red-500';
+  const color = percent < 50 ? 'text-fg-secondary' : percent < 80 ? 'text-warn' : 'text-danger';
+  const barColor = percent < 50 ? 'bg-fg-faint' : percent < 80 ? 'bg-warn' : 'bg-danger';
 
   return (
     <div className="relative">

@@ -265,10 +265,10 @@ function RepointelChip(): JSX.Element | null {
       : mode === 'off'
         ? 'bg-fg-muted'
         : mode === 'oss'
-          ? 'bg-emerald-500'
+          ? 'bg-ok'
           : mode === 'premium-shared' || mode === 'premium-native'
-            ? 'bg-blue-500'
-            : 'bg-amber-500';
+            ? 'bg-info'
+            : 'bg-warn';
 
   return (
     <div className="relative" ref={ref}>

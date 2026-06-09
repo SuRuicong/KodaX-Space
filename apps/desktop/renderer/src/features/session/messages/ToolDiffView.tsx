@@ -82,10 +82,8 @@ export function ToolDiffView(props: ToolDiffViewProps): JSX.Element {
         <span className="truncate flex-1" title={props.path}>
           {name}
         </span>
-        {summary.plus > 0 && (
-          <span className="text-emerald-500 font-semibold">+{summary.plus}</span>
-        )}
-        {summary.minus > 0 && <span className="text-red-400 font-semibold">−{summary.minus}</span>}
+        {summary.plus > 0 && <span className="text-ok font-semibold">+{summary.plus}</span>}
+        {summary.minus > 0 && <span className="text-danger font-semibold">−{summary.minus}</span>}
         {/* review C3-HIGH-2: 多集合 diff 算出 0/0 但 before !== after 是"行只是被
             重排了" —— 说 "no change" 会误导用户（Monaco 展开后会显示真实 diff）。
             用 ~reordered 跟"真没改"区分。 */}

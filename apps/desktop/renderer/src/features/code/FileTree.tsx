@@ -91,7 +91,7 @@ export function FileTree({ projectRoot, selectedPath, onSelect }: FileTreeProps)
     return <div className="text-xs text-fg-muted p-3">loading tree…</div>;
   }
   if (err) {
-    return <div className="text-xs text-red-400 p-3 font-mono">{err}</div>;
+    return <div className="text-xs text-danger p-3 font-mono">{err}</div>;
   }
   if (rootNodes.length === 0) {
     return <div className="text-xs text-fg-faint p-3">empty project</div>;
@@ -99,7 +99,7 @@ export function FileTree({ projectRoot, selectedPath, onSelect }: FileTreeProps)
   return (
     <div className="text-[12px] font-mono select-none">
       {truncated && (
-        <div className="text-[11px] text-amber-500 px-2 py-1 border-b border-border-default">
+        <div className="text-[11px] text-warn px-2 py-1 border-b border-border-default">
           tree truncated (&gt;5000 nodes)
         </div>
       )}

@@ -248,7 +248,7 @@ export function ModelEffortSelector(): JSX.Element {
                       >
                         <span className="truncate flex-1">{p.displayName}</span>
                         {isActive && (
-                          <span className="text-emerald-500" aria-hidden>
+                          <span className="text-ok" aria-hidden>
                             ✓
                           </span>
                         )}
@@ -267,7 +267,7 @@ export function ModelEffortSelector(): JSX.Element {
             <div>
               <div className="px-3 py-1 flex justify-between items-center text-fg-muted text-[11px] uppercase tracking-wider">
                 <span>Model</span>
-                {!session && <span className="text-amber-500 normal-case">for next session</span>}
+                {!session && <span className="text-warn normal-case">for next session</span>}
               </div>
               <div className="max-h-64 overflow-y-auto">
                 {previewModels.length === 0 ? (
@@ -287,7 +287,7 @@ export function ModelEffortSelector(): JSX.Element {
                       >
                         <span className="truncate flex-1 font-mono">{m}</span>
                         {isActive && (
-                          <span className="text-emerald-500" aria-hidden>
+                          <span className="text-ok" aria-hidden>
                             ✓
                           </span>
                         )}
@@ -323,7 +323,7 @@ export function ModelEffortSelector(): JSX.Element {
                   >
                     {EFFORT_LABEL[m]}
                     {selected && (
-                      <span className="ml-0.5 text-emerald-500" aria-hidden>
+                      <span className="ml-0.5 text-ok" aria-hidden>
                         ✓
                       </span>
                     )}

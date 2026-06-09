@@ -278,7 +278,7 @@ export default function App(): JSX.Element {
   return (
     <div className="h-screen flex flex-col bg-surface text-fg-primary">
       <header className="border-b border-border-default px-4 py-2.5 flex items-center gap-3 flex-shrink-0">
-        <div className="w-2 h-2 rounded-full bg-emerald-500" aria-hidden />
+        <div className="w-2 h-2 rounded-full bg-ok" aria-hidden />
         <h1 className="text-sm font-semibold">KodaX Space</h1>
         <span className="text-xs text-fg-muted font-mono">v{version?.spaceVersion ?? '?.?.?'}</span>
         <button

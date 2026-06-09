@@ -473,9 +473,9 @@ export function ConversationStreamV2(): JSX.Element {
               const isMatch = matchSet.has(m.id);
               const isCurrent = currentMatchId === m.id;
               const ringClass = isCurrent
-                ? 'ring-2 ring-amber-500/80 rounded-md'
+                ? 'ring-2 ring-warn/80 rounded-md'
                 : isMatch
-                  ? 'ring-1 ring-amber-500/40 rounded-md'
+                  ? 'ring-1 ring-warn/40 rounded-md'
                   : '';
               let inner: JSX.Element;
               let markerTone: MarkerTone = 'assistant';
@@ -606,11 +606,11 @@ export function ConversationStreamV2(): JSX.Element {
 // 直径 9px，与 rail (1px wide @ left:7px) 居中对齐 = marker.left = 3px。
 type MarkerTone = 'user' | 'assistant' | 'system' | 'tool' | 'thinking';
 const MARKER_TONE_CLASS: Record<MarkerTone, string> = {
-  user: 'bg-sky-500 dark:bg-sky-400',
-  assistant: 'bg-emerald-500 dark:bg-emerald-400',
-  system: 'bg-amber-500 dark:bg-amber-400',
+  user: 'bg-run dark:bg-run',
+  assistant: 'bg-ok dark:bg-ok',
+  system: 'bg-warn dark:bg-warn',
   tool: 'bg-fg-faint dark:bg-fg-muted',
-  thinking: 'bg-purple-500 dark:bg-purple-400',
+  thinking: 'bg-thinking dark:bg-thinking',
 };
 function TimelineMarker({ tone }: { tone: MarkerTone }): JSX.Element {
   return (
@@ -658,8 +658,8 @@ function ThinkingBlock({
         onClick={onToggle}
         className={[
           'text-xs font-mono flex items-center gap-1.5',
-          'dark:text-purple-400 dark:hover:text-purple-300',
-          'text-purple-700 hover:text-purple-900',
+          'dark:text-thinking dark:hover:text-thinking',
+          'text-thinking hover:text-thinking',
         ].join(' ')}
         aria-expanded={expanded}
       >
@@ -670,8 +670,8 @@ function ThinkingBlock({
         <div
           className={[
             'mt-1.5 ml-3 pl-2 border-l text-xs whitespace-pre-wrap',
-            'dark:border-purple-900/60 dark:text-purple-300/80',
-            'border-purple-200 text-purple-800',
+            'dark:border-thinking/60 dark:text-thinking/80',
+            'border-thinking text-thinking',
           ].join(' ')}
         >
           {thinking}
@@ -734,11 +734,9 @@ function ToolCluster({ cluster, expanded, onToggle }: ToolClusterProps): JSX.Ele
         <Caret open={expanded} />
         <span>{label}</span>
         {thinkingTokens > 0 && (
-          <span className="dark:text-purple-400 text-purple-700">
-            · 💭 ~{thinkingTokens} tokens
-          </span>
+          <span className="dark:text-thinking text-thinking">· 💭 ~{thinkingTokens} tokens</span>
         )}
-        {!allDone && <span className="text-amber-500">{runningHint}</span>}
+        {!allDone && <span className="text-warn">{runningHint}</span>}
       </button>
       {expanded && (
         <div className="mt-1.5 ml-3 space-y-2 border-l border-border-default pl-3">
@@ -751,8 +749,8 @@ function ToolCluster({ cluster, expanded, onToggle }: ToolClusterProps): JSX.Ele
                   <div
                     className={[
                       'pl-2 border-l text-xs whitespace-pre-wrap',
-                      'dark:border-purple-900/60 dark:text-purple-300/80',
-                      'border-purple-200 text-purple-800',
+                      'dark:border-thinking/60 dark:text-thinking/80',
+                      'border-thinking text-thinking',
                     ].join(' ')}
                   >
                     {sc.thinking}
@@ -762,7 +760,7 @@ function ToolCluster({ cluster, expanded, onToggle }: ToolClusterProps): JSX.Ele
                   <div className="flex items-start gap-1.5 text-fg-secondary">
                     <span className="whitespace-pre-wrap break-words">{sc.title}</span>
                     {subRunning && (
-                      <span className="text-amber-500 text-[11px] flex-shrink-0 mt-px">
+                      <span className="text-warn text-[11px] flex-shrink-0 mt-px">
                         · {subRunning.toolName}…
                       </span>
                     )}

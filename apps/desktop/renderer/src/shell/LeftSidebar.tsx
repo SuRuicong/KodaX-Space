@@ -132,7 +132,7 @@ export function LeftSidebar({ mode, onModeChange, width }: LeftSidebarProps): JS
           <span className="inline-flex items-center justify-center gap-1.5">
             <Handshake className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden /> Partner
           </span>
-          <span className="absolute -top-0.5 -right-0.5 text-[8px] text-amber-500">soon</span>
+          <span className="absolute -top-0.5 -right-0.5 text-[8px] text-warn">soon</span>
         </button>
       </div>
 
@@ -414,7 +414,7 @@ function ProjectTree({
             treatAsCurrent
               ? 'text-fg-primary font-semibold'
               : 'text-fg-secondary hover:bg-hover-bg hover:text-fg-primary'
-          } ${isDragOverTarget ? 'outline outline-1 outline-blue-500/60' : ''}`}
+          } ${isDragOverTarget ? 'outline outline-1 outline-info/60' : ''}`}
           onContextMenu={(e) => {
             e.preventDefault();
             setProjCtxMenu({ project: proj, x: e.clientX, y: e.clientY });
@@ -459,7 +459,7 @@ function ProjectTree({
           )}
           {runningCount > 0 && !isRenaming && (
             <span
-              className="text-emerald-400 text-[11px] flex-shrink-0 font-mono"
+              className="text-ok text-[11px] flex-shrink-0 font-mono"
               aria-label={`${runningCount} running`}
               title={`${runningCount} session${runningCount === 1 ? '' : 's'} running`}
             >
@@ -909,13 +909,13 @@ function SessionRow({
     >
       <SessionBullet isFork={isFork} />
       {flags?.pinned && (
-        <span className="text-amber-400 text-[11px]" aria-hidden title="Pinned">
+        <span className="text-warn text-[11px]" aria-hidden title="Pinned">
           📌
         </span>
       )}
       <span className="truncate flex-1">{session.title ?? 'Untitled session'}</span>
       {flags?.unread && (
-        <span className="text-emerald-400 text-[11px]" aria-hidden title="Unread">
+        <span className="text-ok text-[11px]" aria-hidden title="Unread">
           ●
         </span>
       )}
@@ -924,10 +924,10 @@ function SessionRow({
         <span
           className={`text-[11px] flex-shrink-0 ${
             status === 'awaiting'
-              ? 'text-amber-400'
+              ? 'text-warn'
               : status === 'error'
-                ? 'text-red-400'
-                : 'text-emerald-400' /* running */
+                ? 'text-danger'
+                : 'text-ok' /* running */
           }`}
           aria-hidden
           title={
@@ -973,7 +973,7 @@ function RenameInput({
       }}
       onBlur={onCancel}
       onFocus={(e) => e.currentTarget.select()}
-      className="flex-1 bg-transparent text-fg-primary text-xs outline-none border-b border-border-strong focus:border-amber-500 px-0.5 -mx-0.5"
+      className="flex-1 bg-transparent text-fg-primary text-xs outline-none border-b border-border-strong focus:border-warn px-0.5 -mx-0.5"
       placeholder="Session title"
       maxLength={256}
       aria-label="Rename session"
@@ -1020,7 +1020,7 @@ function RunningPeersPanel(): JSX.Element | null {
   return (
     <div className="border-b border-border-default px-2 py-1.5">
       <div className="text-[11px] uppercase tracking-wider text-fg-muted mb-1 px-1 flex items-center gap-1.5">
-        <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+        <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-ok" />
         <span>Running · {peers.length}</span>
       </div>
       {peers.map((p) => {

@@ -26,14 +26,14 @@ import { Caret } from '../../components/Caret.js';
 type ManagedLiveKind = WorkerNode['latestKind'];
 
 function kindDotClass(kind: ManagedLiveKind, isActive: boolean): string {
-  if (isActive) return 'bg-sky-500 animate-pulse';
+  if (isActive) return 'bg-run animate-pulse';
   switch (kind) {
     case 'completed':
-      return 'bg-emerald-500';
+      return 'bg-ok';
     case 'warning':
-      return 'bg-amber-500';
+      return 'bg-warn';
     case 'notification':
-      return 'bg-sky-500';
+      return 'bg-run';
     case 'progress':
       return 'bg-fg-faint';
     default:
@@ -75,7 +75,7 @@ export function TasksPanel(): JSX.Element {
             <div className="text-fg-secondary font-mono">
               {budget.used} / {budget.cap}
               {status?.budgetApprovalRequired && (
-                <span className="ml-2 text-amber-400">· approval required</span>
+                <span className="ml-2 text-warn">· approval required</span>
               )}
             </div>
             <div className="h-1.5 bg-surface-2 rounded overflow-hidden">
@@ -167,7 +167,7 @@ function WorkerRow({ node }: { node: WorkerNode }): JSX.Element {
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
         className={`w-full text-left px-2 py-1 rounded flex items-center gap-2 hover:bg-hover-bg ${
-          node.isActive ? 'bg-sky-950/30' : ''
+          node.isActive ? 'bg-run/30' : ''
         }`}
       >
         <span

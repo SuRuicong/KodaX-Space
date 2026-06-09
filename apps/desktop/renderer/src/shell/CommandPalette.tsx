@@ -44,10 +44,10 @@ function emitInsert(text: string): void {
 }
 
 const KIND_BADGE: Record<CommandKind, { label: string; cls: string }> = {
-  action: { label: 'Action', cls: 'text-amber-400 bg-amber-500/10' },
-  session: { label: 'Session', cls: 'text-sky-400 bg-sky-500/10' },
-  file: { label: 'File', cls: 'text-emerald-400 bg-emerald-500/10' },
-  slash: { label: 'Slash', cls: 'text-violet-400 bg-violet-500/10' },
+  action: { label: 'Action', cls: 'text-warn bg-warn/10' },
+  session: { label: 'Session', cls: 'text-run bg-run/10' },
+  file: { label: 'File', cls: 'text-ok bg-ok/10' },
+  slash: { label: 'Slash', cls: 'text-thinking bg-thinking/10' },
 };
 
 const GROUP_ORDER: readonly CommandKind[] = ['action', 'session', 'file', 'slash'];

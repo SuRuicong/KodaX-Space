@@ -187,7 +187,7 @@ export function SessionList(): JSX.Element {
             type="button"
             onClick={() => void handleCreate()}
             disabled={!currentProjectPath || creating}
-            className="text-xs px-2 py-1 rounded bg-emerald-700/80 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-white"
+            className="text-xs px-2 py-1 rounded bg-ok/80 hover:bg-ok disabled:opacity-40 disabled:cursor-not-allowed text-white"
             title={currentProjectPath ? 'Create new session' : 'Pick a project first'}
           >
             +
@@ -224,7 +224,7 @@ export function SessionList(): JSX.Element {
               // (在白底卡片上能"鼓出来"). 边线 light 用 blue-300 增强 vs blue-50 衬底的反差。
               className={`group cursor-pointer text-left px-2 py-2 rounded text-sm flex flex-col gap-0.5 ${
                 isActive
-                  ? 'dark:bg-blue-900/30 dark:border-blue-800/50 dark:text-blue-100 bg-blue-100 border-blue-300 text-blue-900 border'
+                  ? 'bg-info/15 border-info/40 text-info border'
                   : 'hover:bg-hover-bg text-fg-secondary border border-transparent'
               }`}
               title={s.sessionId}
@@ -264,7 +264,7 @@ export function SessionList(): JSX.Element {
                   <button
                     type="button"
                     onClick={(e) => void handleDelete(e, s.sessionId)}
-                    className="text-fg-muted hover:text-red-400 px-1"
+                    className="text-fg-muted hover:text-danger px-1"
                     aria-label="Delete session"
                   >
                     ×

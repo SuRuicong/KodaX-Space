@@ -189,7 +189,7 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
           >
             <span
               className={`font-mono min-w-[140px] ${
-                item.kind === 'skill' ? 'text-sky-300' : 'text-amber-300'
+                item.kind === 'skill' ? 'text-run' : 'text-warn'
               }`}
             >
               {/* v0.1.10 fix: skill 显示成 `/skill:<name>` 对齐 KodaX REPL namespace;

@@ -231,12 +231,12 @@ function PreferencesPanel(): JSX.Element {
             type="button"
             onClick={() => void save()}
             disabled={busy || defaultWorkspace.trim() === originalDefault.trim()}
-            className="text-xs px-3 py-1 bg-emerald-700 hover:bg-emerald-600 text-fg-primary rounded disabled:opacity-50 disabled:cursor-not-allowed"
+            className="text-xs px-3 py-1 bg-ok/15 text-ok border border-ok/50 hover:bg-ok/25 rounded disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {busy ? 'Saving…' : 'Save'}
           </button>
-          {err && <span className="text-red-400 text-xs">{err}</span>}
-          {saved && <span className="text-emerald-400 text-xs">Saved.</span>}
+          {err && <span className="text-danger text-xs">{err}</span>}
+          {saved && <span className="text-ok text-xs">Saved.</span>}
         </div>
       </section>
 
@@ -263,7 +263,7 @@ function SmartPopoutToggle(): JSX.Element {
           type="checkbox"
           checked={enabled}
           onChange={(e) => setEnabled(e.target.checked)}
-          className="mt-0.5 accent-emerald-500"
+          className="mt-0.5 accent-ok"
         />
         <div className="flex-1">
           <div className="text-xs text-fg-primary">Auto-open Plan / Diff / Tasks popouts</div>
@@ -326,17 +326,17 @@ function ProvidersPanel(): JSX.Element {
       </div>
 
       {err && (
-        <div className="text-xs font-mono rounded p-2 border dark:text-red-300 dark:border-red-900 dark:bg-red-950/40 text-red-900 border-red-300 bg-red-50">
+        <div className="text-xs font-mono rounded p-2 border text-danger border-danger/40 bg-danger/12">
           {err}
         </div>
       )}
 
       {keychainBackend === 'memory' && (
-        <div className="text-xs rounded p-3 border dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100 border-amber-300 bg-amber-50 text-amber-900">
+        <div className="text-xs rounded p-3 border text-warn border-warn/40 bg-warn/12">
           <div className="font-semibold mb-1">
             ⚠ Keychain unavailable — keys stored in memory only
           </div>
-          <div className="dark:text-amber-200/80 text-amber-800">
+          <div className="text-warn/90">
             Could not load <code className="font-mono">keytar</code> or the system keychain (macOS
             Keychain / Windows Credential Manager / Linux libsecret). API keys you set here will
             work this session but <strong>will be lost on app restart</strong>. Install build tools
@@ -365,7 +365,7 @@ function ProvidersPanel(): JSX.Element {
             <button
               type="button"
               onClick={() => setShowCustomForm(true)}
-              className="px-2 py-0.5 text-[11px] rounded bg-violet-800 text-violet-100 hover:bg-violet-700"
+              className="px-2 py-0.5 text-[11px] rounded bg-thinking/12 text-thinking hover:bg-thinking/20"
             >
               + Add custom
             </button>

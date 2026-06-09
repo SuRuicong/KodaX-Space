@@ -21,9 +21,9 @@ import { useAppStore } from '../../store/appStore.js';
 
 // Severity badge — 双主题。同 PermissionModal RISK_STYLE 同款思路: dark 深底浅字, light 浅底深字。
 const SEVERITY_STYLE: Record<AskUserSignal['severity'], string> = {
-  info: 'dark:bg-blue-900 dark:text-blue-200 bg-blue-100 text-blue-900',
-  warning: 'dark:bg-amber-900 dark:text-amber-200 bg-amber-100 text-amber-900',
-  danger: 'dark:bg-red-900 dark:text-red-100 bg-red-100 text-red-900',
+  info: 'bg-info/12 text-info',
+  warning: 'bg-warn/12 text-warn',
+  danger: 'bg-danger/12 text-danger',
 };
 
 function truncate(s: string, max: number): string {
@@ -99,7 +99,7 @@ export function AskUserModal(): JSX.Element | null {
   if (!head) return null;
 
   const hasDangerSignal = head.signals?.some((s) => s.severity === 'danger');
-  const borderClass = hasDangerSignal ? 'border-red-700' : 'border-amber-700';
+  const borderClass = hasDangerSignal ? 'border-danger' : 'border-warn';
 
   return (
     <div
@@ -112,7 +112,7 @@ export function AskUserModal(): JSX.Element | null {
         className={`w-[560px] max-w-[95vw] max-h-[90vh] flex flex-col bg-surface-2 border ${borderClass} rounded-lg shadow-xl`}
       >
         <div className="px-5 py-3 border-b border-border-default flex items-center gap-3 flex-shrink-0">
-          <span className="px-2 py-0.5 text-[11px] font-mono font-semibold rounded bg-amber-900 text-amber-200">
+          <span className="px-2 py-0.5 text-[11px] font-mono font-semibold rounded bg-warn/15 text-warn">
             ASK
           </span>
           <h2 id="ask-user-modal-title" className="text-sm font-semibold text-fg-primary">
@@ -132,7 +132,7 @@ export function AskUserModal(): JSX.Element | null {
 
           <div className="space-y-1">
             <div className="text-[11px] font-mono uppercase text-fg-muted">Tool</div>
-            <div className="text-sm font-mono text-amber-300">{head.toolCall.toolName}</div>
+            <div className="text-sm font-mono text-warn">{head.toolCall.toolName}</div>
           </div>
 
           {inputPreview && (
@@ -166,7 +166,7 @@ export function AskUserModal(): JSX.Element | null {
             </div>
           )}
 
-          {err && <div className="text-xs text-red-400 font-mono">{err}</div>}
+          {err && <div className="text-xs text-danger font-mono">{err}</div>}
         </div>
 
         <div className="px-5 py-3 border-t border-border-default flex items-center justify-end gap-2 flex-shrink-0">
@@ -182,7 +182,7 @@ export function AskUserModal(): JSX.Element | null {
             type="button"
             disabled={busy}
             onClick={() => void answer('allow')}
-            className="px-3 py-1.5 text-xs rounded font-medium bg-emerald-700 text-fg-primary hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 text-xs rounded font-medium bg-ok/15 text-ok border border-ok/50 hover:bg-ok/25 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Allow (Enter)
           </button>

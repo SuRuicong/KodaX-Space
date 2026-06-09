@@ -188,7 +188,7 @@ export function ProjectSessionPicker({
                     }`}
                   >
                     {isCurrent && (
-                      <span className="text-emerald-400 text-[11px]" aria-hidden>
+                      <span className="text-ok text-[11px]" aria-hidden>
                         ●
                       </span>
                     )}

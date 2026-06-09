@@ -77,7 +77,7 @@ export function EventStream(): JSX.Element {
       <ConversationStream sessionId={currentSessionId} />
 
       <div className="border-t border-border-default p-3 space-y-2 flex-shrink-0">
-        {err && <div className="text-red-400 text-xs font-mono">{err}</div>}
+        {err && <div className="text-danger text-xs font-mono">{err}</div>}
         <InputBox
           value={prompt}
           onChange={setPrompt}

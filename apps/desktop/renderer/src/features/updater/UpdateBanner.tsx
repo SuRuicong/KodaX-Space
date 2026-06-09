@@ -91,7 +91,7 @@ export function UpdateBanner(): JSX.Element | null {
         type="button"
         onClick={install}
         disabled={installing}
-        className="ml-2 px-2 py-0.5 text-xs rounded bg-emerald-700/90 text-white hover:bg-emerald-700 border border-emerald-600 disabled:opacity-60 disabled:cursor-not-allowed"
+        className="ml-2 px-2 py-0.5 text-xs rounded bg-ok/90 text-white hover:bg-ok border border-ok disabled:opacity-60 disabled:cursor-not-allowed"
       >
         {installing ? 'Installing…' : 'Restart & install'}
       </button>
@@ -106,11 +106,9 @@ interface BannerShellProps {
 }
 
 const TONE_CLASS: Record<BannerShellProps['tone'], string> = {
-  info: 'dark:bg-surface-3/95 dark:border-border-strong dark:text-fg-primary bg-surface-2 border-border-strong text-fg-primary',
-  success:
-    'dark:bg-emerald-900/90 dark:border-emerald-700 dark:text-emerald-100 bg-emerald-50 border-emerald-300 text-emerald-900',
-  error:
-    'dark:bg-red-900/90 dark:border-red-700 dark:text-red-100 bg-red-50 border-red-300 text-red-900',
+  info: 'bg-surface-2 border-border-strong text-fg-primary',
+  success: 'bg-surface-2 border-ok/50 text-ok',
+  error: 'bg-surface-2 border-danger/50 text-danger',
 };
 
 function BannerShell(props: BannerShellProps): JSX.Element {

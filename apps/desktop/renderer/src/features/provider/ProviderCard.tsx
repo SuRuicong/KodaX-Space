@@ -127,7 +127,7 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
       // (亮模式下"哪个是默认 provider"得一眼能看出来)
       className={`border rounded-lg p-3 ${
         provider.isDefault
-          ? 'dark:border-emerald-700 dark:bg-emerald-950/30 border-emerald-400 bg-emerald-50'
+          ? 'dark:border-ok dark:bg-ok/30 border-ok bg-ok'
           : provider.configured
             ? 'border-border-strong bg-surface-2'
             : 'border-border-default bg-surface-2/40'
@@ -140,12 +140,12 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
               {provider.displayName}
             </span>
             {provider.isDefault && (
-              <span className="px-1.5 py-0.5 text-[9px] font-mono rounded dark:bg-emerald-800 dark:text-emerald-100 bg-emerald-200 text-emerald-900">
+              <span className="px-1.5 py-0.5 text-[9px] font-mono rounded bg-ok/12 text-ok">
                 DEFAULT
               </span>
             )}
             {provider.isCustom && (
-              <span className="px-1.5 py-0.5 text-[9px] font-mono rounded dark:bg-violet-800 dark:text-violet-100 bg-violet-200 text-violet-900">
+              <span className="px-1.5 py-0.5 text-[9px] font-mono rounded bg-thinking/12 text-thinking">
                 CUSTOM
               </span>
             )}
@@ -157,7 +157,7 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
         </div>
         <div className="flex-shrink-0">
           {provider.configured ? (
-            <span className="px-2 py-0.5 text-[11px] font-mono rounded bg-emerald-900 text-emerald-200">
+            <span className="px-2 py-0.5 text-[11px] font-mono rounded bg-ok/15 text-ok">
               CONFIGURED
             </span>
           ) : (
@@ -177,7 +177,7 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder={`Paste ${provider.apiKeyEnv}`}
-              className="flex-1 bg-surface border border-border-strong rounded px-2 py-1 text-xs font-mono text-fg-primary outline-none focus:border-blue-500"
+              className="flex-1 bg-surface border border-border-strong rounded px-2 py-1 text-xs font-mono text-fg-primary outline-none focus:border-info"
               disabled={busy}
             />
             <button
@@ -195,7 +195,7 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
               type="button"
               onClick={() => void handleSave()}
               disabled={busy || draft.trim() === ''}
-              className="px-3 py-1 text-xs rounded bg-blue-700 text-fg-primary hover:bg-blue-600 disabled:opacity-50"
+              className="px-3 py-1 text-xs rounded bg-info/15 text-info border border-info/50 hover:bg-info/25 disabled:opacity-50"
             >
               Save
             </button>
@@ -222,7 +222,7 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
               type="button"
               onClick={() => setEditing(true)}
               disabled={busy}
-              className="px-2 py-1 text-xs rounded bg-blue-700 text-fg-primary hover:bg-blue-600 disabled:opacity-50"
+              className="px-2 py-1 text-xs rounded bg-info/15 text-info border border-info/50 hover:bg-info/25 disabled:opacity-50"
             >
               Set API key
             </button>
@@ -250,7 +250,7 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
                   type="button"
                   onClick={() => void handleSetDefault()}
                   disabled={busy}
-                  className="px-2 py-1 text-xs rounded disabled:opacity-50 dark:bg-emerald-800 dark:text-emerald-100 dark:hover:bg-emerald-700 bg-emerald-600 text-white hover:bg-emerald-500"
+                  className="px-2 py-1 text-xs rounded disabled:opacity-50 bg-ok/15 text-ok border border-ok/50 hover:bg-ok/25"
                 >
                   Set default
                 </button>
@@ -259,7 +259,7 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
                 type="button"
                 onClick={() => void handleRemove()}
                 disabled={busy}
-                className="px-2 py-1 text-xs rounded disabled:opacity-50 dark:bg-red-900 dark:text-red-100 dark:hover:bg-red-800 bg-red-600 text-white hover:bg-red-500"
+                className="px-2 py-1 text-xs rounded disabled:opacity-50 bg-danger/15 text-danger border border-danger/50 hover:bg-danger/25"
               >
                 Remove key
               </button>
@@ -270,7 +270,7 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
               type="button"
               onClick={() => void handleRemoveCustom()}
               disabled={busy}
-              className="px-2 py-1 text-xs rounded bg-surface-3 text-fg-muted hover:bg-red-900 hover:text-red-100 disabled:opacity-50"
+              className="px-2 py-1 text-xs rounded bg-surface-3 text-fg-muted hover:bg-danger/15 hover:text-danger disabled:opacity-50"
             >
               Delete provider
             </button>
@@ -279,12 +279,12 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
       )}
 
       {test.kind === 'ok' && (
-        <div className="mt-2 text-[11px] font-mono text-emerald-300">✓ OK · {test.latencyMs}ms</div>
+        <div className="mt-2 text-[11px] font-mono text-ok">✓ OK · {test.latencyMs}ms</div>
       )}
       {test.kind === 'fail' && (
-        <div className="mt-2 text-[11px] font-mono text-red-300">✗ {test.error}</div>
+        <div className="mt-2 text-[11px] font-mono text-danger">✗ {test.error}</div>
       )}
-      {err && <div className="mt-2 text-[11px] font-mono text-red-400">{err}</div>}
+      {err && <div className="mt-2 text-[11px] font-mono text-danger">{err}</div>}
     </div>
   );
 }

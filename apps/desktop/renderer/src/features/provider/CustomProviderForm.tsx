@@ -66,9 +66,9 @@ export function CustomProviderForm({ onAdded, onCancel }: CustomProviderFormProp
   return (
     <form
       onSubmit={(e) => void handleSubmit(e)}
-      className="border border-violet-800 rounded-lg p-3 bg-violet-950/30 space-y-2"
+      className="border border-thinking rounded-lg p-3 bg-thinking/10 space-y-2"
     >
-      <div className="text-xs font-semibold text-violet-200 mb-1">Add custom provider</div>
+      <div className="text-xs font-semibold text-thinking mb-1">Add custom provider</div>
 
       <Field label="Display name">
         <input
@@ -135,13 +135,13 @@ export function CustomProviderForm({ onAdded, onCancel }: CustomProviderFormProp
         />
       </Field>
 
-      {err && <div className="text-[11px] font-mono text-red-300">{err}</div>}
+      {err && <div className="text-[11px] font-mono text-danger">{err}</div>}
 
       <div className="flex items-center gap-2 pt-1">
         <button
           type="submit"
           disabled={!valid || busy}
-          className="px-3 py-1 text-xs rounded bg-violet-700 text-fg-primary hover:bg-violet-600 disabled:opacity-50"
+          className="px-3 py-1 text-xs rounded bg-thinking/15 text-thinking border border-thinking/50 hover:bg-thinking/25 disabled:opacity-50"
         >
           {busy ? 'Adding…' : 'Add provider'}
         </button>

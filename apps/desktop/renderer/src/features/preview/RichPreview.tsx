@@ -63,7 +63,7 @@ export function RichPreview({ projectRoot, path, kind }: Props): JSX.Element {
     return <div className="p-3 text-xs text-fg-muted">Loading…</div>;
   }
   if (err !== null) {
-    return <div className="p-3 text-xs text-red-400">{err}</div>;
+    return <div className="p-3 text-xs text-danger">{err}</div>;
   }
   if (truncated !== null) {
     return (

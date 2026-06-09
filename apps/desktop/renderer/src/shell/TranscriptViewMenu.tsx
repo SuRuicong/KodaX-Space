@@ -98,7 +98,7 @@ export function TranscriptViewMenu(): JSX.Element {
             >
               <span className="flex-1">{o.label}</span>
               {view === o.key && (
-                <span className="text-emerald-500" aria-hidden>
+                <span className="text-ok" aria-hidden>
                   ✓
                 </span>
               )}
@@ -113,7 +113,7 @@ export function TranscriptViewMenu(): JSX.Element {
                 onClick={() => setFont(f.key)}
                 className={`px-2 py-0.5 rounded border ${
                   fontSize === f.key
-                    ? 'border-emerald-500 text-fg-primary'
+                    ? 'border-ok text-fg-primary'
                     : 'border-border-strong text-fg-muted hover:text-fg-primary'
                 }`}
                 title={`Font ${['Small', 'Medium', 'Large'][idx]}`}

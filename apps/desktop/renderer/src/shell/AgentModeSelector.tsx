@@ -123,7 +123,7 @@ export function AgentModeSelector(): JSX.Element {
                 <span className="font-mono w-9">{LABELS[m]}</span>
                 <span className="flex-1 text-xs">{FULL_NAMES[m]}</span>
                 {current === m && (
-                  <span className="text-emerald-500" aria-hidden>
+                  <span className="text-ok" aria-hidden>
                     ✓
                   </span>
                 )}

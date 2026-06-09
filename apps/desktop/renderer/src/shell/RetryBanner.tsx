@@ -122,8 +122,7 @@ export function RetryBanner(): JSX.Element | null {
       <div
         className={[
           'px-3 py-1 text-xs flex items-center gap-2 border-t border-b font-mono',
-          'text-amber-800 bg-amber-100/70 border-amber-300',
-          'dark:text-amber-300/90 dark:bg-amber-900/15 dark:border-amber-900/30',
+          'text-warn bg-warn/15 border-warn/40',
         ].join(' ')}
         role="status"
         aria-live="polite"
@@ -133,7 +132,7 @@ export function RetryBanner(): JSX.Element | null {
           {reasonLabel}
           {banner.provider ? ` by ${banner.provider}` : ''} · retrying in {remainSec}s
         </span>
-        <span className="text-amber-700/80 dark:text-amber-300/60 ml-auto">
+        <span className="text-warn/80 dark:text-warn/60 ml-auto">
           attempt {banner.attempt}/{banner.maxAttempts}
         </span>
       </div>
@@ -145,15 +144,15 @@ export function RetryBanner(): JSX.Element | null {
     <div
       className={[
         'px-3 py-1 text-xs flex items-center gap-2 border-t border-b font-mono',
-        'text-sky-800 bg-sky-100/70 border-sky-300',
-        'dark:text-sky-300/90 dark:bg-sky-900/15 dark:border-sky-900/30',
+        'text-run bg-run/15 border-run/40',
+        'dark:text-run/90 dark:bg-run/15 dark:border-run/30',
       ].join(' ')}
       role="status"
       aria-live="polite"
     >
       <RotateCw className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} aria-hidden />
       <span>Provider recovery: {banner.recoveryAction}</span>
-      <span className="text-sky-700/80 dark:text-sky-300/60 ml-auto">
+      <span className="text-run/80 dark:text-run/60 ml-auto">
         attempt {banner.attempt}/{banner.maxAttempts}
       </span>
     </div>

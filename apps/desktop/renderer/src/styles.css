@@ -62,11 +62,13 @@
     --accent-border: rgba(245, 166, 35, 0.42);
     --accent-glow: rgba(245, 166, 35, 0.42);
 
-    /* —— 语义状态色 (白底加深档)，只做状态点 —— */
-    --ok: 31 157 82;
-    --run: 31 143 214;
-    --warn: 201 138 9;
-    --danger: 220 77 77;
+    /* —— 语义调色板 (白底加深档)。F054 #1：收编原彩虹字面色，每色一义 —— */
+    --ok: 31 157 82; /* 成功/完成 ← emerald/green */
+    --run: 31 143 214; /* 运行/活跃(带动画) ← sky */
+    --info: 37 99 235; /* 链接/信息/选中 ← blue */
+    --thinking: 147 51 234; /* 推理/AMA/slash ← purple/violet */
+    --warn: 201 138 9; /* 警告/脏状态 ← amber(警告语境)/orange */
+    --danger: 220 77 77; /* 错误/失败 ← red/rose */
 
     /* —— 代码 / diff / 语法 (atom-one-light) —— */
     --code-bg: 246 246 248;
@@ -112,6 +114,8 @@
 
     --ok: 74 222 128;
     --run: 76 194 255;
+    --info: 96 165 250;
+    --thinking: 192 132 252;
     --warn: 251 191 36;
     --danger: 248 113 113;
 
@@ -129,117 +133,6 @@
 /* F054: zinc 反转 hack 已删除 —— 组件已全量迁移到语义 token (bg-surface / text-fg-* /
    border-border-* / hover:bg-hover-bg)，这些 token 本身 theme-aware，不再需要 light-mode
    逐类反转。(grep "zinc-" renderer/src 仅余注释与 Monaco 主题 hex。) */
-/* ===== Accent text colors — light-mode override (2026-05) =====
-   组件大量用 `text-{accent}-{100|200|300}` (pale tone for dark bg)。这些 class 在 styles.css
-   反转表里之前只覆盖了 amber-300。其他 (blue/emerald/red/orange/violet/sky/...) 在 light
-   模式下保留 pale 原色,白底上几乎看不见。
-   规则: 把 100/200/300 全部映射到对应同色相的 700/800 tone (深色,在白底可读 WCAG AA)。
-   组件如果已经写了 dark:text-foo + light:text-bar 之类显式双主题则不受影响 (那种情况下
-   light: 前缀的特异性高于这里的 html:not(.dark))。 */
-html:not(.dark) .text-amber-100 {
-  color: rgb(146 64 14);
-} /* amber-800 */
-html:not(.dark) .text-amber-200 {
-  color: rgb(180 83 9);
-} /* amber-700 */
-html:not(.dark) .text-amber-300 {
-  color: rgb(180 83 9);
-} /* amber-700 — 已有,inline code 复用 */
-html:not(.dark) .text-amber-400 {
-  color: rgb(217 119 6);
-} /* amber-600 — 弱一档 */
-
-html:not(.dark) .text-sky-100 {
-  color: rgb(7 89 133);
-} /* sky-800 */
-html:not(.dark) .text-sky-200 {
-  color: rgb(3 105 161);
-} /* sky-700 */
-html:not(.dark) .text-sky-300 {
-  color: rgb(3 105 161);
-} /* sky-700 */
-html:not(.dark) .text-sky-400 {
-  color: rgb(2 132 199);
-} /* sky-600 */
-
-html:not(.dark) .text-blue-100 {
-  color: rgb(30 64 175);
-} /* blue-800 */
-html:not(.dark) .text-blue-200 {
-  color: rgb(29 78 216);
-} /* blue-700 */
-html:not(.dark) .text-blue-300 {
-  color: rgb(29 78 216);
-} /* blue-700 */
-html:not(.dark) .text-blue-400 {
-  color: rgb(37 99 235);
-} /* blue-600 */
-
-html:not(.dark) .text-emerald-100 {
-  color: rgb(6 95 70);
-} /* emerald-800 */
-html:not(.dark) .text-emerald-200 {
-  color: rgb(4 120 87);
-} /* emerald-700 */
-html:not(.dark) .text-emerald-300 {
-  color: rgb(4 120 87);
-} /* emerald-700 */
-html:not(.dark) .text-emerald-400 {
-  color: rgb(5 150 105);
-} /* emerald-600 */
-
-html:not(.dark) .text-red-100 {
-  color: rgb(153 27 27);
-} /* red-800 */
-html:not(.dark) .text-red-200 {
-  color: rgb(185 28 28);
-} /* red-700 */
-html:not(.dark) .text-red-300 {
-  color: rgb(185 28 28);
-} /* red-700 */
-html:not(.dark) .text-red-400 {
-  color: rgb(220 38 38);
-} /* red-600 */
-
-html:not(.dark) .text-orange-100 {
-  color: rgb(154 52 18);
-} /* orange-800 */
-html:not(.dark) .text-orange-200 {
-  color: rgb(194 65 12);
-} /* orange-700 */
-html:not(.dark) .text-orange-300 {
-  color: rgb(194 65 12);
-} /* orange-700 */
-
-html:not(.dark) .text-violet-100 {
-  color: rgb(91 33 182);
-} /* violet-800 */
-html:not(.dark) .text-violet-200 {
-  color: rgb(109 40 217);
-} /* violet-700 */
-html:not(.dark) .text-violet-300 {
-  color: rgb(109 40 217);
-} /* violet-700 */
-html:not(.dark) .text-violet-400 {
-  color: rgb(124 58 237);
-} /* violet-600 */
-
-html:not(.dark) .text-purple-200 {
-  color: rgb(126 34 206);
-} /* purple-700 */
-html:not(.dark) .text-purple-300 {
-  color: rgb(126 34 206);
-} /* purple-700 */
-html:not(.dark) .text-purple-400 {
-  color: rgb(147 51 234);
-} /* purple-600 */
-
-html:not(.dark) .text-rose-200 {
-  color: rgb(190 18 60);
-} /* rose-700 */
-html:not(.dark) .text-rose-300 {
-  color: rgb(190 18 60);
-} /* rose-700 */
 
 /* highlight.js 浅色 token 覆盖 — atom-one-dark.css 通过 @import 加载，
    规则字面是 .hljs / .hljs-keyword 等不带 dark 限定，在 light 模式仍生效。
