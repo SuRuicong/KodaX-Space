@@ -66,7 +66,7 @@ export function CustomProviderForm({ onAdded, onCancel }: CustomProviderFormProp
   return (
     <form
       onSubmit={(e) => void handleSubmit(e)}
-      className="border border-thinking rounded-lg p-3 bg-thinking/10 space-y-2"
+      className="border border-thinking/40 rounded-lg p-3 bg-thinking/10 space-y-2"
     >
       <div className="text-xs font-semibold text-thinking mb-1">Add custom provider</div>
 

@@ -383,13 +383,16 @@ export function WelcomeDashboard(): JSX.Element {
   );
 }
 
-// 5 档梯度——更明显的台阶差，让稀疏数据也能看出"活跃 vs 极度活跃"层次。
-// 0 用极淡 fill（不是全暗），让网格本身可读；1→4 蓝色从深到浅渐变
+// 5 档强度梯度 (GitHub 贡献图风)。F054 修正：原来用裸 blue-900→300 写死 shade，
+// 在 light 模式下 (bg-blue-* 无 light override) 是"少=深navy / 多=浅蓝"——方向反了。
+// 改用单一 --info hue 的**透明度阶梯**：少→多 = 透明度递增 = 越活跃越显眼，两主题方向一致。
+//   light: info=深蓝, /15 淡 → 实色 深; dark: info=亮蓝, /15 微 → 实色 亮。
+// 0 档用极淡中性 fill 让空网格本身可读。
 const LEVEL_BG: Record<0 | 1 | 2 | 3 | 4, string> = {
   0: 'bg-surface-3/40',
-  1: 'bg-info',
-  2: 'bg-info',
-  3: 'bg-info',
+  1: 'bg-info/25',
+  2: 'bg-info/45',
+  3: 'bg-info/70',
   4: 'bg-info',
 };
 

@@ -195,7 +195,7 @@ function MarkdownInner({ content }: MarkdownProps): JSX.Element {
               href={href}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-info hover:text-info/70 underline decoration-info/40 underline-offset-2"
+              className="text-info/80 hover:text-info underline decoration-info/40 underline-offset-2"
             >
               {children}
             </a>

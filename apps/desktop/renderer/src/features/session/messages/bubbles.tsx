@@ -231,7 +231,7 @@ export function AssistantBubble({
           className={[
             'text-xs font-mono mb-1.5 flex items-center gap-1.5',
             'dark:text-thinking dark:hover:text-thinking',
-            'text-thinking hover:text-thinking/70',
+            'text-thinking/80 hover:text-thinking',
           ].join(' ')}
         >
           <Caret open={showThinking} />
@@ -243,7 +243,7 @@ export function AssistantBubble({
           className={[
             'mb-2 ml-3 pl-2 border-l text-xs whitespace-pre-wrap',
             'dark:border-thinking/60 dark:text-thinking/80',
-            'border-thinking text-thinking',
+            'border-thinking/50 text-thinking/90',
           ].join(' ')}
         >
           {thinking}
@@ -530,7 +530,7 @@ function ToolEditInputView({ toolName, input }: ToolEditInputViewProps): JSX.Ele
           <button
             type="button"
             onClick={() => setShowFullInput((v) => !v)}
-            className="text-[11px] text-info hover:text-info/70 normal-case"
+            className="text-[11px] text-info/80 hover:text-info normal-case"
           >
             {showFullInput ? 'Collapse' : `Show full (${inputCollapse.totalLines} lines)`}
           </button>
@@ -580,7 +580,7 @@ function ToolResultView({
           <button
             type="button"
             onClick={() => setShowFullResult((v) => !v)}
-            className="text-[11px] text-info hover:text-info/70 normal-case"
+            className="text-[11px] text-info/80 hover:text-info normal-case"
           >
             {showFullResult ? 'Collapse' : `Show full (${resultCollapse.totalLines} lines)`}
           </button>

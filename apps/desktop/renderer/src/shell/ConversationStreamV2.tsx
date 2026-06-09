@@ -659,7 +659,7 @@ function ThinkingBlock({
         className={[
           'text-xs font-mono flex items-center gap-1.5',
           'dark:text-thinking dark:hover:text-thinking',
-          'text-thinking hover:text-thinking/70',
+          'text-thinking/80 hover:text-thinking',
         ].join(' ')}
         aria-expanded={expanded}
       >
@@ -671,7 +671,7 @@ function ThinkingBlock({
           className={[
             'mt-1.5 ml-3 pl-2 border-l text-xs whitespace-pre-wrap',
             'dark:border-thinking/60 dark:text-thinking/80',
-            'border-thinking text-thinking',
+            'border-thinking/50 text-thinking/90',
           ].join(' ')}
         >
           {thinking}
@@ -748,7 +748,7 @@ function ToolCluster({ cluster, expanded, onToggle }: ToolClusterProps): JSX.Ele
                     className={[
                       'pl-2 border-l text-xs whitespace-pre-wrap',
                       'dark:border-thinking/60 dark:text-thinking/80',
-                      'border-thinking text-thinking',
+                      'border-thinking/50 text-thinking/90',
                     ].join(' ')}
                   >
                     {sc.thinking}
