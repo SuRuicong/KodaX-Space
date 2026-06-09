@@ -21,6 +21,15 @@
 // currentProjectPath，永远可用。
 
 import { useEffect, useState } from 'react';
+import {
+  Paperclip,
+  FolderPlus,
+  Slash,
+  Plug,
+  Puzzle,
+  ChevronLeft,
+  type LucideIcon,
+} from 'lucide-react';
 import type { McpServerMeta, SkillMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 import { Caret } from '../components/Caret.js';
@@ -167,9 +176,7 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
             key={`${s.source}:${s.name}`}
             className="px-3 py-1.5 hover:bg-hover-bg text-xs flex items-center gap-2"
           >
-            <span className="text-ok" aria-hidden>
-              ●
-            </span>
+            <span className="w-1.5 h-1.5 rounded-full bg-ok flex-shrink-0" aria-hidden />
             <span className="flex-1 truncate">{s.name}</span>
             <span className="text-[11px] text-fg-muted font-mono">{s.transport}</span>
             <span className="text-[11px] text-fg-faint">{s.source}</span>
@@ -214,11 +221,11 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
       className="absolute left-0 bottom-full mb-1 w-60 bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 text-xs z-50"
       onMouseLeave={onClose}
     >
-      <AttachRow icon="📎" label="Add files or photos" onClick={() => void addFiles()} />
-      <AttachRow icon="📁" label="Add folder" onClick={() => void addFolder()} />
-      <AttachRow icon="⌗" label="Slash commands" onClick={() => setSub('slash')} chevron />
-      <AttachRow icon="⚙" label="Connectors" onClick={() => void loadConnectors()} chevron />
-      <AttachRow icon="🧩" label="Skills" onClick={() => void loadSkills()} chevron />
+      <AttachRow Icon={Paperclip} label="Add files or photos" onClick={() => void addFiles()} />
+      <AttachRow Icon={FolderPlus} label="Add folder" onClick={() => void addFolder()} />
+      <AttachRow Icon={Slash} label="Slash commands" onClick={() => setSub('slash')} chevron />
+      <AttachRow Icon={Plug} label="Connectors" onClick={() => void loadConnectors()} chevron />
+      <AttachRow Icon={Puzzle} label="Skills" onClick={() => void loadSkills()} chevron />
     </div>
   );
 }
@@ -238,10 +245,10 @@ function SubMenuFrame({
         <button
           type="button"
           onClick={onBack}
-          className="hover:text-fg-secondary"
+          className="hover:text-fg-secondary inline-flex items-center"
           aria-label="Back"
         >
-          ←
+          <ChevronLeft className="w-3.5 h-3.5" strokeWidth={2} aria-hidden />
         </button>
         <span>{title}</span>
       </div>
@@ -251,14 +258,14 @@ function SubMenuFrame({
 }
 
 function AttachRow({
-  icon,
+  Icon,
   label,
   onClick,
   disabled,
   chevron,
   hint,
 }: {
-  icon: string;
+  Icon: LucideIcon;
   label: string;
   onClick?: () => void;
   disabled?: boolean;
@@ -275,9 +282,7 @@ function AttachRow({
         disabled ? 'text-fg-faint cursor-not-allowed' : 'text-fg-secondary hover:bg-hover-bg'
       }`}
     >
-      <span className="w-4" aria-hidden>
-        {icon}
-      </span>
+      <Icon className="w-4 h-4 flex-shrink-0 text-fg-muted" strokeWidth={1.75} aria-hidden />
       <span className="flex-1">{label}</span>
       {chevron && <Caret open={false} className="text-fg-faint" />}
     </button>

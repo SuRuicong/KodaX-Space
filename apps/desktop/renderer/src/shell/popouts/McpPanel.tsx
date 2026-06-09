@@ -18,7 +18,15 @@ import type {
   McpRuntimeStatusT,
   McpbExtensionT,
 } from '@kodax-space/space-ipc-schema';
-import { RefreshCw } from 'lucide-react';
+import {
+  RefreshCw,
+  Circle,
+  Loader2,
+  CircleDot,
+  CircleX,
+  MinusCircle,
+  type LucideIcon,
+} from 'lucide-react';
 import { useAppStore } from '../../store/appStore.js';
 import { pushToast } from '../../store/toastStore.js';
 import { Caret } from '../../components/Caret.js';
@@ -30,12 +38,12 @@ const STATUS_COLOR: Record<McpRuntimeStatusT, string> = {
   error: 'text-danger',
   disabled: 'text-fg-faint',
 };
-const STATUS_ICON: Record<McpRuntimeStatusT, string> = {
-  idle: '○',
-  connecting: '⟳',
-  ready: '●',
-  error: '✕',
-  disabled: '—',
+const STATUS_ICON: Record<McpRuntimeStatusT, LucideIcon> = {
+  idle: Circle,
+  connecting: Loader2,
+  ready: CircleDot,
+  error: CircleX,
+  disabled: MinusCircle,
 };
 
 interface ToolItem {
@@ -340,6 +348,7 @@ export function McpPanel(): JSX.Element {
           const status = row.status;
           const m = row.meta;
           const sStatus: McpRuntimeStatusT = status?.status ?? 'idle';
+          const StatusIcon = STATUS_ICON[sStatus];
           const tools = status?.tools ?? 0;
           const isBusy = busyServer === row.serverId;
           const toolsState = expandedTools[row.serverId];
@@ -350,13 +359,12 @@ export function McpPanel(): JSX.Element {
             >
               <div className="px-2 py-1.5">
                 <div className="flex items-center gap-2">
-                  <span
-                    className={`${STATUS_COLOR[sStatus]} font-mono`}
+                  <StatusIcon
+                    className={`w-3.5 h-3.5 flex-shrink-0 ${STATUS_COLOR[sStatus]} ${sStatus === 'connecting' ? 'animate-spin' : ''}`}
+                    strokeWidth={2}
                     aria-hidden
-                    title={sStatus}
-                  >
-                    {STATUS_ICON[sStatus]}
-                  </span>
+                  />
+                  <span className="sr-only">{sStatus}</span>
                   <span className="font-mono text-fg-primary truncate flex-1">{row.serverId}</span>
                   <span className={`text-[11px] font-mono ${STATUS_COLOR[sStatus]}`}>
                     {sStatus}

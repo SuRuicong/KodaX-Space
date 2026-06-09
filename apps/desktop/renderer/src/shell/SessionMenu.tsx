@@ -16,6 +16,21 @@
 // 会丢）；KodaX SDK 0.7.42 出 forkSession()/rewindSession() 后接磁盘。
 
 import { useEffect, useState } from 'react';
+import {
+  ExternalLink,
+  Pin,
+  PinOff,
+  Circle,
+  Pencil,
+  GitFork,
+  Undo2,
+  Network,
+  FolderInput,
+  Archive,
+  ArchiveRestore,
+  Trash2,
+  type LucideIcon,
+} from 'lucide-react';
 import { useAppStore, type UserMessage } from '../store/appStore.js';
 import { SessionLineagePanel } from '../features/session/SessionLineagePanel.js';
 
@@ -243,9 +258,15 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
       className={`absolute left-0 top-full mt-1 ${showLineage ? 'w-80' : 'w-52'} bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 text-xs z-50`}
       onMouseLeave={onClose}
     >
-      <MenuRow icon="↗" label="Open in" shortcut="" disabled hint="External app — v0.1.x" />
       <MenuRow
-        icon={sessionFlags?.pinned ? '📌✓' : '📌'}
+        Icon={ExternalLink}
+        label="Open in"
+        shortcut=""
+        disabled
+        hint="External app — v0.1.x"
+      />
+      <MenuRow
+        Icon={sessionFlags?.pinned ? PinOff : Pin}
         label={sessionFlags?.pinned ? 'Unpin' : 'Pin'}
         shortcut="P"
         onClick={() => {
@@ -254,7 +275,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
         }}
       />
       <MenuRow
-        icon={sessionFlags?.unread ? '●✓' : '●'}
+        Icon={Circle}
         label={sessionFlags?.unread ? 'Mark as read' : 'Mark as unread'}
         shortcut="U"
         onClick={() => {
@@ -262,10 +283,10 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
           onClose();
         }}
       />
-      <MenuRow icon="✎" label="Rename" shortcut="R" onClick={() => setRenaming(true)} />
-      <MenuRow icon="⑂" label="Fork" shortcut="F" onClick={() => void doFork()} />
+      <MenuRow Icon={Pencil} label="Rename" shortcut="R" onClick={() => setRenaming(true)} />
+      <MenuRow Icon={GitFork} label="Fork" shortcut="F" onClick={() => void doFork()} />
       <MenuRow
-        icon="↶"
+        Icon={Undo2}
         label="Rewind 1 turn"
         shortcut="W"
         onClick={() => void doRewind()}
@@ -273,7 +294,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
         hint={userMessages.length === 0 ? 'No turns yet' : undefined}
       />
       <MenuRow
-        icon="🌳"
+        Icon={Network}
         label={showLineage ? 'Hide lineage' : 'Show lineage'}
         shortcut="L"
         onClick={() => setShowLineage((v) => !v)}
@@ -289,9 +310,9 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
           />
         </div>
       )}
-      <MenuRow icon="📂" label="Move to group" shortcut="" disabled hint="v0.1.x" />
+      <MenuRow Icon={FolderInput} label="Move to group" shortcut="" disabled hint="v0.1.x" />
       <MenuRow
-        icon={sessionFlags?.archived ? '📦✓' : '📦'}
+        Icon={sessionFlags?.archived ? ArchiveRestore : Archive}
         label={sessionFlags?.archived ? 'Unarchive' : 'Archive'}
         shortcut="A"
         onClick={() => {
@@ -300,13 +321,13 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
         }}
       />
       <div className="border-t border-border-default my-1" />
-      <MenuRow icon="🗑" label="Delete" shortcut="D" onClick={() => void doDelete()} danger />
+      <MenuRow Icon={Trash2} label="Delete" shortcut="D" onClick={() => void doDelete()} danger />
     </div>
   );
 }
 
 interface MenuRowProps {
-  icon: string;
+  Icon: LucideIcon;
   label: string;
   shortcut: string;
   onClick?: () => void;
@@ -316,7 +337,7 @@ interface MenuRowProps {
 }
 
 function MenuRow({
-  icon,
+  Icon,
   label,
   shortcut,
   onClick,
@@ -338,9 +359,7 @@ function MenuRow({
             : 'text-fg-secondary hover:bg-hover-bg'
       }`}
     >
-      <span className="w-4" aria-hidden>
-        {icon}
-      </span>
+      <Icon className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={1.75} aria-hidden />
       <span className="flex-1">{label}</span>
       <span className="text-[11px] text-fg-faint">{shortcut}</span>
     </button>

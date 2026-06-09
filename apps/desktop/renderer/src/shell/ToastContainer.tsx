@@ -3,6 +3,7 @@
 // 显示 pushToast 推进来的瞬态消息。tone 决定颜色 + 默认 ttl；用户也可以 × 手动关。
 // 不需要订阅 sessionId / projectPath 等业务状态，与 Shell 解耦。
 
+import { Info, CheckCircle2, AlertTriangle, XCircle, X, type LucideIcon } from 'lucide-react';
 import type { Toast, ToastTone } from '../store/toastStore.js';
 import { useToastStore } from '../store/toastStore.js';
 
@@ -15,11 +16,11 @@ const TONE_CLASS: Record<ToastTone, string> = {
   error: 'bg-surface-2 border-danger/50 text-danger',
 };
 
-const TONE_ICON: Record<ToastTone, string> = {
-  info: 'ⓘ',
-  success: '✓',
-  warning: '!',
-  error: '✕',
+const TONE_ICON: Record<ToastTone, LucideIcon> = {
+  info: Info,
+  success: CheckCircle2,
+  warning: AlertTriangle,
+  error: XCircle,
 };
 
 export function ToastContainer(): JSX.Element | null {
@@ -30,26 +31,27 @@ export function ToastContainer(): JSX.Element | null {
 
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none">
-      {toasts.map((t: Toast) => (
-        <div
-          key={t.id}
-          role="status"
-          className={`pointer-events-auto flex items-start gap-2 px-3 py-2 rounded border text-xs shadow-lg ${TONE_CLASS[t.tone]}`}
-        >
-          <span className="font-mono leading-tight" aria-hidden>
-            {TONE_ICON[t.tone]}
-          </span>
-          <div className="flex-1 whitespace-pre-wrap break-words">{t.message}</div>
-          <button
-            type="button"
-            onClick={() => dismiss(t.id)}
-            className="dark:text-fg-muted dark:hover:text-white text-fg-muted hover:text-fg-primary px-0.5 leading-none"
-            aria-label="Dismiss"
+      {toasts.map((t: Toast) => {
+        const Icon = TONE_ICON[t.tone];
+        return (
+          <div
+            key={t.id}
+            role="status"
+            className={`pointer-events-auto flex items-start gap-2 px-3 py-2 rounded border text-xs shadow-lg ${TONE_CLASS[t.tone]}`}
           >
-            ×
-          </button>
-        </div>
-      ))}
+            <Icon className="w-4 h-4 flex-shrink-0 mt-0.5" strokeWidth={2} aria-hidden />
+            <div className="flex-1 whitespace-pre-wrap break-words">{t.message}</div>
+            <button
+              type="button"
+              onClick={() => dismiss(t.id)}
+              className="text-fg-muted hover:text-fg-primary inline-flex items-center"
+              aria-label="Dismiss"
+            >
+              <X className="w-3.5 h-3.5" strokeWidth={2} />
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }
