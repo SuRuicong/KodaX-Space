@@ -606,11 +606,11 @@ export function ConversationStreamV2(): JSX.Element {
 // 直径 9px，与 rail (1px wide @ left:7px) 居中对齐 = marker.left = 3px。
 type MarkerTone = 'user' | 'assistant' | 'system' | 'tool' | 'thinking';
 const MARKER_TONE_CLASS: Record<MarkerTone, string> = {
-  user: 'bg-run dark:bg-run',
-  assistant: 'bg-ok dark:bg-ok',
-  system: 'bg-warn dark:bg-warn',
+  user: 'bg-run',
+  assistant: 'bg-ok',
+  system: 'bg-warn',
   tool: 'bg-fg-faint dark:bg-fg-muted',
-  thinking: 'bg-thinking dark:bg-thinking',
+  thinking: 'bg-thinking',
 };
 function TimelineMarker({ tone }: { tone: MarkerTone }): JSX.Element {
   return (
@@ -659,7 +659,7 @@ function ThinkingBlock({
         className={[
           'text-xs font-mono flex items-center gap-1.5',
           'dark:text-thinking dark:hover:text-thinking',
-          'text-thinking hover:text-thinking',
+          'text-thinking hover:text-thinking/70',
         ].join(' ')}
         aria-expanded={expanded}
       >
@@ -733,9 +733,7 @@ function ToolCluster({ cluster, expanded, onToggle }: ToolClusterProps): JSX.Ele
       >
         <Caret open={expanded} />
         <span>{label}</span>
-        {thinkingTokens > 0 && (
-          <span className="dark:text-thinking text-thinking">· 💭 ~{thinkingTokens} tokens</span>
-        )}
+        {thinkingTokens > 0 && <span className="text-thinking">· 💭 ~{thinkingTokens} tokens</span>}
         {!allDone && <span className="text-warn">{runningHint}</span>}
       </button>
       {expanded && (

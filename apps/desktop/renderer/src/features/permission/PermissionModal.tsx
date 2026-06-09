@@ -243,9 +243,7 @@ export function PermissionModal(): JSX.Element | null {
               className="px-3 py-1.5 text-xs rounded font-medium border border-ok text-ok hover:bg-ok/15 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Always allow{' '}
-              <code className="font-mono text-xs dark:text-warn text-warn">
-                {head.suggestedPattern}
-              </code>
+              <code className="font-mono text-xs text-warn">{head.suggestedPattern}</code>
             </button>
           )}
           <button

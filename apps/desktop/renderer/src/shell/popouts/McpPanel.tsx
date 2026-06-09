@@ -312,10 +312,15 @@ export function McpPanel(): JSX.Element {
             type="button"
             onClick={() => void reload()}
             disabled={loading}
-            className="px-2 py-0.5 text-[11px] rounded bg-warn/15 text-warn hover:bg-warn/25 disabled:opacity-50"
+            className="px-2 py-0.5 text-[11px] rounded bg-warn/15 text-warn hover:bg-warn/25 disabled:opacity-50 inline-flex items-center gap-1"
             title="Reload config + reconstruct manager (call after editing ~/.kodax/config.json)"
           >
-            ⟲ Reload config
+            <RefreshCw
+              className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`}
+              strokeWidth={2}
+              aria-hidden
+            />
+            Reload config
           </button>
           <button
             type="button"

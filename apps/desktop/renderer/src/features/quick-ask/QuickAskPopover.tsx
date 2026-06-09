@@ -239,7 +239,7 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
             </div>
           )}
           {state.kind === 'error' && (
-            <div className="mt-3 pt-3 border-t dark:border-danger/60 border-danger text-xs dark:text-danger text-danger">
+            <div className="mt-3 pt-3 border-t dark:border-danger/60 border-danger text-xs text-danger">
               {state.message}
             </div>
           )}

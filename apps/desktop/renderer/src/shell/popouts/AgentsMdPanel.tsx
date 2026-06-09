@@ -315,7 +315,7 @@ function ContextTab(): JSX.Element {
             <button
               type="button"
               onClick={() => startEdit('global', '# AGENTS.md (global)\n\n')}
-              className="px-2 py-0.5 text-[11px] rounded text-warn hover:text-warn hover:bg-warn/30"
+              className="px-2 py-0.5 text-[11px] rounded text-warn hover:text-warn/70 hover:bg-warn/30"
               title="Create global AGENTS.md (~/.kodax/AGENTS.md)"
             >
               + Global
@@ -325,7 +325,7 @@ function ContextTab(): JSX.Element {
             <button
               type="button"
               onClick={() => startEdit('project', '# AGENTS.md (project)\n\n')}
-              className="px-2 py-0.5 text-[11px] rounded text-ok hover:text-ok hover:bg-ok/30"
+              className="px-2 py-0.5 text-[11px] rounded text-ok hover:text-ok/70 hover:bg-ok/30"
               title="Create project AGENTS.md"
             >
               + Project

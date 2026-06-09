@@ -231,7 +231,7 @@ export function AssistantBubble({
           className={[
             'text-xs font-mono mb-1.5 flex items-center gap-1.5',
             'dark:text-thinking dark:hover:text-thinking',
-            'text-thinking hover:text-thinking',
+            'text-thinking hover:text-thinking/70',
           ].join(' ')}
         >
           <Caret open={showThinking} />
@@ -267,20 +267,20 @@ export function AssistantBubble({
 // 与 DONE 浅绿标签矛盾。红色全局语义=错误，不应当作 bash 的常态色。
 // 状态主导后 done=emerald / running=amber，跟 DONE 徽章语义一致。
 const TOOL_STATUS_COLOR: Record<'running' | 'done', string> = {
-  running: 'dark:border-warn/30 dark:bg-warn/20 border-warn bg-warn/70',
-  done: 'dark:border-ok/30 dark:bg-ok/20 border-ok bg-ok/70',
+  running: 'border-warn/40 bg-warn/15',
+  done: 'border-ok/40 bg-ok/15',
 };
 
 // 工具种类色相留在 tool name 文字上 —— 用户仍能一眼分清工具类型，但不再霸占 body。
 // 注意：bash 不用 red (语义=错误)，改 rose 表达"powerful + 注意"。
 const TOOL_NAME_COLOR: Record<string, string> = {
-  read: 'dark:text-info text-info',
-  write: 'dark:text-warn text-warn',
-  edit: 'dark:text-warn text-warn',
-  multi_edit: 'dark:text-warn text-warn',
-  bash: 'dark:text-danger text-danger',
-  grep: 'dark:text-ok text-ok',
-  glob: 'dark:text-ok text-ok',
+  read: 'text-info',
+  write: 'text-warn',
+  edit: 'text-warn',
+  multi_edit: 'text-warn',
+  bash: 'text-danger',
+  grep: 'text-ok',
+  glob: 'text-ok',
 };
 
 // v0.1.9 fix: 文件修改类工具默认展开 — 用户期望对话流里直接看到 diff 摘要 (path + ±N),
@@ -530,7 +530,7 @@ function ToolEditInputView({ toolName, input }: ToolEditInputViewProps): JSX.Ele
           <button
             type="button"
             onClick={() => setShowFullInput((v) => !v)}
-            className="text-[11px] text-info hover:text-info normal-case"
+            className="text-[11px] text-info hover:text-info/70 normal-case"
           >
             {showFullInput ? 'Collapse' : `Show full (${inputCollapse.totalLines} lines)`}
           </button>
@@ -580,17 +580,16 @@ function ToolResultView({
           <button
             type="button"
             onClick={() => setShowFullResult((v) => !v)}
-            className="text-[11px] text-info hover:text-info normal-case"
+            className="text-[11px] text-info hover:text-info/70 normal-case"
           >
             {showFullResult ? 'Collapse' : `Show full (${resultCollapse.totalLines} lines)`}
           </button>
         )}
       </div>
       <pre
-        className={[
-          'text-xs whitespace-pre-wrap break-all max-h-64 overflow-auto',
-          'dark:text-ok text-ok',
-        ].join(' ')}
+        className={['text-xs whitespace-pre-wrap break-all max-h-64 overflow-auto', 'text-ok'].join(
+          ' ',
+        )}
       >
         {showFullResult ? result : resultCollapse.body}
       </pre>

@@ -100,7 +100,7 @@ function CopyCodeButton({ getText }: { getText: () => string }): JSX.Element {
       aria-label={copied ? 'Code copied to clipboard' : 'Copy code to clipboard'}
     >
       {copied ? (
-        <span className="text-ok dark:text-ok font-medium">✓ Copied</span>
+        <span className="text-ok font-medium">✓ Copied</span>
       ) : (
         <>
           <svg
@@ -195,7 +195,7 @@ function MarkdownInner({ content }: MarkdownProps): JSX.Element {
               href={href}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-info hover:text-info underline decoration-info/40 underline-offset-2"
+              className="text-info hover:text-info/70 underline decoration-info/40 underline-offset-2"
             >
               {children}
             </a>
