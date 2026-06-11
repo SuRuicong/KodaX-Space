@@ -77,8 +77,16 @@ export function ModelEffortSelector(): JSX.Element {
   const activeProvider: ProviderInfo | undefined = activeProviderId
     ? providers.find((p) => p.id === activeProviderId)
     : undefined;
+  // kodaxDefaults.model 属于 kodaxDefaults.provider；只有当解析出的 active provider 正是它时才能用。
+  // 否则会出现 "Provider A 的名字 + Provider B 的 model" 错配 —— 例如 Space 默认 provider 是
+  // Kimi for Coding，但 KodaX config 的默认 model 是 mimo-v2.5-pro（属 mimo），未做 provider 一致性
+  // 校验就会显示成 "Kimi for Coding · mimo-v2.5-pro"（用户报的 bug）。provider 不匹配时回退到该
+  // provider 自己的 defaultModel。
   const activeModel: string =
-    pendingModel ?? kodaxDefaults?.model ?? activeProvider?.defaultModel ?? '—';
+    pendingModel ??
+    (kodaxDefaults?.provider === activeProviderId ? kodaxDefaults?.model : undefined) ??
+    activeProvider?.defaultModel ??
+    '—';
   const activeEffort: ReasoningMode =
     session?.reasoningMode ?? pendingReasoningMode ?? kodaxDefaults?.reasoningMode ?? 'auto';
 

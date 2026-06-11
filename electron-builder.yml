@@ -25,11 +25,23 @@ files:
   - 'package.json'
   - '!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,HISTORY.md,LICENSE,license,*.d.ts.map}'
   - '!**/node_modules/.cache/**'
-  - '!**/{test,tests,__tests__,__mocks__,docs,doc,example,examples}/**'
+  # 只排除 100% 测试框架约定目录（jest 的 __tests__/__mocks__，永不属于运行时）。
+  # ⚠️ 绝不按 doc/docs/test/example 这种"看着像非运行时"的目录名盲删 node_modules——
+  # 这些名字可能是包的运行时代码：例如 yaml 的 dist/doc/ 含 directives.js / Document.js，
+  # 被 compose/composer.js `require('../doc/directives.js')`。曾用 doc 通配把它删掉，导致打包后
+  # SDK 加载即 "Cannot find module '../doc/directives.js'"、主进程崩、窗口不创建。
+  # 源码/文档/sourcemap 的体积裁剪已由下面的 *.md / *.map / *.ts 扩展名规则安全覆盖（按文件不按目录）。
+  - '!**/__tests__/**'
+  - '!**/__mocks__/**'
   - '!**/*.{md,markdown}'
   - '!**/*.map'
   - '!**/.bin/**'
   - '!**/*.{ts,tsx,scss,less}'
+  # 安全兜底：放宽目录排除后，显式挡掉任何依赖里可能夹带的凭据文件（避免被打进 asar 安装包）。
+  - '!**/.env'
+  - '!**/.env.*'
+  - '!**/*.{key,pem}'
+  - '!**/{credentials,secrets}.json'
 
 asar: true
 

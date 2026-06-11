@@ -119,13 +119,31 @@ async function checkAsarContents() {
     ok(`asar contains ${req}`);
   }
 
-  // 反例：node_modules/**/test/** 不该进
-  const leaks = normalized.filter((f) => /\/(test|tests|__tests__|docs|examples?)\//.test(f));
+  // 运行时 doc/ 目录回归守卫（HARD FAIL）：
+  // electron-builder.yml 的 files glob 曾用 `doc`/`docs` 通配把任意同名目录删掉，误伤 yaml 的
+  // dist/doc/（运行时代码：composer.js `require('../doc/directives.js')`）→ 打包后 SDK 加载即崩、
+  // 主进程不创建窗口。若 yaml 作为独立 node_modules 包被打进 asar（compose/composer.js 在），
+  // 其 dist/doc/directives.js 必须同在。（当 SDK 把 yaml bundle 进 chunk 时整包不在 asar，自动跳过。）
+  const yamlComposer = normalized.some((f) => /\/node_modules\/yaml\/dist\/compose\/composer\.js$/.test(f));
+  if (yamlComposer) {
+    const yamlDoc = normalized.some((f) => /\/node_modules\/yaml\/dist\/doc\/directives\.js$/.test(f));
+    if (!yamlDoc) {
+      fail(
+        "yaml packed but yaml/dist/doc/directives.js missing — runtime doc/ stripped. " +
+          'Check electron-builder.yml files globs do not exclude **/doc/** under node_modules.',
+      );
+    }
+    ok('yaml/dist/doc/directives.js present (runtime doc/ not stripped)');
+  }
+
+  // 只有 jest 约定的 __tests__/__mocks__ 才该被排除；它们若出现说明排除 glob 没生效（仅 WARN，体积问题）。
+  // 注意：doc/docs/test/example 这类目录现在是“故意保留”的（可能是包的运行时代码），不再当泄漏报警。
+  const leaks = normalized.filter((f) => /\/(__tests__|__mocks__)\//.test(f));
   if (leaks.length > 0) {
-    console.warn(`[smoke-pack] WARN: ${leaks.length} test/docs/examples paths leaked into asar (first 5):`);
+    console.warn(`[smoke-pack] WARN: ${leaks.length} __tests__/__mocks__ paths leaked into asar (first 5):`);
     leaks.slice(0, 5).forEach((f) => console.warn(`  - ${f}`));
   } else {
-    ok('no test/docs/examples leaked into asar');
+    ok('no __tests__/__mocks__ leaked into asar');
   }
 }
 

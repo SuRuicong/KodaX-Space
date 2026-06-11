@@ -5,7 +5,7 @@
 // - renderer 仅 UI，不直接 import LLM/KodaX runtime
 // - 安全基线：contextIsolation / nodeIntegration=false / sandbox / CSP
 
-import { app, BrowserWindow, Menu, shell, session } from 'electron';
+import { app, BrowserWindow, Menu, shell, session, dialog } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { registerVersionChannel } from './ipc/version.js';
@@ -418,6 +418,31 @@ app.whenReady().then(async () => {
       createMainWindow();
     }
   });
+}).catch((err) => {
+  // 启动链兜底：whenReady 内任一步抛错（如 SDK chunk 缺运行时文件、动态 import 失败）原本会变成
+  // unhandledRejection，且 createMainWindow() 不再执行 → 窗口永不出现，而 Windows GUI 子系统下
+  // 控制台又收不到日志，用户只看到"app 打不开 / session 都没了"。这里捕获后：① 写日志
+  // ② 弹原生错误框让失败可见 ③ 若尚无窗口则补建一个，让 app 至少起来（SDK 依赖型功能再各自经 IPC
+  // 优雅报错，而非整个 app 静默消失）。
+  // console 写完整信息（含 stack，供开发者在日志里排查）；给用户的 dialog 文案经
+  // sanitizeForDialog 抹掉绝对路径（Win 下含用户名）并截断，避免共享屏幕/录屏时泄漏路径或
+  // 错误对象里夹带的敏感串。
+  console.error('[main] fatal during whenReady startup:', sanitizeError(err));
+  try {
+    dialog.showErrorBox(
+      'KodaX Space 启动出错',
+      `主进程启动时发生错误（完整信息见 ~/.kodax/space/logs/）：\n\n${sanitizeForDialog(err)}`,
+    );
+  } catch {
+    /* dialog 不可用时也别再抛 */
+  }
+  if (BrowserWindow.getAllWindows().length === 0) {
+    try {
+      createMainWindow();
+    } catch (e) {
+      console.error('[main] createMainWindow() in startup catch also failed:', sanitizeError(e));
+    }
+  }
 });
 
 app.on('window-all-closed', () => {
@@ -495,6 +520,20 @@ function sanitizeError(input: unknown): { name: string; message: string; stack?:
     return { name: input.name, message: input.message, stack: input.stack };
   }
   return { name: typeof input, message: String(input) };
+}
+// 给用户 dialog 看的文案：只取 message（不含完整 stack），抹掉绝对路径（Win `C:\Users\<name>\…`、
+// UNC `\\…`、POSIX `/a/b/c`），并截断到 500 字。完整 stack 仍写 console（开发者排查）。
+function sanitizeForDialog(input: unknown): string {
+  const raw = input instanceof Error ? input.message : String(input);
+  const redacted = raw
+    .replace(/[A-Za-z]:\\[^\s'"]+/g, '<path>')
+    .replace(/\\\\[^\s'"]+/g, '<path>')
+    // POSIX 绝对路径：至少含一个分隔符（覆盖 /Users/<name>/… 这类含用户名的家目录路径，
+    // 单段如 /coding 不算敏感、不匹配）。比旧 [\w.-] 段宽，能吃到含空格/括号的路径剩余部分。
+    .replace(/\/[\w.-]+\/[^\s'"]*/g, '<path>')
+    .trim();
+  const capped = redacted.length > 500 ? `${redacted.slice(0, 500)}…` : redacted;
+  return capped || 'unknown startup error';
 }
 process.on('uncaughtException', (err) => {
   console.error('[main] uncaughtException:', sanitizeError(err));

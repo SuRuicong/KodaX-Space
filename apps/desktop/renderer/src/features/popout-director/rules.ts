@@ -14,12 +14,15 @@
 // 触发规则 (按"应该自动展开哪个 popout"维度):
 //   plan   ← session events 含 `todo_update` 且 items.length > 0
 //   diff   ← tool_start.toolName ∈ FILE_MUTATION_TOOLS (write/edit/multi_edit/...)
-//   tasks  ← managed_task_status.activeWorkerId 出现 (AMA 多 worker 协作启动)
+//
+// **不自动 promote 'tasks'**(2026-06 用户反馈):agent 一跑就弹独立 Tasks 面板交互很差,
+// 而 RightSidebar 的 "Workers" section 本就是 popoutKind='tasks' 的内联摘要、内容也不多。
+// worker 信息留在右侧栏内联即可;用户想看完整面板再手动点 ⤢ 展开。
 
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 
 /** 哪些 popout kind 受 director 管理 (其他 popout 不自动 promote — 保留给用户主动开)。 */
-export type SmartPopoutKind = 'plan' | 'diff' | 'tasks';
+export type SmartPopoutKind = 'plan' | 'diff';
 
 /** broker.ts:48 EDIT_TOOLS 同款 — 拷过来避免 renderer 跨边界 import。 */
 const FILE_MUTATION_TOOLS: ReadonlySet<string> = new Set([
@@ -43,9 +46,8 @@ export interface DirectorDecisionInput {
  * 跑一遍 rules 看是否应该 auto-promote 某个 popout。
  *
  * 优先级 (同一帧多触发时):
- *   1. tasks  (multi-worker 协作 — 最高,看不见 worker 等于盲跑)
- *   2. plan   (planner-driven 工作流 — 用户应该看)
- *   3. diff   (开始改文件 — 用户应该确认 / preview)
+ *   1. plan   (planner-driven 工作流 — 用户应该看)
+ *   2. diff   (开始改文件 — 用户应该确认 / preview)
  *
  * caller (useSmartPopoutDirector hook) 拿到结果后:
  *   - null: 什么都不做
@@ -55,31 +57,23 @@ export function decideAutoPromote(input: DirectorDecisionInput): SmartPopoutKind
   // 用户已经在看别的 popout — 别打扰
   if (input.activePopout !== null) return null;
 
-  // 扫一趟事件流,记下三类信号是否出现过。短路返还:先按优先级序检查,
+  // 扫一趟事件流,记下两类信号是否出现过。短路返还:先按优先级序检查,
   // 命中且未 promoted 立刻返。无须扫完事件 (events 可能上千条 — 优先级最高在最前)。
-  let hasTasks = false;
+  // 注意:managed_task_status('tasks') 不再自动 promote — 见文件头说明,worker 信息走右侧栏内联。
   let hasPlan = false;
   let hasDiff = false;
 
   for (const ev of input.events) {
-    if (!hasTasks && ev.kind === 'managed_task_status') {
-      // activeWorkerId 出现才算 "AMA 真的在多 worker 跑"。空 status (例如启动头一帧)
-      // 不应触发,避免普通 SA 路径误开 tasks。
-      if (ev.status.activeWorkerId !== undefined && ev.status.activeWorkerId !== '') {
-        hasTasks = true;
-      }
-    }
     if (!hasPlan && ev.kind === 'todo_update') {
       if (ev.items.length > 0) hasPlan = true;
     }
     if (!hasDiff && ev.kind === 'tool_start') {
       if (FILE_MUTATION_TOOLS.has(ev.toolName)) hasDiff = true;
     }
-    if (hasTasks && hasPlan && hasDiff) break; // 三个都见过,提前出
+    if (hasPlan && hasDiff) break; // 两个都见过,提前出
   }
 
   // 按优先级取第一个 (a) 已触发 + (b) 未 promoted 的 kind
-  if (hasTasks && !input.promoted.has('tasks')) return 'tasks';
   if (hasPlan && !input.promoted.has('plan')) return 'plan';
   if (hasDiff && !input.promoted.has('diff')) return 'diff';
   return null;

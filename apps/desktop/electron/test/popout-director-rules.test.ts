@@ -128,16 +128,18 @@ test('does NOT promote diff on read-only tools (bash / grep / glob)', () => {
   }
 });
 
-test('promotes tasks when managed_task_status has activeWorkerId', () => {
+// 2026-06 用户反馈后改：managed_task_status 不再自动 promote 'tasks'（worker 信息走右侧栏
+// Workers section 内联，agent 一跑就弹独立 Tasks 面板交互很差）。无论 activeWorkerId 有无都不弹。
+test('does NOT auto-promote tasks even when managed_task_status has activeWorkerId', () => {
   const result = decideAutoPromote({
     events: [managedTaskStatus('worker-1')],
     activePopout: null,
     promoted: emptySet(),
   });
-  assert.equal(result, 'tasks');
+  assert.equal(result, null);
 });
 
-test('does NOT promote tasks on managed_task_status without activeWorkerId (SA path)', () => {
+test('does NOT promote on managed_task_status without activeWorkerId either', () => {
   const result = decideAutoPromote({
     events: [managedTaskStatus(undefined)],
     activePopout: null,
@@ -146,24 +148,15 @@ test('does NOT promote tasks on managed_task_status without activeWorkerId (SA p
   assert.equal(result, null);
 });
 
-test('does NOT promote tasks on empty-string activeWorkerId (defensive)', () => {
-  const result = decideAutoPromote({
-    events: [managedTaskStatus('')],
-    activePopout: null,
-    promoted: emptySet(),
-  });
-  assert.equal(result, null);
-});
-
 // ---- priority ordering ----
 
-test('priority: tasks > plan > diff when multiple triggered simultaneously', () => {
+test('priority: plan > diff (tasks no longer participates even if managed_task_status present)', () => {
   const result = decideAutoPromote({
     events: [toolStart('write'), todoUpdate(1), managedTaskStatus('w-1')],
     activePopout: null,
     promoted: emptySet(),
   });
-  assert.equal(result, 'tasks');
+  assert.equal(result, 'plan');
 });
 
 test('priority: plan > diff when both triggered (no tasks)', () => {
@@ -178,34 +171,24 @@ test('priority: plan > diff when both triggered (no tasks)', () => {
 // ---- promoted set behavior ----
 
 test('skips promoted kinds — promotes the next-priority unpromoted kind', () => {
-  const promoted = new Set<SmartPopoutKind>(['tasks']);
+  const promoted = new Set<SmartPopoutKind>(['plan']);
   const result = decideAutoPromote({
-    events: [toolStart('write'), todoUpdate(1), managedTaskStatus('w-1')],
+    events: [toolStart('write'), todoUpdate(1)],
     activePopout: null,
     promoted,
   });
-  // tasks promoted → next priority is plan
-  assert.equal(result, 'plan');
+  // plan promoted → next priority is diff
+  assert.equal(result, 'diff');
 });
 
-test('skips promoted across all three — returns null', () => {
-  const promoted = new Set<SmartPopoutKind>(['tasks', 'plan', 'diff']);
+test('skips promoted across both — returns null', () => {
+  const promoted = new Set<SmartPopoutKind>(['plan', 'diff']);
   const result = decideAutoPromote({
-    events: [toolStart('write'), todoUpdate(1), managedTaskStatus('w-1')],
+    events: [toolStart('write'), todoUpdate(1)],
     activePopout: null,
     promoted,
   });
   assert.equal(result, null);
-});
-
-test('promoted skip respects priority — promoted=plan, has tasks+diff → tasks wins', () => {
-  const promoted = new Set<SmartPopoutKind>(['plan']);
-  const result = decideAutoPromote({
-    events: [toolStart('write'), todoUpdate(1), managedTaskStatus('w-1')],
-    activePopout: null,
-    promoted,
-  });
-  assert.equal(result, 'tasks');
 });
 
 test('promoted skip — only diff fires + diff promoted → null', () => {

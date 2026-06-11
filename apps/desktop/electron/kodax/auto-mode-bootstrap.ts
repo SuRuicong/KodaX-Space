@@ -20,8 +20,7 @@ import path from 'node:path';
 import type {
   AgentsFile,
   AutoModeAskUser,
-  AutoModeEngineKodaX,
-  AutoModeOnEngineChange,
+  AutoModeEngine,
   AutoModeToolGuardrail,
   KodaXBaseProvider,
   RulesLoadResult,
@@ -45,11 +44,11 @@ export interface SpaceAutoModeBootstrapDeps {
   /** 当前会话 model；返回空字符串会 warn 但仍传递（保留 SDK 配置上下文）。*/
   readonly getCurrentModel: () => string;
   /** 当前 auto engine sub-mode (用户首选 / 自动 fallback 后)。*/
-  readonly initialEngine: AutoModeEngineKodaX;
+  readonly initialEngine: AutoModeEngine;
   /** sideQuery classifier 超时 (ms)。缺省 30s. */
   readonly timeoutMs?: number;
   /** engine 变更回调；FEATURE_030 wire 到 emit auto_engine_change SessionEvent. */
-  readonly onEngineChange?: AutoModeOnEngineChange;
+  readonly onEngineChange?: (engine: AutoModeEngine) => void;
   /** 结构化日志；Space 端把 'warn' 路由到 console.warn。*/
   readonly log?: (level: 'info' | 'warn', msg: string) => void;
 }

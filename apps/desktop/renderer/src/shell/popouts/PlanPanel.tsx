@@ -54,38 +54,42 @@ export function PlanPanel(): JSX.Element {
       </header>
 
       <ul className="flex-1 overflow-y-auto p-2 space-y-1">
-        {todos.map((todo) => (
-          <li
-            key={todo.id}
-            className={
-              'flex items-start gap-2 px-2 py-1.5 rounded ' +
-              (todo.status === 'in_progress'
-                ? 'bg-run/40'
-                : todo.status === 'completed'
-                  ? 'opacity-60'
-                  : '')
-            }
-          >
-            <span
+        {todos.map((todo) => {
+          // cancelled / skipped 视觉同 completed（灰 + 删除线，已settled）；failed 用 danger 突出，不删除线。
+          const settledDim =
+            todo.status === 'completed' || todo.status === 'cancelled' || todo.status === 'skipped';
+          const dotCls =
+            todo.status === 'completed'
+              ? 'bg-ok border-ok'
+              : todo.status === 'failed'
+                ? 'bg-danger border-danger'
+                : todo.status === 'in_progress'
+                  ? 'border-run bg-run/30 animate-pulse'
+                  : todo.status === 'cancelled' || todo.status === 'skipped'
+                    ? 'border-border-strong bg-border-strong/40'
+                    : 'border-border-strong';
+          const textCls =
+            todo.status === 'failed'
+              ? 'text-danger'
+              : settledDim
+                ? 'text-fg-muted line-through'
+                : 'text-fg-primary';
+          return (
+            <li
+              key={todo.id}
               className={
-                'flex-shrink-0 w-3 h-3 rounded-full mt-0.5 border ' +
-                (todo.status === 'completed'
-                  ? 'bg-ok border-ok'
-                  : todo.status === 'in_progress'
-                    ? 'border-run bg-run/30 animate-pulse'
-                    : 'border-border-strong')
-              }
-              aria-label={`status: ${todo.status}`}
-            />
-            <span
-              className={
-                todo.status === 'completed' ? 'text-fg-muted line-through' : 'text-fg-primary'
+                'flex items-start gap-2 px-2 py-1.5 rounded ' +
+                (todo.status === 'in_progress' ? 'bg-run/40' : settledDim ? 'opacity-60' : '')
               }
             >
-              {todo.content}
-            </span>
-          </li>
-        ))}
+              <span
+                className={'flex-shrink-0 w-3 h-3 rounded-full mt-0.5 border ' + dotCls}
+                aria-label={`status: ${todo.status}`}
+              />
+              <span className={textCls}>{todo.content}</span>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

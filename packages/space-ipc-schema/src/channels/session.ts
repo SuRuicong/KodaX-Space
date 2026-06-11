@@ -551,7 +551,10 @@ const tokenUsageSchema = z
 const todoItemSchema = z.object({
   id: z.string().min(1).max(128),
   content: z.string().max(2048),
-  status: z.enum(['pending', 'in_progress', 'completed']),
+  // 与 SDK TodoStatus 全量对齐（v0.7.42+ 含 failed/skipped/cancelled 终态）。
+  // 之前只列前 3 档，导致 SDK 发的 failed/cancelled 在 IPC 边界被 Zod 拒绝或被上游误映射成
+  // completed（失败任务显示成 ✓ 完成，误导用户）。
+  status: z.enum(['pending', 'in_progress', 'completed', 'failed', 'skipped', 'cancelled']),
   activeForm: z.string().max(2048).optional(),
 });
 

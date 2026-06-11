@@ -78,7 +78,7 @@ export function registerMcpChannels(): void {
     const tools = list.tools.slice(0, 1024).map((t) => ({
       id: t.id,
       name: t.name,
-      ...(t.description !== undefined ? { description: t.description } : {}),
+      ...(t.summary !== undefined ? { description: t.summary } : {}),
     }));
     return {
       tools,

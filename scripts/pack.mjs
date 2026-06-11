@@ -82,6 +82,8 @@ function run(cmd, args, label, envOverride) {
 }
 
 function restoreLink({ target, type }) {
+  // SDK_DIR 是模块顶层静态常量（SPACE_ROOT/node_modules/@kodax-ai/kodax），不接受外部输入；
+  // 删除范围恒定锁死在 Space 自己的 node_modules 下，不会触及 repo 外路径。
   // 先清掉刚装上的发布版实体目录，再原样重建 link
   fs.rmSync(SDK_DIR, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(SDK_DIR), { recursive: true });
@@ -89,7 +91,16 @@ function restoreLink({ target, type }) {
   console.log(`[pack] restored dev link: @kodax-ai/kodax → ${target}`);
 }
 
-const passthrough = process.argv.slice(2); // e.g. ['--win'] / ['--mac']
+// 透传给 electron-builder 的参数走白名单 —— 只允许已知的平台/架构标志。
+// 否则 electron-builder 接受 `--config.publish[0]...` / `--config.extraResources[0]=...` /
+// `--extraMetadata.*` 这类能在运行时覆盖 electron-builder.yml 任意字段的参数，
+// 在被污染的 CI 或误操作下可变成"把任意文件打进包 / 改自动更新源"的供应链向量。
+const ALLOWED_PASSTHROUGH = new Set(['--win', '--mac', '--linux', '--dir', '--x64', '--arm64', '--ia32', '--armv7l']);
+const passthrough = process.argv.slice(2).filter((arg) => {
+  if (ALLOWED_PASSTHROUGH.has(arg)) return true;
+  console.warn(`[pack] 忽略不在白名单内的参数: ${arg}`);
+  return false;
+});
 const link = inspectSdkLink();
 
 if (!link.linked) {

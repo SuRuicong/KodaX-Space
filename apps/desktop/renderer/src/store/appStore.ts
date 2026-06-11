@@ -156,7 +156,8 @@ interface AppState {
       | ReadonlyArray<{
           id: string;
           content: string;
-          status: 'pending' | 'in_progress' | 'completed';
+          // 与 IPC todoItemSchema / SDK TodoStatus 全量对齐（含 failed/skipped/cancelled 终态）。
+          status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped' | 'cancelled';
           activeForm?: string;
         }>
       | undefined

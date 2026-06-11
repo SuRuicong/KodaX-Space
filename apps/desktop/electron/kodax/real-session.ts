@@ -85,11 +85,11 @@ function sanitizeAutoModeErrorMessage(msg: string): string {
 import type {
   AutoModeAskUser,
   AutoModeAskUserVerdict,
-  AutoModeEngineKodaX,
+  AutoModeEngine,
   Guardrail,
   KodaXOptions,
   KodaXEvents,
-  RunnerToolCall,
+  KodaXSessionStorage,
   ToolCallSignal,
 } from '@kodax-ai/kodax/coding';
 import type { InputArtifact, SessionEvent } from '@kodax-space/space-ipc-schema';
@@ -98,6 +98,7 @@ import { bootstrapAutoMode } from './auto-mode-bootstrap.js';
 import { getSessionStorageHandle } from './session-store.js';
 import { wrapSdkError } from './sdk-errors.js';
 import { buildSkillsPrompt } from './skills-prompt.js';
+import { SPACE_MANUAL_TOPICS, SPACE_PRODUCT_NAME } from './space-manual-topics.js';
 import type {
   ManagedSession,
   PermissionRequestFn,
@@ -238,33 +239,49 @@ export class RealKodaXSession implements ManagedSession {
   private makeAskUserBridge(): AutoModeAskUser {
     const sid = this.sessionId;
     return async (
-      call: RunnerToolCall,
+      call: Parameters<AutoModeAskUser>[0],
       reason: string,
       signals?: readonly ToolCallSignal[],
     ): Promise<AutoModeAskUserVerdict> => {
       const sigArr = signals?.map((s) => {
-        const sev = s.severity;
-        let normalized: 'info' | 'warning' | 'danger';
-        if (sev === 'warning' || sev === 'danger') {
-          normalized = sev;
-        } else if (sev === 'info' || sev === undefined) {
-          normalized = 'info';
+        // ToolCallSignal is a discriminated union on `kind`; map each variant to
+        // the Space IPC AskUser { type, severity, message } shape.
+        if (s.kind === 'dangerous_pattern') {
+          // severity: 'high' → 'danger', 'medium' → 'warning'
+          let normalized: 'warning' | 'danger';
+          if (s.severity === 'high') {
+            normalized = 'danger';
+          } else if (s.severity === 'medium') {
+            normalized = 'warning';
+          } else {
+            // 当前 SDK 只有 high/medium；若将来引入 'critical'/'low' 等新档，silent downgrade
+            // 会让我们看不见。observable warn 让此类 SDK 升级立即冒头，prompt 我们扩 schema。
+            console.warn(
+              `[real-session ${sid}] unknown dangerous_pattern severity "${String(s.severity)}" → warning; ` +
+                `KodaX SDK may have introduced a new severity level`,
+            );
+            normalized = 'warning';
+          }
+          return { type: s.kind, severity: normalized, message: s.pattern };
         } else {
-          // F030 review HIGH#1: 未知 severity 静默降到 info 会让 'critical' 等
-          // 未来 KodaX 引入的更高级别 signal silent downgrade。observable warn
-          // 让此类升级可被诊断。当前 KodaX 0.7.40 只有 info/warning/danger 三档；
-          // 若 SDK 引入 'critical' 这条 warn 会立即冒头，prompt 我们扩 schema。
-          console.warn(
-            `[real-session ${sid}] unknown signal severity "${sev}" mapped to info ` +
-            `(type=${String(s.type)}); KodaX SDK may have introduced new severity level`,
-          );
-          normalized = 'info';
+          // All other variants: extract a representative message per kind.
+          let msg: string;
+          if (s.kind === 'shell_redirect_outside') {
+            msg = s.target;
+          } else if (s.kind === 'package_install') {
+            msg = s.manager;
+          } else if (s.kind === 'git_write') {
+            msg = s.verb;
+          } else if (s.kind === 'network') {
+            msg = s.tool;
+          } else if (s.kind === 'file_modification') {
+            msg = s.targets.join(', ');
+          } else {
+            // 'protected_path' | 'outside_project' — both have `path`
+            msg = s.path;
+          }
+          return { type: s.kind, severity: 'warning' as const, message: msg };
         }
-        return {
-          type: String(s.type ?? 'unknown'),
-          severity: normalized,
-          message: String(s.message ?? s.type ?? ''),
-        };
       });
       return askUserBroker.request({
         sessionId: sid,
@@ -450,8 +467,8 @@ export class RealKodaXSession implements ManagedSession {
             ? {
                 inputTokens: info.usage.inputTokens,
                 outputTokens: info.usage.outputTokens,
-                cacheReadInputTokens: info.usage.cacheReadInputTokens,
-                cacheWriteInputTokens: info.usage.cacheCreationInputTokens,
+                cacheReadInputTokens: info.usage.cachedReadTokens,
+                cacheWriteInputTokens: info.usage.cachedWriteTokens,
               }
             : undefined,
         });
@@ -505,29 +522,43 @@ export class RealKodaXSession implements ManagedSession {
 
       // ---- Repointel trace ----
       onRepoIntelligenceTrace: (event) => {
+        // SDK KodaXRepoIntelligenceTraceEvent: { stage, summary, capability?, trace? }
+        // IPC repointelTraceSchema: { kind, mode?, engine?, bridge?, status?, latencyMs?, cacheHit? }
+        // Mapping: stage→kind; capability.{mode,engine,bridge,status}→IPC optionals; trace.{daemonLatencyMs,cacheHit}→IPC optionals
         this.emit({
           kind: 'repointel_trace',
           sessionId: sid,
           event: {
-            kind: event.kind,
-            mode: event.mode,
-            engine: event.engine,
-            bridge: event.bridge,
-            status: event.status,
-            latencyMs: event.latencyMs,
-            cacheHit: event.cacheHit,
+            kind: event.stage,
+            ...(event.capability !== undefined
+              ? {
+                  mode: event.capability.mode,
+                  engine: event.capability.engine,
+                  bridge: event.capability.bridge,
+                  status: event.capability.status,
+                }
+              : {}),
+            ...(event.trace !== undefined
+              ? {
+                  latencyMs: event.trace.daemonLatencyMs ?? event.trace.cliLatencyMs,
+                  cacheHit: event.trace.cacheHit,
+                }
+              : {}),
           },
         });
       },
 
       // ---- Todo / Plan ----
       onTodoUpdate: (items) => {
+        // SDK TodoItem uses `subject` (renamed from `content` in v0.7.42)。
+        // IPC todoItemSchema 现已接全量 TodoStatus（含 failed/skipped/cancelled），直接透传真实
+        // status，不再 lossy 映射成 completed（失败任务不该显示成 ✓ 完成）。
         this.emit({
           kind: 'todo_update',
           sessionId: sid,
           items: items.map((item) => ({
             id: item.id,
-            content: item.content,
+            content: item.subject,
             status: item.status,
             activeForm: item.activeForm,
           })),
@@ -602,7 +633,7 @@ export class RealKodaXSession implements ManagedSession {
           getCurrentProviderName: () => this.provider,
           // v0.7.42 SDK wired (P0): 用户 /model 设的值或 provider 默认（''）
           getCurrentModel: () => this.model ?? '',
-          initialEngine: this.autoModeEngine as AutoModeEngineKodaX,
+          initialEngine: this.autoModeEngine as AutoModeEngine,
           timeoutMs: 30_000,
           onEngineChange: (engine) => {
             // F030 review MEDIUM#4: session dispose 后 guardrail in-flight classifier
@@ -697,9 +728,8 @@ export class RealKodaXSession implements ManagedSession {
       // scope: 'user' 让 SDK FileSessionStorage 把 session 当成用户对话面板的
       // first-class session 落盘。storage 是 SDK 当前要求的字段——不传则
       // saveSessionSnapshot 静默 no-op，jsonl 不落盘 (用户对话历史丢失)。
-      session: { id: sid, scope: 'user', storage: sessionStorage },
+      session: { id: sid, scope: 'user', storage: sessionStorage as KodaXSessionStorage | undefined },
       context: {
-        cwd: this.projectRoot,
         // gitRoot 用 projectRoot——Space 不再单独求 git root，KodaX 自己会处理边界
         gitRoot: this.projectRoot,
         executionCwd: this.projectRoot,
@@ -733,6 +763,17 @@ export class RealKodaXSession implements ManagedSession {
           : {}),
       },
       guardrails,
+      // FEATURE_221 (SDK 0.7.47): 注入 Space 自己的产品手册,让内建 kodax_manual
+      // tool 在用户问"怎么粘图/怎么开 popout/怎么配 provider"时返回 Space 形态的
+      // 答案 —— 不是默认 KodaX REPL 视角 (~/.kodax/config / npm install).
+      // 同 id (overview / install / quickstart / providers / config / sessions /
+      // commands / skills / permissions / troubleshooting) override KodaX base 条目;
+      // 新 id (popouts / smart-popout-director / image-paste / sidebar-resize /
+      // keyboard-shortcuts) 纯增量. SDK 4KB body cap 之内.
+      selfManual: {
+        productName: SPACE_PRODUCT_NAME,
+        topics: SPACE_MANUAL_TOPICS,
+      },
     };
 
     try {

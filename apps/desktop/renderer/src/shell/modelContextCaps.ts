@@ -32,10 +32,10 @@ const RULES: readonly CapRule[] = [
   { match: /^glm-5/, cap: 200_000 },
   // GLM-4.7 — 128k
   { match: /^glm-4\.7/, cap: 128_000 },
-  // MiniMax M2 系列 — 1M
-  { match: /^MiniMax-M2/, cap: 1_000_000 },
-  // MiniMax latest (ark-coding 中) — 1M
-  { match: /^minimax-latest/, cap: 1_000_000 },
+  // MiniMax M 系列 (M2 / M2.7 / M3，ark-coding + minimax-coding) — 1M
+  // 2026-06-09 SDK ark-coding 阵容 catch-up：新增 MiniMax-M3、移除 minimax-latest，
+  // 故 match 从 /^MiniMax-M2/ 放宽到 /^MiniMax-M/ 覆盖 M3 及后续，并删掉死规则 minimax-latest。
+  { match: /^MiniMax-M/, cap: 1_000_000 },
   // MiMo (Xiaomi) — 128k
   { match: /^mimo-/, cap: 128_000 },
   // Doubao seed 2.0 系列 (ark-coding) — 256k

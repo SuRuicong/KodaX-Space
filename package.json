@@ -1,6 +1,6 @@
 {
   "name": "kodax-space",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "KodaX Space — Provider-neutral, local-first AI agent desktop client (KodaX 生态桌面客户端)",
   "private": true,
   "type": "module",
@@ -38,10 +38,11 @@
     "e2e": "npm run build:smoke && npm run e2e:run",
     "e2e:run": "playwright test",
     "e2e:headed": "playwright test --headed",
-    "postinstall": "electron-builder install-app-deps || true"
+    "postinstall": "electron-builder install-app-deps || true",
+    "smoke:boot": "node e2e/boot-smoke-packaged.mjs"
   },
   "dependencies": {
-    "@kodax-ai/kodax": "^0.7.46"
+    "@kodax-ai/kodax": "^0.7.48"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
