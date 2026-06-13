@@ -95,6 +95,7 @@ import type {
 import type { InputArtifact, SessionEvent, Surface } from '@kodax-space/space-ipc-schema';
 import { askUserBroker } from '../permission/ask-user-broker.js';
 import { bootstrapAutoMode } from './auto-mode-bootstrap.js';
+import { computeToolBlockReason, isPartnerToolAllowed } from './partner-tools.js';
 import { getSessionStorageHandle } from './session-store.js';
 import { wrapSdkError } from './sdk-errors.js';
 import { buildSkillsPrompt } from './skills-prompt.js';
@@ -333,6 +334,12 @@ export class RealKodaXSession implements ManagedSession {
       input,
       meta,
     ) => {
+      // F047 defense-in-depth (security review MEDIUM)：Partner 白名单已在 planModeBlockCheck
+      // 拦下（LLM 拿到 reason）。这里再兜一道 fail-closed——万一 SDK 改 hook 顺序 / 新增不经
+      // planModeBlockCheck 的调用路径（如 MCP 工具），Partner 仍不会执行非白名单工具。
+      if (this.surface === 'partner' && !isPartnerToolAllowed(tool, sdk.resolveToolCapability(tool))) {
+        return false;
+      }
       try {
         const decision = await this.requestPermission({
           toolId: meta?.toolId ?? `auto_${tool}_${Date.now()}`,
@@ -355,16 +362,21 @@ export class RealKodaXSession implements ManagedSession {
     //
     // 闭包读 this.permissionMode — kodaxHost.setPermissionMode 改字段后立即生效，
     // 不需要重建 session。
+    // F047: Partner surface 工具白名单（non-bash-subset）+ plan-mode 拦截统一收敛到
+    // computeToolBlockReason（纯函数，见 partner-tools.ts）。Partner 只放行 SDK 判定的只读
+    // tier（resolveToolCapability==='read'）+ 显式 web 研究工具；Coder 行为不变（plan-mode 原样）。
+    // SDK 查询走 thunk 保持惰性。
     const planModeBlockCheck = (
       tool: string,
       _input: Record<string, unknown>,
-    ): string | null => {
-      if (this.permissionMode !== 'plan') return null;
-      // SDK isToolPlanModeAllowed: readonly / planModeAllowed:true → allowed; 其他 → blocked
-      // Fail-closed: 未知 tool 返回 false（一律 block）
-      if (sdk.isToolPlanModeAllowed(tool)) return null;
-      return `[plan] tool '${tool}' is blocked. Plan mode allows only read/search tools — describe the plan instead of executing it.`;
-    };
+    ): string | null =>
+      computeToolBlockReason({
+        surface: this.surface,
+        permissionMode: this.permissionMode,
+        tool,
+        resolveCapability: () => sdk.resolveToolCapability(tool),
+        isPlanModeAllowed: () => sdk.isToolPlanModeAllowed(tool),
+      });
 
     // Exit plan mode — KodaX 的 exit_plan_mode 工具调用这个让 host 审批 plan 文本。
     // 返回 true → KodaX 退出 plan mode，开始执行；false → 留在 plan mode；
