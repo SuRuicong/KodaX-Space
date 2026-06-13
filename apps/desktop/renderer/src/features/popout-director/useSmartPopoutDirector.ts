@@ -13,6 +13,7 @@
 
 import { useEffect } from 'react';
 import { useAppStore } from '../../store/appStore.js';
+import { useSurfaceStore } from '../../store/surface.js';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { decideAutoPromote, type SmartPopoutKind } from './rules.js';
 
@@ -31,6 +32,10 @@ export function useSmartPopoutDirector({
   setActivePopout,
 }: UseSmartPopoutDirectorArgs): void {
   const enabled = useAppStore((s) => s.smartPopoutEnabled);
+  // F046 review HIGH-1: director 只在 Coder 面生效。Partner 面 Shell 不挂 PopoutOverlay，
+  // 若 director 仍跑，会把 (session, kind) 标 promoted（污染 store）——用户切回 Coder 续这条
+  // session 时，本该首次自动弹的 plan/diff/tasks 因已 promoted 而永不弹，feature 静默失效。
+  const surfaceIsCode = useSurfaceStore((s) => s.currentSurface === 'code');
   const sessionId = useAppStore((s) => s.currentSessionId);
   const events = useAppStore((s) =>
     sessionId ? s.eventsBySession[sessionId] ?? EMPTY_EVENTS : EMPTY_EVENTS,
@@ -47,6 +52,7 @@ export function useSmartPopoutDirector({
 
   useEffect(() => {
     if (!enabled) return;
+    if (!surfaceIsCode) return; // Partner 面不跑 director（见上）
     if (sessionId === null) return;
     const decision = decideAutoPromote({ events, activePopout, promoted });
     if (decision === null) return;
@@ -54,5 +60,5 @@ export function useSmartPopoutDirector({
     // store,下一帧 selector 拿到 prom 含 decision,decideAutoPromote 不会再 emit。
     markPromoted(sessionId, decision);
     setActivePopout(decision);
-  }, [enabled, sessionId, events, activePopout, promoted, markPromoted, setActivePopout]);
+  }, [enabled, surfaceIsCode, sessionId, events, activePopout, promoted, markPromoted, setActivePopout]);
 }

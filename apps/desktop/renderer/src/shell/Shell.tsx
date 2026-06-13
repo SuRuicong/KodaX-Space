@@ -190,12 +190,19 @@ export function Shell(): JSX.Element {
   const setRequestedPopout = useAppStore((s) => s.requestPopout);
   useEffect(() => {
     if (requestedPopout === null) return;
+    // F046 review HIGH-3: Partner 面不挂 PopoutOverlay。若在 Partner 触发 requestPopout
+    // （如某条 slash command），这里仍会 setActivePopout 但无 overlay 渲染 → 请求被静默吞掉、
+    // 切回 Coder 也不会重放。Partner 下直接丢弃请求（清 null），不污染 activePopout。
+    if (currentSurface !== 'code') {
+      setRequestedPopout(null);
+      return;
+    }
     const known = ['preview', 'diff', 'terminal', 'tasks', 'plan', 'agents', 'mcp'] as const;
     if ((known as readonly string[]).includes(requestedPopout)) {
       setActivePopout(requestedPopout as PopoutKind);
     }
     setRequestedPopout(null); // 消费完清回 null,允许下次 slash command 再次触发
-  }, [requestedPopout, setRequestedPopout, setActivePopout]);
+  }, [requestedPopout, setRequestedPopout, setActivePopout, currentSurface]);
 
   // P4a: Ctrl+\ 进入/退出"专注阅读"模式 — 隐藏 Left / Right Sidebar，让主区域满宽。
   //   - BottomBar / Breadcrumb / titlebar 保留（用户仍要发消息 + 窗口操作）
@@ -203,6 +210,10 @@ export function Shell(): JSX.Element {
   const [fullscreenRead, setFullscreenRead] = useState(false);
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // F046 review HIGH-2: 专注阅读模式的退出按钮只在 Coder 分支渲染；Partner 面没有可见
+      // 退出 affordance（且 RightSidebar 本就不挂）。Partner 面不接 Ctrl+\，避免把左栏藏掉后
+      // 用户找不到退出入口。Partner 想要专注阅读是后续 doc-workspace 的独立设计。
+      if (currentSurface === 'partner') return;
       if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === '\\') {
         e.preventDefault();
         setFullscreenRead((v) => !v);
@@ -210,7 +221,7 @@ export function Shell(): JSX.Element {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [currentSurface]);
 
   return (
     <div className="h-screen flex flex-col bg-surface text-fg-primary overflow-hidden">
