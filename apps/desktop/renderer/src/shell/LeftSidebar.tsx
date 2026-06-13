@@ -2,7 +2,7 @@
 //
 // Claude Desktop 风左侧侧栏：
 //   ┌─────────────┐
-//   │ [Coder][Partner]  ← mode tab (Partner 灰 + "Coming")
+//   │ [Coder][Partner]  ← surface tab (F045: Partner 可点，SurfaceTabs 组件)
 //   │
 //   │ + New session
 //   │ ⏰ Scheduled  (灰，v0.1.x)
@@ -15,21 +15,14 @@
 //   │   · 修个 bug
 //   └─────────────┘
 //
-// ADR-004 v2 决策：M0 就显示 Coder/Partner tab；Partner 灰 + "Coming"。
+// ADR-004 v2 决策：常驻 Coder/Partner tab。F045 起 Partner 可点（抽到 SurfaceTabs 组件，
+// 接 surface store）；LeftSidebar 是两 surface 共用的全局导航（项目 / session / surface tab）。
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Code2,
-  Handshake,
-  Plus,
-  Clock,
-  Briefcase,
-  ChevronDown,
-  Settings,
-  type LucideIcon,
-} from 'lucide-react';
-import type { Mode } from './Shell.js';
+import { Plus, Clock, Briefcase, ChevronDown, Settings, type LucideIcon } from 'lucide-react';
+import { SurfaceTabs } from './SurfaceTabs.js';
 import { useAppStore } from '../store/appStore.js';
+import { useSurfaceStore } from '../store/surface.js';
 import { Caret } from '../components/Caret.js';
 import {
   canonProjectRoot,
@@ -65,26 +58,27 @@ function prefetchSessionHistory(sessionId: string, msgCount: number | undefined)
 interface LeftSidebarProps {
   /** 2026-06: 动态宽度（px）。Shell 拖 ResizeHandle 实时改这个值。 */
   width?: number;
-  mode: Mode;
-  onModeChange: (m: Mode) => void;
 }
 
-export function LeftSidebar({ mode, onModeChange, width }: LeftSidebarProps): JSX.Element {
+export function LeftSidebar({ width }: LeftSidebarProps): JSX.Element {
   const sessions = useAppStore((s) => s.sessions);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const setCurrentSession = useAppStore((s) => s.setCurrentSession);
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
+  // F045: 当前工作面（Coder / Partner）。session 列表按 surface 分面——切 surface 重新拉。
+  const currentSurface = useSurfaceStore((s) => s.currentSurface);
 
   // F040: 不再按 currentProjectPath 过滤拉 session —— 多项目 sidebar 需要全量。
   // 启动期拉一次；切项目 / 增删 session 触发的"补拉"未来要走显式 refresh 路径。
   // refetch 触发器：currentProjectPath 变化（开新项目可能带新 session）+ mount。
+  // F045: 加 currentSurface —— Coder / Partner 会话列表彼此独立，切面时按新 surface 重拉。
   useEffect(() => {
     const bridge = window.kodaxSpace;
     if (!bridge) return;
-    void bridge.invoke('session.list', undefined).then((r) => {
+    void bridge.invoke('session.list', { surface: currentSurface }).then((r) => {
       if (r.ok) useAppStore.getState().setSessions(r.data.sessions);
     });
-  }, [currentProjectPath]);
+  }, [currentProjectPath, currentSurface]);
 
   /**
    * + New session：统一首页与新建。不再急建空 session（那会跳进零消息空白对话页，
@@ -108,33 +102,8 @@ export function LeftSidebar({ mode, onModeChange, width }: LeftSidebarProps): JS
       style={width !== undefined ? { width: `${width}px` } : undefined}
       className="flex flex-col border-r border-border-default bg-surface flex-shrink-0 text-[13px]"
     >
-      {/* Mode tab */}
-      <div className="p-2 flex gap-1 border-b border-border-default flex-shrink-0">
-        <button
-          type="button"
-          onClick={() => onModeChange('coder')}
-          className={`flex-1 text-xs py-1.5 rounded ${
-            mode === 'coder'
-              ? 'bg-surface-3 text-fg-primary'
-              : 'text-fg-muted hover:text-fg-primary'
-          }`}
-        >
-          <span className="inline-flex items-center justify-center gap-1.5">
-            <Code2 className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden /> Coder
-          </span>
-        </button>
-        <button
-          type="button"
-          disabled
-          className="flex-1 text-xs py-1.5 rounded text-fg-muted cursor-not-allowed relative"
-          title="Partner — Coming in v0.1.x"
-        >
-          <span className="inline-flex items-center justify-center gap-1.5">
-            <Handshake className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden /> Partner
-          </span>
-          <span className="absolute -top-0.5 -right-0.5 text-[8px] text-warn">soon</span>
-        </button>
-      </div>
+      {/* Surface tab — F045: [Coder][Partner] 切换（Partner 自本版起可点） */}
+      <SurfaceTabs />
 
       {/* New session + menus */}
       <div className="p-2 space-y-0.5">

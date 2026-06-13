@@ -55,6 +55,7 @@ export {
   type PermissionMode,
   type AutoModeEngine,
   type AgentMode,
+  type Surface,
   type SessionMeta,
   type SessionEvent,
   type SessionEventKind,

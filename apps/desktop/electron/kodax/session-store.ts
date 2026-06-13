@@ -24,7 +24,18 @@
 //                                                  (避免 dynamic import 触发 cli-boxes JSON bug)
 //
 // 重置：setSessionStoreImpl(null) 恢复默认。
+import type { Surface } from '@kodax-space/space-ipc-schema';
+
 type SdkSessionModule = typeof import('@kodax-ai/kodax/session');
+
+/**
+ * F045: 把 SDK SessionSummary.tag（consumer 私有自由字符串）反推回 Space 的 surface。
+ * 只有 tag==='partner' 归 Partner；其余（'code' / 未知值 / 历史无 tag）一律保守归 Coder。
+ * 与写入侧 real-session.ts 的 `session.tag = this.surface` 对称。
+ */
+export function sdkTagToSurface(tag: string | undefined): Surface {
+  return tag === 'partner' ? 'partner' : 'code';
+}
 
 export interface SessionStoreImpl {
   readonly listSessions: SdkSessionModule['listSessions'];
@@ -134,6 +145,8 @@ export interface PersistedSessionMeta {
   readonly createdAt?: string;
   /** workspaceRoot (= projectRoot) 若 SDK runtimeInfo 提供 */
   readonly projectRoot?: string;
+  /** F045: 从 SDK summary.tag 反推的工作面归属（无 tag 归 'code'）。决定列表归属。 */
+  readonly surface: Surface;
 }
 
 /**
@@ -177,6 +190,9 @@ export async function listPersistedSessions(opts: {
     msgCount: s.msgCount,
     createdAt: s.createdAt,
     projectRoot: s.runtimeInfo?.workspaceRoot ?? s.runtimeInfo?.gitRoot,
+    // F045: 不把 tag 下推给 SDK listSessions（仍按 projectRoot+scope 拉，避开 all-fetch
+    // 致列表不全的历史回退坑 ②B）。这里反推 surface，main 端（host.listMerged）再 filter。
+    surface: sdkTagToSurface(s.tag),
   }));
 }
 

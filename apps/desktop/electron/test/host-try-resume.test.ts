@@ -62,6 +62,24 @@ test('tryResume rehydrates a persisted-only session into the in-flight Map', asy
   assert.equal(resumed!.title, '你好');
 });
 
+test('tryResume recovers surface from persisted SDK tag (Partner stays Partner)', async () => {
+  // F045: 重启后 resume 一个 tag='partner' 的 session，必须恢复成 surface='partner'，
+  // 否则它会被默认成 Coder 并在 in-flight 优先 dedup 下整段串面。
+  const id = 's_partner-resumed';
+  mockState.seedTagged(id, 'C:/proj/example', 'partner', 'doc work');
+  const ok = await kodaxHost.tryResume(id);
+  assert.equal(ok, true);
+  assert.equal(kodaxHost.get(id)?.surface, 'partner');
+});
+
+test('tryResume defaults surface to "code" for legacy untagged persisted session', async () => {
+  const id = 's_legacy-resumed';
+  mockState.seed(id, 'C:/proj/example', 'old session'); // 无 tag
+  const ok = await kodaxHost.tryResume(id);
+  assert.equal(ok, true);
+  assert.equal(kodaxHost.get(id)?.surface, 'code');
+});
+
 test('tryResume bails out when persisted session lacks gitRoot', async () => {
   const id = 's_no-gitroot';
   // 不通过 seed 走，而是直接往 mock 里塞一个缺 gitRoot 的条目。当前 mock helper 不支持

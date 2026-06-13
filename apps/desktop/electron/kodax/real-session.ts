@@ -92,7 +92,7 @@ import type {
   KodaXSessionStorage,
   ToolCallSignal,
 } from '@kodax-ai/kodax/coding';
-import type { InputArtifact, SessionEvent } from '@kodax-space/space-ipc-schema';
+import type { InputArtifact, SessionEvent, Surface } from '@kodax-space/space-ipc-schema';
 import { askUserBroker } from '../permission/ask-user-broker.js';
 import { bootstrapAutoMode } from './auto-mode-bootstrap.js';
 import { getSessionStorageHandle } from './session-store.js';
@@ -126,6 +126,12 @@ export class RealKodaXSession implements ManagedSession {
   autoModeEngine: ManagedSession['autoModeEngine'];
   /** AMA (默认 / 多智能体协作) vs SA (单 agent，接口并发受限时降级)。*/
   agentMode: ManagedSession['agentMode'];
+  /**
+   * F045: 工作面归属（'code' = Coder / 'partner' = Partner）。session 创建时定死，
+   * 持久化为 KodaX SDK session tag（写盘时把该值原样写进 session.tag）。
+   * 决定它出现在哪个面的列表，并将来驱动工具集裁剪（F047）。
+   */
+  readonly surface: Surface;
   /** SDK 0.7.42 wired: 用户 /model 设的覆盖；undefined 走 provider 默认。*/
   model?: string;
   /** SDK 0.7.42 wired: 用户 /thinking 设的开关；undefined 走 KodaX 默认。*/
@@ -152,6 +158,7 @@ export class RealKodaXSession implements ManagedSession {
     this.permissionMode = opts.permissionMode;
     this.autoModeEngine = opts.autoModeEngine ?? 'llm';
     this.agentMode = opts.agentMode ?? 'ama';
+    this.surface = opts.surface ?? 'code';
     this.createdAt = Date.now();
     this.lastActivityAt = this.createdAt;
     this.parentSessionId = opts.parentSessionId;
@@ -728,7 +735,16 @@ export class RealKodaXSession implements ManagedSession {
       // scope: 'user' 让 SDK FileSessionStorage 把 session 当成用户对话面板的
       // first-class session 落盘。storage 是 SDK 当前要求的字段——不传则
       // saveSessionSnapshot 静默 no-op，jsonl 不落盘 (用户对话历史丢失)。
-      session: { id: sid, scope: 'user', storage: sessionStorage as KodaXSessionStorage | undefined },
+      //
+      // F045: tag = surface 值（'code' | 'partner'），SDK 持久化进 SessionData.tag
+      // → listSessions summary.tag 回带 → session-store mapper 反推回 surface。
+      // 这是 Coder / Partner 会话列表彼此独立的持久化依据（KodaX SDK 0.7.49）。
+      session: {
+        id: sid,
+        scope: 'user',
+        tag: this.surface,
+        storage: sessionStorage as KodaXSessionStorage | undefined,
+      },
       context: {
         // gitRoot 用 projectRoot——Space 不再单独求 git root，KodaX 自己会处理边界
         gitRoot: this.projectRoot,

@@ -52,6 +52,20 @@ export type AutoModeEngine = z.infer<typeof autoModeEngineSchema>;
 const agentModeSchema = z.enum(['ama', 'sa']);
 export type AgentMode = z.infer<typeof agentModeSchema>;
 
+// ---- Surface (F045 Partner 批次地基) ----
+//
+// 工作面：'code' = Coder（编码），'partner' = Partner（文档/协作）。与 renderer
+// 的 store/surface.ts 的 Surface 联合**值对齐**（'code' | 'partner'）。
+//
+// 持久化语义：写盘时把 surface 值原样写进 KodaX SDK 的 session tag（consumer 私有
+// 自由字符串）——surface 'code'→tag 'code'，'partner'→tag 'partner'。
+// 反推（mapper）：tag==='partner' ? 'partner' : 'code'。故历史无 tag 的 session 自然
+// 归 Coder（向后兼容），tag 损坏/未知值也保守归 Coder。
+// list 侧不把 tag 下推给 SDK（仍按 projectRoot+scope 拉），mapper 反推 surface 后由
+// main 端 filter——避开"自维护索引 + all-fetch 致 session 列不全"的历史回退坑（②B）。
+const surfaceSchema = z.enum(['code', 'partner']);
+export type Surface = z.infer<typeof surfaceSchema>;
+
 // ---- Provider ID (review F008 C2-sec)
 //
 // 限制 providerId 字符集到合法形态的并集——避免任意字符串混进 ManagedSession.provider 字段
@@ -118,6 +132,11 @@ const sessionMetaSchema = z.object({
    * 'sa' 是 fallback 选择（接口并发受限、需要节省 token 时显式降级）。
    */
   agentMode: agentModeSchema.default('ama'),
+  /**
+   * F045: 工作面归属（Coder / Partner）。session 创建时定死，持久化为 SDK session tag。
+   * 缺省 'code'——无 tag 的历史 session 归 Coder（向后兼容）。决定它出现在哪个面的列表。
+   */
+  surface: surfaceSchema.default('code'),
   title: z.string().max(256).optional(),
   createdAt: z.number().int().nonnegative(),
   lastActivityAt: z.number().int().nonnegative(),
@@ -153,6 +172,8 @@ export const sessionCreateChannel = {
     autoModeEngine: autoModeEngineSchema.optional(),
     /** 缺省 'ama'。SA 是接口并发受限的 fallback。*/
     agentMode: agentModeSchema.optional(),
+    /** F045: 工作面。缺省 'code'。决定 session 的 tag（写盘）/ 工具集 / 列表归属。*/
+    surface: surfaceSchema.optional(),
   }),
   output: z.object({
     sessionId: z.string().min(1),
@@ -223,6 +244,8 @@ export const sessionListChannel = {
   input: z
     .object({
       projectRoot: z.string().min(1).max(4096).optional(),
+      /** F045: 只返回该工作面的 session（不传 = 全部，含历史无 tag 的）。 */
+      surface: surfaceSchema.optional(),
     })
     .optional(),
   output: z.object({

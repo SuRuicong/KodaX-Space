@@ -14,7 +14,7 @@
 //   KodaXEvents.onStreamEnd      → emit({ kind:'session_complete', ... })
 //   (catch in agent.run)         → emit({ kind:'session_error',  ... })
 
-import type { AgentMode, AutoModeEngine, InputArtifact, PermissionDecision, PermissionMode, SessionEvent } from '@kodax-space/space-ipc-schema';
+import type { AgentMode, AutoModeEngine, InputArtifact, PermissionDecision, PermissionMode, SessionEvent, Surface } from '@kodax-space/space-ipc-schema';
 
 /**
  * 工具调用前的权限请求回调。
@@ -43,6 +43,8 @@ export type SessionCreateOptions = {
   readonly autoModeEngine?: AutoModeEngine;
   /** AMA (默认) / SA — KodaX agent 形态。缺省 'ama'。*/
   readonly agentMode?: AgentMode;
+  /** F045: 工作面（'code' = Coder / 'partner' = Partner）。缺省 'code'。持久化为 SDK session tag。*/
+  readonly surface?: Surface;
   /** FEATURE_033 fork 时由 host 传入；root session 不带。*/
   readonly parentSessionId?: string;
   readonly forkPointTurnIdx?: number;
@@ -77,6 +79,11 @@ export interface ManagedSession {
   autoModeEngine: AutoModeEngine;
   /** AMA (默认 / 多 agent 协作) vs SA (单 agent，接口并发 fallback)。运行时可切。*/
   agentMode: AgentMode;
+  /**
+   * F045: 工作面归属（'code' = Coder / 'partner' = Partner）。创建时定死、不可变，
+   * 持久化为 KodaX SDK session tag。决定 session 出现在哪个面的列表。
+   */
+  readonly surface: Surface;
   /**
    * SDK 0.7.42 setModel: model 覆盖 provider 默认；undefined = 用 provider 默认。
    * 切换不重启 session——下一次 send 时传入 runKodaX options.model。

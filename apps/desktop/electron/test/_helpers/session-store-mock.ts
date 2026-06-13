@@ -17,12 +17,17 @@ import { setSessionStoreImpl, type SessionStoreImpl } from '../../kodax/session-
 export interface MockSessionState {
   /** Inject a 'persisted' session so SDK forkSession finds it. */
   seed(id: string, gitRoot: string, title?: string): void;
+  /** F045: Inject a persisted session carrying a SDK session tag (surface 反推). */
+  seedTagged(id: string, gitRoot: string, tag: string | undefined, title?: string): void;
   /** Wipe storage + restore default SDK impl. Call from afterEach. */
   reset(): void;
 }
 
 export function installSessionStoreMock(): MockSessionState {
-  const storage = new Map<string, { id: string; title: string; gitRoot: string }>();
+  const storage = new Map<
+    string,
+    { id: string; title: string; gitRoot: string; tag?: string }
+  >();
 
   const impl: SessionStoreImpl = {
     listSessions: async (opts) => {
@@ -33,6 +38,7 @@ export function installSessionStoreMock(): MockSessionState {
         id: s.id,
         title: s.title,
         msgCount: 0,
+        ...(s.tag !== undefined ? { tag: s.tag } : {}),
         runtimeInfo: { workspaceRoot: s.gitRoot },
       }));
     },
@@ -59,7 +65,13 @@ export function installSessionStoreMock(): MockSessionState {
     loadSession: async (id) => {
       const s = storage.get(id);
       if (!s) return null;
-      return { title: s.title, messages: [], gitRoot: s.gitRoot } as never;
+      // F045: 回带 tag，让 host.tryResume 能从持久化数据反推 surface。
+      return {
+        title: s.title,
+        messages: [],
+        gitRoot: s.gitRoot,
+        ...(s.tag !== undefined ? { tag: s.tag } : {}),
+      } as never;
     },
     watchSessions: () => ({ close: () => undefined }),
   };
@@ -68,6 +80,9 @@ export function installSessionStoreMock(): MockSessionState {
   return {
     seed(id, gitRoot, title = 'Untitled'): void {
       storage.set(id, { id, title, gitRoot });
+    },
+    seedTagged(id, gitRoot, tag, title = 'Untitled'): void {
+      storage.set(id, { id, title, gitRoot, ...(tag !== undefined ? { tag } : {}) });
     },
     reset(): void {
       storage.clear();

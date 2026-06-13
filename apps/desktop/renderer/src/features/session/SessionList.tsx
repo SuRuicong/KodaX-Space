@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../../store/appStore.js';
+import { useSurfaceStore } from '../../store/surface.js';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 
 // 'mock' 永远保留——FEATURE_003 Mock adapter 的入口，未配 key 时也能跑通整个流程。
@@ -16,6 +17,7 @@ const MOCK_PROVIDER = 'mock';
 
 export function SessionList(): JSX.Element {
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
+  const currentSurface = useSurfaceStore((s) => s.currentSurface);
   const sessions = useAppStore((s) => s.sessions);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const setSessions = useAppStore((s) => s.setSessions);
@@ -80,8 +82,8 @@ export function SessionList(): JSX.Element {
       setSessions([]);
       return;
     }
-    void refreshSessions(currentProjectPath, setSessions);
-  }, [currentProjectPath, setSessions]);
+    void refreshSessions(currentProjectPath, setSessions, currentSurface);
+  }, [currentProjectPath, setSessions, currentSurface]);
 
   async function handleCreate(): Promise<void> {
     if (!currentProjectPath) return;
@@ -97,6 +99,8 @@ export function SessionList(): JSX.Element {
         provider,
         reasoningMode,
         permissionMode,
+        // F045: 新 session 归当前工作面；main 落盘成 SDK session tag。
+        surface: currentSurface,
       });
       if (!result.ok) {
         console.error('[SessionList] create failed:', result.error);
@@ -112,6 +116,7 @@ export function SessionList(): JSX.Element {
         permissionMode,
         autoModeEngine: 'llm',
         agentMode: 'ama', // 与 sessionMetaSchema.default 一致；session.list 刷新会拿权威值
+        surface: currentSurface,
         title: undefined,
         createdAt: result.data.createdAt,
         lastActivityAt: result.data.createdAt,
@@ -119,7 +124,7 @@ export function SessionList(): JSX.Element {
       upsertSession(stub);
       setCurrentSession(stub.sessionId);
       // await refresh——确保 main 端权威列表已应用，避免后续操作看到 stub 残影
-      await refreshSessions(currentProjectPath, setSessions);
+      await refreshSessions(currentProjectPath, setSessions, currentSurface);
     } finally {
       setCreating(false);
     }
@@ -156,7 +161,7 @@ export function SessionList(): JSX.Element {
     const result = await bridge.invoke('session.setTitle', { sessionId: renaming, title: trimmed });
     setRenaming(null);
     if (result.ok && currentProjectPath) {
-      await refreshSessions(currentProjectPath, setSessions);
+      await refreshSessions(currentProjectPath, setSessions, currentSurface);
     }
   }
 
@@ -289,10 +294,12 @@ export function SessionList(): JSX.Element {
 async function refreshSessions(
   projectRoot: string,
   setSessions: (s: readonly SessionMeta[]) => void,
+  surface?: SessionMeta['surface'],
 ): Promise<void> {
   const bridge = window.kodaxSpace;
   if (!bridge) return;
-  const result = await bridge.invoke('session.list', { projectRoot });
+  // F045: 按当前工作面拉，与分面列表一致（不传 surface 则回退全量，向后兼容）。
+  const result = await bridge.invoke('session.list', { projectRoot, surface });
   if (result.ok) {
     setSessions(result.data.sessions);
   }

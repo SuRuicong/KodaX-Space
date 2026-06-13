@@ -24,6 +24,7 @@ beforeEach(() => {
         permissionMode: 'accept-edits',
         autoModeEngine: 'llm',
         agentMode: 'ama',
+        surface: 'code',
         createdAt: FALLBACK_SENT_AT,
         lastActivityAt: FALLBACK_SENT_AT,
       },

@@ -42,8 +42,8 @@ import { ToastContainer } from './ToastContainer.js';
 import { ZoomController } from './ZoomController.js';
 import { UpdateBanner } from '../features/updater/UpdateBanner.js';
 import { useAppStore } from '../store/appStore.js';
-
-export type Mode = 'coder' | 'partner';
+import { useSurfaceStore } from '../store/surface.js';
+import { PartnerWorkspace } from '../features/partner/PartnerWorkspace.js';
 
 // 模块级 set：哪些 session 已从 SDK 拉过 history 回填 store。
 // 之前用 useRef 在 Shell component 里——HMR 重挂 / Shell 卸载重挂都会丢，导致 fork/rewind
@@ -52,8 +52,8 @@ export type Mode = 'coder' | 'partner';
 const restoredSessionIds = new Set<string>();
 
 export function Shell(): JSX.Element {
-  // Mode：alpha.1 阶段只 Coder 可用，Partner 灰；ADR-004 v2 决策
-  const [mode, setMode] = useState<Mode>('coder');
+  // F045: surface 一等状态（替代旧 local mode）。Partner 自本版起有真实空壳。
+  const currentSurface = useSurfaceStore((s) => s.currentSurface);
 
   // 侧栏开/关：button 放在 breadcrumb 行最左 / 最右；侧栏关掉时 0 占位（不再 28px 竖条）
   const leftSidebarOpen = useAppStore((s) => s.leftSidebarOpen);
@@ -232,7 +232,7 @@ export function Shell(): JSX.Element {
       <div className="flex flex-1 min-h-0">
         {!fullscreenRead && leftSidebarOpen && (
           <>
-            <LeftSidebar mode={mode} onModeChange={setMode} width={leftWidth} />
+            <LeftSidebar width={leftWidth} />
             <ResizeHandle
               side="left"
               width={leftWidth}
@@ -246,70 +246,78 @@ export function Shell(): JSX.Element {
           </>
         )}
 
-        <div className="flex-1 flex flex-col min-w-0 relative">
-          <div className="flex items-center px-3 h-10 border-b border-border-default flex-shrink-0 gap-1">
-            {/* 左侧栏切换按钮 — 始终常驻，让收起后仍能一键展开 */}
-            <SidebarToggleButton
-              side="left"
-              open={leftSidebarOpen && !fullscreenRead}
-              onClick={() => {
-                if (fullscreenRead) {
-                  setFullscreenRead(false);
-                  setLeftSidebarOpen(true);
-                } else {
-                  setLeftSidebarOpen(!leftSidebarOpen);
-                }
-              }}
-            />
-            <Breadcrumb />
-            <CommandToolbar active={activePopout} onToggle={setActivePopout} />
-            {fullscreenRead && (
-              <button
-                type="button"
-                onClick={() => setFullscreenRead(false)}
-                className="ml-1 text-[11px] px-2 py-0.5 rounded border border-border-default text-fg-muted hover:text-fg-primary"
-                title="Exit focus mode (Ctrl+\\)"
-              >
-                ↗ Focus
-              </button>
-            )}
-            {/* 右侧栏切换按钮 */}
-            <SidebarToggleButton
-              side="right"
-              open={rightSidebarOpen && !fullscreenRead}
-              onClick={() => {
-                if (fullscreenRead) {
-                  setFullscreenRead(false);
-                  setRightSidebarOpen(true);
-                } else {
-                  setRightSidebarOpen(!rightSidebarOpen);
-                }
-              }}
-            />
-          </div>
-
-          <ConversationStreamV2 />
-
-          <BottomBar />
-
-          {activePopout !== null && (
-            <PopoutOverlay kind={activePopout} onClose={() => setActivePopout(null)} />
-          )}
-        </div>
-
-        {!fullscreenRead && rightSidebarOpen && (
+        {currentSurface === 'partner' ? (
+          // F045: Partner surface 只替换主区（对话区）。LeftSidebar 是全局导航
+          // （项目 / session / SurfaceTabs），两 surface 共用，故在本分支外。三栏由 F046 填实。
+          <PartnerWorkspace />
+        ) : (
           <>
-            <ResizeHandle
-              side="right"
-              width={rightWidth}
-              defaultWidth={320}
-              onPreview={setRightWidthDraft}
-              onCommit={(px) => {
-                setRightWidthDraft(null);
-                setRightSidebarWidth(px);
-              }}
-            />
-            <RightSidebar width={rightWidth} />
+            <div className="flex-1 flex flex-col min-w-0 relative">
+              <div className="flex items-center px-3 h-10 border-b border-border-default flex-shrink-0 gap-1">
+                {/* 左侧栏切换按钮 — 始终常驻，让收起后仍能一键展开 */}
+                <SidebarToggleButton
+                  side="left"
+                  open={leftSidebarOpen && !fullscreenRead}
+                  onClick={() => {
+                    if (fullscreenRead) {
+                      setFullscreenRead(false);
+                      setLeftSidebarOpen(true);
+                    } else {
+                      setLeftSidebarOpen(!leftSidebarOpen);
+                    }
+                  }}
+                />
+                <Breadcrumb />
+                <CommandToolbar active={activePopout} onToggle={setActivePopout} />
+                {fullscreenRead && (
+                  <button
+                    type="button"
+                    onClick={() => setFullscreenRead(false)}
+                    className="ml-1 text-[11px] px-2 py-0.5 rounded border border-border-default text-fg-muted hover:text-fg-primary"
+                    title="Exit focus mode (Ctrl+\\)"
+                  >
+                    ↗ Focus
+                  </button>
+                )}
+                {/* 右侧栏切换按钮 */}
+                <SidebarToggleButton
+                  side="right"
+                  open={rightSidebarOpen && !fullscreenRead}
+                  onClick={() => {
+                    if (fullscreenRead) {
+                      setFullscreenRead(false);
+                      setRightSidebarOpen(true);
+                    } else {
+                      setRightSidebarOpen(!rightSidebarOpen);
+                    }
+                  }}
+                />
+              </div>
+
+              <ConversationStreamV2 />
+
+              <BottomBar />
+
+              {activePopout !== null && (
+                <PopoutOverlay kind={activePopout} onClose={() => setActivePopout(null)} />
+              )}
+            </div>
+
+            {!fullscreenRead && rightSidebarOpen && (
+              <>
+                <ResizeHandle
+                  side="right"
+                  width={rightWidth}
+                  defaultWidth={320}
+                  onPreview={setRightWidthDraft}
+                  onCommit={(px) => {
+                    setRightWidthDraft(null);
+                    setRightSidebarWidth(px);
+                  }}
+                />
+                <RightSidebar width={rightWidth} />
+              </>
+            )}
           </>
         )}
 

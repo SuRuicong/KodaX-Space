@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, Plus, X } from 'lucide-react';
 import type { InputArtifact, SessionMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
+import { useSurfaceStore } from '../store/surface.js';
 import { ChipBar } from './ChipBar.js';
 import { ModelEffortSelector } from './ModelEffortSelector.js';
 import { ModeSelector } from './ModeSelector.js';
@@ -113,6 +114,8 @@ function tokenizeArgs(rest: string): string[] {
 export function BottomBar(): JSX.Element {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
+  // F045: 新建 session 落在当前工作面（Coder / Partner）——写盘成 SDK session tag。
+  const currentSurface = useSurfaceStore((s) => s.currentSurface);
   const providers = useAppStore((s) => s.providers);
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
   const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
@@ -268,6 +271,8 @@ export function BottomBar(): JSX.Element {
       reasoningMode,
       permissionMode,
       agentMode,
+      // F045: 新 session 归当前工作面；main 落盘成 SDK session tag，决定它在哪个面的列表出现。
+      surface: currentSurface,
     });
     if (!result.ok) {
       setErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'create failed'}`);
@@ -281,6 +286,7 @@ export function BottomBar(): JSX.Element {
       permissionMode,
       autoModeEngine: 'llm',
       agentMode,
+      surface: currentSurface,
       title: undefined,
       createdAt: result.data.createdAt,
       lastActivityAt: result.data.createdAt,
@@ -290,9 +296,11 @@ export function BottomBar(): JSX.Element {
     // 仅消费 provider 的 pending（provider 有独立 defaultProviderId 兜底）；mode 类
     // pending（permission / reasoning / agent）现在等同"用户首选"，持久化在 LS 留下次默认
     setPendingProviderId(null);
-    // 刷新权威列表（让 LeftSidebar Recents 立即看到新条目）
+    // 刷新权威列表（让 LeftSidebar Recents 立即看到新条目）。F045: 按当前 surface 拉，
+    // 与 LeftSidebar 的分面列表一致（否则新建后刷新会把另一面的 session 也灌进来）。
     const listResult = await window.kodaxSpace.invoke('session.list', {
       projectRoot: currentProjectPath,
+      surface: currentSurface,
     });
     if (listResult.ok) useAppStore.getState().setSessions(listResult.data.sessions);
     return stub.sessionId;

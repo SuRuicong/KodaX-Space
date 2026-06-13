@@ -17,6 +17,7 @@ function mkSession(sessionId: string, projectRoot: string): SessionMeta {
     permissionMode: 'accept-edits',
     autoModeEngine: 'llm',
     agentMode: 'ama',
+    surface: 'code',
     createdAt: 1700000000000,
     lastActivityAt: 1700000000000,
   };

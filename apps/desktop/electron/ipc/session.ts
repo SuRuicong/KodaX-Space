@@ -72,6 +72,8 @@ export function registerSessionChannels(): void {
       permissionMode: input.permissionMode,
       autoModeEngine: input.autoModeEngine,
       agentMode: input.agentMode,
+      // F045: 工作面（Coder / Partner）。缺省 'code'。host 落盘成 SDK session tag。
+      surface: input.surface,
     });
     // v0.1.6 cleanup: 用 ~/.kodax/config.json 的 thinking 默认值初始化新 session。
     // 不传 schema 改动——renderer 没必要知道 thinking 默认值，main 直接 fill 即可。
@@ -160,7 +162,9 @@ export function registerSessionChannels(): void {
     // 传给 host.listMerged 的 projectRoot 是 canonical 形态（SDK listSessions 内部
     // 自己 normalize；当前 SDK 版本 projectRoot filter 不严格——本层再过一道 canon
     // 比较兜底）。
-    const merged = await kodaxHost.listMerged({ projectRoot: projectFilter });
+    // F045: surface 过滤透传给 host.listMerged（在合并 in-flight ∪ persisted 后统一 filter）。
+    // 不传 = 全部（含历史无 tag 的，向后兼容）。Coder = surface!=='partner'，Partner = 'partner'。
+    const merged = await kodaxHost.listMerged({ projectRoot: projectFilter, surface: input?.surface });
 
     // Persisted session 没有真运行时设置——磁盘上只 SDK lineage + gitRoot。先准备一份
     // user-defaults 兜底，给 sidebar UI 占位用（避免显示 "mock" 让用户以为整个 SDK 是 mock）。
@@ -223,6 +227,7 @@ export function registerSessionChannels(): void {
           permissionMode: item.permissionMode,
           autoModeEngine: item.autoModeEngine,
           agentMode: item.agentMode,
+          surface: item.surface,
           title: item.title,
           createdAt: item.createdAt,
           lastActivityAt: item.lastActivityAt,
@@ -247,6 +252,8 @@ export function registerSessionChannels(): void {
         permissionMode: persistedPermissionFallback,
         autoModeEngine: 'llm',
         agentMode: 'ama',
+        // F045: 真值——来自 SDK summary.tag 反推（host.listMerged 已派生），非占位。
+        surface: item.surface,
         title: item.title,
         createdAt: sortKey,
         lastActivityAt: sortKey,
