@@ -578,7 +578,10 @@ export class RealKodaXSession implements ManagedSession {
           kind: 'managed_task_status',
           sessionId: sid,
           status: {
-            agentMode: status.agentMode,
+            // SDK 0.7.49+ 把 KodaXAgentMode 扩成 'ama'|'sa'|'amaw'（新增 AMA 变体）。
+            // Space 的 agentMode 是粗粒度二元（ama=多智能体 / sa=单 agent），'amaw' 仍是
+            // AMA 家族 → 在边界折叠成 'ama'，不让新枚举漏进 IPC schema(z.enum['ama','sa'])。
+            agentMode: status.agentMode === 'sa' ? 'sa' : 'ama',
             harnessProfile: status.harnessProfile,
             activeWorkerId: status.activeWorkerId,
             activeWorkerTitle: status.activeWorkerTitle,

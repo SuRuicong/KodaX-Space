@@ -54,8 +54,8 @@
 | 042 | NAPI native-helpers（合并 F014 tokenizer + F025 diff + F026b fuzzy） | Refactor | Low | v0.1.x+ | Deferred | [v0.1.4.md#042](features/v0.1.4.md#feature_042-napi-native-helpers合并版) |
 | 043 | 项目级 contextmenu（rename / archive / remove from Space） — codex 形态对齐 | New | High | v0.1.8 | Completed | [v0.1.8.md#043](features/v0.1.8.md#feature_043-项目级-contextmenu) |
 | 044 | 右侧 Changes 点文件打开 git working-tree diff popout | Enhancement | High | v0.1.10 | Completed | [v0.1.10.md#feature_044](features/v0.1.10.md#feature_044-右侧-changes-点文件打开-git-working-tree-diff-popout) |
-| 045 | Surface 抽象落地 + `[Coder][Partner]` tab + 隐式入口判定 | New | Critical | v0.1.11 | Planned | [v0.1.11.md#feature_045](features/v0.1.11.md#feature_045-surface-抽象落地--coderpartner-tab--隐式入口判定) |
-| 046 | Partner doc-workspace 三栏布局骨架 | New | High | v0.1.11 | Planned | [v0.1.11.md#feature_046](features/v0.1.11.md#feature_046-partner-doc-workspace-三栏布局骨架) |
+| 045 | Surface 抽象 + `[Coder][Partner]` tab + session 分面（SDK tag；**砍隐式入口**，显式手动切） | New | Critical | v0.1.11 | Done | [v0.1.11.md#feature_045](features/v0.1.11.md#feature_045-surface-抽象落地--coderpartner-tab--隐式入口判定) |
+| 046 | Partner doc-workspace 三栏（**功能可用**：中栏真对话 + per-surface session 记忆 + 持久化面） | New | High | v0.1.11 | Done | [v0.1.11.md#feature_046](features/v0.1.11.md#feature_046-partner-doc-workspace-三栏布局骨架) |
 | 047 | Partner 工具白名单（non-bash-subset）+ 非 git 文件作用域 | New | High | v0.1.11 | Planned | [v0.1.11.md#feature_047](features/v0.1.11.md#feature_047-partner-工具白名单non-bash-subset-非-git-文件作用域) |
 | 048 | Artifact 一等概念（登记 / 富预览 / 迭代版本 / 导出） | New | High | v0.1.12 | Planned | [v0.1.12.md#feature_048](features/v0.1.12.md#feature_048-artifact-一等概念) |
 | 049 | Partner skill pack：代码相关知识工作（复用 Repointel） | New | High | v0.1.12 | Planned | [v0.1.12.md#feature_049](features/v0.1.12.md#feature_049-partner-skill-pack代码相关知识工作) |

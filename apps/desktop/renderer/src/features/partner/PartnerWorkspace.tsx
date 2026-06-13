@@ -1,28 +1,21 @@
-// PartnerWorkspace — F045 路由目标（最小占位）。
+// PartnerWorkspace — F045 路由目标 / F046 三栏实体。
 //
-// F045 立 surface 路由：切到 Partner 时主区渲染本组件，证明 surface 切换不重启
-// runtime、不丢 session 列表。三栏实体（Sources | 对话+任务进度 | Artifact 预览）
-// 由 F046 填充；工具白名单 / 非 git 作用域由 F047；Artifact 由 F048。
+// doc-workspace 三栏（ADR-007 / HLD §9.4）：
+//   Sources（左）| 对话 + 输入（中）| Artifact 预览（右）
+// 去掉 Coder 的 Subagent tree / 内置 Terminal 抽屉（知识工作不需要）。
 //
-// 占位刻意诚实：呈现将要到来的三栏轮廓 + 空态文案，不假装已有能力。
+// F046 范围：三栏 shell + 中栏功能可用（真能对话，绑 Partner session）。
+//   - 左栏 Sources：占位（F047 接非 git 作用域目录树 / F052 接 URL 源）
+//   - 中栏 PartnerConversation：复用 ConversationStreamV2 + 裁剪版 BottomBar
+//   - 右栏 Artifact：占位（F048 接 artifact 登记/预览/迭代/导出）
+//
+// LeftSidebar（项目 / session / SurfaceTabs）是两 surface 共用的全局导航，在本组件之外
+// 由 Shell 渲染。per-surface 当前 session 由 store/surface.ts 的 setSurface 维护。
 
-import { Handshake, FolderOpen, MessageSquare, FileOutput } from 'lucide-react';
-
-interface ColumnStubProps {
-  Icon: typeof Handshake;
-  title: string;
-  hint: string;
-}
-
-function ColumnStub({ Icon, title, hint }: ColumnStubProps): JSX.Element {
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6 text-center border-r border-border-default last:border-r-0">
-      <Icon className="w-6 h-6 text-fg-muted" strokeWidth={1.5} aria-hidden />
-      <div className="text-[13px] text-fg-secondary font-medium">{title}</div>
-      <div className="text-[11px] text-fg-muted leading-relaxed max-w-[200px]">{hint}</div>
-    </div>
-  );
-}
+import { Handshake } from 'lucide-react';
+import { SourcesPanel } from './SourcesPanel.js';
+import { PartnerConversation } from './PartnerConversation.js';
+import { ArtifactPanel } from './ArtifactPanel.js';
 
 export function PartnerWorkspace(): JSX.Element {
   return (
@@ -33,21 +26,9 @@ export function PartnerWorkspace(): JSX.Element {
         <span className="text-[11px] text-fg-muted">doc-workspace · 知识工作</span>
       </div>
       <div className="flex flex-1 min-h-0">
-        <ColumnStub
-          Icon={FolderOpen}
-          title="Sources"
-          hint="知识源（文件 / 目录 / URL）将在这里列出。F047 接入非 git 作用域。"
-        />
-        <ColumnStub
-          Icon={MessageSquare}
-          title="对话 + 任务进度"
-          hint="与 Partner 的多步文档事务对话。F046 接入对话流。"
-        />
-        <ColumnStub
-          Icon={FileOutput}
-          title="Artifact"
-          hint="产出（报告 / slides / 表格）会显示在这里，可迭代、可导出。F048 接入。"
-        />
+        <SourcesPanel />
+        <PartnerConversation />
+        <ArtifactPanel />
       </div>
     </div>
   );

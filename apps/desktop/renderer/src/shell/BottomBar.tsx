@@ -632,6 +632,12 @@ export function BottomBar(): JSX.Element {
     }
 
     if (action === 'show-memory') {
+      // F046 review HIGH-2: Partner 面 Shell 不挂 PopoutOverlay（仅 Coder 分支挂），
+      // 直接 requestPopout('agents') 会静默无反应。surface-gate + 明确告知，避免"按了没反应"。
+      if (currentSurface === 'partner') {
+        appendUserMessage(sessionId, '/memory 在 Coder 面使用（Partner 面暂无 AGENTS.md popout）。');
+        return;
+      }
       // v0.1.x: 直接打开 Agents popout (REPL /memory 同款 — 打开 inline editor)。
       // Popout 里可以编辑 global / project AGENTS.md (写盘走 session.agentsMd.save IPC)。
       useAppStore.getState().requestPopout('agents');
@@ -1070,11 +1076,13 @@ export function BottomBar(): JSX.Element {
       {/* Provider retry / recovery / rate-limit 实时提示 (REPL StatusNoticesSurface 等价) */}
       <RetryBanner />
 
-      {/* P5: AMA agent 形态时展示 worker / harness / 子任务计数 */}
-      <AmaWorkStrip />
+      {/* P5: AMA agent 形态时展示 worker / harness / 子任务计数。
+          F046: Partner 面隐藏——AMA/harness 是编码形态概念，Partner（doc-workspace）不展示。 */}
+      {currentSurface !== 'partner' && <AmaWorkStrip />}
 
-      {/* REPL BackgroundTaskBar 等价: 多 subagent 并发时按 workerId 聚合显示 chip 条 */}
-      <BackgroundTaskBar />
+      {/* REPL BackgroundTaskBar 等价: 多 subagent 并发时按 workerId 聚合显示 chip 条。
+          F046: 同 AmaWorkStrip，Partner 面隐藏子 agent 并发条。 */}
+      {currentSurface !== 'partner' && <BackgroundTaskBar />}
 
       {/* v0.1.4：流式 spinner 搬去了 ConversationStreamV2 末尾 —— 对齐 VSCode
           Claude Code "正在做什么"放在历史下方紧邻输入框上的位置感。
@@ -1227,9 +1235,11 @@ export function BottomBar(): JSX.Element {
               onInsertText={(text) => setPrompt((p) => (p ? `${p} ${text}` : text))}
             />
           </div>
-          <AgentPicker insertAtCaret={insertAtCaret} />
+          {/* F046: AgentPicker（@子agent 插入）/ AgentModeSelector（AMA·SA）是编码形态控件，
+              Partner 面隐藏；保留 ModeSelector（权限：写 artifact 仍需门控）+ ModelEffortSelector。 */}
+          {currentSurface !== 'partner' && <AgentPicker insertAtCaret={insertAtCaret} />}
           <ModeSelector />
-          <AgentModeSelector />
+          {currentSurface !== 'partner' && <AgentModeSelector />}
           <span className="ml-auto" />
           <ModelEffortSelector />
           {/* Send / Stop 按钮 (F054 hero CTA)。Send = 唯一享 .btn-accent gradient+辉光的强调按钮；

@@ -14,6 +14,7 @@
 
 import { create } from 'zustand';
 import type { Surface } from '@kodax-space/space-ipc-schema';
+import { useAppStore } from './appStore.js';
 
 // F045: Surface 联合的**权威定义**在 IPC schema 包（surfaceSchema = z.enum(['code','partner'])）
 // ——renderer 从那里 import 并 re-export，避免两处独立声明 drift（新增面只改 schema 一处）。
@@ -53,16 +54,67 @@ export const SURFACES: Record<Surface, SurfaceSpec> = {
 
 export const DEFAULT_SURFACE: Surface = 'code';
 
+// F046: currentSurface 持久化——重启回到上次停留的面（Coder/Partner）。
+// 仅持久化"哪个面"，不持久化"哪个 session"——与 Coder 现状一致（重启都回各面 dashboard）。
+const LS_KEY_SURFACE = 'kodax-space.currentSurface';
+function lsGetSurface(): Surface {
+  if (typeof window === 'undefined') return DEFAULT_SURFACE;
+  try {
+    return window.localStorage.getItem(LS_KEY_SURFACE) === 'partner' ? 'partner' : 'code';
+  } catch {
+    return DEFAULT_SURFACE;
+  }
+}
+function lsSetSurface(surface: Surface): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(LS_KEY_SURFACE, surface);
+  } catch {
+    // localStorage 不可用（隐私模式 / 配额满）—— 静默，仅丢失"记住面"持久化
+  }
+}
+
 interface SurfaceState {
   /** 当前显示的 surface。默认 Coder，不破坏 v0.1.10 单 surface 行为。 */
   readonly currentSurface: Surface;
-  /** 显式切换（tab 点击）。 */
+  /**
+   * F046: 每个 surface 上次停留的 session（Coder/Partner 列表独立 → 当前 session 也按面记忆）。
+   * **仅内存**：切面时快照当前面的 session、恢复目标面的；不跨重启持久化（重启两面都回 dashboard，
+   * 与 Coder 现状一致）。
+   */
+  readonly sessionIdBySurface: Record<Surface, string | null>;
+  /**
+   * 显式切换（SurfaceTabs 点击）。原子地：① 快照离开面的当前 session（捕获实时值）
+   * → ② 切 currentSurface + 持久化 → ③ 把 appStore.currentSessionId 恢复成目标面上次的
+   * session（null → 该面 welcome/dashboard）。
+   */
   setSurface: (surface: Surface) => void;
 }
 
-export const useSurfaceStore = create<SurfaceState>((set) => ({
-  currentSurface: DEFAULT_SURFACE,
-  setSurface: (surface) => set({ currentSurface: surface }),
+export const useSurfaceStore = create<SurfaceState>((set, get) => ({
+  currentSurface: lsGetSurface(),
+  sessionIdBySurface: { code: null, partner: null },
+  setSurface: (surface) => {
+    const prev = get().currentSurface;
+    if (prev === surface) return;
+    // ① 快照离开面的当前 session（appStore 是单向依赖：surface → app，无 cycle）。
+    const app = useAppStore.getState();
+    const leavingSessionId = app.currentSessionId;
+    const stored = get().sessionIdBySurface[surface] ?? null;
+    // 校验：目标面上次的 session 可能已在另一面被删除（review HIGH-1）。不在当前
+    // sessions 列表里就回退到 null（该面 dashboard），避免 currentSessionId 指向 orphan id
+    // 让 ConversationStreamV2 渲染一个已不存在的 session。
+    const restored = stored !== null && app.sessions.some((s) => s.sessionId === stored)
+      ? stored
+      : null;
+    set((s) => ({
+      currentSurface: surface,
+      sessionIdBySurface: { ...s.sessionIdBySurface, [prev]: leavingSessionId },
+    }));
+    lsSetSurface(surface);
+    // ③ 路由到目标面上次停留的 session（null → 该面 dashboard）。
+    app.setCurrentSession(restored);
+  },
 }));
 
 /** spec 取用便捷器（组件里读 layout/tools/scope 用）。 */
