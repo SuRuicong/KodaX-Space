@@ -6,16 +6,23 @@
 // LiveCanvas sandbox and is GATED by isReactArtifactEnabled() — OFF in shipped
 // builds, so the LC half-product never blocks release.
 
+import { lazy, Suspense } from 'react';
 import { Markdown } from '../session/messages/Markdown';
 import { MonacoViewer } from '../code/MonacoViewer';
 import { RichPreview } from '../preview/RichPreview';
-// SandboxFrame is only rendered in the gated 'react' tier (isReactArtifactEnabled,
-// DEV-only). Vite folds import.meta.env.DEV to false in prod and tree-shakes it.
-import { SandboxFrame } from './SandboxFrame';
 import { isReactArtifactEnabled } from './artifactKind';
 import { HtmlArtifact } from './renderers/HtmlArtifact';
 import { ChartArtifact } from './renderers/ChartArtifact';
 import { SvgArtifact, ImageArtifact } from './renderers/MediaArtifact';
+
+// The interactive-React tier (LiveCanvas sandbox) loads via a dynamic import
+// GUARDED by the static `import.meta.env.DEV` constant. In a release build Vite
+// folds DEV to false, so Rollup dead-code-eliminates this branch — the
+// SandboxFrame chunk AND its `@livecanvas/sandbox-bridge` dependency never enter
+// the bundle. **发布构建因此完全不编译/不依赖 LC**;dev 才按需加载(artifactKind 门控)。
+const SandboxFrameLazy = import.meta.env.DEV
+  ? lazy(() => import('./SandboxFrame').then((m) => ({ default: m.SandboxFrame })))
+  : null;
 
 export type ArtifactContent =
   | { kind: 'markdown'; content: string }
@@ -85,14 +92,16 @@ export function ArtifactView(props: ArtifactContent): JSX.Element {
         </div>
       );
     case 'react':
-      if (!isReactArtifactEnabled()) return <ReactTierUnavailable />;
+      if (!isReactArtifactEnabled() || !SandboxFrameLazy) return <ReactTierUnavailable />;
       return (
-        <SandboxFrame
-          indexUrl={props.indexUrl}
-          sandboxOrigin={props.sandboxOrigin}
-          code={props.code}
-          artifactId={props.artifactId}
-        />
+        <Suspense fallback={<div className="flex-1" />}>
+          <SandboxFrameLazy
+            indexUrl={props.indexUrl}
+            sandboxOrigin={props.sandboxOrigin}
+            code={props.code}
+            artifactId={props.artifactId}
+          />
+        </Suspense>
       );
     default: {
       // Exhaustiveness guard: adding an ArtifactContent variant without a branch

@@ -1,13 +1,13 @@
 // ArtifactPanel — Partner 三栏之右栏：产物（artifact）。
 //
-// F048 路径 D：嵌 LiveCanvas sandbox 渲染基底（见记忆 livecanvas_artifact_plan）。
-// P1（渲染冒烟）：sandbox ready 时，dev 下挂一个 recharts 测试 artifact 验证整条
-// 嵌入链活渲染；未 ready（bundle 未装 / 打包父 origin 待 F055）则回退占位。
-// P2 接 artifact store + 真实产物列表/版本；P3 接 agent 生成。
+// F048/F056：渲染走 ArtifactView 注册表。静态 tier（md/code/html/chart/...）LC-free；
+// 交互 React tier 经 isReactArtifactEnabled() 门控（发布关、dev 按需开，见 artifactKind）。
+// P1 smoke：门控开 + sandbox ready 时,经 ArtifactView 挂一个 recharts 测试 artifact 验活渲染。
+// P2 接 artifact store + 真实产物列表/版本。
 
 import { FileOutput } from 'lucide-react';
 import { useSandboxInfo } from '../artifact/useSandboxInfo';
-import { SandboxFrame } from '../artifact/SandboxFrame';
+import { ArtifactView } from '../artifact/ArtifactView';
 import { SMOKE_ARTIFACT_CODE, SMOKE_ARTIFACT_ID } from '../artifact/smokeArtifact';
 import { isReactArtifactEnabled } from '../artifact/artifactKind';
 
@@ -26,14 +26,15 @@ function PanelShell({ children }: { children: React.ReactNode }): JSX.Element {
 export function ArtifactPanel(): JSX.Element {
   const sandbox = useSandboxInfo();
 
-  // P1 smoke lives behind the interactive-React tier gate (F056): OFF in shipped
-  // builds, so the LC-dependent demo never surfaces in release. The status check
-  // also narrows the discriminated union for TypeScript. Real static artifacts
-  // (md/code/html/chart/...) wire in via ArtifactView when the store layer lands.
+  // Interactive-React smoke lives behind the tier gate (F056): OFF in shipped
+  // builds, dev-on-demand. Routed through ArtifactView so SandboxFrame (and its
+  // LC dependency) is only ever the DEV-only lazy chunk — never in the release
+  // bundle. Real static artifacts wire in here when the store layer lands.
   if (isReactArtifactEnabled() && sandbox.status === 'ready') {
     return (
       <PanelShell>
-        <SandboxFrame
+        <ArtifactView
+          kind="react"
           indexUrl={sandbox.sandbox.indexUrl}
           sandboxOrigin={sandbox.sandbox.sandboxOrigin}
           code={SMOKE_ARTIFACT_CODE}
