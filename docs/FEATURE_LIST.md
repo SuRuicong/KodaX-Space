@@ -64,6 +64,7 @@
 | 052 | Partner skill pack：研究（deep-research 内化 + web 知识源） | New | Medium | v0.1.14 | Planned | [v0.1.14.md#feature_052](features/v0.1.14.md#feature_052-partner-skill-pack研究) |
 | 053 | Partner 自定义画像 + H1-Partner 完整 harness（依赖 SDK R1/R2） | New | High | v0.1.14 | Blocked | [v0.1.14.md#feature_053](features/v0.1.14.md#feature_053-partner-自定义画像--h1-partner-完整-harness) |
 | 054 | 视觉系统刷新（refined dark+light token / Geist+JetBrains Mono / Lucide / 单一琥珀金 + 语义调色板） | Enhancement | High | v0.1.10 | Completed | [v0.1.10.md#feature_054](features/v0.1.10.md#feature_054-视觉系统刷新-refined-darklight-token--geistjetbrains-mono--lucide--单一琥珀金强调) |
+| 055 | 打包 renderer 迁 `app://` 自定义标准协议（artifact 嵌入安全地基；file:// → app://space 真实可锁 origin） | Refactor | High | v0.1.12 | Planned | [v0.1.12.md#feature_055](features/v0.1.12.md#feature_055-打包-renderer-迁-app-自定义标准协议) |
 | ~~027~~ | ~~代码签名 + notarize~~ — 2026-06-05 移除，KodaX Space 不走"陌生人公开 Beta"路径 | ~~Internal~~ | — | — | Dropped | — |
 | ~~028~~ | ~~隐私政策 + 文档站~~ — 同上 | ~~Internal~~ | — | — | Dropped | — |
 | 029 | Permission Mode canonical 3 + Auto engine 子档 | Refactor | Critical | v0.1.0-alpha.1 | Completed | [v0.1.0.md#029](features/v0.1.0.md#feature_029-permission-mode-canonical-3--auto-engine-子档) |
