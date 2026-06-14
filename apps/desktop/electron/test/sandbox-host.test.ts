@@ -9,58 +9,54 @@ import { sandboxHost } from '../artifact/sandbox-host.js';
 
 // NOTE: these tests share the process-global `sandboxHost` singleton. node:test
 // runs them sequentially and each test's `finally` calls dispose() to reset
-// state, so order independence holds. If this file grows, prefer exporting the
-// SandboxHost class for per-test instances.
+// state, so order independence holds. The `bundleCandidates` seam keeps tests
+// hermetic — the real linked @kodax-ai/livecanvas-sandbox-shell is NOT consulted.
 
-function makeFixtureRepo(): { repoRoot: string; bundleRoot: string } {
-  // Lay out a fake Space repo so defaultBundleCandidates' env override is used;
-  // we drive resolution via envOverride to avoid depending on a real LC sibling.
-  const repoRoot = mkdtempSync(join(tmpdir(), 'space-repo-'));
-  const bundleRoot = join(repoRoot, 'bundle');
-  mkdirSync(join(bundleRoot, '_next'), { recursive: true });
-  writeFileSync(join(bundleRoot, 'index.html'), '<!doctype html><body>shell</body>');
-  return { repoRoot, bundleRoot };
+function makeFixtureBundle(): string {
+  const root = mkdtempSync(join(tmpdir(), 'lc-host-fixture-'));
+  mkdirSync(join(root, '_next'), { recursive: true });
+  writeFileSync(join(root, 'index.html'), '<!doctype html><html><head></head><body>shell</body></html>');
+  return root;
 }
 
 test('sandboxHost: not ready (with diagnostic) when no bundle found', async () => {
-  const { repoRoot } = makeFixtureRepo();
   try {
     const info = await sandboxHost.start({
-      spaceRepoRoot: repoRoot,
       parentOrigin: 'http://localhost:5173',
-      envOverride: join(repoRoot, 'nonexistent'),
+      bundleCandidates: [join(tmpdir(), 'definitely-not-a-bundle-xyz')],
     });
     assert.equal(info.ready, false);
-    assert.match(info.error ?? '', /build:bundle|bundle/);
+    assert.match(info.error ?? '', /bundle|link:livecanvas/);
     assert.equal(info.sandboxOrigin, undefined);
   } finally {
     await sandboxHost.dispose();
-    rmSync(repoRoot, { recursive: true, force: true });
   }
 });
 
 test('sandboxHost: ready + serves + idempotent start + dispose', async () => {
-  const { repoRoot, bundleRoot } = makeFixtureRepo();
+  const bundleRoot = makeFixtureBundle();
   try {
     const info = await sandboxHost.start({
-      spaceRepoRoot: repoRoot,
       parentOrigin: 'http://localhost:5173',
-      envOverride: bundleRoot,
+      bundleCandidates: [bundleRoot],
     });
     assert.equal(info.ready, true);
     assert.match(info.sandboxOrigin ?? '', /^http:\/\/127\.0\.0\.1:\d+$/);
-    assert.equal(info.indexUrl, `${info.sandboxOrigin}/_sandbox/index.html`);
+    assert.match(info.indexUrl ?? '', /\/index\.html\?lc_parent_origin=/);
+    // shellVersion is undefined when the test seam bypasses the real package.
+    assert.equal(info.shellVersion, undefined);
 
-    // server actually serves the fixture index
+    // server actually serves the fixture index (with injection)
     const res = await fetch(info.indexUrl!);
     assert.equal(res.status, 200);
-    assert.ok((await res.text()).includes('shell'));
+    const html = await res.text();
+    assert.ok(html.includes('shell'));
+    assert.match(html, /__LC_TRUSTED_PARENT_ORIGINS__/);
 
     // idempotent: second start returns same info, no second server
     const again = await sandboxHost.start({
-      spaceRepoRoot: repoRoot,
       parentOrigin: 'http://localhost:5173',
-      envOverride: bundleRoot,
+      bundleCandidates: [bundleRoot],
     });
     assert.equal(again.sandboxOrigin, info.sandboxOrigin);
 
@@ -68,6 +64,6 @@ test('sandboxHost: ready + serves + idempotent start + dispose', async () => {
     assert.equal(sandboxHost.getInfo().ready, false);
   } finally {
     await sandboxHost.dispose();
-    rmSync(repoRoot, { recursive: true, force: true });
+    rmSync(bundleRoot, { recursive: true, force: true });
   }
 });

@@ -1,11 +1,10 @@
 // P1a — sandbox static-server + bundle-resolver unit/integration tests.
 //
-// Uses a SYNTHETIC bundle fixture (a temp dir mimicking the Next static export
-// shape: index.html + _next/static/*.js + index.txt). This exercises Space's own
-// HTTP-serving contract (routing / path-safety / MIME / CSP / passthrough) — NOT
-// the LiveCanvas shell's render behaviour, which needs the real bundle and is
-// verified live in P1c (记忆 feedback_mock_fidelity: 真边界不靠 mock；这里的边界是
-// 我方静态服务，fixture 是真文件真请求，合规).
+// Uses a SYNTHETIC bundle fixture (a temp dir mimicking the standalone package's
+// static export: index.html at root + _next/static/*.js + index.txt). This
+// exercises Space's own HTTP-serving contract (root routing / path-safety / MIME /
+// CSP / trusted-origins injection) — NOT the LiveCanvas shell's render behaviour,
+// which is verified live in P1c (记忆 feedback_mock_fidelity).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,20 +14,23 @@ import { join } from 'node:path';
 import {
   frameAncestors,
   isBareOrigin,
+  injectTrustedOrigins,
   handleSandboxRoute,
   startSandboxServer,
 } from '../artifact/sandbox-server.js';
 import {
   resolveSandboxBundle,
   isMountableBundle,
-  defaultBundleCandidates,
 } from '../artifact/bundle-resolver.js';
 
 const PARENT = 'http://localhost:5173';
 
 function makeFixtureBundle(): string {
   const root = mkdtempSync(join(tmpdir(), 'lc-sandbox-fixture-'));
-  writeFileSync(join(root, 'index.html'), '<!doctype html><html><head><script src="/_next/static/app.js"></script></head><body>shell</body></html>');
+  writeFileSync(
+    join(root, 'index.html'),
+    '<!doctype html><html><head><script src="/_next/static/app.js"></script></head><body>shell</body></html>',
+  );
   writeFileSync(join(root, 'index.txt'), 'rsc-payload');
   mkdirSync(join(root, '_next', 'static'), { recursive: true });
   writeFileSync(join(root, '_next', 'static', 'app.js'), 'console.log("chunk")');
@@ -51,7 +53,7 @@ test('isMountableBundle: true only when dir has index.html', () => {
 test('resolveSandboxBundle: env override wins and is validated', () => {
   const root = makeFixtureBundle();
   try {
-    const r = resolveSandboxBundle({ envOverride: root, lcRepoCandidates: ['/nope'] });
+    const r = resolveSandboxBundle({ envOverride: root, packageCandidates: ['/nope'] });
     assert.equal(r.ok, true);
     if (r.ok) {
       assert.equal(r.resolution.source, 'env');
@@ -62,37 +64,38 @@ test('resolveSandboxBundle: env override wins and is validated', () => {
   }
 });
 
-test('resolveSandboxBundle: falls through env→local→lc-repo, picks first mountable', () => {
+test('resolveSandboxBundle: non-absolute env override is ignored, falls to package', () => {
   const root = makeFixtureBundle();
   try {
-    const r = resolveSandboxBundle({
-      envOverride: join(root, 'missing'), // exists? no → skip
-      localCandidates: [join(root, '_next')], // exists but no index.html → skip
-      lcRepoCandidates: [root], // mountable → win
-    });
+    const r = resolveSandboxBundle({ envOverride: 'relative/path', packageCandidates: [root] });
     assert.equal(r.ok, true);
-    if (r.ok) assert.equal(r.resolution.source, 'lc-repo');
+    if (r.ok) assert.equal(r.resolution.source, 'package');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('resolveSandboxBundle: error result lists what was tried', () => {
-  const r = resolveSandboxBundle({ localCandidates: ['/a/b'], lcRepoCandidates: ['/c/d'] });
-  assert.equal(r.ok, false);
-  if (!r.ok) {
-    assert.equal(r.tried.length, 2);
-    assert.match(r.reason, /build:bundle/);
+test('resolveSandboxBundle: picks first mountable package candidate', () => {
+  const root = makeFixtureBundle();
+  try {
+    const r = resolveSandboxBundle({ packageCandidates: [join(root, '_next'), root] });
+    assert.equal(r.ok, true);
+    if (r.ok) assert.equal(r.resolution.source, 'package');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('defaultBundleCandidates: derives LC sibling-repo path two levels up', () => {
-  const { local, lcRepo } = defaultBundleCandidates('/x/Works/KodaX-Space');
-  assert.ok(local[0]?.includes('resources'));
-  assert.ok(lcRepo[0]?.replace(/\\/g, '/').endsWith('LiveCanvas/packages/cli/dist/sandbox-shell-static'));
+test('resolveSandboxBundle: error result lists what was tried + actionable hint', () => {
+  const r = resolveSandboxBundle({ packageCandidates: ['/a/b'] });
+  assert.equal(r.ok, false);
+  if (!r.ok) {
+    assert.equal(r.tried.length, 1);
+    assert.match(r.reason, /link:livecanvas|SPACE_LC_SANDBOX_BUNDLE/);
+  }
 });
 
-// ---- pure router ------------------------------------------------------------
+// ---- origin / CSP / injection helpers --------------------------------------
 
 test('frameAncestors: includes parent origin, falls back to self only', () => {
   assert.equal(frameAncestors(PARENT), `frame-ancestors 'self' ${PARENT}`);
@@ -113,62 +116,34 @@ test('frameAncestors: NEVER injects a malformed value (CSP/header-injection guar
   assert.equal(frameAncestors('http://evil\r\nX: y'), "frame-ancestors 'self'");
 });
 
-test('handleSandboxRoute: /_sandbox exact (no slash) → serves index.html', () => {
-  const root = makeFixtureBundle();
-  try {
-    const r = handleSandboxRoute(root, PARENT, 'GET', '/_sandbox');
-    assert.equal(r.status, 200);
-    assert.match(r.headers['Content-Type'] ?? '', /text\/html/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+test('injectTrustedOrigins: inserts script before </head> for valid origin; no-op otherwise', () => {
+  const html = '<html><head><title>x</title></head><body>b</body></html>';
+  const out = injectTrustedOrigins(html, 'app://space');
+  assert.match(out, /__LC_TRUSTED_PARENT_ORIGINS__=\["app:\/\/space"\]/);
+  assert.ok(out.indexOf('__LC_TRUSTED') < out.indexOf('</head>')); // before </head>
+  assert.equal(injectTrustedOrigins(html, ''), html); // empty → untouched
+  assert.equal(injectTrustedOrigins(html, 'http://x ;evil'), html); // invalid → untouched
 });
 
-test('handleSandboxRoute: 404 for unknown path still carries CSP', () => {
-  const root = makeFixtureBundle();
-  try {
-    const r = handleSandboxRoute(root, PARENT, 'GET', '/nope');
-    assert.equal(r.status, 404);
-    assert.equal(r.headers['Content-Security-Policy'], frameAncestors(PARENT));
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
+// ---- pure router (root serving) --------------------------------------------
 
-test('handleSandboxRoute: symlink inside bundle pointing OUTSIDE is forbidden (403)', (t) => {
+test('handleSandboxRoute: / and /index.html → 200 html with CSP + injected origins', () => {
   const root = makeFixtureBundle();
-  const outside = mkdtempSync(join(tmpdir(), 'lc-outside-'));
-  writeFileSync(join(outside, 'secret.txt'), 'TOP SECRET');
   try {
-    // Symlink creation needs privilege/Developer Mode on Windows — skip if denied.
-    try {
-      symlinkSync(join(outside, 'secret.txt'), join(root, 'leak.txt'), 'file');
-    } catch {
-      t.skip('symlink creation not permitted in this environment');
-      return;
+    for (const p of ['/', '/index.html']) {
+      const r = handleSandboxRoute(root, PARENT, 'GET', p);
+      assert.equal(r.status, 200, p);
+      assert.match(r.headers['Content-Type'] ?? '', /text\/html/);
+      assert.equal(r.headers['Content-Security-Policy'], frameAncestors(PARENT));
+      assert.equal(r.headers['Cache-Control'], 'no-store');
+      assert.match(r.body?.toString() ?? '', /__LC_TRUSTED_PARENT_ORIGINS__/);
     }
-    const r = handleSandboxRoute(root, PARENT, 'GET', '/_sandbox/leak.txt');
-    assert.equal(r.status, 403);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-    rmSync(outside, { recursive: true, force: true });
-  }
-});
-
-test('handleSandboxRoute: /_sandbox/index.html → 200 html with CSP', () => {
-  const root = makeFixtureBundle();
-  try {
-    const r = handleSandboxRoute(root, PARENT, 'GET', '/_sandbox/index.html');
-    assert.equal(r.status, 200);
-    assert.match(r.headers['Content-Type'] ?? '', /text\/html/);
-    assert.equal(r.headers['Content-Security-Policy'], frameAncestors(PARENT));
-    assert.ok(r.body?.toString().includes('shell'));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('handleSandboxRoute: root-relative /_next/* passthrough served from bundle root', () => {
+test('handleSandboxRoute: root-relative /_next/* served from bundle root', () => {
   const root = makeFixtureBundle();
   try {
     const r = handleSandboxRoute(root, PARENT, 'GET', '/_next/static/app.js');
@@ -179,11 +154,13 @@ test('handleSandboxRoute: root-relative /_next/* passthrough served from bundle 
   }
 });
 
-test('handleSandboxRoute: /index.txt exact passthrough, but /robots.txt does not leak', () => {
+test('handleSandboxRoute: /index.txt served; missing file → 404 with CSP', () => {
   const root = makeFixtureBundle();
   try {
     assert.equal(handleSandboxRoute(root, PARENT, 'GET', '/index.txt').status, 200);
-    assert.equal(handleSandboxRoute(root, PARENT, 'GET', '/robots.txt').status, 404);
+    const miss = handleSandboxRoute(root, PARENT, 'GET', '/robots.txt');
+    assert.equal(miss.status, 404);
+    assert.equal(miss.headers['Content-Security-Policy'], frameAncestors(PARENT));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -192,17 +169,17 @@ test('handleSandboxRoute: /index.txt exact passthrough, but /robots.txt does not
 test('handleSandboxRoute: path traversal is forbidden (403)', () => {
   const root = makeFixtureBundle();
   try {
-    const r = handleSandboxRoute(root, PARENT, 'GET', '/_sandbox/../../../etc/passwd');
+    const r = handleSandboxRoute(root, PARENT, 'GET', '/../../../etc/passwd');
     assert.equal(r.status, 403);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('handleSandboxRoute: non-GET/HEAD on sandbox path → 405', () => {
+test('handleSandboxRoute: non-GET/HEAD → 405', () => {
   const root = makeFixtureBundle();
   try {
-    const r = handleSandboxRoute(root, PARENT, 'POST', '/_sandbox/index.html');
+    const r = handleSandboxRoute(root, PARENT, 'POST', '/index.html');
     assert.equal(r.status, 405);
     assert.equal(r.headers.Allow, 'GET, HEAD');
   } finally {
@@ -213,7 +190,7 @@ test('handleSandboxRoute: non-GET/HEAD on sandbox path → 405', () => {
 test('handleSandboxRoute: HEAD omits body but keeps status/headers', () => {
   const root = makeFixtureBundle();
   try {
-    const r = handleSandboxRoute(root, PARENT, 'HEAD', '/_sandbox/index.html');
+    const r = handleSandboxRoute(root, PARENT, 'HEAD', '/index.html');
     assert.equal(r.status, 200);
     assert.equal(r.body, null);
   } finally {
@@ -232,25 +209,46 @@ test('handleSandboxRoute: /health → 200 json', () => {
   }
 });
 
+test('handleSandboxRoute: symlink inside bundle pointing OUTSIDE is forbidden (403)', (t) => {
+  const root = makeFixtureBundle();
+  const outside = mkdtempSync(join(tmpdir(), 'lc-outside-'));
+  writeFileSync(join(outside, 'secret.txt'), 'TOP SECRET');
+  try {
+    try {
+      symlinkSync(join(outside, 'secret.txt'), join(root, 'leak.txt'), 'file');
+    } catch {
+      t.skip('symlink creation not permitted in this environment');
+      return;
+    }
+    const r = handleSandboxRoute(root, PARENT, 'GET', '/leak.txt');
+    assert.equal(r.status, 403);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
 // ---- live loopback server ---------------------------------------------------
 
-test('startSandboxServer: binds 127.0.0.1, serves over real HTTP, closes clean', async () => {
+test('startSandboxServer: binds 127.0.0.1, serves over real HTTP, injects, closes', async () => {
   const root = makeFixtureBundle();
   const srv = await startSandboxServer({ bundleRoot: root, parentOrigin: PARENT });
   try {
     assert.match(srv.origin, /^http:\/\/127\.0\.0\.1:\d+$/);
-    assert.equal(srv.indexUrl, `${srv.origin}/_sandbox/index.html`);
+    assert.equal(srv.indexUrl, `${srv.origin}/index.html?lc_parent_origin=${encodeURIComponent(PARENT)}`);
 
     const res = await fetch(srv.indexUrl);
     assert.equal(res.status, 200);
     assert.match(res.headers.get('content-type') ?? '', /text\/html/);
     assert.equal(res.headers.get('content-security-policy'), frameAncestors(PARENT));
-    assert.ok((await res.text()).includes('shell'));
+    const html = await res.text();
+    assert.ok(html.includes('shell'));
+    assert.match(html, /__LC_TRUSTED_PARENT_ORIGINS__/); // injected
 
     const chunk = await fetch(`${srv.origin}/_next/static/app.js`);
     assert.equal(chunk.status, 200);
 
-    const traversal = await fetch(`${srv.origin}/_sandbox/%2e%2e%2f%2e%2e%2fetc/passwd`);
+    const traversal = await fetch(`${srv.origin}/%2e%2e%2f%2e%2e%2fetc/passwd`);
     assert.equal(traversal.status, 403);
   } finally {
     await srv.close();

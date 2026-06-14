@@ -6,9 +6,13 @@
 // 的 dist。所以 link 比 link-kodax 简单：直接 junction 包目录即可，无需 staging + 重写
 // package.json。
 //
-// 当前 v1(路径 D)只需两包：
+// 当前 v1(路径 D)需三包：
 //   - @livecanvas/sandbox-bridge  父子帧协议 createHost/createChild + Bootstrap schema
 //   - @livecanvas/canvas-protocol AgentBackend 接口/ChatChunk(v1b AI-powered artifact 用)
+//   - @kodax-ai/livecanvas-sandbox-shell  独立静态 bundle(渲染基底)+ getStaticDir/version/
+//     renderTrustedOriginsScript resolver。repo 目录是 packages/sandbox-shell-bundle，
+//     发布名是 @kodax-ai/livecanvas-sandbox-shell(scope/名都与目录不同)→ 走 CROSS_SCOPE。
+//     尚未 publish npm；dev 经本脚本 junction，packaging 待 LC 发布后处理。
 // v2(全嵌 gateway-core，独立进程)再加 gateway-core/gateway-middleware/llm-clients。
 //
 // ⚠️ 注意：
@@ -35,6 +39,19 @@ const SCOPE_DIR = path.join(SPACE_ROOT, 'node_modules', '@livecanvas');
 // v1(路径 D)消费包。要扩展(v2 gateway-core 等)在此加。
 const PACKAGES = ['sandbox-bridge', 'canvas-protocol'];
 
+// 跨 scope 包：发布名 / scope 与 repo 目录都不同，单独映射。
+//   repoDir  — LC_REPO/packages/<repoDir>
+//   scope    — node_modules/<scope>/<name>
+//   probe    — 校验已 build 的标志文件(相对 target)
+const CROSS_SCOPE = [
+  {
+    repoDir: 'sandbox-shell-bundle',
+    scope: '@kodax-ai',
+    name: 'livecanvas-sandbox-shell',
+    probe: 'static/index.html',
+  },
+];
+
 const unlinkMode = process.argv.includes('--unlink');
 
 function rimrafSafe(p) {
@@ -49,7 +66,8 @@ function rimrafSafe(p) {
 
 if (unlinkMode) {
   for (const pkg of PACKAGES) rimrafSafe(path.join(SCOPE_DIR, pkg));
-  console.log(`[link-livecanvas] removed @livecanvas/* junctions under ${SCOPE_DIR}`);
+  for (const x of CROSS_SCOPE) rimrafSafe(path.join(SPACE_ROOT, 'node_modules', x.scope, x.name));
+  console.log(`[link-livecanvas] removed @livecanvas/* + cross-scope junctions`);
   console.log(`[link-livecanvas] run \`npm install --force\` if you also want to restore any published tarball.`);
   process.exit(0);
 }
@@ -76,6 +94,23 @@ for (const pkg of PACKAGES) {
   rimrafSafe(link);
   fs.symlinkSync(target, link, isWin ? 'junction' : 'dir');
   console.log(`[link-livecanvas] @livecanvas/${pkg} -> ${target}`);
+}
+
+for (const x of CROSS_SCOPE) {
+  const target = path.join(LC_REPO, 'packages', x.repoDir);
+  if (!fs.existsSync(target)) {
+    console.error(`[link-livecanvas] missing target ${target} — build LC first`);
+    process.exit(1);
+  }
+  if (!fs.existsSync(path.join(target, x.probe))) {
+    console.warn(`[link-livecanvas] WARN: ${x.repoDir}/${x.probe} 缺失 — 在 LC 跑 \`npm run -w ${x.scope}/${x.name} build\``);
+  }
+  const scopeDir = path.join(SPACE_ROOT, 'node_modules', x.scope);
+  fs.mkdirSync(scopeDir, { recursive: true });
+  const link = path.join(scopeDir, x.name);
+  rimrafSafe(link);
+  fs.symlinkSync(target, link, isWin ? 'junction' : 'dir');
+  console.log(`[link-livecanvas] ${x.scope}/${x.name} -> ${target}`);
 }
 
 console.log('');

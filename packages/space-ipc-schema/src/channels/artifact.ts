@@ -24,8 +24,10 @@ export const artifactSandboxInfoChannel = {
     ready: z.boolean(),
     /** Bare origin of the sandbox server, e.g. http://127.0.0.1:54123. Present iff ready. */
     sandboxOrigin: z.string().url().optional(),
-    /** Full iframe src for the sandbox-shell entry. Present iff ready. */
+    /** Full iframe src for the sandbox-shell entry (carries lc_parent_origin). Present iff ready. */
     indexUrl: z.string().url().optional(),
+    /** Shell bundle version — for asserting protocol compat against sandbox-bridge. */
+    shellVersion: z.string().max(64).optional(),
     /** Diagnostic message when not ready (e.g. bundle missing). Never present when ready. */
     error: z.string().max(2048).optional(),
   }),

@@ -88,6 +88,9 @@ function applyCsp(): void {
     //     hash 跟 inline 脚本字符 1:1 锁定；inline 改了 hash 也要改，否则 csp-hash test 会拦下。
     //     hash 与单测同源派生：apps/desktop/electron/test/csp-inline-hash.test.ts 启动 read +
     //     compute 一遍 assert 匹配，未来 inline 漂移 CI 立刻报错）
+    // frame-src 放行 artifact sandbox 的 loopback origin（F048 路径 D：renderer 以
+    // <iframe> 嵌 http://127.0.0.1:<port> 的 sandbox-shell）。仅 127.0.0.1（+dev 的
+    // localhost），不放宽其它。无 frame-src 时 default-src 'self' 会拦掉 iframe。
     const csp = isDev
       ? [
           "default-src 'self'",
@@ -96,6 +99,7 @@ function applyCsp(): void {
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data:",
           "font-src 'self' data:",
+          "frame-src 'self' http://127.0.0.1:* http://localhost:*",
           "connect-src 'self' ws://localhost:* ws://127.0.0.1:* http://localhost:* http://127.0.0.1:*",
         ].join('; ')
       : [
@@ -105,6 +109,7 @@ function applyCsp(): void {
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data:",
           "font-src 'self' data:",
+          "frame-src 'self' http://127.0.0.1:*",
           "connect-src 'self'",
         ].join('; ');
 
@@ -386,7 +391,6 @@ app.whenReady().then(async () => {
   const sandboxParentOrigin = isDev && VITE_DEV_SERVER_URL ? new URL(VITE_DEV_SERVER_URL).origin : '';
   void sandboxHost
     .start({
-      spaceRepoRoot: path.resolve(__dirname, '..'),
       parentOrigin: sandboxParentOrigin,
       envOverride: process.env.SPACE_LC_SANDBOX_BUNDLE,
     })
