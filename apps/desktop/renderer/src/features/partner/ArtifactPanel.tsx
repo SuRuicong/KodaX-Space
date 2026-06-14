@@ -9,6 +9,7 @@ import { FileOutput } from 'lucide-react';
 import { useSandboxInfo } from '../artifact/useSandboxInfo';
 import { SandboxFrame } from '../artifact/SandboxFrame';
 import { SMOKE_ARTIFACT_CODE, SMOKE_ARTIFACT_ID } from '../artifact/smokeArtifact';
+import { isReactArtifactEnabled } from '../artifact/artifactKind';
 
 function PanelShell({ children }: { children: React.ReactNode }): JSX.Element {
   return (
@@ -25,10 +26,11 @@ function PanelShell({ children }: { children: React.ReactNode }): JSX.Element {
 export function ArtifactPanel(): JSX.Element {
   const sandbox = useSandboxInfo();
 
-  // P1 smoke: only auto-mount the demo artifact in dev. Packaged builds show the
-  // placeholder (and can't mount pre-F055 anyway). The status check also narrows
-  // the discriminated union for TypeScript.
-  if (import.meta.env.DEV && sandbox.status === 'ready') {
+  // P1 smoke lives behind the interactive-React tier gate (F056): OFF in shipped
+  // builds, so the LC-dependent demo never surfaces in release. The status check
+  // also narrows the discriminated union for TypeScript. Real static artifacts
+  // (md/code/html/chart/...) wire in via ArtifactView when the store layer lands.
+  if (isReactArtifactEnabled() && sandbox.status === 'ready') {
     return (
       <PanelShell>
         <SandboxFrame
