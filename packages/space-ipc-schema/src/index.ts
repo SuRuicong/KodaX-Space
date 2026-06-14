@@ -223,6 +223,11 @@ export {
 } from './channels/terminal.js';
 
 export {
+  artifactSandboxInfoChannel,
+  type ArtifactSandboxInfo,
+} from './channels/artifact.js';
+
+export {
   INVOKE_CHANNEL_NAMES,
   PUSH_CHANNEL_NAMES,
   getInvokeChannel,

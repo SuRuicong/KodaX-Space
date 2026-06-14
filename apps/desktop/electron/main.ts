@@ -35,6 +35,8 @@ import { registerUpdaterChannels, initAutoUpdater } from './ipc/updater.js';
 import { registerMcpbChannels, installMcpbFromOsHandoff } from './ipc/mcpb.js';
 import { registerTerminalChannels } from './ipc/terminal.js';
 import { registerClipboardChannels } from './ipc/clipboard.js';
+import { registerArtifactChannels } from './ipc/artifact.js';
+import { sandboxHost } from './artifact/sandbox-host.js';
 import { cleanupOrphanKodaxSpaceDirWithLog } from './kodax/cleanup-orphan-kodax-space.js';
 import { getPtyHost } from './terminal/ptyHost.js';
 import { settingsStore } from './settings/store.js';
@@ -376,6 +378,36 @@ app.whenReady().then(async () => {
   registerTerminalChannels();
   // OC-31 v0.1.9 clipboard image paste — renderer 把粘贴板图片落到 app temp dir
   registerClipboardChannels();
+  // F048 路径 D artifact：自托管 LC sandbox bundle on 127.0.0.1（best-effort）。
+  // bundle 未装（LC build:bundle 尚未产出可用产物，见记忆 livecanvas_gap_sandbox_bundle）
+  // 时 ready:false，renderer 显示占位、不开端口。dev parentOrigin = Vite renderer origin
+  // （sandbox 的 localhost bypass 接受）；prod renderer=file:// 无可比对 origin（留待 F055 app://）。
+  registerArtifactChannels();
+  const sandboxParentOrigin = isDev && VITE_DEV_SERVER_URL ? new URL(VITE_DEV_SERVER_URL).origin : '';
+  void sandboxHost
+    .start({
+      spaceRepoRoot: path.resolve(__dirname, '..'),
+      parentOrigin: sandboxParentOrigin,
+      envOverride: process.env.SPACE_LC_SANDBOX_BUNDLE,
+    })
+    .then((info) => {
+      if (info.ready) {
+        console.info('[main] artifact sandbox serving at', info.sandboxOrigin);
+        // F055 gap: with no parent origin to pin, `frame-ancestors` degrades to
+        // 'self' only and the sandbox is NOT origin-isolated from a rogue local
+        // framer. Only reachable if a bundle is dropped into a packaged build
+        // before F055 lands (dev always has the Vite origin). Make it loud.
+        if (!sandboxParentOrigin) {
+          console.warn(
+            '[main] artifact sandbox started with NO parent origin — framing is unrestricted ' +
+              '(packaged app:// host pinning lands in F055). Treat as non-isolated until then.',
+          );
+        }
+      } else {
+        console.info('[main] artifact sandbox not ready:', info.error);
+      }
+    })
+    .catch((err) => console.warn('[main] sandbox host start failed:', err instanceof Error ? err.message : err));
   // F021 v0.1.5 冷启动 file association：用户双击 .mcpb 启动 Space 时，path 在 process.argv 里。
   // mainWindow 还没创建，但 installMcpbFromOsHandoff 内部会拉 BrowserWindow.getAllWindows()[0]
   // ——等 createMainWindow() 跑完才有 window。fire-and-forget，让 window 先建好。
@@ -503,6 +535,10 @@ app.on('before-quit', (event) => {
   // 同样 fire-and-forget,失败不阻塞退出。
   void disposeMcpManager().catch((err) =>
     console.warn('[main] mcp shutdown:', err instanceof Error ? err.message : err),
+  );
+  // F048 路径 D：关闭 loopback sandbox server（释放 127.0.0.1 端口）。fire-and-forget。
+  void sandboxHost.dispose().catch((err) =>
+    console.warn('[main] sandbox host dispose:', err instanceof Error ? err.message : err),
   );
   if (kodaxHost.listInFlight().length === 0) return;
   event.preventDefault();

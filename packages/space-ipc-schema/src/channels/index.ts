@@ -112,6 +112,7 @@ import {
   terminalExitChannel,
 } from './terminal.js';
 import { clipboardSaveImageChannel, clipboardCleanupSessionChannel } from './clipboard.js';
+import { artifactSandboxInfoChannel } from './artifact.js';
 
 export const invokeChannels = {
   [versionChannel.name]: versionChannel,
@@ -189,6 +190,7 @@ export const invokeChannels = {
   [terminalKillChannel.name]: terminalKillChannel,
   [clipboardSaveImageChannel.name]: clipboardSaveImageChannel,
   [clipboardCleanupSessionChannel.name]: clipboardCleanupSessionChannel,
+  [artifactSandboxInfoChannel.name]: artifactSandboxInfoChannel,
 } as const;
 
 export const pushChannels = {
