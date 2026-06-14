@@ -34,6 +34,8 @@
     "clean": "node scripts/clean.mjs",
     "link:kodax": "node scripts/link-kodax.mjs",
     "unlink:kodax": "node scripts/link-kodax.mjs --unlink",
+    "link:livecanvas": "node scripts/link-livecanvas.mjs",
+    "unlink:livecanvas": "node scripts/link-livecanvas.mjs --unlink",
     "test": "npm run test --workspaces --if-present",
     "e2e": "npm run build:smoke && npm run e2e:run",
     "e2e:run": "playwright test",
