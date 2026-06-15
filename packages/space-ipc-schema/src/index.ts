@@ -104,6 +104,7 @@ export {
 export {
   skillDiscoverChannel,
   skillInvokeChannel,
+  skillMetaSchema,
   type SkillMeta,
   type SkillSource,
 } from './channels/skill.js';

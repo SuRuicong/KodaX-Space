@@ -292,6 +292,8 @@ const FILE_MUTATION_TOOLS_DEFAULT_EXPANDED: ReadonlySet<string> = new Set([
   'multi_edit',
   'str_replace',
   'insert_after_anchor',
+  // F059c: 产物卡片要在对话里直接可见可点，默认展开（input 已紧凑、不 dump content）。
+  'create_artifact',
 ]);
 
 export function ToolCallCard({

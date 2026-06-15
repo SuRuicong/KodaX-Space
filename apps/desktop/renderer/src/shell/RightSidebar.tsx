@@ -46,6 +46,12 @@ export function RightSidebar({ width }: RightSidebarProps = {}): JSX.Element {
   // agent 新产出 artifact → 自动切到 Artifact（精确信号：reason==='created'，
   // 不被版本更新 / 删除 / 切会话误触发）。
   useArtifactCreated(currentSessionId, () => setTab('artifact'));
+  // 对话里点 artifact 卡片 → 切到 Artifact tab（ArtifactsView 同时监听做选中）。
+  useEffect(() => {
+    const onFocus = (): void => setTab('artifact');
+    window.addEventListener('kodax-space.focus-artifact', onFocus);
+    return () => window.removeEventListener('kodax-space.focus-artifact', onFocus);
+  }, []);
 
   // 产物被删空 → 强制回概览（tab 卡在 artifact 时兜底）。
   const showArtifact = hasArtifacts && tab === 'artifact';

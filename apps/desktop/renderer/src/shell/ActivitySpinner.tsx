@@ -28,10 +28,10 @@ interface ActivitySnapshot {
   readonly startedAt: number | null;
   /** 当前 tool 正在操作的 path（write/edit/read 等 toolInput 含 path/file_path）— 渲染时显示 basename。*/
   readonly toolPath?: string;
-  /** Thinking…/Writing… 状态时的累积 char count (倒扫到上个非 thinking_delta 边界)。 */
-  readonly thinkingChars?: number;
-  /** Running tool… 状态时当前 toolId 累积 tool_input_delta partialJson char count。 */
-  readonly toolInputChars?: number;
+  /** Thinking…/Writing… 状态时的累积估算 token 数 (倒扫到上个非 thinking_delta 边界)。 */
+  readonly thinkingTokens?: number;
+  /** Running tool… 状态时当前 toolId 累积 tool_input_delta partialJson 的估算 token 数。 */
+  readonly toolInputTokens?: number;
 }
 
 function snapshotFromEvents(
@@ -128,25 +128,26 @@ function snapshotFromEvents(
     }
   }
 
-  // 字符数实时计数 (REPL StatusBar 同款)。让用户看到 LLM 实际在产出多少字符,而不只是"...转圈"。
-  //   - thinking: 累计最近一段连续的 thinking_delta (从最后一个非 thinking 事件起,排除 thinking_end)
-  //   - tool_input: 累计当前 activeToolId 的所有 tool_input_delta partialJson 长度
+  // 估算 token 实时计数。SDK 只在 iteration_end 给权威 tokenCount;两次 iteration 之间
+  // 这里从 streaming delta 文本估算 token(同 bubbles.approxTokens 启发式:ASCII 4 chars≈
+  // 1 token,CJK/emoji≈1 token/char),让用户看到 LLM 实际在产出多少(而不只是"...转圈")。
+  // 之前显示的是原始字符数(chars),对中文会 4× 低估 token —— 改估算 token 单位一致。
+  //   - thinking: 累计最近一段连续的 thinking_delta (从最后一个非 thinking 事件起)
+  //   - tool_input: 累计当前 activeToolId 的所有 tool_input_delta partialJson
   // 都从尾巴扫,边界是: session_start / iteration_end / tool_result / text_delta 等"打断"事件。
-  let thinkingChars: number | undefined;
+  let thinkingTokens: number | undefined;
   if (status === 'Thinking…' || status === 'Writing…') {
-    let total = 0;
+    const acc = { ascii: 0, nonAscii: 0 };
     for (let i = events.length - 1; i >= 0; i--) {
       const ev = events[i];
       if (ev.kind === 'thinking_delta') {
-        total += ev.text.length;
+        tallyChars(ev.text, acc);
       } else if (ev.kind === 'thinking_end') {
         // thinking_end 携带完整 thinking text;比逐条 delta 更权威。但若当前 turn 里有多个
         // thinking block (extended thinking with interleaved tool calls),一个老 thinking_end
         // 会先碰到。**仅在尚未累积任何 delta 时**才信它 — 否则当前 block 的 delta 已经在跑,
         // 老 end 不该覆盖 (审查 M3)。
-        if (total === 0) {
-          total = ev.thinking.length;
-        }
+        if (acc.ascii === 0 && acc.nonAscii === 0) tallyChars(ev.thinking, acc);
         break;
       } else if (
         ev.kind === 'text_delta' ||
@@ -159,23 +160,23 @@ function snapshotFromEvents(
         break;
       }
     }
-    if (total > 0) thinkingChars = total;
+    if (acc.ascii + acc.nonAscii > 0) thinkingTokens = estTokens(acc.ascii, acc.nonAscii);
   }
 
-  let toolInputChars: number | undefined;
+  let toolInputTokens: number | undefined;
   if (activeToolId) {
-    let total = 0;
+    const acc = { ascii: 0, nonAscii: 0 };
     for (let i = events.length - 1; i >= 0; i--) {
       const ev = events[i];
       if (ev.kind === 'tool_input_delta' && (ev as { toolId?: string }).toolId === activeToolId) {
-        total += ev.partialJson.length;
+        tallyChars(ev.partialJson, acc);
       } else if (ev.kind === 'tool_start' && (ev as { toolId?: string }).toolId === activeToolId) {
         break;
       } else if (ev.kind === 'tool_result' || ev.kind === 'iteration_end') {
         break;
       }
     }
-    if (total > 0) toolInputChars = total;
+    if (acc.ascii + acc.nonAscii > 0) toolInputTokens = estTokens(acc.ascii, acc.nonAscii);
   }
 
   // FEATURE_184/F193 — Sidecar Verifier 在 Worker 文字结束后再跑一次 LLM 评判
@@ -184,8 +185,8 @@ function snapshotFromEvents(
   if (managedPhase === 'verifying') {
     status = 'Verifying…';
     toolPath = undefined;
-    thinkingChars = undefined;
-    toolInputChars = undefined;
+    thinkingTokens = undefined;
+    toolInputTokens = undefined;
   }
 
   return {
@@ -195,15 +196,37 @@ function snapshotFromEvents(
     tokens,
     startedAt,
     toolPath,
-    thinkingChars,
-    toolInputChars,
+    thinkingTokens,
+    toolInputTokens,
   };
+}
+
+/** Tally a string's ASCII vs non-ASCII chars into an accumulator (for token estimation). */
+function tallyChars(text: string, acc: { ascii: number; nonAscii: number }): void {
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) < 128) acc.ascii++;
+    else acc.nonAscii++;
+  }
+}
+
+/** Estimate tokens from tallied chars — ASCII 4≈1 token, CJK/emoji≈1 token/char
+ *  (same heuristic as bubbles.approxTokens; ±20% is fine for a live spinner). */
+function estTokens(ascii: number, nonAscii: number): number {
+  return Math.max(1, Math.round(ascii / 4 + nonAscii));
 }
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
+}
+
+// elapsed 秒数 → 人类可读：< 60s 显示 "Ns"；>= 60s 显示 "Mm SSs"（对齐 KodaX TUI）。
+function formatElapsed(sec: number): string {
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}m${s.toString().padStart(2, '0')}s`;
 }
 
 // 每个 session 第一次进入 streaming 时记 startedAt；session_complete/error 时清。
@@ -267,7 +290,7 @@ export function ActivitySpinner(): JSX.Element | null {
 
   const elapsedSec =
     snap.startedAt !== null ? Math.max(0, Math.round((Date.now() - snap.startedAt) / 1000)) : 0;
-  const elapsedStr = elapsedSec > 0 ? `${elapsedSec}s` : '';
+  const elapsedStr = elapsedSec > 0 ? formatElapsed(elapsedSec) : '';
 
   const iterStr = snap.iter ? `iter ${snap.iter.current}/${snap.iter.max}` : '';
 
@@ -288,16 +311,16 @@ export function ActivitySpinner(): JSX.Element | null {
   // tool path 显示 basename — 全路径太长，basename + dim 灰显
   const toolBase = snap.toolPath ? snap.toolPath.split(/[\\/]/).filter(Boolean).pop() : null;
 
-  // Char counts: REPL StatusBar 同款 — thinking 中显示 "3.4k chars"; 工具 input partial JSON
-  // 累积时显示 "2.1k chars"。让用户看到 LLM 实际产出量，而不只是"...转圈"。
-  let charStr = '';
-  if (snap.thinkingChars !== undefined) {
-    charStr = `${formatTokens(snap.thinkingChars)} chars`;
-  } else if (snap.toolInputChars !== undefined) {
-    charStr = `${formatTokens(snap.toolInputChars)} chars`;
+  // Live 估算 token：thinking 中显示 "~850 tok"；工具 input partial JSON 累积时同理。
+  // `~` 标记是估算（区别于 iteration_end 的权威 tokens），单位统一为 token 而非 chars。
+  let liveTokStr = '';
+  if (snap.thinkingTokens !== undefined) {
+    liveTokStr = `~${formatTokens(snap.thinkingTokens)} tok`;
+  } else if (snap.toolInputTokens !== undefined) {
+    liveTokStr = `~${formatTokens(snap.toolInputTokens)} tok`;
   }
 
-  const tail = [elapsedStr, iterStr, tokenStr, charStr].filter(Boolean).join(' · ');
+  const tail = [elapsedStr, iterStr, tokenStr, liveTokStr].filter(Boolean).join(' · ');
 
   return (
     <div className="flex items-center gap-2 text-xs text-fg-muted font-mono px-1 py-0.5">

@@ -201,13 +201,15 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
             key={`${sk.source}:${sk.name}`}
             type="button"
             onClick={() => {
-              onInsertText(`/${sk.name}${sk.argumentHint ? ' ' : ''}`);
+              // 插 `/skill:<name> ` —— 与 `/` 补全弹窗 + KodaX REPL namespace 一致
+              // （handleSend 认 `/skill:` 前缀直接走 invokeSkill）。带尾空格让用户接着补 args。
+              onInsertText(`/skill:${sk.name} `);
               onClose();
             }}
             className="w-full text-left px-3 py-1.5 hover:bg-hover-bg flex items-center gap-2 text-xs"
             title={`${sk.path} (${sk.source})`}
           >
-            <code className="text-ok font-mono">/{sk.name}</code>
+            <code className="text-ok font-mono">/skill:{sk.name}</code>
             <span className="text-fg-muted truncate flex-1">{sk.description}</span>
             <span className="text-[11px] text-fg-faint">{sk.source}</span>
           </button>

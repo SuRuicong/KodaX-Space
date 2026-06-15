@@ -11,8 +11,10 @@
 // 的子组件 (MultiEditList)。
 
 import { useState } from 'react';
+import { FileOutput, Maximize2 } from 'lucide-react';
 import { ToolDiffView } from './ToolDiffView.js';
-import { registerToolInputRenderer } from './toolRegistry.js';
+import { registerToolInputRenderer, registerToolResultRenderer } from './toolRegistry.js';
+import { useAppStore } from '../../../store/appStore.js';
 
 /** 工具：从 input record 里抽 string 字段（其它类型当成不存在）。 */
 function pickString(o: Record<string, unknown> | undefined, key: string): string | null {
@@ -107,4 +109,96 @@ registerToolInputRenderer('multi_edit', ({ input }) => {
   if (!Array.isArray(edits) || edits.length === 0) return null;
   const path = pickString(input, 'file_path') ?? pickString(input, 'path') ?? '';
   return <MultiEditList path={path} edits={edits} />;
+});
+
+// ---- create_artifact (F059c) ----
+//
+// 产物默认埋在折叠的 tool_call 卡里、对话里看不到入口（用户反馈 2026-06-15）。这里:
+//   - input 渲染成一行紧凑描述，避免把整段 HTML/代码 content dump 进对话流
+//   - result 渲染成可点的 artifact 卡片：点卡片 → 右侧栏聚焦该 artifact；⛶ → 独立窗口
+// 配合 bubbles 把 create_artifact 设为默认展开，产物在对话里就直接可见可点。
+
+/** Clickable artifact card shown as a create_artifact tool result. */
+function ArtifactToolCard({
+  id,
+  version,
+  title,
+  kind,
+}: {
+  id: string;
+  version: number | undefined;
+  title: string;
+  kind: string;
+}): JSX.Element {
+  const projectRoot = useAppStore((s) => {
+    const cur = s.currentSessionId;
+    return cur ? (s.sessions.find((x) => x.sessionId === cur)?.projectRoot ?? null) : null;
+  });
+
+  function focusInPanel(): void {
+    // 右侧栏切到 Artifact tab + 选中该 id（RightSidebar / ArtifactsView 监听此事件）。
+    window.dispatchEvent(new CustomEvent('kodax-space.focus-artifact', { detail: { id } }));
+  }
+  function openWindow(e: React.MouseEvent): void {
+    e.stopPropagation();
+    void window.kodaxSpace?.invoke('artifact.openWindow', {
+      id,
+      ...(version !== undefined ? { version } : {}),
+      ...(projectRoot ? { projectRoot } : {}),
+      title,
+    });
+  }
+
+  return (
+    <div className="flex items-center gap-2 rounded border border-border-default bg-surface-2/40 px-2.5 py-2">
+      <FileOutput className="w-4 h-4 text-accent-ink flex-shrink-0" strokeWidth={1.75} aria-hidden />
+      <button
+        type="button"
+        onClick={focusInPanel}
+        className="flex-1 min-w-0 text-left"
+        title="在右侧 Artifact 面板查看"
+      >
+        <div className="text-[12px] font-medium text-fg-primary truncate font-sans">{title}</div>
+        <div className="text-[10px] text-fg-muted uppercase tracking-wide">
+          {kind}
+          {version !== undefined ? ` · v${version}` : ''}
+        </div>
+      </button>
+      <button
+        type="button"
+        onClick={openWindow}
+        title="单独打开（独立窗口）"
+        aria-label="单独打开 artifact"
+        className="w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3 flex-shrink-0"
+      >
+        <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.75} />
+      </button>
+    </div>
+  );
+}
+
+// input：一行紧凑描述（kind · 「title」· summary），不 dump content。
+registerToolInputRenderer('create_artifact', ({ input }) => {
+  const title = pickString(input, 'title');
+  const kind = pickString(input, 'kind');
+  if (!title && !kind) return null;
+  const summary = pickString(input, 'summary');
+  return (
+    <div className="text-[11px] text-fg-muted">
+      {kind && <span className="uppercase tracking-wide">{kind}</span>}
+      {title && <span className="text-fg-secondary"> · 「{title}」</span>}
+      {summary && <span> · {summary}</span>}
+    </div>
+  );
+});
+
+// result：从结果文本解析 id/version（"…(id=<id>, v<n>)"），渲染可点卡片；解析不到（如 Error）→ 回退原文。
+registerToolResultRenderer('create_artifact', ({ result, input }) => {
+  const m = /\(id=([^,]+), v(\d+)\)/.exec(result);
+  if (!m) return null;
+  const id = m[1].trim();
+  const version = Number(m[2]);
+  const title = pickString(input, 'title') ?? 'Artifact';
+  const kind = pickString(input, 'kind') ?? '';
+  return <ArtifactToolCard id={id} version={Number.isFinite(version) ? version : undefined} title={title} kind={kind} />;
 });

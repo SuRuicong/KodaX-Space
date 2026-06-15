@@ -41,7 +41,7 @@ import { CommandPaletteController } from './CommandPalette.js';
 import { ToastContainer } from './ToastContainer.js';
 import { ZoomController } from './ZoomController.js';
 import { UpdateBanner } from '../features/updater/UpdateBanner.js';
-import { useAppStore } from '../store/appStore.js';
+import { useAppStore, clampSidebarWidthPx } from '../store/appStore.js';
 import { useSurfaceStore } from '../store/surface.js';
 import { PartnerWorkspace } from '../features/partner/PartnerWorkspace.js';
 
@@ -92,6 +92,14 @@ export function Shell(): JSX.Element {
     setRightSidebarOpen(hasPlan);
     lastAutoHadPlanRef.current = hasPlan;
   }, [planLength, currentSessionIdForPlan, setRightSidebarOpen]);
+
+  // F059c: 对话里点 artifact 卡片 → 若右侧栏关着先打开它（RightSidebar 内部再切到 Artifact
+  // tab + 选中）。否则点了卡片"什么都没发生"。
+  useEffect(() => {
+    const onFocus = (): void => setRightSidebarOpen(true);
+    window.addEventListener('kodax-space.focus-artifact', onFocus);
+    return () => window.removeEventListener('kodax-space.focus-artifact', onFocus);
+  }, [setRightSidebarOpen]);
 
   // 历史 session 切换时按需从 KodaX SDK 拉持久化对话内容回填 store。
   // events / userMessages buffer 是 in-memory；重启 / 切到 new session 后空 → 调
@@ -248,10 +256,10 @@ export function Shell(): JSX.Element {
               side="left"
               width={leftWidth}
               defaultWidth={260}
-              onPreview={setLeftWidthDraft}
+              onPreview={(px) => setLeftWidthDraft(clampSidebarWidthPx(px))}
               onCommit={(px) => {
                 setLeftWidthDraft(null);
-                setLeftSidebarWidth(px);
+                setLeftSidebarWidth(clampSidebarWidthPx(px));
               }}
             />
           </>
@@ -320,10 +328,10 @@ export function Shell(): JSX.Element {
                   side="right"
                   width={rightWidth}
                   defaultWidth={320}
-                  onPreview={setRightWidthDraft}
+                  onPreview={(px) => setRightWidthDraft(clampSidebarWidthPx(px))}
                   onCommit={(px) => {
                     setRightWidthDraft(null);
-                    setRightSidebarWidth(px);
+                    setRightSidebarWidth(clampSidebarWidthPx(px));
                   }}
                 />
                 <RightSidebar width={rightWidth} />

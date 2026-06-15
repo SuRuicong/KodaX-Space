@@ -2,6 +2,7 @@
 //
 // 启动 main 时 main.ts 调 registerSkillChannels()，注册 skill.discover + skill.invoke。
 
+import { skillMetaSchema } from '@kodax-space/space-ipc-schema';
 import { registerChannel } from './register.js';
 import { kodaxHost } from '../kodax/host.js';
 import { getSkillRegistry, invalidateSkillCache, toSkillMeta } from '../skill/registry.js';
@@ -44,7 +45,19 @@ export function registerSkillChannels(): void {
       invalidateSkillCache(input.projectRoot);
     }
     const registry = await getSkillRegistry(input.projectRoot);
-    const skills = registry.listUserInvocable().map(toSkillMeta);
+    // Per-item validate + drop the invalid (instead of letting one bad skill fail
+    // the whole array via OUTPUT_INVALID). toSkillMeta already clamps the common
+    // overflow (long descriptions); this catches anything still off-spec (e.g. a
+    // SKILL.md with a non-kebab name) so the picker/slash list degrade gracefully.
+    const skills = registry
+      .listUserInvocable()
+      .map(toSkillMeta)
+      .filter((m) => {
+        const ok = skillMetaSchema.safeParse(m).success;
+        if (!ok) console.warn(`[skill.discover] dropping schema-invalid skill: ${m.name}`);
+        return ok;
+      })
+      .slice(0, 256); // schema caps the array at 256
     return { skills };
   });
 

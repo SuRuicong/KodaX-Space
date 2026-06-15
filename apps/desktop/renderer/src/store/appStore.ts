@@ -559,15 +559,25 @@ function lsSet(key: string, value: string | null): void {
 const IS_WIN_RENDERER =
   typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent);
 
-// 2026-06: sidebar 宽度上下限。下限给用户拖到很窄时还能识别 icon + 一两个字符;
-// 上限避免误拖把主区域挤死。坏值（NaN / 越界）退回 fallback default。
+// 2026-06: sidebar 宽度下限——拖到很窄时还能识别 icon + 一两个字符。
 const SIDEBAR_WIDTH_MIN = 180;
-const SIDEBAR_WIDTH_MAX = 520;
+
+/** 动态上限 = 窗口宽度的一半（用户 2026-06-15 指定）。窗口越宽，侧栏越能拉宽，但最多占一半。 */
+export function sidebarWidthMax(): number {
+  const w = typeof window !== 'undefined' && window.innerWidth ? window.innerWidth : 1440;
+  return Math.max(SIDEBAR_WIDTH_MIN + 120, Math.round(w * 0.5));
+}
+
+/** Clamp a (finite) drag px to [MIN, dynamicMax]。拖动预览 + commit 共用，避免越界后回弹。 */
+export function clampSidebarWidthPx(px: number): number {
+  return Math.round(Math.min(sidebarWidthMax(), Math.max(SIDEBAR_WIDTH_MIN, px)));
+}
+
+// 只有非有限值(NaN — 如 localStorage 缺值)才退回 fallback；有限值一律 clamp 到边界
+// 而不是弹回 default —— 否则用户拖过界一松手就跳回默认宽，看着像"拖不动"(用户复报 2026-06-15)。
 function clampSidebarWidth(raw: number, fallback: number): number {
-  if (!Number.isFinite(raw) || raw < SIDEBAR_WIDTH_MIN || raw > SIDEBAR_WIDTH_MAX) {
-    return fallback;
-  }
-  return Math.round(raw);
+  if (!Number.isFinite(raw)) return fallback;
+  return clampSidebarWidthPx(raw);
 }
 
 export const useAppStore = create<AppState>((set) => ({

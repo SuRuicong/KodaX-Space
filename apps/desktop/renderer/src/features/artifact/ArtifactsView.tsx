@@ -187,6 +187,16 @@ export function ArtifactsView(): JSX.Element {
     setSelectedId(null);
   }, [sessionId]);
 
+  // F059c: 对话里点 artifact 卡片 → 选中该 id（RightSidebar 同时把 tab 切到 Artifact）。
+  useEffect(() => {
+    const onFocus = (e: Event): void => {
+      const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+      if (id) setSelectedId(id);
+    };
+    window.addEventListener('kodax-space.focus-artifact', onFocus);
+    return () => window.removeEventListener('kodax-space.focus-artifact', onFocus);
+  }, []);
+
   // Default selection = most recently updated (list is sorted updatedAt desc).
   const selected = artifacts.find((a) => a.id === selectedId) ?? artifacts[0] ?? null;
 

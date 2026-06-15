@@ -45,6 +45,7 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
   const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
   const pendingProviderId = useAppStore((s) => s.pendingProviderId);
+  const pendingModel = useAppStore((s) => s.pendingModel);
   const pendingReasoningMode = useAppStore((s) => s.pendingReasoningMode);
   // 不读 pendingPermissionMode —— Quick Ask 强制 plan 不让用户的 accept-edits / auto 默认
   // 让 SDK 写文件 / 跑 bash
@@ -108,10 +109,12 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
       pendingReasoningMode,
       pendingPermissionMode: 'plan', // 强制 plan，不让 Quick Ask 改文件 / 跑 shell
       pendingAgentMode,
+      pendingModel,
     });
     const createR = await window.kodaxSpace.invoke('session.create', {
       projectRoot: currentProjectPath,
       provider: resolved.provider,
+      ...(resolved.model ? { model: resolved.model } : {}),
       reasoningMode: resolved.reasoningMode,
       permissionMode: resolved.permissionMode,
       agentMode: resolved.agentMode,

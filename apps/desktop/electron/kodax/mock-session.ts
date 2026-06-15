@@ -104,6 +104,7 @@ export class MockKodaXSession implements ManagedSession {
     this.sessionId = opts.sessionId;
     this.projectRoot = opts.projectRoot;
     this.provider = opts.provider;
+    this.model = opts.model;
     this.reasoningMode = opts.reasoningMode;
     this.permissionMode = opts.permissionMode;
     this.autoModeEngine = opts.autoModeEngine ?? 'llm';

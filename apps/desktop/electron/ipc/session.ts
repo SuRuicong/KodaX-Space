@@ -68,6 +68,9 @@ export function registerSessionChannels(): void {
     const { sessionId, createdAt } = kodaxHost.createSession({
       projectRoot,
       provider: input.provider,
+      // 生效 model（renderer 用 resolveActiveModel 解析后带上）→ 让 SDK 应用 per-model 能力
+      // （正确 contextWindow → 压缩窗口），修默认模型下过早压缩（2026-06-15 用户复报）。
+      ...(input.model !== undefined ? { model: input.model } : {}),
       reasoningMode: input.reasoningMode,
       permissionMode: input.permissionMode,
       autoModeEngine: input.autoModeEngine,

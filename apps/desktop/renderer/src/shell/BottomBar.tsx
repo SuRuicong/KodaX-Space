@@ -120,6 +120,7 @@ export function BottomBar(): JSX.Element {
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
   const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
   const pendingProviderId = useAppStore((s) => s.pendingProviderId);
+  const pendingModel = useAppStore((s) => s.pendingModel);
   const pendingReasoningMode = useAppStore((s) => s.pendingReasoningMode);
   const pendingPermissionMode = useAppStore((s) => s.pendingPermissionMode);
   const pendingAgentMode = useAppStore((s) => s.pendingAgentMode);
@@ -276,7 +277,7 @@ export function BottomBar(): JSX.Element {
       setErr('Open a folder first — Ctrl+O.');
       return null;
     }
-    const { provider, reasoningMode, permissionMode, agentMode } = resolveSessionCreateInputs({
+    const { provider, reasoningMode, permissionMode, agentMode, model } = resolveSessionCreateInputs({
       projectRoot: currentProjectPath,
       providers,
       defaultProviderId,
@@ -285,6 +286,7 @@ export function BottomBar(): JSX.Element {
       pendingReasoningMode,
       pendingPermissionMode,
       pendingAgentMode,
+      pendingModel,
     });
     const result = await window.kodaxSpace.invoke('session.create', {
       projectRoot: currentProjectPath,
@@ -292,6 +294,8 @@ export function BottomBar(): JSX.Element {
       reasoningMode,
       permissionMode,
       agentMode,
+      // 显式带上生效 model，让 SDK 应用 per-model 能力（正确的 contextWindow → 压缩窗口）。
+      ...(model ? { model } : {}),
       // F045: 新 session 归当前工作面；main 落盘成 SDK session tag，决定它在哪个面的列表出现。
       surface: currentSurface,
     });
@@ -303,6 +307,7 @@ export function BottomBar(): JSX.Element {
       sessionId: result.data.sessionId,
       projectRoot: currentProjectPath,
       provider,
+      ...(model ? { model } : {}),
       reasoningMode,
       permissionMode,
       autoModeEngine: 'llm',
@@ -803,13 +808,6 @@ export function BottomBar(): JSX.Element {
     appendUserMessage(sessionId, `[unknown action: ${action}]`);
   }
 
-  /** 仅 popover 直接点中 slash 命令（已知 builtin、无 fallback 必要）时用。*/
-  async function execSlashDirect(sessionId: string, name: string, args: string[]): Promise<void> {
-    // 这层薄壳保持与原 execSlash 相同的 busy 语义但不做 skill fallback。
-    // 当前实现复用 execSlashOrSkill；future 若需要细分语义可分开。
-    await execSlashOrSkill(sessionId, name, args);
-  }
-
   /**
    * F035: 执行 skill → 拿 resolvedPrompt → 走 session.send。
    * appendUserMessage 显示 "/<skill> args" 让用户在 stream 里看到调用记录。
@@ -835,8 +833,8 @@ export function BottomBar(): JSX.Element {
       setErr(error ?? `skill /${name} failed`);
       return;
     }
-    // 把 "/skill args" 当一条 user message 显示
-    const skillEcho = `/${name} ${args.join(' ')}`.trim();
+    // 把 "/skill:name args" 当一条 user message 显示（与补全/输入的 namespace 一致）。
+    const skillEcho = `/skill:${name} ${args.join(' ')}`.trim();
     appendUserMessage(sessionId, skillEcho);
     // P0a: 标记 pending，让 spinner 在 IPC 期间就亮起来
     setPendingSend(sessionId, true);
@@ -980,36 +978,20 @@ export function BottomBar(): JSX.Element {
       setPrompt('');
       return;
     }
-    const hint = item.kind === 'slash' ? item.meta.argsHint : item.meta.argumentHint;
-    if (!hint) {
-      // 无参数 → 直接执行（已知 kind 走对应 IPC）。
-      // ensureSession 在无 session 时建一个；execSlashDirect/invokeSkill 自己管 busy。
-      setPrompt('');
-      void (async () => {
-        const sid = await ensureSession();
-        if (!sid) return;
-        if (item.kind === 'slash') {
-          await execSlashDirect(sid, item.meta.name, []);
-        } else {
-          // invokeSkill 不管 busy（注释里说由 caller 包），所以这里包一次
-          setBusy(true);
-          setErr(null);
-          try {
-            await invokeSkill(sid, item.meta.name, []);
-          } finally {
-            setBusy(false);
-          }
-        }
-      })();
-    } else {
-      // 有参数 → 把 token 放回输入框等用户继续输入。Enter 后 handleSend 解析。
-      // v0.1.10 fix: 跟 KodaX REPL 对齐, skill 走 `/skill:<name>` namespace, slash 仍 `/<name>`。
-      // handleSend 已经认识 `/skill:` 前缀直接走 invokeSkill, 不走 slash.exec → unknownCommand
-      // → fallback 这条二跳。
-      const insertText =
-        item.kind === 'skill' ? `/skill:${item.meta.name} ` : `/${item.meta.name} `;
-      setPrompt(insertText);
-    }
+    // 选中 = **补全到输入框**（不再自动执行）。用户复报：一点击/回车就直接发出去、体验很差。
+    // 现在统一把 `/<cmd> ` 或 `/skill:<name> ` 插进输入框，让用户补 args / 复核后再按 Enter 发送。
+    // 尾空格使 slashMode 关闭 → 补全弹窗收起；handleSend 认 `/skill:` 前缀走 invokeSkill。
+    const insertText =
+      item.kind === 'skill' ? `/skill:${item.meta.name} ` : `/${item.meta.name} `;
+    setPrompt(insertText);
+    // 焦点拉回输入框，光标在末尾，用户可直接续打。
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (ta) {
+        ta.focus();
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+      }
+    });
   }
 
   async function handleCancel(): Promise<void> {

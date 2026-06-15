@@ -136,7 +136,8 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         setSelectedIdx((i) => Math.max(i - 1, 0));
-      } else if (e.key === 'Enter') {
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        // Enter 或 Tab 都补全选中项（Tab = 编辑器惯例的"补全"键，用户复报 Tab 补不出来）。
         const item = filtered[selectedIdx];
         if (item) {
           e.preventDefault();

@@ -45,6 +45,12 @@ export type SessionCreateOptions = {
   readonly agentMode?: AgentMode;
   /** F045: 工作面（'code' = Coder / 'partner' = Partner）。缺省 'code'。持久化为 SDK session tag。*/
   readonly surface?: Surface;
+  /**
+   * 生效 model（创建时即带上）。undefined = 用 provider 默认。
+   * 显式带上能让 SDK 应用该 model 的 per-model 能力（如真实 contextWindow），
+   * 避免默认模型下 SDK 兜底到小窗口导致过早压缩（2026-06-15 用户复报）。
+   */
+  readonly model?: string;
   /** FEATURE_033 fork 时由 host 传入；root session 不带。*/
   readonly parentSessionId?: string;
   readonly forkPointTurnIdx?: number;

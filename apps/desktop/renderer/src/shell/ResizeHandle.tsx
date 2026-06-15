@@ -1,18 +1,22 @@
-// ResizeHandle — 2026-06 (v0.1.9).
+// ResizeHandle — 2026-06 (v0.1.9; F059c rewrite to Pointer Events).
 //
 // 1px 视觉宽 / 4px 命中宽的垂直分隔条，拖动调整左右侧栏。
 //   side='left'  贴在左侧栏右缘 (border-r 位置)，向右拖 → 加宽
 //   side='right' 贴在右侧栏左缘 (border-l 位置)，向左拖 → 加宽
 //
-// 实现要点:
-//   - 拖动期间用 document-level mousemove/mouseup 避免离开 handle 自身后失焦
-//   - body.style.cursor='ew-resize' + body.style.userSelect='none' 让整页面同步变指针
-//     并禁选,避免拖动时不小心高亮 sidebar 内文字
-//   - Esc 取消拖动 (回到 start 宽度)
-//   - 双击 reset 到默认 (left=260, right=320 — 跟 store 默认对齐)
+// **Pointer capture（关键）**：用 Pointer Events + setPointerCapture，把整段拖动的
+// pointermove/up **强制路由到 handle 元素本身**，无论指针移到哪——包括移到 <iframe>
+// 上（artifact HTML / preview / terminal / LC sandbox）。这一并解决了用户复报的两个 bug：
+//   1) 向窄拖时光标进右栏 artifact iframe → 以前 mousemove 被 iframe 吞 → "卡住"。
+//   2) mouseup 落在 iframe 上 / 指针离开窗口 → 以前 mouseup 收不到 → 拖动"没松开"、
+//      focus 卡在拖动栏、之后拖不动。
+// 捕获后这些事件都还到 handle，drag 一定能正常结束。pointercancel 兜底（系统中断捕获）。
 //
-// 不持久化中间值,只 release (mouseup) 时调一次 setWidth → 写 localStorage。
-// 拖动中通过 onPreview 回调让 caller 显示实时宽度,不必每帧 setState 整个 store。
+// 其它：
+//   - body.style.cursor='ew-resize' + userSelect='none' 拖动期全页指针/禁选
+//   - Esc 取消拖动（回到 start 宽度）
+//   - 双击 reset 到默认（left=260, right=320 — 跟 store 默认对齐）
+//   - 只 release 时调一次 onCommit → 写 localStorage；拖动中 onPreview 实时驱动父 width。
 
 import { useCallback, useEffect, useRef } from 'react';
 
@@ -20,7 +24,7 @@ export interface ResizeHandleProps {
   readonly side: 'left' | 'right';
   /** 当前宽度（px） */
   readonly width: number;
-  /** mouseup / blur 时一次性提交最终宽度 */
+  /** pointerup 时一次性提交最终宽度 */
   readonly onCommit: (px: number) => void;
   /** 默认宽度（双击 reset 用） */
   readonly defaultWidth: number;
@@ -35,79 +39,86 @@ export function ResizeHandle({
   defaultWidth,
   onPreview,
 }: ResizeHandleProps): JSX.Element {
-  // 把"拖动 session"信息塞在一个 ref 里，避免 mousemove handler 闭包过期
-  const dragRef = useRef<{
-    startX: number;
-    startWidth: number;
-    active: boolean;
-  } | null>(null);
-  // v0.1.9 release review HIGH-2: 拖动中组件 unmount 时 window 上的 3 个 listener
-  // 不会被 onUp / onKey 清掉,造成永久泄漏 + closure 持有过期 props。useEffect
-  // cleanup 通过这个 ref 拿到当前 listener 引用统一 detach。
-  const listenersRef = useRef<{
-    onMove: (e: MouseEvent) => void;
-    onUp: (e: MouseEvent) => void;
-    onKey: (e: KeyboardEvent) => void;
-  } | null>(null);
+  // 拖动 session 信息（startX/startWidth）放 ref，避免 move handler 闭包过期。
+  const dragRef = useRef<{ startX: number; startWidth: number; active: boolean } | null>(null);
+  // 拖动中 unmount 时，绑在 handle 上的 listener + pointer capture 不会被 onUp 清掉；
+  // useEffect cleanup 通过这个 ref 统一 detach（review HIGH-2 的等价处理）。
+  const teardownRef = useRef<(() => void) | null>(null);
 
-  const onMouseDown = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
       if (e.button !== 0) return; // 只响应左键
       e.preventDefault();
-      dragRef.current = {
-        startX: e.clientX,
-        startWidth: width,
-        active: true,
-      };
+      const el = e.currentTarget;
+      const pointerId = e.pointerId;
+      dragRef.current = { startX: e.clientX, startWidth: width, active: true };
       document.body.style.cursor = 'ew-resize';
       document.body.style.userSelect = 'none';
 
-      const onMove = (ev: MouseEvent): void => {
+      const nextFrom = (clientX: number): number => {
         const drag = dragRef.current;
-        if (!drag || !drag.active) return;
-        const dx = ev.clientX - drag.startX;
-        // side='left': 鼠标向右走,左侧栏变宽
-        // side='right': 鼠标向左走,右侧栏变宽（dx 取反）
-        const next = side === 'left' ? drag.startWidth + dx : drag.startWidth - dx;
-        onPreview?.(next);
+        if (!drag) return width;
+        const dx = clientX - drag.startX;
+        // side='left': 鼠标向右 → 左栏变宽；side='right': 鼠标向左 → 右栏变宽（dx 取反）
+        return side === 'left' ? drag.startWidth + dx : drag.startWidth - dx;
       };
 
-      const detach = (): void => {
-        window.removeEventListener('mousemove', onMove);
-        window.removeEventListener('mouseup', onUp);
+      const onMove = (ev: PointerEvent): void => {
+        if (!dragRef.current?.active) return;
+        onPreview?.(nextFrom(ev.clientX));
+      };
+
+      // teardown 幂等：移除 handle 上的 pointer listeners + window keydown，释放捕获，
+      // 复位 body 样式。多次调用安全（onUp / cancel / unmount 都可能触发）。
+      const teardown = (): void => {
+        el.removeEventListener('pointermove', onMove);
+        el.removeEventListener('pointerup', onUp);
+        el.removeEventListener('pointercancel', onCancel);
         window.removeEventListener('keydown', onKey);
-        listenersRef.current = null;
-      };
-
-      const onUp = (ev: MouseEvent): void => {
-        const drag = dragRef.current;
-        if (!drag) return;
-        const dx = ev.clientX - drag.startX;
-        const next = side === 'left' ? drag.startWidth + dx : drag.startWidth - dx;
-        dragRef.current = null;
+        try {
+          if (el.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId);
+        } catch {
+          /* capture 已释放 — 忽略 */
+        }
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
-        detach();
-        onCommit(next);
+        dragRef.current = null;
+        teardownRef.current = null;
+      };
+
+      const onUp = (ev: PointerEvent): void => {
+        const px = nextFrom(ev.clientX);
+        teardown();
+        onCommit(px);
+      };
+
+      const onCancel = (): void => {
+        const start = dragRef.current?.startWidth ?? width;
+        teardown();
+        // 系统中断捕获（少见）→ 回到起点宽度，别留半拖状态。
+        onPreview?.(start);
+        onCommit(start);
       };
 
       const onKey = (ev: KeyboardEvent): void => {
         if (ev.key !== 'Escape') return;
-        const drag = dragRef.current;
-        if (!drag) return;
-        // 取消 → 把宽度恢复到拖动起点
-        dragRef.current = null;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        detach();
-        onPreview?.(drag.startWidth);
-        onCommit(drag.startWidth);
+        const start = dragRef.current?.startWidth ?? width;
+        teardown();
+        onPreview?.(start);
+        onCommit(start);
       };
 
-      window.addEventListener('mousemove', onMove);
-      window.addEventListener('mouseup', onUp);
+      // setPointerCapture：之后 pointermove/up/cancel 都派发到 el，即便指针在 iframe 上。
+      try {
+        el.setPointerCapture(pointerId);
+      } catch {
+        /* 极端环境不支持捕获 — 仍绑 el listener，至少 handle 上方可用 */
+      }
+      el.addEventListener('pointermove', onMove);
+      el.addEventListener('pointerup', onUp);
+      el.addEventListener('pointercancel', onCancel);
       window.addEventListener('keydown', onKey);
-      listenersRef.current = { onMove, onUp, onKey };
+      teardownRef.current = teardown;
     },
     [side, width, onCommit, onPreview],
   );
@@ -117,23 +128,10 @@ export function ResizeHandle({
     onCommit(defaultWidth);
   }, [defaultWidth, onCommit, onPreview]);
 
-  // 卸载时清理:
-  //   - body cursor / userSelect (极端情况:组件 unmount 时还在拖)
-  //   - **window listener** (review HIGH-2): 拖动中 unmount 时 onUp/onKey 永远不会被调用,
-  //     listener 永远不会自己 detach。这里兜底 detach,否则 closure 持有过期 props/ref。
+  // 拖动中 unmount 兜底：teardown 还挂着就执行它（释放捕获 + 复位 body + 清 listener）。
   useEffect(() => {
     return () => {
-      if (listenersRef.current) {
-        window.removeEventListener('mousemove', listenersRef.current.onMove);
-        window.removeEventListener('mouseup', listenersRef.current.onUp);
-        window.removeEventListener('keydown', listenersRef.current.onKey);
-        listenersRef.current = null;
-      }
-      if (dragRef.current?.active) {
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        dragRef.current = null;
-      }
+      teardownRef.current?.();
     };
   }, []);
 
@@ -144,13 +142,11 @@ export function ResizeHandle({
       aria-label={side === 'left' ? 'Resize left sidebar' : 'Resize right sidebar'}
       aria-valuenow={width}
       tabIndex={0}
-      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
       onDoubleClick={onDoubleClick}
       className={[
-        // 4px 宽命中区,中间 1px 实色边线 + hover 强化 — 视觉上跟现有 border 一致
-        'flex-shrink-0 w-1 cursor-ew-resize relative select-none',
+        'flex-shrink-0 w-1 cursor-ew-resize relative select-none touch-none',
         'hover:bg-info/30 active:bg-info/50 transition-colors',
-        // 拖动时整条变高亮（active 通过 mousedown 让 body cursor 变,实际样式靠 hover 类）
       ].join(' ')}
       title="Drag to resize · Double-click to reset · Esc to cancel"
     />

@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../../store/appStore.js';
+import { resolveActiveModel } from '../../shell/resolveActiveModel.js';
 import { useSurfaceStore } from '../../store/surface.js';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 
@@ -93,10 +94,22 @@ export function SessionList(): JSX.Element {
     // v0.1.6 cleanup: session 初值跟随 ~/.kodax/config.json（KodaX CLI 设过的话）
     const reasoningMode = kodaxDefaults?.reasoningMode ?? 'auto';
     const permissionMode = kodaxDefaults?.permissionMode ?? 'accept-edits';
+    // 生效 model（与 picker 同源）：显式带上让 SDK 应用 per-model 能力（正确 contextWindow → 压缩窗口）。
+    const activeProvider = providers.find((p) => p.id === provider);
+    const resolvedModel = resolveActiveModel({
+      activeProviderId: provider,
+      activeProviderModels: activeProvider?.models,
+      activeProviderDefaultModel: activeProvider?.defaultModel,
+      pendingModel: null, // SessionList 用自己的 provider 下拉，不读 pendingModel
+      kodaxDefaultsProvider: kodaxDefaults?.provider ?? null,
+      kodaxDefaultsModel: kodaxDefaults?.model ?? null,
+    });
+    const model = resolvedModel && resolvedModel !== '—' ? resolvedModel : undefined;
     try {
       const result = await bridge.invoke('session.create', {
         projectRoot: currentProjectPath,
         provider,
+        ...(model ? { model } : {}),
         reasoningMode,
         permissionMode,
         // F045: 新 session 归当前工作面；main 落盘成 SDK session tag。
@@ -112,6 +125,7 @@ export function SessionList(): JSX.Element {
         sessionId: result.data.sessionId,
         projectRoot: currentProjectPath,
         provider,
+        ...(model ? { model } : {}),
         reasoningMode,
         permissionMode,
         autoModeEngine: 'llm',

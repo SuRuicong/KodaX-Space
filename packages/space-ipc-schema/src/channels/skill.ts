@@ -17,7 +17,7 @@ import { z } from 'zod';
 const skillSourceSchema = z.enum(['user', 'project', 'plugin', 'builtin']);
 
 // Skill 元数据（discover 输出）。description 上限同 slash command。
-const skillMetaSchema = z.object({
+export const skillMetaSchema = z.object({
   name: z.string()
     .regex(/^[a-z0-9][a-z0-9._:-]{0,63}$/, {
       message: 'skill name must be kebab-case (allow . : _ -)',

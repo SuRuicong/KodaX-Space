@@ -17,6 +17,7 @@
 // reasoningMode/permissionMode：同样 pending → kodaxDefaults → hardcoded fallback
 
 import type { SessionMeta, ProviderInfo, KodaxUserDefaults } from '@kodax-space/space-ipc-schema';
+import { resolveActiveModel } from './resolveActiveModel.js';
 
 const MOCK_PROVIDER = 'mock';
 
@@ -29,6 +30,8 @@ export interface CreateSessionInput {
   readonly pendingReasoningMode: SessionMeta['reasoningMode'] | null;
   readonly pendingPermissionMode?: SessionMeta['permissionMode'] | null;
   readonly pendingAgentMode?: SessionMeta['agentMode'] | null;
+  /** User's pending (next-session) model — persisted; validated against the resolved provider. */
+  readonly pendingModel?: string | null;
 }
 
 export interface CreateSessionResolved {
@@ -36,6 +39,15 @@ export interface CreateSessionResolved {
   readonly reasoningMode: SessionMeta['reasoningMode'];
   readonly permissionMode: NonNullable<SessionMeta['permissionMode']>;
   readonly agentMode: NonNullable<SessionMeta['agentMode']>;
+  /**
+   * Effective model to create the session with. Resolved from the SAME source the
+   * model picker shows (pending → kodaxDefaults → provider default). Passing it
+   * EXPLICITLY (instead of leaving it undefined for the SDK to guess) lets KodaX
+   * apply the model's per-model capabilities — notably its real contextWindow —
+   * so auto-compaction uses the right window (2026-06-15 用户复报：默认模型下 run
+   * 没拿到 glm-5.2 的 1M，压缩按 ~128k 触发)。undefined only when nothing resolves.
+   */
+  readonly model?: string;
 }
 
 /** 仅做 provider / reasoning / permission 解析；不发 IPC。便于测试。 */
@@ -68,5 +80,18 @@ export function resolveSessionCreateInputs(input: CreateSessionInput): CreateSes
   // Default 'ama' — KodaX SDK 默认也是这个；用户主动选 SA 走 fallback 路径
   const agentMode = pendingAgentMode ?? 'ama';
 
-  return { provider, reasoningMode, permissionMode, agentMode };
+  // 解析生效 model（与 picker 同源），显式带上让 SDK 应用 per-model 能力。
+  const activeProvider = providers.find((p) => p.id === provider);
+  const resolvedModel = resolveActiveModel({
+    activeProviderId: provider,
+    activeProviderModels: activeProvider?.models,
+    activeProviderDefaultModel: activeProvider?.defaultModel,
+    pendingModel: input.pendingModel ?? null,
+    kodaxDefaultsProvider: kodaxDefaults?.provider ?? null,
+    kodaxDefaultsModel: kodaxDefaults?.model ?? null,
+  });
+  // resolveActiveModel 无解时返回 '—' 哨兵 — 别把它当真 model 传出去。
+  const model = resolvedModel && resolvedModel !== '—' ? resolvedModel : undefined;
+
+  return { provider, reasoningMode, permissionMode, agentMode, model };
 }

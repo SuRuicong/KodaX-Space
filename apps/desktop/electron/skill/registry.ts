@@ -104,12 +104,17 @@ export function toSkillMeta(m: SkillMetadata): {
   source: SkillMetadata['source'];
   path: string;
 } {
+  // Clamp to the IPC schema caps. Real skills routinely have long trigger
+  // descriptions (>512), which would otherwise fail skillMetaSchema and — because
+  // z.array rejects on ANY element — blow up the WHOLE skill.discover output
+  // (OUTPUT_INVALID → empty picker + skills missing from slash). 用户复报 2026-06-15。
+  const clamp = (s: string, max: number): string => (s.length > max ? s.slice(0, max) : s);
   return {
-    name: m.name,
-    description: m.description,
-    argumentHint: m.argumentHint,
+    name: clamp(m.name, 64),
+    description: clamp(m.description ?? '', 512),
+    argumentHint: m.argumentHint ? clamp(m.argumentHint, 128) : undefined,
     source: m.source,
-    path: m.path,
+    path: clamp(m.path, 4096),
   };
 }
 

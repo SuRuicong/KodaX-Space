@@ -166,6 +166,12 @@ export const sessionCreateChannel = {
   input: z.object({
     projectRoot: z.string().min(1),
     provider: providerIdSchema,
+    /**
+     * 生效 model（renderer 用 resolveActiveModel 解析后带上）。可选——缺省走 provider 默认。
+     * 显式带上让 SDK 应用该 model 的 per-model 能力（如真实 contextWindow），避免默认模型下
+     * SDK 兜底小窗口导致过早压缩（2026-06-15 用户复报）。
+     */
+    model: z.string().min(1).max(128).optional(),
     reasoningMode: reasoningModeSchema.optional(),
     permissionMode: permissionModeSchema.optional(),
     /** 仅 mode='auto' 生效。缺省 'llm'。*/
