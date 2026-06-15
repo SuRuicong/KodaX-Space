@@ -225,6 +225,17 @@ export {
 export {
   artifactSandboxInfoChannel,
   type ArtifactSandboxInfo,
+  artifactKindSchema,
+  artifactRefSchema,
+  artifactCreateChannel,
+  artifactListChannel,
+  artifactReadChannel,
+  artifactDeleteChannel,
+  artifactChangedChannel,
+  MAX_ARTIFACT_CONTENT_BYTES,
+  ARTIFACT_MAX_VERSIONS,
+  type ArtifactKindT,
+  type ArtifactRefT,
 } from './channels/artifact.js';
 
 export {

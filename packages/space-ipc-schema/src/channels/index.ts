@@ -112,7 +112,14 @@ import {
   terminalExitChannel,
 } from './terminal.js';
 import { clipboardSaveImageChannel, clipboardCleanupSessionChannel } from './clipboard.js';
-import { artifactSandboxInfoChannel } from './artifact.js';
+import {
+  artifactSandboxInfoChannel,
+  artifactCreateChannel,
+  artifactListChannel,
+  artifactReadChannel,
+  artifactDeleteChannel,
+  artifactChangedChannel,
+} from './artifact.js';
 
 export const invokeChannels = {
   [versionChannel.name]: versionChannel,
@@ -191,10 +198,15 @@ export const invokeChannels = {
   [clipboardSaveImageChannel.name]: clipboardSaveImageChannel,
   [clipboardCleanupSessionChannel.name]: clipboardCleanupSessionChannel,
   [artifactSandboxInfoChannel.name]: artifactSandboxInfoChannel,
+  [artifactCreateChannel.name]: artifactCreateChannel,
+  [artifactListChannel.name]: artifactListChannel,
+  [artifactReadChannel.name]: artifactReadChannel,
+  [artifactDeleteChannel.name]: artifactDeleteChannel,
 } as const;
 
 export const pushChannels = {
   [sessionEventChannel.name]: sessionEventChannel,
+  [artifactChangedChannel.name]: artifactChangedChannel,
   [permissionRequestChannel.name]: permissionRequestChannel,
   [permissionCancelledChannel.name]: permissionCancelledChannel,
   [askUserRequestChannel.name]: askUserRequestChannel,
