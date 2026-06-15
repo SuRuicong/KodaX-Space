@@ -65,7 +65,10 @@
 | 053 | Partner 自定义画像 + H1-Partner 完整 harness（依赖 SDK R1/R2） | New | High | v0.1.14 | Blocked | [v0.1.14.md#feature_053](features/v0.1.14.md#feature_053-partner-自定义画像--h1-partner-完整-harness) |
 | 054 | 视觉系统刷新（refined dark+light token / Geist+JetBrains Mono / Lucide / 单一琥珀金 + 语义调色板） | Enhancement | High | v0.1.10 | Completed | [v0.1.10.md#feature_054](features/v0.1.10.md#feature_054-视觉系统刷新-refined-darklight-token--geistjetbrains-mono--lucide--单一琥珀金强调) |
 | 055 | 打包 renderer 迁 `app://` 自定义标准协议（artifact 嵌入安全地基；file:// → app://space 真实可锁 origin） | Refactor | High | v0.1.12 | Planned | [v0.1.12.md#feature_055](features/v0.1.12.md#feature_055-打包-renderer-迁-app-自定义标准协议) |
-| 056 | 静态 Artifact 基线（LC-free）+ tier 门控（md/code/html/svg/pdf·docx·xlsx/chart 静态渲染；react/交互 tier 门控待 LC GA） | New | Critical | v0.1.12 | In Progress | [v0.1.12.md#feature_056](features/v0.1.12.md#feature_056-静态-artifact-基线lc-free--tier-门控) |
+| 056 | 静态 Artifact 基线（LC-free）+ tier 门控（md/code/html/svg/pdf·docx·xlsx/chart 静态渲染；react/交互 tier 门控待 LC GA） | New | Critical | v0.1.12 | Done | [v0.1.12.md#feature_056](features/v0.1.12.md#feature_056-静态-artifact-基线lc-free--tier-门控) |
+| 057 | Artifact 数据层（ArtifactRef store + 持久化 ~/.kodax/space/artifacts + IPC create/list/read/delete + changed push） | New | Critical | v0.1.12 | In Progress | [v0.1.12.md#feature_057](features/v0.1.12.md#feature_057-artifact-数据层) |
+| 058 | Artifact 生成（in-process `create_artifact` tool 走 SDK registerTool + agent steering 优先静态 kind） | New | Critical | v0.1.12 | Planned | [v0.1.12.md#feature_058](features/v0.1.12.md#feature_058-artifact-生成) |
+| 059 | ArtifactPanel UX（列表 + 版本切换 + ArtifactView 渲染 + 迭代"再改一版" + 导出）+ Coder popout | New | High | v0.1.12 | Planned | [v0.1.12.md#feature_059](features/v0.1.12.md#feature_059-artifactpanel-ux--迭代导出) |
 | ~~027~~ | ~~代码签名 + notarize~~ — 2026-06-05 移除，KodaX Space 不走"陌生人公开 Beta"路径 | ~~Internal~~ | — | — | Dropped | — |
 | ~~028~~ | ~~隐私政策 + 文档站~~ — 同上 | ~~Internal~~ | — | — | Dropped | — |
 | 029 | Permission Mode canonical 3 + Auto engine 子档 | Refactor | Critical | v0.1.0-alpha.1 | Completed | [v0.1.0.md#029](features/v0.1.0.md#feature_029-permission-mode-canonical-3--auto-engine-子档) |
