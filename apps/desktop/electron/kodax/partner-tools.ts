@@ -21,6 +21,14 @@ import type { PermissionMode, Surface } from '@kodax-space/space-ipc-schema';
 export const PARTNER_NETWORK_ALLOW: ReadonlySet<string> = new Set(['web_fetch', 'web_search']);
 
 /**
+ * Partner 显式允许的 Space 自有工具（F058）。`create_artifact` 是 Space 注册的
+ * in-process 工具（sideEffect='mutates-state'，写 Space 自有 artifact store，不碰项目 FS），
+ * resolveToolCapability 对它 fail-closed 到 'subagent' → 不显式放行就会被拦。Partner 产出
+ * 报告/文档/图表正是核心场景,故放行。
+ */
+export const PARTNER_SPACE_TOOL_ALLOW: ReadonlySet<string> = new Set(['create_artifact']);
+
+/**
  * Partner surface 是否允许调用某工具。
  *
  * @param toolName  SDK 工具名（planModeBlockCheck 收到的同款名）
@@ -28,6 +36,7 @@ export const PARTNER_NETWORK_ALLOW: ReadonlySet<string> = new Set(['web_fetch', 
  */
 export function isPartnerToolAllowed(toolName: string, capability: string): boolean {
   if (PARTNER_NETWORK_ALLOW.has(toolName)) return true;
+  if (PARTNER_SPACE_TOOL_ALLOW.has(toolName)) return true;
   return capability === 'read';
 }
 

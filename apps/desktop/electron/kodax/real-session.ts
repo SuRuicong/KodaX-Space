@@ -96,6 +96,8 @@ import type { InputArtifact, SessionEvent, Surface } from '@kodax-space/space-ip
 import { askUserBroker } from '../permission/ask-user-broker.js';
 import { bootstrapAutoMode } from './auto-mode-bootstrap.js';
 import { computeToolBlockReason, isPartnerToolAllowed } from './partner-tools.js';
+import { ensureCreateArtifactToolRegistered } from '../artifact/create-artifact-tool.js';
+import { withArtifactContext } from '../artifact/run-context.js';
 import { getSessionStorageHandle } from './session-store.js';
 import { wrapSdkError } from './sdk-errors.js';
 import { buildSkillsPrompt } from './skills-prompt.js';
@@ -313,6 +315,10 @@ export class RealKodaXSession implements ManagedSession {
     // SDK subpath dynamic load — 首次调时拉 chunks，后续命中 cache。
     // planModeBlockCheck (同步) 和 runKodaX (异步) 都需要这个 module。
     const sdk = await loadSdkCoding();
+
+    // F058: register the in-process create_artifact tool once (global registry).
+    // Lazy here (first run) so the agent's tool schema includes it; idempotent.
+    ensureCreateArtifactToolRegistered(sdk);
 
     // Permission 统一钩子。KodaX 在工具实际执行前调这个，返回 false → 跳过执行，
     // 返回 true → 正常执行，返回 string → 直接当作 tool result（覆盖执行）。
@@ -813,7 +819,12 @@ export class RealKodaXSession implements ManagedSession {
       // runKodaX 是 SA-only 入口、静默忽略 options.agentMode；直接调它会让 AMA/SA
       // 选择器空接（每个 turn 都跑 SA、无 verifier → "只报计划就停" 没人拦截）。
       // 见 task-engine.ts dispatchManagedTask / runner-driven.ts(verifier 挂载点)。
-      await sdk.runManagedTask(options, prompt);
+      // F058: bind artifact attribution context for this run so the
+      // create_artifact tool handler (global registration) knows which
+      // session/surface to attribute to (ALS — concurrency-safe across sessions).
+      await withArtifactContext({ sessionId: sid, surface: this.surface, projectRoot: this.projectRoot }, () =>
+        sdk.runManagedTask(options, prompt),
+      );
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         this.emit({ kind: 'session_error', sessionId: sid, error: 'cancelled', category: 'cancelled', retriable: true });
