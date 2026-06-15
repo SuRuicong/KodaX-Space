@@ -187,6 +187,28 @@ export const artifactDeleteChannel = {
   output: z.object({ deleted: z.boolean() }),
 } as const;
 
+// ---- Invoke: artifact.export (save a version's content to a user-chosen file) ----
+// Content-backed kinds only (markdown/code/html/svg/chart/image). Doc kinds
+// (pdf/docx/xlsx) are already files on disk — exporting them would mean copying an
+// arbitrary stored path (file-exfil vector), so they're not exportable here.
+export const artifactExportChannel = {
+  name: 'artifact.export',
+  direction: 'invoke',
+  input: z.object({
+    id: z.string().min(1).max(128),
+    version: z.number().int().positive().optional(),
+  }),
+  output: z.object({
+    ok: z.boolean(),
+    /** Written file path (present when ok). */
+    path: z.string().max(4096).optional(),
+    /** True when the user cancelled the save dialog. */
+    canceled: z.boolean().optional(),
+    /** Diagnostic when ok=false and not cancelled. */
+    error: z.string().max(512).optional(),
+  }),
+} as const;
+
 // ---- Push: artifact.changed (store mutated → renderer refetches) ----
 export const artifactChangedChannel = {
   name: 'artifact.changed',

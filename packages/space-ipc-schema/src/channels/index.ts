@@ -118,6 +118,7 @@ import {
   artifactListChannel,
   artifactReadChannel,
   artifactDeleteChannel,
+  artifactExportChannel,
   artifactChangedChannel,
 } from './artifact.js';
 
@@ -202,6 +203,7 @@ export const invokeChannels = {
   [artifactListChannel.name]: artifactListChannel,
   [artifactReadChannel.name]: artifactReadChannel,
   [artifactDeleteChannel.name]: artifactDeleteChannel,
+  [artifactExportChannel.name]: artifactExportChannel,
 } as const;
 
 export const pushChannels = {

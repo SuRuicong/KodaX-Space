@@ -231,6 +231,7 @@ export {
   artifactListChannel,
   artifactReadChannel,
   artifactDeleteChannel,
+  artifactExportChannel,
   artifactChangedChannel,
   MAX_ARTIFACT_CONTENT_BYTES,
   ARTIFACT_MAX_VERSIONS,

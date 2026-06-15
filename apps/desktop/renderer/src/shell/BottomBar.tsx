@@ -231,6 +231,27 @@ export function BottomBar(): JSX.Element {
     return () => window.removeEventListener('kodax-space.focus-textarea', onFocus);
   }, []);
 
+  // F059b: artifact "再改一版" → prefill the composer with a revision instruction
+  // and focus it (caret at end). The user appends the change + sends; the agent
+  // reuses the artifactId in create_artifact to produce a new version.
+  useEffect(() => {
+    const onPrefill = (e: Event): void => {
+      const detail = (e as CustomEvent<{ text?: string }>).detail;
+      if (typeof detail?.text !== 'string') return;
+      setPrompt(detail.text);
+      const len = detail.text.length; // use the known length, not the (maybe-stale) DOM value
+      requestAnimationFrame(() => {
+        const ta = textareaRef.current;
+        if (!ta) return;
+        ta.focus();
+        ta.setSelectionRange(len, len);
+        setCaret(len);
+      });
+    };
+    window.addEventListener('kodax-space.compose-prefill', onPrefill);
+    return () => window.removeEventListener('kodax-space.compose-prefill', onPrefill);
+  }, []);
+
   // F026 ⌘K 命令面板桥：CommandPalette 选 file / slash 项时把 `@path` / `/cmd `
   // 通过 inputBridge 模块私有 registry 路由到这里 → 插当前 caret。
   // 不用 window CustomEvent（避免任意 renderer JS 都能向输入框注入文本的 ambient cap）。
