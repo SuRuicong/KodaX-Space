@@ -232,6 +232,7 @@ export {
   artifactReadChannel,
   artifactDeleteChannel,
   artifactExportChannel,
+  artifactOpenWindowChannel,
   artifactChangedChannel,
   MAX_ARTIFACT_CONTENT_BYTES,
   ARTIFACT_MAX_VERSIONS,

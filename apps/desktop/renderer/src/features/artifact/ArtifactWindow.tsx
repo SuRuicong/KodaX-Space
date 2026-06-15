@@ -1,0 +1,179 @@
+// ArtifactWindow (F059c L3) — the standalone, maximized artifact page rendered in a
+// SEPARATE BrowserWindow (opened via artifact.openWindow). It has its own fresh
+// renderer + store, so it can't use useArtifacts (which needs the main window's
+// currentSessionId); it reads the artifact directly by id via useArtifactRead.
+//
+// Mounted by main.tsx when location.hash is `#artifact?id=…`. Lean toolbar (version
+// switcher + 复制 + 导出) — no "再改一版" here (that prefills the *main* window's
+// composer, which this window can't reach).
+
+import { useEffect, useMemo, useState } from 'react';
+import { FileOutput, Copy, Check, Download } from 'lucide-react';
+import { ArtifactView } from './ArtifactView';
+import { useArtifactRead } from './useArtifacts';
+import { toArtifactContent } from './toArtifactContent';
+import { TEXT_COPY_KINDS } from './artifactKind';
+
+export interface ArtifactHashParams {
+  readonly id: string;
+  readonly version?: number;
+  readonly projectRoot: string | null;
+  readonly title: string | null;
+}
+
+/** NUL/CR/LF reject — defense-in-depth on path-ish strings arriving via the URL hash. */
+function hasControlChar(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c === 0 || c === 10 || c === 13) return true;
+  }
+  return false;
+}
+
+/** Parse `#artifact?id=…&v=…&projectRoot=…&title=…`; returns null if not an artifact hash. */
+export function parseArtifactHash(hash: string): ArtifactHashParams | null {
+  const h = hash.startsWith('#') ? hash.slice(1) : hash;
+  const prefix = 'artifact?';
+  if (!h.startsWith(prefix)) return null;
+  const p = new URLSearchParams(h.slice(prefix.length));
+  const id = p.get('id');
+  // id is an opaque store key, never a path — reject anything path-like / oversize
+  // before the IPC round-trip (matches artifact.read's min(1).max(128)).
+  if (!id || id.length > 128 || /[\\/]|\.\./.test(id)) return null;
+  const vRaw = p.get('v');
+  const v = vRaw ? Number(vRaw) : NaN;
+  const rawRoot = p.get('projectRoot');
+  return {
+    id,
+    version: Number.isInteger(v) && v > 0 ? v : undefined,
+    // projectRoot feeds doc-kind file reads downstream (scope-gated); drop control chars here too.
+    projectRoot: rawRoot && !hasControlChar(rawRoot) ? rawRoot : null,
+    title: p.get('title'),
+  };
+}
+
+function Centered({ children }: { children: React.ReactNode }): JSX.Element {
+  return (
+    <div className="flex-1 flex items-center justify-center text-[12px] text-fg-muted">{children}</div>
+  );
+}
+
+export function ArtifactWindow({ params }: { params: ArtifactHashParams }): JSX.Element {
+  const [version, setVersion] = useState<number | undefined>(params.version);
+  const { ref, payload, loading, error } = useArtifactRead(params.id, version);
+  const [copied, setCopied] = useState(false);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
+
+  const content = useMemo(
+    () => (ref && payload ? toArtifactContent(ref.kind, payload, params.projectRoot) : null),
+    [ref, payload, params.projectRoot],
+  );
+
+  // Reflect the artifact title in the OS window title.
+  useEffect(() => {
+    const t = ref?.title ?? params.title;
+    if (t) document.title = t;
+  }, [ref?.title, params.title]);
+
+  const canCopy = payload?.content !== undefined && ref !== null && TEXT_COPY_KINDS.has(ref.kind);
+  const canSave = payload?.content !== undefined;
+  const effectiveVersion = version ?? ref?.currentVersion;
+
+  async function onCopy(): Promise<void> {
+    if (payload?.content == null) return;
+    try {
+      await navigator.clipboard.writeText(payload.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setActionMsg('复制失败');
+    }
+  }
+
+  async function onSave(): Promise<void> {
+    const bridge = window.kodaxSpace;
+    if (!bridge) return;
+    setActionMsg(null);
+    const r = await bridge.invoke(
+      'artifact.export',
+      effectiveVersion !== undefined ? { id: params.id, version: effectiveVersion } : { id: params.id },
+    );
+    if (!r.ok) {
+      setActionMsg('保存失败');
+      return;
+    }
+    if (r.data.ok) setActionMsg(r.data.path ? `已保存：${r.data.path}` : '已保存');
+    else if (!r.data.canceled) setActionMsg(r.data.error ?? '保存失败');
+    else return; // user cancelled — leave the toolbar quiet
+    setTimeout(() => setActionMsg(null), 2500);
+  }
+
+  return (
+    <div className="h-screen w-screen flex flex-col bg-surface text-fg-primary">
+      <header className="flex items-center gap-2 px-4 h-11 border-b border-border-default flex-shrink-0">
+        <FileOutput className="w-4 h-4 text-fg-muted flex-shrink-0" strokeWidth={1.75} aria-hidden />
+        <span className="font-medium truncate" title={ref?.title}>
+          {ref?.title ?? params.title ?? 'Artifact'}
+        </span>
+        {ref && ref.versions.length > 1 && (
+          <select
+            className="text-[11px] bg-surface-raised border border-border-default rounded px-1.5 py-1 text-fg-secondary ml-1"
+            value={effectiveVersion ?? ''}
+            onChange={(e) => setVersion(Number(e.target.value))}
+            aria-label="版本"
+          >
+            {ref.versions
+              .slice()
+              .sort((a, b) => b.v - a.v)
+              .map((vm) => (
+                <option key={vm.v} value={vm.v}>
+                  v{vm.v}
+                  {vm.v === ref.currentVersion ? ' (最新)' : ''}
+                </option>
+              ))}
+          </select>
+        )}
+        {actionMsg && <span className="text-[11px] text-fg-muted truncate max-w-[40%]">{actionMsg}</span>}
+        <div className="ml-auto flex items-center gap-0.5">
+          {canCopy && (
+            <button
+              type="button"
+              onClick={() => void onCopy()}
+              title="复制内容"
+              aria-label="复制内容"
+              className="w-7 h-7 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
+            >
+              {copied ? (
+                <Check className="w-4 h-4 text-ok" strokeWidth={2} />
+              ) : (
+                <Copy className="w-4 h-4" strokeWidth={1.75} />
+              )}
+            </button>
+          )}
+          {canSave && (
+            <button
+              type="button"
+              onClick={() => void onSave()}
+              title="另存为…"
+              aria-label="另存为"
+              className="w-7 h-7 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
+            >
+              <Download className="w-4 h-4" strokeWidth={1.75} />
+            </button>
+          )}
+        </div>
+      </header>
+      <div className="flex-1 min-h-0 flex flex-col">
+        {loading && !content ? (
+          <Centered>加载中…</Centered>
+        ) : error ? (
+          <Centered>{error}</Centered>
+        ) : content ? (
+          <ArtifactView {...content} />
+        ) : (
+          <Centered>此产物暂无法预览。</Centered>
+        )}
+      </div>
+    </div>
+  );
+}

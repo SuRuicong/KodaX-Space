@@ -209,6 +209,25 @@ export const artifactExportChannel = {
   }),
 } as const;
 
+// ---- Invoke: artifact.openWindow (F059c — open one artifact in a separate maximized window) ----
+// L3 of the artifact view escalation (sidebar tab → full-cover popout → standalone window).
+// The child window loads the renderer with a `#artifact?...` hash and renders ArtifactWindow,
+// which reads the artifact by id over IPC (no shared store with the main window).
+export const artifactOpenWindowChannel = {
+  name: 'artifact.openWindow',
+  direction: 'invoke',
+  input: z.object({
+    id: z.string().min(1).max(128),
+    /** Defaults to currentVersion when omitted. */
+    version: z.number().int().positive().optional(),
+    /** Needed by doc kinds (pdf/docx/xlsx) to resolve the on-disk path; ignored otherwise. */
+    projectRoot: z.string().max(4096).optional(),
+    /** OS window title (cosmetic). */
+    title: z.string().max(256).optional(),
+  }),
+  output: z.object({ ok: z.boolean() }),
+} as const;
+
 // ---- Push: artifact.changed (store mutated → renderer refetches) ----
 export const artifactChangedChannel = {
   name: 'artifact.changed',

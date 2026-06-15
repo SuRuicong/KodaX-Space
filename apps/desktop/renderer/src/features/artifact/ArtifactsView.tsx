@@ -5,16 +5,17 @@
 // session from appStore; artifacts are the current session's (any surface).
 
 import { useEffect, useMemo, useState } from 'react';
-import { FileOutput, Copy, Check, Download, RefreshCw } from 'lucide-react';
+import { FileOutput, Copy, Check, Download, RefreshCw, Maximize2 } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import { ArtifactView } from './ArtifactView';
 import { useArtifacts, useArtifactContent } from './useArtifacts';
 import { toArtifactContent } from './toArtifactContent';
+import { TEXT_COPY_KINDS } from './artifactKind';
 import type { ArtifactRefT } from '@kodax-space/space-ipc-schema';
 
 export function ArtifactsEmptyState(): JSX.Element {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6 text-center">
+    <div className="h-full flex flex-col items-center justify-center gap-2 p-6 text-center">
       <FileOutput className="w-6 h-6 text-fg-muted" strokeWidth={1.5} aria-hidden />
       <div className="text-[12px] text-fg-secondary font-medium">产出会显示在这里</div>
       <div className="text-[11px] text-fg-muted leading-relaxed max-w-[200px]">
@@ -23,9 +24,6 @@ export function ArtifactsEmptyState(): JSX.Element {
     </div>
   );
 }
-
-// Kinds whose inline content is meaningful to copy as text.
-const TEXT_COPY_KINDS = new Set(['markdown', 'code', 'html', 'svg', 'chart']);
 
 /** Reads + renders one artifact's selected version. */
 function ArtifactViewer({ artifact, projectRoot }: { artifact: ArtifactRefT; projectRoot: string | null }): JSX.Element {
@@ -82,6 +80,18 @@ function ArtifactViewer({ artifact, projectRoot }: { artifact: ArtifactRefT; pro
     setActivePopoutKind(null); // 若在全屏 popout，关掉让用户看到输入框（侧栏/Partner 下无害）
   }
 
+  // "单独打开"：F059c L3 —— 开独立最大化窗口看这份 artifact（escalation 第三级）。
+  async function onOpenWindow(): Promise<void> {
+    const bridge = window.kodaxSpace;
+    if (!bridge) return;
+    await bridge.invoke('artifact.openWindow', {
+      id: artifact.id,
+      version: effectiveVersion,
+      projectRoot: projectRoot ?? undefined,
+      title: artifact.title,
+    });
+  }
+
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       {/* toolbar 恒显示：再改一版对任何 artifact 都可用 */}
@@ -94,12 +104,15 @@ function ArtifactViewer({ artifact, projectRoot }: { artifact: ArtifactRefT; pro
                 value={effectiveVersion}
                 onChange={(e) => setVersion(Number(e.target.value))}
               >
-                {artifact.versions.map((v) => (
-                  <option key={v.v} value={v.v}>
-                    v{v.v}
-                    {v.v === artifact.currentVersion ? ' (最新)' : ''}
-                  </option>
-                ))}
+                {artifact.versions
+                  .slice()
+                  .sort((a, b) => b.v - a.v)
+                  .map((v) => (
+                    <option key={v.v} value={v.v}>
+                      v{v.v}
+                      {v.v === artifact.currentVersion ? ' (最新)' : ''}
+                    </option>
+                  ))}
               </select>
             </>
           )}
@@ -136,6 +149,15 @@ function ArtifactViewer({ artifact, projectRoot }: { artifact: ArtifactRefT; pro
                 <Download className="w-3.5 h-3.5" strokeWidth={1.75} />
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => void onOpenWindow()}
+              title="单独打开（独立最大化窗口）"
+              aria-label="单独打开"
+              className="w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
+            >
+              <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.75} />
+            </button>
           </div>
         </div>
       {loading && !content ? (
@@ -170,14 +192,14 @@ export function ArtifactsView(): JSX.Element {
 
   if (artifacts.length === 0) {
     return loading ? (
-      <div className="flex-1 flex items-center justify-center text-[11px] text-fg-muted">加载中…</div>
+      <div className="h-full flex items-center justify-center text-[11px] text-fg-muted">加载中…</div>
     ) : (
       <ArtifactsEmptyState />
     );
   }
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col">
+    <div className="h-full min-h-0 flex flex-col">
       {artifacts.length > 1 && (
         <div className="px-3 py-1.5 border-b border-border-default flex-shrink-0">
           <select

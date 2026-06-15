@@ -68,3 +68,13 @@ export function isReactArtifactEnabled(): boolean {
 export function isStaticArtifactKind(kind: ArtifactKind): boolean {
   return STATIC_ARTIFACT_KINDS.includes(kind);
 }
+
+/** Kinds whose inline content is meaningful to copy as text (shared by the
+ * embedded ArtifactViewer + the standalone ArtifactWindow so they can't drift). */
+export const TEXT_COPY_KINDS: ReadonlySet<string> = new Set([
+  'markdown',
+  'code',
+  'html',
+  'svg',
+  'chart',
+]);

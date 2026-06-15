@@ -1,0 +1,41 @@
+// Window navigation guards — shared by the main window and artifact popout windows
+// (F059c) so the top-level navigation security can't drift between them.
+//
+// Policy (defense-in-depth; the renderer eventually shows LLM/MCP-produced content):
+//   - window.open / target=_blank → always denied; https:// is handed to the system
+//     browser, everything else is dropped.
+//   - in-page navigation (will-navigate) → only the app's own assets are allowed
+//     (dev: the Vite dev-server origin; prod: file:// URLs under the renderer dist).
+//     https:// links open externally; any other scheme/path is prevented (blocks
+//     file:///etc/passwd-style injection).
+//
+// `import type` only — no runtime electron import, so this module is safe to pull
+// into the tsx/esm test loader.
+
+import type { WebContents } from 'electron';
+
+export interface NavGuardDeps {
+  /** Vite dev-server URL when running in dev; undefined in production. */
+  readonly devServerUrl: string | undefined;
+  /** file:// prefix (with trailing slash) of the packaged renderer dist. */
+  readonly allowedFilePrefix: string;
+  /** Open an external https URL in the system browser (inject shell.openExternal). */
+  readonly openExternal: (url: string) => void;
+}
+
+/** Lock a window's top-level navigation + window.open to the app's own assets. */
+export function installNavigationGuards(wc: WebContents, deps: NavGuardDeps): void {
+  wc.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://')) deps.openExternal(url);
+    return { action: 'deny' };
+  });
+
+  wc.on('will-navigate', (event, url) => {
+    const isDevServer = Boolean(deps.devServerUrl && url.startsWith(deps.devServerUrl));
+    const isAllowedLocalFile = url.startsWith(deps.allowedFilePrefix);
+    if (isDevServer || isAllowedLocalFile) return;
+
+    event.preventDefault();
+    if (url.startsWith('https://')) deps.openExternal(url);
+  });
+}

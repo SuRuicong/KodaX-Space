@@ -36,6 +36,8 @@ import { registerMcpbChannels, installMcpbFromOsHandoff } from './ipc/mcpb.js';
 import { registerTerminalChannels } from './ipc/terminal.js';
 import { registerClipboardChannels } from './ipc/clipboard.js';
 import { registerArtifactChannels } from './ipc/artifact.js';
+import { registerArtifactWindowChannel } from './artifact/artifact-window.js';
+import { installNavigationGuards } from './window/navigation-guards.js';
 import { sandboxHost } from './artifact/sandbox-host.js';
 import { cleanupOrphanKodaxSpaceDirWithLog } from './kodax/cleanup-orphan-kodax-space.js';
 import { getPtyHost } from './terminal/ptyHost.js';
@@ -159,28 +161,14 @@ function createMainWindow(): void {
     },
   });
 
-  // 外链白名单：只允许 https:// 走系统浏览器；http:// 与其他 scheme 直接 deny。
-  // 理由：renderer 终会渲染 LLM/MCP 产生的内容，http:// 链接可能触发本机协议处理器或
-  // 中间人篡改的 OAuth/auth 流；强约束只放行 https。
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://')) {
-      void shell.openExternal(url);
-    }
-    return { action: 'deny' };
-  });
-
-  // 阻断 in-page 导航到任何非应用资源。
-  // - dev: 仅放行 Vite dev server origin
-  // - prod: 仅放行打包目录下的 file:// 路径（防止 LLM 注入 file:///etc/passwd 等任意路径）
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    const isDevServer = Boolean(isDev && VITE_DEV_SERVER_URL && url.startsWith(VITE_DEV_SERVER_URL));
-    const isAllowedLocalFile = url.startsWith(ALLOWED_FILE_PREFIX);
-    if (isDevServer || isAllowedLocalFile) return;
-
-    event.preventDefault();
-    if (url.startsWith('https://')) {
-      void shell.openExternal(url);
-    }
+  // 外链白名单 + in-page 导航锁定 —— 与 artifact 独立窗口共用同一套守卫（F059c），
+  // 避免两处窗口的安全策略漂移。理由：renderer 终会渲染 LLM/MCP 产生的内容，必须
+  // 只放行应用自身资源（dev: Vite origin / prod: 打包 file:// 前缀），https 外链走系统
+  // 浏览器，其余一律 deny（防 LLM 注入 file:///etc/passwd 等任意路径）。
+  installNavigationGuards(mainWindow.webContents, {
+    devServerUrl: VITE_DEV_SERVER_URL,
+    allowedFilePrefix: ALLOWED_FILE_PREFIX,
+    openExternal: (url) => void shell.openExternal(url),
   });
 
   mainWindow.once('ready-to-show', () => {
@@ -388,6 +376,12 @@ app.whenReady().then(async () => {
   // 时 ready:false，renderer 显示占位、不开端口。dev parentOrigin = Vite renderer origin
   // （sandbox 的 localhost bypass 接受）；prod renderer=file:// 无可比对 origin（留待 F055 app://）。
   registerArtifactChannels();
+  // F059c L3：artifact.openWindow → 独立最大化窗口（复用同一 renderer + preload，走 #artifact hash）。
+  registerArtifactWindowChannel({
+    preloadPath: PRELOAD_PATH,
+    rendererDist: RENDERER_DIST,
+    devServerUrl: VITE_DEV_SERVER_URL,
+  });
   const sandboxParentOrigin = isDev && VITE_DEV_SERVER_URL ? new URL(VITE_DEV_SERVER_URL).origin : '';
   void sandboxHost
     .start({

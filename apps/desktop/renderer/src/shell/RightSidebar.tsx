@@ -23,7 +23,7 @@ import { useAppStore } from '../store/appStore.js';
 import { Caret } from '../components/Caret.js';
 import { buildWorkerTree } from './popouts/worker-tree.js';
 import { ArtifactsView } from '../features/artifact/ArtifactsView.js';
-import { useArtifacts } from '../features/artifact/useArtifacts.js';
+import { useArtifacts, useArtifactCreated } from '../features/artifact/useArtifacts.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 
@@ -33,21 +33,104 @@ interface RightSidebarProps {
 }
 
 export function RightSidebar({ width }: RightSidebarProps = {}): JSX.Element {
+  const currentSessionId = useAppStore((s) => s.currentSessionId);
+  const { artifacts } = useArtifacts(currentSessionId);
+  const requestPopout = useAppStore((s) => s.requestPopout);
+  const hasArtifacts = artifacts.length > 0;
+  const [tab, setTab] = useState<'overview' | 'artifact'>('overview');
+
+  // 切 session → 回概览（不带着上个会话的 Artifact 视图）。
+  useEffect(() => {
+    setTab('overview');
+  }, [currentSessionId]);
+  // agent 新产出 artifact → 自动切到 Artifact（精确信号：reason==='created'，
+  // 不被版本更新 / 删除 / 切会话误触发）。
+  useArtifactCreated(currentSessionId, () => setTab('artifact'));
+
+  // 产物被删空 → 强制回概览（tab 卡在 artifact 时兜底）。
+  const showArtifact = hasArtifacts && tab === 'artifact';
+
   return (
     <aside
       style={width !== undefined ? { width: `${width}px` } : undefined}
-      className="border-l border-border-default bg-surface flex flex-col flex-shrink-0 overflow-y-auto text-[13px]"
+      className="border-l border-border-default bg-surface flex flex-col flex-shrink-0 text-[13px]"
     >
-      {/* 三节"任务态" — 常驻摘要，⤢ 按需弹大图 */}
-      <PlanSection />
-      <WorkersSection />
-      <ChangesSection />
-      {/* F059b: Coder 也能看 artifact（全局）。无 artifact 时隐藏；⤢ 弹全屏。 */}
-      <ArtifactSection />
-      {/* 旧两节降级 — 信息密度低，默认折叠置底 */}
-      <WorkingFolderSection />
-      <ContextSection />
+      {/* F059c 动态右侧栏：有产物时顶部出 [概览 | Artifact] 切换；Artifact 占满整栏满高，
+          不再挤在底部的 280px 小框。⤢ 展开到中间大图（full-cover，像 diff）。 */}
+      {hasArtifacts && (
+        <div className="flex items-stretch border-b border-border-default flex-shrink-0">
+          <SidebarTab active={!showArtifact} onClick={() => setTab('overview')}>
+            概览
+          </SidebarTab>
+          <SidebarTab active={showArtifact} onClick={() => setTab('artifact')}>
+            Artifact ({artifacts.length})
+          </SidebarTab>
+          {showArtifact && (
+            <button
+              type="button"
+              onClick={() => requestPopout('artifact')}
+              title="展开到中间大图"
+              aria-label="展开 Artifact 到中间大图"
+              className="px-2.5 inline-flex items-center justify-center text-fg-muted hover:text-fg-primary hover:bg-surface-3 border-l border-border-default/60"
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M15 3h6v6" />
+                <path d="M10 14L21 3" />
+                <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
+              </svg>
+            </button>
+          )}
+        </div>
+      )}
+      {showArtifact ? (
+        <div className="flex-1 min-h-0">
+          <ArtifactsView />
+        </div>
+      ) : (
+        // 概览：原任务态多节堆叠（自身滚动）。
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <PlanSection />
+          <WorkersSection />
+          <ChangesSection />
+          <WorkingFolderSection />
+          <ContextSection />
+        </div>
+      )}
     </aside>
+  );
+}
+
+/** 右侧栏顶部的 [概览|Artifact] 分段按钮。active = 微高亮底色。 */
+function SidebarTab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`flex-1 px-3 py-2 text-[12px] font-medium transition-colors ${
+        active ? 'text-fg-primary bg-surface-2' : 'text-fg-muted hover:text-fg-secondary'
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -151,23 +234,6 @@ function Section({ title, defaultOpen = true, popoutKind, children }: SectionPro
       </div>
       {open && <div className="px-3 pb-3">{children}</div>}
     </section>
-  );
-}
-
-// ---- Artifact section（F059b：Coder 全局可见 artifact） ----
-
-function ArtifactSection(): JSX.Element | null {
-  const currentSessionId = useAppStore((s) => s.currentSessionId);
-  const { artifacts } = useArtifacts(currentSessionId);
-  // 无 artifact 时隐藏（同 Plan/Workers 的"无内容隐藏"）。
-  if (artifacts.length === 0) return null;
-  return (
-    <Section title={`Artifact (${artifacts.length})`} popoutKind="artifact">
-      {/* -mx-3 -mb-3 抵消 Section 内边距，让预览占满；固定高度作紧凑预览，⤢ 看全屏。 */}
-      <div className="-mx-3 -mb-3 h-[280px] flex flex-col">
-        <ArtifactsView />
-      </div>
-    </Section>
   );
 }
 

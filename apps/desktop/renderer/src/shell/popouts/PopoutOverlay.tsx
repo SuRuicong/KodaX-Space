@@ -12,11 +12,12 @@
 // **v0.1.11**: diff 升级为"完整覆盖层"——铺满整个对话区 (left-0)，side-by-side diff
 // 不再挤在一半屏。用户反馈 880px 看代码 diff 还是太窄 (2026-06-08)。其它 popout 维持
 // 右侧 slide-in 窄 panel。FULL_COVER_KINDS 控制谁走全宽。
-const FULL_COVER_KINDS = new Set<string>(['diff']);
+// **F059c**: artifact 加入 full-cover —— HTML/图表/报告在 760px 窄条里被截、读不全
+// (用户反馈 2026-06-15)。⤢ 后铺满整个中间对话区 (像 diff)；再"单独打开"走 L3 独立窗口。
+const FULL_COVER_KINDS = new Set<string>(['diff', 'artifact']);
 const POPOUT_WIDTH: Record<string, string> = {
   preview: 'w-[880px]',
   terminal: 'w-[800px]',
-  artifact: 'w-[760px]', // charts / markdown / rich preview need room
 };
 const DEFAULT_POPOUT_WIDTH = 'w-[480px]';
 

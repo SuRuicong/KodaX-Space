@@ -9,12 +9,15 @@ import { ArtifactsView } from '../artifact/ArtifactsView';
 
 export function ArtifactPanel(): JSX.Element {
   return (
-    <aside className="w-72 flex-shrink-0 border-l border-border-default flex flex-col bg-surface">
+    <aside className="w-72 flex-shrink-0 border-l border-border-default flex flex-col bg-surface overflow-hidden">
       <div className="px-3 h-9 flex items-center gap-2 border-b border-border-default flex-shrink-0">
         <FileOutput className="w-3.5 h-3.5 text-fg-muted" strokeWidth={1.75} aria-hidden />
         <span className="text-[11px] uppercase tracking-wider text-fg-muted">Artifact</span>
       </div>
-      <ArtifactsView />
+      {/* ArtifactsView 根用 h-full：需一个有界高度的 flex 子容器（aside 满高减去 header）。 */}
+      <div className="flex-1 min-h-0">
+        <ArtifactsView />
+      </div>
     </aside>
   );
 }

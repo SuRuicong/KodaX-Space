@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { ArtifactWindow, parseArtifactHash } from './features/artifact/ArtifactWindow';
 // F054 视觉刷新：本地打包字体 (Electron 无网 + CSP)，不走 Google Fonts CDN。
 // Variable 字体单文件覆盖全字重；--ui / --mono 在 styles.css 指向它们。
 import '@fontsource-variable/geist';
@@ -33,8 +34,12 @@ if (!rootEl) {
   throw new Error('root element not found');
 }
 
+// F059c L3：`#artifact?id=…` hash → 这是 artifact.openWindow 开的独立最大化窗口，
+// 挂载精简的 <ArtifactWindow/>（自读取 artifact，无主窗 store）而非整个 <App/>。
+const artifactParams = parseArtifactHash(window.location.hash);
+
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
-    <App />
+    {artifactParams ? <ArtifactWindow params={artifactParams} /> : <App />}
   </React.StrictMode>,
 );
