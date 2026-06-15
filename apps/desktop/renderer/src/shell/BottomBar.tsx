@@ -1171,7 +1171,13 @@ export function BottomBar(): JSX.Element {
               e.preventDefault();
               void attachImages(images);
             }}
-            disabled={busy || !currentProjectPath}
+            // Only block typing while a slash/skill command is mid-flight. NOT on
+            // !currentProjectPath: during boot/session-open the project path hydrates
+            // async, and disabling here made the input dead ("click → no response,
+            // like loading") until it resolved. Sending is still gated by canSend
+            // (which requires currentProjectPath) + ensureSession's own guard, so
+            // typing early is safe — the prompt just can't send until a project is set.
+            disabled={busy}
             rows={2}
             placeholder={
               !currentProjectPath

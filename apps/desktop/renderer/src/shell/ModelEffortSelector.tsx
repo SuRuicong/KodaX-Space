@@ -26,6 +26,7 @@
 import { useEffect, useState } from 'react';
 import type { ProviderInfo, SessionMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
+import { resolveActiveModel } from './resolveActiveModel.js';
 
 type ReasoningMode = SessionMeta['reasoningMode'];
 
@@ -77,16 +78,18 @@ export function ModelEffortSelector(): JSX.Element {
   const activeProvider: ProviderInfo | undefined = activeProviderId
     ? providers.find((p) => p.id === activeProviderId)
     : undefined;
-  // kodaxDefaults.model 属于 kodaxDefaults.provider；只有当解析出的 active provider 正是它时才能用。
-  // 否则会出现 "Provider A 的名字 + Provider B 的 model" 错配 —— 例如 Space 默认 provider 是
-  // Kimi for Coding，但 KodaX config 的默认 model 是 mimo-v2.5-pro（属 mimo），未做 provider 一致性
-  // 校验就会显示成 "Kimi for Coding · mimo-v2.5-pro"（用户报的 bug）。provider 不匹配时回退到该
-  // provider 自己的 defaultModel。
-  const activeModel: string =
-    pendingModel ??
-    (kodaxDefaults?.provider === activeProviderId ? kodaxDefaults?.model : undefined) ??
-    activeProvider?.defaultModel ??
-    '—';
+  // 模型解析做 provider 一致性校验（见 resolveActiveModel）：pendingModel 跨重启持久化但
+  // pendingProviderId 不持久，stale pendingModel(如 glm-5.2) 会和重启后的默认 provider(如
+  // MiMo) 凑成 "MiMo · glm-5.2" 错配（用户复报 bug）。只有候选 model 确属 active provider 才用，
+  // 否则回退到该 provider 自己的 defaultModel。
+  const activeModel: string = resolveActiveModel({
+    activeProviderId,
+    activeProviderModels: activeProvider?.models,
+    activeProviderDefaultModel: activeProvider?.defaultModel,
+    pendingModel,
+    kodaxDefaultsProvider: kodaxDefaults?.provider,
+    kodaxDefaultsModel: kodaxDefaults?.model,
+  });
   const activeEffort: ReasoningMode =
     session?.reasoningMode ?? pendingReasoningMode ?? kodaxDefaults?.reasoningMode ?? 'auto';
 
