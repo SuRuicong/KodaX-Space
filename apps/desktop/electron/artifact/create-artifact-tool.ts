@@ -64,7 +64,7 @@ const DESCRIPTION = [
 export interface CreateArtifactHandlerDeps {
   store: ArtifactStore;
   /** Called after a successful create/version so the renderer can refetch. */
-  notifyChanged: (payload: { id: string; reason: 'created' | 'version' }) => void;
+  notifyChanged: (payload: { id: string; sessionId: string; reason: 'created' | 'version' }) => void;
 }
 
 type ToolHandler = (input: Record<string, unknown>) => Promise<string>;
@@ -136,7 +136,7 @@ export function makeCreateArtifactHandler(deps: CreateArtifactHandlerDeps): Tool
     try {
       const res = await deps.store.upsert(parsed.data);
       try {
-        deps.notifyChanged({ id: res.id, reason: res.created ? 'created' : 'version' });
+        deps.notifyChanged({ id: res.id, sessionId: ctx.sessionId, reason: res.created ? 'created' : 'version' });
       } catch {
         // renderer may be closing — artifact is persisted and shows on next load.
       }

@@ -9,5 +9,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["**/*.ts", "../renderer/src/features/session/composeMessages.ts", "../renderer/src/store/appStore.ts", "../renderer/src/features/artifact/chartSpec.ts"]
+  "include": ["**/*.ts", "../renderer/src/features/session/composeMessages.ts", "../renderer/src/store/appStore.ts", "../renderer/src/features/artifact/chartSpec.ts", "../renderer/src/features/artifact/toArtifactContent.ts"]
 }

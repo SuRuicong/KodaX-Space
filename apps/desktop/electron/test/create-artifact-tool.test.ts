@@ -25,7 +25,7 @@ function freshStore(): { store: ArtifactStore; dir: string } {
 
 function harness() {
   const { store, dir } = freshStore();
-  const changes: Array<{ id: string; reason: string }> = [];
+  const changes: Array<{ id: string; sessionId: string; reason: string }> = [];
   const handler = makeCreateArtifactHandler({ store, notifyChanged: (p) => changes.push(p) });
   return { store, dir, changes, handler };
 }
@@ -45,6 +45,7 @@ test('handler: creates a markdown artifact within run context + notifies', async
     assert.equal(list[0]?.surface, 'partner');
     assert.equal(changes.length, 1);
     assert.equal(changes[0]?.reason, 'created');
+    assert.equal(changes[0]?.sessionId, 's1'); // attributed from ALS, not tool input
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

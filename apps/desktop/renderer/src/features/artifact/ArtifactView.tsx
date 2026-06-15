@@ -24,15 +24,8 @@ const SandboxFrameLazy = import.meta.env.DEV
   ? lazy(() => import('./SandboxFrame').then((m) => ({ default: m.SandboxFrame })))
   : null;
 
-export type ArtifactContent =
-  | { kind: 'markdown'; content: string }
-  | { kind: 'code'; content: string; filename?: string }
-  | { kind: 'html'; content: string }
-  | { kind: 'svg'; content: string }
-  | { kind: 'image'; src: string; alt?: string }
-  | { kind: 'chart'; spec: unknown }
-  | { kind: 'pdf' | 'docx' | 'xlsx'; projectRoot: string; path: string }
-  | { kind: 'react'; indexUrl: string; sandboxOrigin: string; code: string; artifactId: string };
+export type { ArtifactContent } from './artifactContent';
+import type { ArtifactContent } from './artifactContent';
 
 function ReactTierUnavailable(): JSX.Element {
   return (

@@ -17,6 +17,7 @@ export function registerArtifactChannels(): void {
     const res = await artifactStore.upsert(input);
     pushToRenderer('artifact.changed', {
       id: res.id,
+      sessionId: input.sessionId,
       reason: res.created ? 'created' : 'version',
     });
     return { id: res.id, version: res.version };

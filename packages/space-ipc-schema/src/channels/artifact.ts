@@ -194,6 +194,8 @@ export const artifactChangedChannel = {
   payload: z.object({
     /** The artifact that changed, or undefined for bulk/delete (renderer refetches list). */
     id: z.string().min(1).max(128).optional(),
+    /** Owning session — lets a renderer skip refetches for other sessions. Absent on delete. */
+    sessionId: z.string().min(1).max(128).optional(),
     reason: z.enum(['created', 'version', 'deleted']),
   }),
 } as const;

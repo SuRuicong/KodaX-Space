@@ -1,0 +1,55 @@
+// F059 — toArtifactContent mapping (pure, renderer util tested from the electron
+// node:test suite, like chart-spec.test.ts). Type-only ArtifactContent import is
+// erased at runtime, so no React/JSX is pulled in.
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { toArtifactContent } from '../../renderer/src/features/artifact/toArtifactContent.js';
+
+test('content kinds map content through; missing content → null', () => {
+  assert.deepEqual(toArtifactContent('markdown', { content: '# x' }, null), { kind: 'markdown', content: '# x' });
+  assert.deepEqual(toArtifactContent('code', { content: 'a=1' }, null), { kind: 'code', content: 'a=1' });
+  assert.deepEqual(toArtifactContent('html', { content: '<b/>' }, null), { kind: 'html', content: '<b/>' });
+  assert.deepEqual(toArtifactContent('svg', { content: '<svg/>' }, null), { kind: 'svg', content: '<svg/>' });
+  assert.equal(toArtifactContent('markdown', {}, null), null);
+});
+
+test('image maps content → src', () => {
+  assert.deepEqual(toArtifactContent('image', { content: 'data:image/png;base64,AAA' }, null), {
+    kind: 'image',
+    src: 'data:image/png;base64,AAA',
+  });
+});
+
+test('chart parses JSON content into a spec object', () => {
+  const spec = { type: 'line', xKey: 'n', data: [{ n: 'a', v: 1 }], series: [{ key: 'v' }] };
+  const out = toArtifactContent('chart', { content: JSON.stringify(spec) }, null);
+  assert.equal(out?.kind, 'chart');
+  assert.deepEqual((out as { spec: unknown }).spec, spec);
+});
+
+test('chart with invalid JSON passes raw string (renderer validates → fallback)', () => {
+  const out = toArtifactContent('chart', { content: 'not json' }, null);
+  assert.equal(out?.kind, 'chart');
+  assert.equal((out as { spec: unknown }).spec, 'not json');
+});
+
+test('doc kinds need path + projectRoot', () => {
+  assert.deepEqual(toArtifactContent('pdf', { path: '/p/a.pdf' }, '/p'), {
+    kind: 'pdf',
+    projectRoot: '/p',
+    path: '/p/a.pdf',
+  });
+  assert.deepEqual(toArtifactContent('docx', { path: '/p/a.docx' }, '/p'), { kind: 'docx', projectRoot: '/p', path: '/p/a.docx' });
+  assert.deepEqual(toArtifactContent('xlsx', { path: '/p/a.xlsx' }, '/p'), { kind: 'xlsx', projectRoot: '/p', path: '/p/a.xlsx' });
+  assert.equal(toArtifactContent('pdf', { path: '/p/a.pdf' }, null), null); // no projectRoot
+  assert.equal(toArtifactContent('docx', {}, '/p'), null); // no path
+});
+
+test('image with missing content → null', () => {
+  assert.equal(toArtifactContent('image', {}, null), null);
+});
+
+test('react (gated interactive tier) is not rendered from the static store', () => {
+  assert.equal(toArtifactContent('react', { content: 'export default()=>null' }, '/p'), null);
+});
