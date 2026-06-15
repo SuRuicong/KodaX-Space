@@ -22,6 +22,8 @@ import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 import { Caret } from '../components/Caret.js';
 import { buildWorkerTree } from './popouts/worker-tree.js';
+import { ArtifactsView } from '../features/artifact/ArtifactsView.js';
+import { useArtifacts } from '../features/artifact/useArtifacts.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 
@@ -40,6 +42,8 @@ export function RightSidebar({ width }: RightSidebarProps = {}): JSX.Element {
       <PlanSection />
       <WorkersSection />
       <ChangesSection />
+      {/* F059b: Coder 也能看 artifact（全局）。无 artifact 时隐藏；⤢ 弹全屏。 */}
+      <ArtifactSection />
       {/* 旧两节降级 — 信息密度低，默认折叠置底 */}
       <WorkingFolderSection />
       <ContextSection />
@@ -147,6 +151,23 @@ function Section({ title, defaultOpen = true, popoutKind, children }: SectionPro
       </div>
       {open && <div className="px-3 pb-3">{children}</div>}
     </section>
+  );
+}
+
+// ---- Artifact section（F059b：Coder 全局可见 artifact） ----
+
+function ArtifactSection(): JSX.Element | null {
+  const currentSessionId = useAppStore((s) => s.currentSessionId);
+  const { artifacts } = useArtifacts(currentSessionId);
+  // 无 artifact 时隐藏（同 Plan/Workers 的"无内容隐藏"）。
+  if (artifacts.length === 0) return null;
+  return (
+    <Section title={`Artifact (${artifacts.length})`} popoutKind="artifact">
+      {/* -mx-3 -mb-3 抵消 Section 内边距，让预览占满；固定高度作紧凑预览，⤢ 看全屏。 */}
+      <div className="-mx-3 -mb-3 h-[280px] flex flex-col">
+        <ArtifactsView />
+      </div>
+    </Section>
   );
 }
 

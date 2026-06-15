@@ -19,7 +19,8 @@ import {
 } from 'lucide-react';
 import { TranscriptViewMenu } from './TranscriptViewMenu.js';
 
-export type PopoutKind = 'preview' | 'diff' | 'terminal' | 'tasks' | 'plan' | 'agents' | 'mcp';
+// 'artifact' (F059b) 不进 toolbar 下拉(同 tasks/plan)——由 RightSidebar Artifact section 的 ⤢ 触发。
+export type PopoutKind = 'preview' | 'diff' | 'terminal' | 'tasks' | 'plan' | 'agents' | 'mcp' | 'artifact';
 
 interface CommandToolbarProps {
   active: PopoutKind | null;

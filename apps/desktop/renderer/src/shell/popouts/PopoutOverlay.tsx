@@ -16,6 +16,7 @@ const FULL_COVER_KINDS = new Set<string>(['diff']);
 const POPOUT_WIDTH: Record<string, string> = {
   preview: 'w-[880px]',
   terminal: 'w-[800px]',
+  artifact: 'w-[760px]', // charts / markdown / rich preview need room
 };
 const DEFAULT_POPOUT_WIDTH = 'w-[480px]';
 
@@ -36,6 +37,7 @@ import { TasksPanel } from './TasksPanel.js';
 import { PlanPanel } from './PlanPanel.js';
 import { AgentsMdPanel } from './AgentsMdPanel.js';
 import { McpPanel } from './McpPanel.js';
+import { ArtifactsView } from '../../features/artifact/ArtifactsView.js';
 
 interface PopoutOverlayProps {
   kind: PopoutKind;
@@ -77,6 +79,7 @@ export function PopoutOverlay({ kind, onClose }: PopoutOverlayProps): JSX.Elemen
           {kind === 'plan' && <PlanPanel />}
           {kind === 'agents' && <AgentsMdPanel />}
           {kind === 'mcp' && <McpPanel />}
+          {kind === 'artifact' && <ArtifactsView />}
         </div>
       </aside>
     </>
