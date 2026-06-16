@@ -157,7 +157,7 @@ export function ModeSelector(): JSX.Element {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="ix text-xs px-2 py-0.5 rounded bg-surface-2 border border-border-default text-fg-secondary hover:bg-hover-bg flex items-center gap-1"
+        className="text-xs px-2 py-0.5 rounded bg-surface-2 border border-border-default text-fg-secondary hover:bg-hover-bg flex items-center gap-1"
         title={`Mode: ${statusLabel} (Ctrl+M)`}
       >
         <span>{statusLabel}</span>

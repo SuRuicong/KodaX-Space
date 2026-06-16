@@ -448,7 +448,7 @@ export function ConversationStreamV2(): JSX.Element {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className={`h-full overflow-auto px-8 py-5 ${fontClass}`}
+        className={`ix-zone h-full overflow-auto px-8 py-5 ${fontClass}`}
       >
         {/* 左右只留几个字符的 padding，不限宽 —— 用户反馈 max-w-3xl 在宽屏留太多空白。
             左侧时间线 rail = 绝对定位竖线 + 每条消息圆点 marker；`pl-6` 给 marker 让位。*/}

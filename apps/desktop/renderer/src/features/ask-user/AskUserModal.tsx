@@ -109,7 +109,7 @@ export function AskUserModal(): JSX.Element | null {
       aria-labelledby="ask-user-modal-title"
     >
       <div
-        className={`glass lift w-[560px] max-w-[95vw] max-h-[90vh] flex flex-col bg-surface-2 border ${borderClass} rounded-lg`}
+        className={`glass lift ix-zone w-[560px] max-w-[95vw] max-h-[90vh] flex flex-col bg-surface-2 border ${borderClass} rounded-lg`}
       >
         <div className="px-5 py-3 border-b border-border-default flex items-center gap-3 flex-shrink-0">
           <span className="px-2 py-0.5 text-[11px] font-mono font-semibold rounded bg-warn/15 text-warn">

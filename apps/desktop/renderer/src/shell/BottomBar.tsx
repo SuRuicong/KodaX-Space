@@ -1067,7 +1067,7 @@ export function BottomBar(): JSX.Element {
     // Claude Desktop 同款"贴底浮起卡片"。ActivitySpinner / err 仍在外层（瞬态指示，
     // 不应挤压 input card 的视觉重量）。card 用 zinc-900/60 衬色 + 一圈极淡 border，
     // 比"顶 border-t + 三段堆叠"更整体。
-    <div className="px-3 pt-1 pb-3 flex-shrink-0 space-y-1">
+    <div className="ix-zone px-3 pt-1 pb-3 flex-shrink-0 space-y-1">
       {err && <div className="text-danger text-xs font-mono px-1">{err}</div>}
 
       {/* 持久内联通知 (REPL NotificationsSurface 等价) — auto-engine fallback 等 */}

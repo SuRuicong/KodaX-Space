@@ -393,8 +393,14 @@ html:not(.dark) .glass::after {
 }
 
 /* ============================================================
-   微交互 .ix / .ix-pop —— 让「每一个交互都很酷」，纯 transform（GPU，不触发 layout）。
-   仅非极简档启用；transition 只跟 transform/shadow/颜色，性能成本可忽略，且无任何 JS。
+   微交互 —— 让「每一个交互都很酷」，纯 transform（GPU，不触发 layout，无 JS）。仅非极简档。
+
+   两层机制：
+   1) 作用域 .ix-zone（主力·高效易维护）：容器标 .ix-zone → 区内所有 button/[role=button]
+      自动获得 hover 浮起 + active 按下；区内现有+将来新增按钮全自动，无需逐个加 class。
+      精准护栏：.no-ix 豁免单个元素 / .ix-pop 走图标放大 / .btn-accent 等自带动画排除 /
+      .monaco-editor·.xterm 嵌入组件硬豁免（绝不误伤编辑器·终端）。
+   2) 显式 .ix / .ix-pop（覆盖·特例）：给不在 zone 内、或要特殊形态（图标放大）的元素单独标。
    ============================================================ */
 .ix {
   transition:
@@ -430,6 +436,42 @@ html:not(.q-minimal) .ix-pop:active {
     transform: none;
   }
 }
+
+/* —— 作用域 .ix-zone：区内按钮自动微交互（排除 .no-ix / .ix-pop / .btn-accent / disabled）—— */
+html:not(.q-minimal)
+  .ix-zone
+  :is(button, [role='button']):not(.no-ix):not(.ix-pop):not(.btn-accent):not(:disabled) {
+  transition:
+    transform 0.16s var(--ease),
+    box-shadow 0.16s var(--ease),
+    background-color 0.15s var(--ease),
+    color 0.15s var(--ease);
+}
+html:not(.q-minimal)
+  .ix-zone
+  :is(button, [role='button']):not(.no-ix):not(.ix-pop):not(.btn-accent):not(:disabled):hover {
+  transform: translateY(-1px);
+}
+html:not(.q-minimal)
+  .ix-zone
+  :is(button, [role='button']):not(.no-ix):not(.ix-pop):not(.btn-accent):not(:disabled):active {
+  transform: translateY(0) scale(0.975);
+}
+/* 嵌入组件硬豁免：无论是否落在 .ix-zone 内，编辑器/终端里的按钮一律不受影响。
+   放在 zone 规则之后、同等特异性下源序靠后 → 覆盖生效。 */
+.monaco-editor :is(button, [role='button']):hover,
+.monaco-editor :is(button, [role='button']):active,
+.xterm :is(button, [role='button']):hover,
+.xterm :is(button, [role='button']):active {
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ix-zone :is(button, [role='button']):hover,
+  .ix-zone :is(button, [role='button']):active {
+    transform: none;
+  }
+}
+
 .glass-base {
   background: rgb(var(--surface) / var(--glass-alpha));
 }

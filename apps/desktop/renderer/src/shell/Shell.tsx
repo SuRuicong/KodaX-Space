@@ -245,7 +245,7 @@ export function Shell(): JSX.Element {
 
       {/* 顶部自定义 titlebar — 自身做窗口拖动 + 留出 Windows overlay 控件 (close/min/max) 空间。
           Mac 上 traffic lights 占 ~78px (hiddenInset)；Windows 上 OS 把 close/min/max 画在右侧 ~138px (titleBarOverlay)。 */}
-      <div className="app-titlebar glass h-9 flex items-center px-3 flex-shrink-0 select-none relative z-20">
+      <div className="app-titlebar glass ix-zone h-9 flex items-center px-3 flex-shrink-0 select-none relative z-20">
         <div className="text-[12px] text-fg-muted titlebar-brand flex items-center gap-1.5">
           <span className="text-accent-ink text-[13px] leading-none" aria-hidden>
             ✱
@@ -287,7 +287,7 @@ export function Shell(): JSX.Element {
             {/* 中央阅读区：悬浮圆角卡片。保持实色（bg-surface）—— aurora 只在卡片四周缝隙
                 透出，对话流不被极光动画触发 re-composite，性能护栏。 */}
             <div className="center-pane flex-1 flex flex-col min-w-0 relative bg-surface rounded-xl border border-border-default overflow-hidden lift">
-              <div className="flex items-center px-3 h-10 border-b border-border-default flex-shrink-0 gap-1">
+              <div className="ix-zone flex items-center px-3 h-10 border-b border-border-default flex-shrink-0 gap-1">
                 {/* 左侧栏切换按钮 — 始终常驻，让收起后仍能一键展开 */}
                 <SidebarToggleButton
                   side="left"

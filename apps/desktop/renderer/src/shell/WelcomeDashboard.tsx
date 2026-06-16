@@ -294,7 +294,7 @@ export function WelcomeDashboard(): JSX.Element {
   }, [stats.favModel, stats.favProviderId, stats.favIsRealModel, providers]);
 
   return (
-    <div className="flex-1 overflow-auto px-6 py-10 flex flex-col items-center">
+    <div className="ix-zone flex-1 overflow-auto px-6 py-10 flex flex-col items-center">
       {/* 大标题 */}
       <h1 className="text-2xl text-fg-primary mb-8 flex items-center gap-2">
         <span className="text-warn" aria-hidden>

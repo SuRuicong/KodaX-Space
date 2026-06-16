@@ -100,7 +100,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): JSX.Element {
   return (
     <aside
       style={width !== undefined ? { width: `${width}px` } : undefined}
-      className="glass lift flex flex-col border border-border-default rounded-xl overflow-hidden bg-surface flex-shrink-0 text-[13px]"
+      className="glass lift ix-zone flex flex-col border border-border-default rounded-xl overflow-hidden bg-surface flex-shrink-0 text-[13px]"
     >
       {/* Surface tab — F045: [Coder][Partner] 切换（Partner 自本版起可点） */}
       <SurfaceTabs />
@@ -111,7 +111,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): JSX.Element {
           type="button"
           onClick={handleNewSession}
           disabled={!currentProjectPath}
-          className="ix w-full text-left text-xs px-2 py-1.5 rounded hover:bg-hover-bg text-fg-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+          className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-hover-bg text-fg-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
           title={!currentProjectPath ? 'Open a folder first' : 'New session'}
         >
           <Plus className="w-4 h-4 flex-shrink-0" strokeWidth={1.75} aria-hidden />
@@ -379,7 +379,7 @@ function ProjectTree({
             if (!src || src === projCanon) return;
             reorderProjects(src, projCanon);
           }}
-          className={`ix group/projectrow w-full text-xs px-2 py-1 rounded flex items-center gap-1.5 ${
+          className={`group/projectrow w-full text-xs px-2 py-1 rounded flex items-center gap-1.5 ${
             treatAsCurrent
               ? 'text-fg-primary font-semibold'
               : 'text-fg-secondary hover:bg-hover-bg hover:text-fg-primary'
@@ -868,7 +868,7 @@ function SessionRow({
         e.preventDefault();
         onContextMenu(e.clientX, e.clientY);
       }}
-      className={`ix w-full text-left text-xs px-2 py-1 rounded truncate flex items-center gap-1 ${
+      className={`w-full text-left text-xs px-2 py-1 rounded truncate flex items-center gap-1 ${
         isSelected
           ? 'bg-surface-3 text-fg-primary'
           : 'text-fg-secondary hover:bg-hover-bg hover:text-fg-primary'

@@ -208,7 +208,7 @@ export function ModelEffortSelector(): JSX.Element {
       <button
         type="button"
         onClick={openPicker}
-        className="ix font-mono text-[11px] hover:text-fg-primary flex items-center gap-1.5"
+        className="font-mono text-[11px] hover:text-fg-primary flex items-center gap-1.5"
         title={
           session ? 'Change provider/model/effort' : 'Pick provider/model/effort for next session'
         }
