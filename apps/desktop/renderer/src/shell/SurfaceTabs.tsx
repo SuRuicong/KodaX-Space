@@ -28,7 +28,7 @@ export function SurfaceTabs(): JSX.Element {
             type="button"
             onClick={() => useSurfaceStore.getState().setSurface(surface)}
             aria-pressed={active}
-            className={`flex-1 text-xs py-1.5 rounded ${
+            className={`ix flex-1 text-xs py-1.5 rounded ${
               active ? 'bg-surface-3 text-fg-primary' : 'text-fg-muted hover:text-fg-primary'
             }`}
           >

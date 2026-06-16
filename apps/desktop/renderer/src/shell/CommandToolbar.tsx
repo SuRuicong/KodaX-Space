@@ -73,7 +73,7 @@ export function CommandToolbar({ active, onToggle }: CommandToolbarProps): JSX.E
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className={`flex items-center gap-1.5 px-2 py-1 text-[12px] rounded-md transition-colors ${
+          className={`ix flex items-center gap-1.5 px-2 py-1 text-[12px] rounded-md ${
             open || active
               ? 'bg-surface-3 text-fg-primary'
               : 'text-fg-secondary hover:text-fg-primary hover:bg-hover-bg'

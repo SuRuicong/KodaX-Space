@@ -387,7 +387,7 @@ function SidebarToggleButton({ side, open, onClick }: SidebarToggleButtonProps):
     <button
       type="button"
       onClick={onClick}
-      className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 hover:bg-hover-bg transition-colors ${
+      className={`ix-pop w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 hover:bg-hover-bg ${
         open ? 'text-fg-primary' : 'text-fg-muted hover:text-fg-primary'
       }`}
       title={label}

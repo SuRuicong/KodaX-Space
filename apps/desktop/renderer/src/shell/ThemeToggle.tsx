@@ -102,7 +102,7 @@ export function ThemeToggle(): JSX.Element {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-xs text-fg-muted hover:text-fg-primary px-1.5 py-0.5 rounded hover:bg-hover-bg flex items-center gap-1"
+        className="ix-pop text-xs text-fg-muted hover:text-fg-primary px-1.5 py-0.5 rounded hover:bg-hover-bg flex items-center gap-1"
         title={`Theme: ${current.label} (⇧Ctrl+T)`}
         aria-label={`Theme ${current.label}`}
       >

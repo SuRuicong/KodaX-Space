@@ -139,7 +139,7 @@ function SidebarTab({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`flex-1 px-3 py-2 text-[12px] font-medium transition-colors ${
+      className={`ix flex-1 px-3 py-2 text-[12px] font-medium ${
         active ? 'text-fg-primary bg-surface-2' : 'text-fg-muted hover:text-fg-secondary'
       }`}
     >

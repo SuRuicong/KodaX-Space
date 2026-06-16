@@ -382,6 +382,54 @@ html:not(.dark) .glass::before {
 .glass.lit::after {
   opacity: 1;
 }
+/* 浅色玻璃：白色高光在浅底上几乎隐形 → 提高亮度让光泽可见 */
+html:not(.dark) .glass::after {
+  background: radial-gradient(
+    300px circle at var(--mx, -999px) var(--my, -999px),
+    rgb(255 255 255 / 0.6),
+    rgb(255 255 255 / 0.2) 36%,
+    transparent 62%
+  );
+}
+
+/* ============================================================
+   微交互 .ix / .ix-pop —— 让「每一个交互都很酷」，纯 transform（GPU，不触发 layout）。
+   仅非极简档启用；transition 只跟 transform/shadow/颜色，性能成本可忽略，且无任何 JS。
+   ============================================================ */
+.ix {
+  transition:
+    transform 0.16s var(--ease),
+    box-shadow 0.16s var(--ease),
+    background-color 0.15s var(--ease),
+    color 0.15s var(--ease);
+}
+html:not(.q-minimal) .ix:hover {
+  transform: translateY(-1px);
+}
+html:not(.q-minimal) .ix:active {
+  transform: translateY(0) scale(0.975);
+}
+/* 图标/小圆按钮：hover 微放大 + 浮起，active 回弹按下 */
+.ix-pop {
+  transition:
+    transform 0.16s var(--ease),
+    background-color 0.15s var(--ease),
+    color 0.15s var(--ease);
+}
+html:not(.q-minimal) .ix-pop:hover {
+  transform: translateY(-1px) scale(1.07);
+}
+html:not(.q-minimal) .ix-pop:active {
+  transform: scale(0.9);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ix:hover,
+  .ix:active,
+  .ix-pop:hover,
+  .ix-pop:active {
+    transform: none;
+  }
+}
 .glass-base {
   background: rgb(var(--surface) / var(--glass-alpha));
 }
