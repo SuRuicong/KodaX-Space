@@ -304,7 +304,8 @@ export function WelcomeDashboard(): JSX.Element {
       </h1>
 
       {/* Overview 卡 */}
-      <div className="w-full max-w-3xl bg-surface-2/60 border border-border-default rounded-lg p-5">
+      <div className="glass lift lift-hover w-full max-w-3xl bg-surface-2/60 border border-border-default rounded-lg p-5">
+
         {/* View tab + 时间范围 */}
         <div className="flex justify-between items-center mb-4 text-xs">
           <div className="flex gap-1">

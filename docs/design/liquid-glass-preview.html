@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="zh" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>KodaX Space · Liquid Glass(无倾斜·spotlight）</title>
+<!--
+  方向重做：抛弃「整面板随鼠标倾斜 + 粒子/晶体」（误点、花哨、不美）。
+  改用 Apple Liquid Glass / visionOS 空间玻璃语言：3D 立体感来自「光·影·材质」，不靠运动。
+   1. 光向渐变描边（左上亮→右下暗）= 玻璃的立体边
+   2. 跟随光标的 specular 高光（pointer-events:none，绝不影响点击）— Liquid Glass 签名
+   3. 分层柔影 + 材质厚度层级（侧栏 regular / 输入框 recessed）
+   4. 极淡柔光背景（克制，不堆叠花哨元素）
+   5. hover 仅"抬升"（影变大 + 极轻 scale），不旋转 — 可预测、零误点
+-->
+<style>
+:root{
+  --bg:9 9 12;
+  --surface-2:23 23 28; --surface-3:30 30 36;
+  --fg-1:240 240 244; --fg-2:170 170 180; --fg-3:108 108 120;
+  --amber:245 181 68; --violet:192 132 252; --blue:120 150 255;
+  --ui:'Geist Variable',-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono Variable',ui-monospace,Menlo,Consolas,monospace;
+  --ease:cubic-bezier(.4,0,.2,1);
+}
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;}
+body{font-family:var(--ui);font-size:13.5px;color:rgb(var(--fg-1));background:rgb(var(--bg));overflow:hidden;-webkit-font-smoothing:antialiased;}
+
+/* 极淡柔光背景：2 团大而慢的柔光，低不透明度，克制 */
+#bg{position:fixed;inset:0;z-index:0;overflow:hidden;background:
+  radial-gradient(70% 60% at 12% 0%, rgba(245,181,68,.10), transparent 60%),
+  radial-gradient(70% 70% at 92% 96%, rgba(120,150,255,.12), transparent 60%),
+  rgb(var(--bg));}
+#bg .soft{position:absolute;border-radius:50%;filter:blur(110px);opacity:.5;will-change:transform;}
+#bg .s1{width:42vw;height:42vw;left:2%;top:-8%;background:radial-gradient(circle,rgba(245,181,68,.5),transparent 66%);animation:f1 40s var(--ease) infinite;}
+#bg .s2{width:40vw;height:40vw;right:0;bottom:-10%;background:radial-gradient(circle,rgba(120,150,255,.55),transparent 66%);animation:f2 48s var(--ease) infinite;}
+@keyframes f1{0%,100%{transform:translate(0,0)}50%{transform:translate(4vw,3vh)}}
+@keyframes f2{0%,100%{transform:translate(0,0)}50%{transform:translate(-3vw,-2vh)}}
+
+/* ===== Liquid Glass 面板 ===== */
+.lg{
+  position:relative;border-radius:18px;isolation:isolate;
+  /* 材质：半透明 + 左上受光的微渐变 */
+  background:linear-gradient(150deg, rgba(255,255,255,.07), rgba(255,255,255,.01) 36%, rgba(255,255,255,0) 60%), rgb(var(--surface-2) / .55);
+  backdrop-filter:blur(26px) saturate(1.7);-webkit-backdrop-filter:blur(26px) saturate(1.7);
+  /* 分层柔影：贴近的硬阴影 + 远的大柔影 = 漂浮地接地 */
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.06) inset,
+    0 1px 2px rgba(0,0,0,.4),
+    0 8px 20px rgba(0,0,0,.35),
+    0 24px 60px rgba(0,0,0,.45);
+}
+/* 光向渐变描边（左上亮→右下暗）：visionOS 立体边的核心。用 mask 只显边。 */
+.lg::before{
+  content:'';position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;z-index:2;
+  background:linear-gradient(145deg, rgba(255,255,255,.55), rgba(255,255,255,.08) 30%, rgba(255,255,255,0) 55%, rgba(0,0,0,.25));
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;
+}
+/* 跟随光标的 specular 高光：柔光跟鼠标走，近边发亮。pointer-events:none 不挡点击。
+   --mx/--my 由 JS 写（相对本卡的百分比）；远离时高光在卡外=不可见。 */
+.lg::after{
+  content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:1;
+  background:radial-gradient(280px circle at var(--mx,-999px) var(--my,-999px), rgba(255,255,255,.10), rgba(255,255,255,.04) 35%, transparent 60%);
+  opacity:0;transition:opacity .35s var(--ease);
+}
+.lg.lit::after{opacity:1;}
+.lg>*{position:relative;z-index:3;}
+/* hover 抬升：只动影 + 极轻 scale，不旋转 → 可预测、不误点 */
+.lift-hover{transition:transform .25s var(--ease), box-shadow .25s var(--ease);}
+.lift-hover:hover{transform:translateY(-2px);
+  box-shadow:0 1px 0 rgba(255,255,255,.08) inset,0 2px 4px rgba(0,0,0,.4),0 14px 30px rgba(0,0,0,.4),0 34px 80px rgba(0,0,0,.5);}
+
+/* —— 布局 —— */
+#app{position:fixed;inset:24px;z-index:1;display:flex;flex-direction:column;gap:14px;}
+.titlebar{height:32px;display:flex;align-items:center;gap:10px;padding:0 6px;color:rgb(var(--fg-2));font-size:12px;}
+.titlebar .logo{width:18px;height:18px;border-radius:6px;background:linear-gradient(150deg,#ffd27a,#d99a22);box-shadow:0 2px 10px rgba(245,181,68,.45),inset 0 1px 0 rgba(255,255,255,.5);}
+.titlebar b{color:rgb(var(--fg-1));}
+.row{flex:1;display:flex;gap:14px;min-height:0;}
+.left{width:240px;flex:0 0 240px;padding:14px;}
+.center{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+.right{width:248px;flex:0 0 248px;padding:14px;}
+
+.tabs{display:flex;gap:6px;margin-bottom:16px;}
+.tab{flex:1;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;gap:7px;font-size:12.5px;color:rgb(var(--fg-2));cursor:pointer;
+  background:rgb(var(--surface-3)/.5);box-shadow:inset 0 1px 0 rgba(255,255,255,.04);transition:.18s var(--ease);}
+.tab:hover{color:rgb(var(--fg-1));}
+.tab.on{color:rgb(var(--fg-1));background:linear-gradient(150deg,rgba(245,181,68,.22),rgba(245,181,68,.1));box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 0 0 1px rgba(245,181,68,.35),0 4px 14px rgba(245,181,68,.18);}
+.tab .d{width:6px;height:6px;border-radius:50%;}
+.sect{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:rgb(var(--fg-3));margin:16px 4px 8px;}
+.item{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:11px;color:rgb(var(--fg-2));margin:2px 0;cursor:pointer;transition:.15s var(--ease);}
+.item:hover{background:rgba(255,255,255,.05);color:rgb(var(--fg-1));}
+.item.on{color:rgb(var(--fg-1));background:linear-gradient(150deg,rgba(245,181,68,.16),rgba(245,181,68,.06));box-shadow:inset 0 0 0 1px rgba(245,181,68,.28),inset 0 1px 0 rgba(255,255,255,.08);}
+.dot{width:7px;height:7px;border-radius:50%;background:rgb(var(--amber));box-shadow:0 0 8px rgb(var(--amber));flex:0 0 7px;}
+.dot.mut{background:rgb(var(--fg-3));box-shadow:none;}
+
+.crumb{height:44px;display:flex;align-items:center;gap:8px;padding:0 18px;border-bottom:1px solid rgba(255,255,255,.07);color:rgb(var(--fg-2));font-size:12.5px;}
+.crumb b{color:rgb(var(--fg-1));}
+.stream{flex:1;overflow:auto;padding:36px 8% 16px;display:flex;flex-direction:column;align-items:center;}
+.h1{font-size:25px;margin:6px 0 28px;letter-spacing:-.01em;}
+.h1 .s{color:rgb(var(--amber));}
+.card{width:100%;max-width:560px;padding:24px;}
+.statrow{display:flex;gap:8px;margin-bottom:20px;}
+.statrow .t{padding:6px 13px;border-radius:10px;font-size:12px;color:rgb(var(--fg-2));cursor:pointer;}
+.statrow .t.on{background:rgba(255,255,255,.08);color:rgb(var(--fg-1));box-shadow:inset 0 1px 0 rgba(255,255,255,.08);}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px 12px;}
+.kv .k{font-size:10.5px;letter-spacing:.06em;color:rgb(var(--fg-3));text-transform:uppercase;}
+.kv .v{font-size:24px;margin-top:4px;letter-spacing:-.02em;}
+.kv .v.am{color:rgb(var(--amber));}
+
+/* 输入框：recessed（凹陷材质，visionOS 文本输入语义） */
+.composer{margin-top:14px;padding:16px 18px;border-radius:16px;position:relative;
+  background:rgb(8 8 11 / .5);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  box-shadow:inset 0 2px 6px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.04),0 1px 0 rgba(255,255,255,.05);}
+.composer::before{content:'';position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;
+  background:linear-gradient(145deg,rgba(255,255,255,.12),rgba(255,255,255,0) 50%);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;}
+.composer .ph{color:rgb(var(--fg-3));font-size:14px;}
+.composer .br{display:flex;align-items:center;gap:8px;margin-top:14px;}
+.pill{height:30px;padding:0 13px;border-radius:10px;display:flex;align-items:center;gap:7px;font-size:12px;color:rgb(var(--fg-2));cursor:pointer;
+  background:rgb(var(--surface-3)/.7);box-shadow:inset 0 1px 0 rgba(255,255,255,.05);}
+.send{margin-left:auto;width:38px;height:38px;border-radius:12px;border:0;cursor:pointer;color:#2a1d05;
+  background:linear-gradient(180deg,#ffd27a,#e0a02e);box-shadow:0 4px 16px rgba(245,181,68,.45),inset 0 1px 0 rgba(255,255,255,.55);transition:.15s var(--ease);}
+.send:hover{transform:translateY(-1px);filter:brightness(1.05);}
+
+.rtab{display:flex;gap:6px;margin-bottom:14px;}
+.rtab .t{flex:1;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:11.5px;color:rgb(var(--fg-2));cursor:pointer;background:rgb(var(--surface-3)/.5);}
+.rtab .t.on{color:rgb(var(--fg-1));background:rgba(255,255,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.08);}
+.plan{display:flex;gap:11px;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.05);}
+.plan .i{width:19px;height:19px;border-radius:7px;flex:0 0 19px;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:inset 0 1px 0 rgba(255,255,255,.08);}
+.plan.ok .i{background:rgba(74,222,128,.18);color:#4ade80;}
+.plan.run .i{background:rgba(120,200,255,.18);color:#6cc6ff;}
+.plan .tt{font-size:12.5px;color:rgb(var(--fg-1));}
+.plan .ss{font-size:11px;color:rgb(var(--fg-3));margin-top:2px;}
+
+::-webkit-scrollbar{width:8px;}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:6px;}
+#fps{position:fixed;top:14px;left:14px;z-index:50;padding:7px 12px;border-radius:11px;font-family:var(--mono);font-size:12px;}
+.muted{color:rgb(var(--fg-3));}
+#note{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:50;padding:8px 16px;border-radius:12px;font-size:12px;color:rgb(var(--fg-2));}
+#note b{color:rgb(var(--amber));}
+</style>
+</head>
+<body>
+
+<div id="bg"><div class="soft s1"></div><div class="soft s2"></div></div>
+<div id="fps" class="lg"><span class="muted">FPS</span> <span id="fpsn" style="font-weight:700">60</span></div>
+
+<div id="app">
+  <div class="titlebar">
+    <span class="logo"></span> <span><b>KodaX</b> Space</span>
+    <span style="flex:1"></span><span class="muted">✦ Liquid Glass · ◐ 主题</span>
+  </div>
+  <div class="row">
+    <aside class="left lg lift-hover">
+      <div class="tabs">
+        <div class="tab on"><span class="d" style="background:rgb(var(--amber))"></span>Coder</div>
+        <div class="tab"><span class="d" style="background:rgb(var(--violet))"></span>Partner</div>
+      </div>
+      <div class="sect">KodaX-Space</div>
+      <div class="item on"><span class="dot"></span><div>Liquid Glass 界面</div></div>
+      <div class="item"><span class="dot mut"></span><div>per-model 上下文窗口</div></div>
+      <div class="item"><span class="dot mut"></span><div>artifact 三级展示</div></div>
+      <div class="sect">KodaX-author</div>
+      <div class="item"><span class="dot mut"></span><div>provider 错配修复</div></div>
+    </aside>
+
+    <main class="center lg">
+      <div class="crumb">KodaX-Space <span class="muted">/</span> <b>Liquid Glass 界面</b></div>
+      <div class="stream">
+        <div class="h1"><span class="s">✱</span> What's up next, <b>there</b>?</div>
+        <div class="card lg lift-hover">
+          <div class="statrow"><span class="t on">Overview</span><span class="t">Models</span><span class="t">Project</span></div>
+          <div class="grid">
+            <div class="kv"><div class="k">Sessions</div><div class="v am">200</div></div>
+            <div class="kv"><div class="k">Messages</div><div class="v">10.0k</div></div>
+            <div class="kv"><div class="k">Tokens</div><div class="v">15.0M</div></div>
+            <div class="kv"><div class="k">Active</div><div class="v">31</div></div>
+          </div>
+        </div>
+        <div class="composer card" style="max-width:560px">
+          <div class="ph">描述一个任务，或问点什么…</div>
+          <div class="br"><span class="pill"><span class="dot mut"></span>Agent</span><span class="pill">glm-5.2 ▾</span><button class="send">↑</button></div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="right lg lift-hover">
+      <div class="rtab"><span class="t on">Plan</span><span class="t">Workers</span><span class="t">Changes</span></div>
+      <div class="plan ok"><span class="i">✓</span><div><div class="tt">光向渐变描边</div><div class="ss">左上亮→右下暗</div></div></div>
+      <div class="plan ok"><span class="i">✓</span><div><div class="tt">光标 specular 高光</div><div class="ss">不影响点击</div></div></div>
+      <div class="plan run"><span class="i">●</span><div><div class="tt">分层柔影景深</div><div class="ss">不靠运动</div></div></div>
+    </aside>
+  </div>
+</div>
+
+<div id="note" class="lg">移动鼠标 → 柔光在玻璃上跟随（<b>不晃动、不误点</b>）；hover 卡片 → 只轻轻抬升。立体感来自光影材质。</div>
+
+<script>
+// 跟随光标的 specular：对每张 .lg 计算光标相对坐标，写 --mx/--my；
+// 近的卡 .lit 显高光，远的高光在卡外=不可见。pointer-events:none 全程不挡点击。
+const cards=[...document.querySelectorAll('.lg')];
+addEventListener('pointermove',e=>{
+  for(const c of cards){
+    const r=c.getBoundingClientRect();
+    const x=e.clientX-r.left, y=e.clientY-r.top;
+    const near = e.clientX>r.left-180 && e.clientX<r.right+180 && e.clientY>r.top-180 && e.clientY<r.bottom+180;
+    c.classList.toggle('lit', near);
+    if(near){ c.style.setProperty('--mx',x+'px'); c.style.setProperty('--my',y+'px'); }
+  }
+});
+addEventListener('pointerleave',()=>cards.forEach(c=>c.classList.remove('lit')));
+// FPS
+let fr=0,lt=performance.now();
+(function f(n){fr++;if(n-lt>=500){const v=Math.round(fr*1000/(n-lt));const e=document.getElementById('fpsn');e.textContent=v;e.style.color=v>=55?'#4ade80':v>=40?'#fbbf24':'#f87171';fr=0;lt=n;}requestAnimationFrame(f);})(performance.now());
+</script>
+</body>
+</html>

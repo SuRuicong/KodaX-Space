@@ -55,7 +55,7 @@ export function PopoutOverlay({ kind, onClose }: PopoutOverlayProps): JSX.Elemen
     <>
       <div className="absolute inset-0 bg-black/30 z-30" onClick={onClose} aria-hidden />
       <aside
-        className={`absolute right-0 top-10 bottom-0 ${widthCls} bg-surface border-l border-border-default z-40 flex flex-col`}
+        className={`glass absolute right-0 top-10 bottom-0 ${widthCls} border-l border-border-default z-40 flex flex-col`}
       >
         <div className="px-3 py-2 border-b border-border-default flex items-center text-xs text-fg-muted flex-shrink-0">
           <span className="capitalize">{kind}</span>

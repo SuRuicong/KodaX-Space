@@ -100,7 +100,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): JSX.Element {
   return (
     <aside
       style={width !== undefined ? { width: `${width}px` } : undefined}
-      className="flex flex-col border-r border-border-default bg-surface flex-shrink-0 text-[13px]"
+      className="glass lift flex flex-col border border-border-default rounded-xl overflow-hidden bg-surface flex-shrink-0 text-[13px]"
     >
       {/* Surface tab — F045: [Coder][Partner] 切换（Partner 自本版起可点） */}
       <SurfaceTabs />

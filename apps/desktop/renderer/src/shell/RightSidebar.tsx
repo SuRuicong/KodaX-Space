@@ -67,7 +67,7 @@ export function RightSidebar({ width }: RightSidebarProps = {}): JSX.Element {
   return (
     <aside
       style={width !== undefined ? { width: `${width}px` } : undefined}
-      className="border-l border-border-default bg-surface flex flex-col flex-shrink-0 text-[13px]"
+      className="glass lift border border-border-default rounded-xl overflow-hidden bg-surface flex flex-col flex-shrink-0 text-[13px]"
     >
       {/* F059c 动态右侧栏：有产物时顶部出 [概览 | Artifact] 切换；Artifact 占满整栏满高，
           不再挤在底部的 280px 小框。⤢ 展开到中间大图（full-cover，像 diff）。 */}

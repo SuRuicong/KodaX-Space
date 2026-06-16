@@ -22,6 +22,12 @@ import type {
   QueuedMessageT,
 } from '@kodax-space/space-ipc-schema';
 import { canonProjectRoot as canonProjectRootShared } from '@kodax-space/space-ipc-schema';
+import {
+  type VisualQuality,
+  VISUAL_QUALITY_KEY,
+  readVisualQuality,
+  applyVisualQualityToDocument,
+} from '../lib/visualQuality.js';
 
 /**
  * Persistent inline notification (NotificationsSurface 渲染源)。
@@ -203,6 +209,9 @@ interface AppState {
   /** UI 主题。dark = 当前默认；light = zinc-100 系；'system' = 跟 OS prefers-color-scheme。
    *  持久化到 localStorage 让重启后保持。*/
   theme: 'dark' | 'light' | 'system';
+  /** F060 视觉质量档（Liquid Glass 总开关）。持久化到 localStorage。
+   *  minimal=实色无模糊 / balanced=玻璃+光标高光（默认）/ full=半透明中央区+更厚玻璃。 */
+  visualQuality: VisualQuality;
   /** Recents 列表过滤+分组+排序选项 — alpha.1 不持久化。*/
   recentsFilter: RecentsFilter;
   /**
@@ -364,6 +373,8 @@ interface AppState {
   toggleSessionFlag(sessionId: string, flag: 'pinned' | 'archived' | 'unread'): void;
   setRecentsFilter(filter: RecentsFilter): void;
   setTheme(theme: 'dark' | 'light' | 'system'): void;
+  /** F060：切视觉质量档。立即应用 <html> class + 写 localStorage。*/
+  setVisualQuality(q: VisualQuality): void;
   setTranscriptView(v: AppState['transcriptView']): void;
   setTranscriptFontSize(s: AppState['transcriptFontSize']): void;
   /** 切项目时清空当前 session 选择和事件 buffer（事件留主进程的；renderer 只清缓存）。*/
@@ -617,6 +628,7 @@ export const useAppStore = create<AppState>((set) => ({
   sessionFlags: {},
   recentsFilter: DEFAULT_RECENTS_FILTER,
   theme: (typeof window !== 'undefined' && (localStorage.getItem('kodax-space.theme') as 'dark' | 'light' | 'system' | null)) || 'dark',
+  visualQuality: typeof window !== 'undefined' ? readVisualQuality() : 'balanced',
   transcriptView: 'normal',
   transcriptFontSize: 'base',
   // 默认关：右侧栏存在意义=KodaX 计划列表，没 plan 时空着没价值；plan 来时由 Shell
@@ -1199,6 +1211,13 @@ export const useAppStore = create<AppState>((set) => ({
       try { localStorage.setItem('kodax-space.theme', theme); } catch { /* SSR / private mode */ }
     }
     set({ theme });
+  },
+  setVisualQuality: (q) => {
+    if (typeof window !== 'undefined') {
+      try { localStorage.setItem(VISUAL_QUALITY_KEY, q); } catch { /* private mode */ }
+      applyVisualQualityToDocument(q);
+    }
+    set({ visualQuality: q });
   },
   setTranscriptView: (v) => set({ transcriptView: v }),
   setTranscriptFontSize: (s) => set({ transcriptFontSize: s }),

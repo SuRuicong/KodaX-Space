@@ -167,7 +167,7 @@ export function PermissionModal(): JSX.Element | null {
       aria-labelledby="permission-modal-title"
     >
       <div
-        className={`w-[520px] max-w-[95vw] max-h-[90vh] flex flex-col bg-surface-2 border ${style.border} rounded-lg shadow-xl`}
+        className={`glass lift w-[520px] max-w-[95vw] max-h-[90vh] flex flex-col bg-surface-2 border ${style.border} rounded-lg`}
       >
         <div className="px-5 py-3 border-b border-border-default flex items-center gap-3 flex-shrink-0">
           <span

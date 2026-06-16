@@ -263,3 +263,246 @@ html:not(.dark) .hljs-link {
 .tnum {
   font-variant-numeric: tabular-nums;
 }
+
+/* ============================================================
+   F060 玻璃拟态 + 景深 + aurora —— 视觉质量三档
+   档位由 <html class="q-minimal|q-balanced|q-full"> 控制（visualQuality.ts 写入），
+   每档只改下面这组 CSS 变量；.glass / .lift 工具类零改动随档切换。
+
+   🔴 性能护栏：backdrop-filter 只用于「静止 chrome」(标题栏 / 侧栏 / 输入框 / 模态)。
+      对话滚动区 (.stream / 消息列表) 绝不挂 .glass —— 否则滚动触发整层 re-composite 掉帧。
+   ============================================================ */
+:root {
+  --glass-blur: 16px;
+  --glass-alpha: 0.66; /* 玻璃面板背景不透明度（配合 aurora 透出） */
+  --glass-sat: 1.35;
+  --depth: 1; /* 景深乘子：驱动高光与投影强度 */
+  --aurora-opacity: 0.5; /* GlassAurora 背景层整体不透明度 */
+}
+/* 极简：玻璃实色化、关景深、关 aurora */
+html.q-minimal {
+  --glass-blur: 0px;
+  --glass-alpha: 1;
+  --glass-sat: 1;
+  --depth: 0.4;
+  --aurora-opacity: 0;
+}
+html.q-balanced {
+  --glass-blur: 20px;
+  --glass-alpha: 0.55;
+  --glass-sat: 1.5;
+  --depth: 1;
+  --aurora-opacity: 0.6;
+}
+html.q-full {
+  --glass-blur: 28px;
+  --glass-alpha: 0.46;
+  --glass-sat: 1.7;
+  --depth: 1.25;
+  --aurora-opacity: 0.72;
+}
+/* 浅色玻璃略提不透明度，避免白底 aurora 透出过曝 */
+html:not(.dark).q-balanced {
+  --glass-alpha: 0.74;
+}
+html:not(.dark).q-full {
+  --glass-alpha: 0.66;
+}
+
+/* ============================================================
+   Liquid Glass 面板（Apple Liquid Glass / visionOS 语言）
+   立体感来自光·影·材质，不靠运动：
+     · ::before  光向渐变描边（左上亮→右下暗）= 玻璃立体边
+     · ::after   光标 specular 高光（--mx/--my 由 useSpotlight 写；pointer-events:none 不挡点击）
+   unlayered 规则胜过 Tailwind @layer 的 bg-surface，组件保留 bg-surface 也被接管。
+   ============================================================ */
+.glass {
+  position: relative;
+  background:
+    linear-gradient(150deg, rgb(255 255 255 / calc(0.06 * var(--depth))), rgb(255 255 255 / 0) 38%),
+    rgb(var(--surface-2) / var(--glass-alpha));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+}
+html:not(.dark) .glass {
+  background:
+    linear-gradient(150deg, rgb(255 255 255 / calc(0.55 * var(--depth))), rgb(255 255 255 / 0) 38%),
+    rgb(var(--surface-2) / var(--glass-alpha));
+}
+/* 光向渐变描边：左上受光亮、右下背光暗，mask 只显 1px 边 → 玻璃立体边缘（visionOS 招式）。
+   z-index:1（正值）→ 画在内容之上；但只占 1px 边环，面板有 padding 不压内容。 */
+.glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  z-index: 1;
+  background: linear-gradient(
+    145deg,
+    rgb(255 255 255 / calc(0.5 * var(--depth))),
+    rgb(255 255 255 / calc(0.08 * var(--depth))) 30%,
+    rgb(255 255 255 / 0) 58%,
+    rgb(0 0 0 / calc(0.22 * var(--depth)))
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+html:not(.dark) .glass::before {
+  background: linear-gradient(
+    145deg,
+    rgb(255 255 255 / calc(0.95 * var(--depth))),
+    rgb(255 255 255 / 0) 55%,
+    rgb(17 17 20 / calc(0.06 * var(--depth)))
+  );
+}
+/* 光标 specular 高光：柔光跟随 --mx/--my，仅 .lit（光标靠近）显示。不挡点击、不移动布局。
+   z-index:-1（负值）→ 画在玻璃表面之上、内容之下：只点亮玻璃面，不糊住文字。
+   于是内容(文档流)天然居中于 ::after(-1) 与 ::before(1) 之间，无需给每个子元素加 z-index。 */
+.glass::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: -1;
+  background: radial-gradient(
+    300px circle at var(--mx, -999px) var(--my, -999px),
+    rgb(255 255 255 / 0.1),
+    rgb(255 255 255 / 0.035) 36%,
+    transparent 62%
+  );
+  opacity: 0;
+  transition: opacity 0.4s var(--ease);
+}
+.glass.lit::after {
+  opacity: 1;
+}
+.glass-base {
+  background: rgb(var(--surface) / var(--glass-alpha));
+}
+/* 极简档：去 backdrop-filter + 去描边/高光（最省、最平） */
+html.q-minimal .glass {
+  background: rgb(var(--surface-2));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+html.q-minimal .glass::before,
+html.q-minimal .glass::after {
+  display: none;
+}
+
+/* 分层柔影：贴近硬影 + 远处大柔影 = 漂浮地接地（visionOS 阴影接地）。强度跟随景深。 */
+.lift {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / calc(0.1 * var(--depth))),
+    0 1px 2px rgb(0 0 0 / calc(0.28 * var(--depth))),
+    0 8px 20px rgb(0 0 0 / calc(0.26 * var(--depth))),
+    0 22px 56px rgb(0 0 0 / calc(0.32 * var(--depth)));
+}
+html:not(.dark) .lift {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / calc(0.9 * var(--depth))),
+    0 1px 2px rgb(17 17 20 / calc(0.05 * var(--depth))),
+    0 8px 20px rgb(17 17 20 / calc(0.06 * var(--depth))),
+    0 22px 50px rgb(17 17 20 / calc(0.08 * var(--depth)));
+}
+html.q-minimal .lift {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+}
+
+/* hover 抬升：只动影 + 极轻位移，不旋转 → 可预测、零误点。 */
+.lift-hover {
+  transition:
+    transform 0.25s var(--ease),
+    box-shadow 0.25s var(--ease);
+}
+html:not(.q-minimal) .lift-hover:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.1),
+    0 2px 6px rgb(0 0 0 / 0.4),
+    0 14px 30px rgb(0 0 0 / 0.4),
+    0 34px 76px rgb(0 0 0 / 0.5);
+}
+
+/* 中央阅读区：默认实色（calm + 性能护栏）；全特效档转半透明玻璃，让极光透进主表面
+   —— 这是「深色下看不出玻璃」的根治：最大的显示层也半透明了。
+   仅 full 档启用（balanced/minimal 保持实色，不在滚动大区域上每帧 re-composite）。 */
+html.q-full .center-pane {
+  background:
+    linear-gradient(160deg, rgb(255 255 255 / 0.05), rgb(255 255 255 / 0) 38%),
+    rgb(var(--surface) / 0.55);
+  backdrop-filter: blur(30px) saturate(1.5);
+  -webkit-backdrop-filter: blur(30px) saturate(1.5);
+}
+html:not(.dark).q-full .center-pane {
+  background:
+    linear-gradient(160deg, rgb(255 255 255 / 0.5), rgb(255 255 255 / 0) 38%),
+    rgb(var(--surface) / 0.62);
+}
+
+/* ===== GlassAurora 极淡柔光背景（克制 · 2 团慢漂，遵循 visionOS「别堆叠花哨元素」）===== */
+.aurora-layer {
+  position: absolute;
+  inset: 0;
+  z-index: -1; /* 在 Shell 根(isolate)的本层叠上下文里，铺在 bg-surface 之上、所有内容之下 */
+  overflow: hidden;
+  pointer-events: none;
+  opacity: var(--aurora-opacity);
+  transition: opacity 0.4s var(--ease);
+}
+.aurora-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(110px);
+  will-change: transform;
+  mix-blend-mode: screen;
+}
+html:not(.dark) .aurora-blob {
+  mix-blend-mode: multiply;
+  filter: blur(120px);
+}
+.aurora-b1 {
+  width: 46vw;
+  height: 46vw;
+  left: 0%;
+  top: -10%;
+  background: radial-gradient(circle, rgba(245, 181, 68, 0.55), transparent 66%);
+  animation: aurora-drift1 40s var(--ease) infinite;
+}
+.aurora-b2 {
+  width: 44vw;
+  height: 44vw;
+  right: -2%;
+  bottom: -12%;
+  background: radial-gradient(circle, rgba(120, 150, 255, 0.6), transparent 66%);
+  animation: aurora-drift2 48s var(--ease) infinite;
+}
+@keyframes aurora-drift1 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(4vw, 3vh) scale(1.08);
+  }
+}
+@keyframes aurora-drift2 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-3vw, -2vh) scale(1.06);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aurora-blob {
+    animation: none;
+  }
+}

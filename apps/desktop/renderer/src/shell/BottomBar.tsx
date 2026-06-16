@@ -1091,7 +1091,7 @@ export function BottomBar(): JSX.Element {
           Claude Code "正在做什么"放在历史下方紧邻输入框上的位置感。
           这里只保留 useIsStreaming hook 的 import（Send/Stop 按钮还在用）。*/}
 
-      <div className="rounded-2xl border border-border-default bg-surface-2 px-3 pt-2 pb-2 space-y-1.5 shadow-sm focus-within:border-accent/50 transition-colors">
+      <div className="glass lift rounded-2xl border border-border-default bg-surface-2 px-3 pt-2 pb-2 space-y-1.5 focus-within:border-accent/50 transition-colors">
         <ChipBar />
 
         {/* OC-31 v0.1.9 — pending image chips。粘贴/拖入的图片以缩略图 + 删除按钮形式展示，

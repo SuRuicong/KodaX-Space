@@ -35,6 +35,9 @@ import { PopoutOverlay } from './popouts/PopoutOverlay.js';
 import { PermissionModal } from '../features/permission/PermissionModal.js';
 import { AskUserModal } from '../features/ask-user/AskUserModal.js';
 import { ThemeToggle } from './ThemeToggle.js';
+import { VisualQualityToggle } from './VisualQualityToggle.js';
+import { GlassAurora } from './GlassAurora.js';
+import { useSpotlight } from '../lib/useSpotlight.js';
 import { RightSidebar } from './RightSidebar.js';
 import { HelpOverlayController } from './HelpOverlay.js';
 import { CommandPaletteController } from './CommandPalette.js';
@@ -54,6 +57,9 @@ const restoredSessionIds = new Set<string>();
 export function Shell(): JSX.Element {
   // F045: surface 一等状态（替代旧 local mode）。Partner 自本版起有真实空壳。
   const currentSurface = useSurfaceStore((s) => s.currentSurface);
+
+  // F060: Liquid Glass 光标 specular 高光（balanced/full 档；纯 CSS 变量，pointer-events:none 不挡点击）。
+  useSpotlight();
 
   // 侧栏开/关：button 放在 breadcrumb 行最左 / 最右；侧栏关掉时 0 占位（不再 28px 竖条）
   const leftSidebarOpen = useAppStore((s) => s.leftSidebarOpen);
@@ -232,10 +238,14 @@ export function Shell(): JSX.Element {
   }, [currentSurface]);
 
   return (
-    <div className="h-screen flex flex-col bg-surface text-fg-primary overflow-hidden">
+    <div className="h-screen flex flex-col bg-surface text-fg-primary overflow-hidden relative isolate">
+      {/* F060: 背景极光层（玻璃 chrome 通过 backdrop-filter 透出它）。minimal 档不渲染。
+          铺在最底层 z-0；下面的 titlebar / body 用 relative z-10 浮在其上。 */}
+      <GlassAurora />
+
       {/* 顶部自定义 titlebar — 自身做窗口拖动 + 留出 Windows overlay 控件 (close/min/max) 空间。
           Mac 上 traffic lights 占 ~78px (hiddenInset)；Windows 上 OS 把 close/min/max 画在右侧 ~138px (titleBarOverlay)。 */}
-      <div className="app-titlebar h-9 flex items-center px-3 border-b border-border-default bg-surface flex-shrink-0 select-none">
+      <div className="app-titlebar glass h-9 flex items-center px-3 flex-shrink-0 select-none relative z-20">
         <div className="text-[12px] text-fg-muted titlebar-brand flex items-center gap-1.5">
           <span className="text-accent-ink text-[13px] leading-none" aria-hidden>
             ✱
@@ -245,10 +255,13 @@ export function Shell(): JSX.Element {
           </span>
         </div>
         <div className="flex-1" />
+        <VisualQualityToggle />
         <ThemeToggle />
       </div>
 
-      <div className="flex flex-1 min-h-0">
+      {/* F060: 面板区。Liquid Glass —— 立体感来自光影材质（光向描边 + 光标 specular + 分层柔影），
+          不靠运动；模态/命令面板放在面板区之外保持 position:fixed 正常。 */}
+      <div className="flex flex-1 min-h-0 gap-2.5 p-2.5">
         {!fullscreenRead && leftSidebarOpen && (
           <>
             <LeftSidebar width={leftWidth} />
@@ -271,7 +284,9 @@ export function Shell(): JSX.Element {
           <PartnerWorkspace />
         ) : (
           <>
-            <div className="flex-1 flex flex-col min-w-0 relative">
+            {/* 中央阅读区：悬浮圆角卡片。保持实色（bg-surface）—— aurora 只在卡片四周缝隙
+                透出，对话流不被极光动画触发 re-composite，性能护栏。 */}
+            <div className="center-pane flex-1 flex flex-col min-w-0 relative bg-surface rounded-xl border border-border-default overflow-hidden lift">
               <div className="flex items-center px-3 h-10 border-b border-border-default flex-shrink-0 gap-1">
                 {/* 左侧栏切换按钮 — 始终常驻，让收起后仍能一键展开 */}
                 <SidebarToggleButton
@@ -339,12 +354,14 @@ export function Shell(): JSX.Element {
             )}
           </>
         )}
-
-        <PermissionModal />
-        <AskUserModal />
-        <HelpOverlayController />
-        <CommandPaletteController />
       </div>
+
+      {/* 模态/命令面板：在面板区之外，保证 position:fixed 相对视口正常铺满 */}
+      <PermissionModal />
+      <AskUserModal />
+      <HelpOverlayController />
+      <CommandPaletteController />
+
       <ToastContainer />
       <ZoomController />
       <UpdateBanner />

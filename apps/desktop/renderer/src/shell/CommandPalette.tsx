@@ -208,7 +208,7 @@ function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Element | n
       aria-label="Command palette"
     >
       <div
-        className="bg-surface border border-border-default rounded-lg shadow-2xl w-[640px] max-w-[90vw] max-h-[70vh] flex flex-col overflow-hidden"
+        className="glass lift border border-border-default rounded-lg w-[640px] max-w-[90vw] max-h-[70vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="border-b border-border-default px-3 py-2">

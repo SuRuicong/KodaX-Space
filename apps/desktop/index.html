@@ -18,6 +18,14 @@
         } catch (e) {
           document.documentElement.classList.add('dark');
         }
+        // F060 视觉质量档：挂载前同步 q-* class，避免玻璃/aurora 闪烁。默认 balanced。
+        try {
+          var q = localStorage.getItem('kodax-space.visualQuality');
+          if (q !== 'minimal' && q !== 'balanced' && q !== 'full') q = 'balanced';
+          document.documentElement.classList.add('q-' + q);
+        } catch (e) {
+          document.documentElement.classList.add('q-balanced');
+        }
       })();
     </script>
   </head>
