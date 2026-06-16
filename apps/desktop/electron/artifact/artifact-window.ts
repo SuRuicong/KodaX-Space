@@ -51,6 +51,11 @@ function buildArtifactHash(input: OpenInput): string {
 // on close (avoids accumulation across a long session).
 const openWindows = new Set<import('electron').BrowserWindow>();
 
+// Strip BiDi override controls from an LLM-authored title before it hits the OS
+// titlebar (visual-spoofing defense). The renderer re-sanitizes once it sets
+// document.title; this covers the brief pre-load flash.
+const BIDI_CONTROLS = /[\u200f\u202a-\u202e\u2066-\u2069]/g;
+
 function openArtifactWindow(input: OpenInput, deps: ArtifactWindowDeps): void {
   const { BrowserWindow, shell } = getElectron();
   const win = new BrowserWindow({
@@ -58,7 +63,7 @@ function openArtifactWindow(input: OpenInput, deps: ArtifactWindowDeps): void {
     height: 820,
     minWidth: 560,
     minHeight: 420,
-    title: input.title ?? 'Artifact',
+    title: (input.title ?? 'Artifact').replace(BIDI_CONTROLS, ''),
     backgroundColor: '#0b0b0c',
     show: false,
     autoHideMenuBar: true,

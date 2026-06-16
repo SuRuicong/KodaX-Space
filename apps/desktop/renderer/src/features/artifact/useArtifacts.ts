@@ -109,8 +109,10 @@ export function useArtifactRead(
     setRef(null);
     setPayload(null);
     setError(null);
-    const load = (): void => {
-      setLoading(true);
+    // silent=true：artifact.changed 触发的后台刷新——不切 loading 旋转，避免 pin 版本时
+    // 每次变更都闪一下"加载中"（版本内容不可变；刷新只为让新版本进 ref.versions 下拉）。
+    const load = (silent = false): void => {
+      if (!silent) setLoading(true);
       bridge
         .invoke('artifact.read', version !== undefined ? { id, version } : { id })
         .then((res) => {
@@ -136,7 +138,7 @@ export function useArtifactRead(
     };
     load();
     const off = bridge.on('artifact.changed', (p) => {
-      if (p.id === id) load();
+      if (p.id === id) load(true);
     });
     return () => {
       alive = false;

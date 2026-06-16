@@ -38,17 +38,25 @@ export function RightSidebar({ width }: RightSidebarProps = {}): JSX.Element {
   const requestPopout = useAppStore((s) => s.requestPopout);
   const hasArtifacts = artifacts.length > 0;
   const [tab, setTab] = useState<'overview' | 'artifact'>('overview');
+  // 锁存"对话卡片点选的 artifact id"，传给 ArtifactsView——它从概览切过来时是新挂载、
+  // 错过 window 事件，靠这个 prop 在挂载时认领选中。
+  const [focusedArtifactId, setFocusedArtifactId] = useState<string | null>(null);
 
   // 切 session → 回概览（不带着上个会话的 Artifact 视图）。
   useEffect(() => {
     setTab('overview');
+    setFocusedArtifactId(null);
   }, [currentSessionId]);
   // agent 新产出 artifact → 自动切到 Artifact（精确信号：reason==='created'，
   // 不被版本更新 / 删除 / 切会话误触发）。
   useArtifactCreated(currentSessionId, () => setTab('artifact'));
-  // 对话里点 artifact 卡片 → 切到 Artifact tab（ArtifactsView 同时监听做选中）。
+  // 对话里点 artifact 卡片 → 切到 Artifact tab + 锁存 id（ArtifactsView 据此选中那一份）。
   useEffect(() => {
-    const onFocus = (): void => setTab('artifact');
+    const onFocus = (e: Event): void => {
+      setTab('artifact');
+      const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+      if (id) setFocusedArtifactId(id);
+    };
     window.addEventListener('kodax-space.focus-artifact', onFocus);
     return () => window.removeEventListener('kodax-space.focus-artifact', onFocus);
   }, []);
@@ -100,7 +108,7 @@ export function RightSidebar({ width }: RightSidebarProps = {}): JSX.Element {
       )}
       {showArtifact ? (
         <div className="flex-1 min-h-0">
-          <ArtifactsView />
+          <ArtifactsView focusedId={focusedArtifactId} />
         </div>
       ) : (
         // 概览：原任务态多节堆叠（自身滚动）。

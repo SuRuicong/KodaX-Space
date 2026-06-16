@@ -84,12 +84,21 @@ function ArtifactViewer({ artifact, projectRoot }: { artifact: ArtifactRefT; pro
   async function onOpenWindow(): Promise<void> {
     const bridge = window.kodaxSpace;
     if (!bridge) return;
-    await bridge.invoke('artifact.openWindow', {
-      id: artifact.id,
-      version: effectiveVersion,
-      projectRoot: projectRoot ?? undefined,
-      title: artifact.title,
-    });
+    try {
+      const r = await bridge.invoke('artifact.openWindow', {
+        id: artifact.id,
+        version: effectiveVersion,
+        projectRoot: projectRoot ?? undefined,
+        title: artifact.title,
+      });
+      if (!r.ok) {
+        setActionMsg('打开窗口失败');
+        setTimeout(() => setActionMsg(null), 2500);
+      }
+    } catch {
+      setActionMsg('打开窗口失败');
+      setTimeout(() => setActionMsg(null), 2500);
+    }
   }
 
   return (
@@ -173,7 +182,12 @@ function ArtifactViewer({ artifact, projectRoot }: { artifact: ArtifactRefT; pro
   );
 }
 
-export function ArtifactsView(): JSX.Element {
+/**
+ * @param focusedId 由宿主（RightSidebar）锁存的"要聚焦的 artifact id"。用于"从概览 tab 点
+ *   对话卡片"场景：此组件当时还没挂载、错过 window 事件，靠这个 prop 在挂载时认领选中。
+ *   其它已挂载实例（popout / Partner）仍靠 window 事件实时响应。
+ */
+export function ArtifactsView({ focusedId }: { focusedId?: string | null } = {}): JSX.Element {
   const sessionId = useAppStore((s) => s.currentSessionId);
   const projectRoot = useAppStore((s) => {
     const cur = s.currentSessionId;
@@ -187,7 +201,13 @@ export function ArtifactsView(): JSX.Element {
     setSelectedId(null);
   }, [sessionId]);
 
+  // 宿主锁存的 focusedId（挂载时 / 变化时）→ 选中（修"从概览点卡片选不中"）。
+  useEffect(() => {
+    if (focusedId) setSelectedId(focusedId);
+  }, [focusedId]);
+
   // F059c: 对话里点 artifact 卡片 → 选中该 id（RightSidebar 同时把 tab 切到 Artifact）。
+  // 给已挂载的实例（popout / Partner）实时响应；侧栏新挂载实例靠上面的 focusedId prop。
   useEffect(() => {
     const onFocus = (e: Event): void => {
       const id = (e as CustomEvent<{ id?: string }>).detail?.id;

@@ -21,6 +21,16 @@ export interface ArtifactHashParams {
   readonly title: string | null;
 }
 
+/**
+ * Sanitize an LLM-authored title before it reaches document.title / OS titlebar:
+ * strip BiDi override controls (titlebar visual-spoofing) + cap to the IPC schema's 256.
+ * U+200F, U+202A–202E, U+2066–2069.
+ */
+export function sanitizeTitle(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  return raw.replace(/[\u200f\u202a-\u202e\u2066-\u2069]/g, '').slice(0, 256) || null;
+}
+
 /** NUL/CR/LF reject — defense-in-depth on path-ish strings arriving via the URL hash. */
 function hasControlChar(s: string): boolean {
   for (let i = 0; i < s.length; i++) {
@@ -48,7 +58,8 @@ export function parseArtifactHash(hash: string): ArtifactHashParams | null {
     version: Number.isInteger(v) && v > 0 ? v : undefined,
     // projectRoot feeds doc-kind file reads downstream (scope-gated); drop control chars here too.
     projectRoot: rawRoot && !hasControlChar(rawRoot) ? rawRoot : null,
-    title: p.get('title'),
+    // title is LLM-authored; sanitize (BiDi titlebar-spoof) + cap to the IPC schema's 256.
+    title: sanitizeTitle(p.get('title')),
   };
 }
 
@@ -69,11 +80,13 @@ export function ArtifactWindow({ params }: { params: ArtifactHashParams }): JSX.
     [ref, payload, params.projectRoot],
   );
 
-  // Reflect the artifact title in the OS window title.
+  // 展示标题：ref.title 来自 store（LLM 产出，未净化）→ sanitize 后用于 OS 标题栏 + header。
+  const displayTitle = sanitizeTitle(ref?.title) ?? params.title ?? 'Artifact';
+
+  // Reflect the (sanitized) artifact title in the OS window title.
   useEffect(() => {
-    const t = ref?.title ?? params.title;
-    if (t) document.title = t;
-  }, [ref?.title, params.title]);
+    document.title = displayTitle;
+  }, [displayTitle]);
 
   const canCopy = payload?.content !== undefined && ref !== null && TEXT_COPY_KINDS.has(ref.kind);
   const canSave = payload?.content !== undefined;
@@ -112,8 +125,8 @@ export function ArtifactWindow({ params }: { params: ArtifactHashParams }): JSX.
     <div className="h-screen w-screen flex flex-col bg-surface text-fg-primary">
       <header className="flex items-center gap-2 px-4 h-11 border-b border-border-default flex-shrink-0">
         <FileOutput className="w-4 h-4 text-fg-muted flex-shrink-0" strokeWidth={1.75} aria-hidden />
-        <span className="font-medium truncate" title={ref?.title}>
-          {ref?.title ?? params.title ?? 'Artifact'}
+        <span className="font-medium truncate" title={displayTitle}>
+          {displayTitle}
         </span>
         {ref && ref.versions.length > 1 && (
           <select

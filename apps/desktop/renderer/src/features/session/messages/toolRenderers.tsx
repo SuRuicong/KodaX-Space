@@ -141,12 +141,15 @@ function ArtifactToolCard({
   }
   function openWindow(e: React.MouseEvent): void {
     e.stopPropagation();
-    void window.kodaxSpace?.invoke('artifact.openWindow', {
-      id,
-      ...(version !== undefined ? { version } : {}),
-      ...(projectRoot ? { projectRoot } : {}),
-      title,
-    });
+    // fire-and-forget；显式吞掉 rejection 避免 unhandledrejection（窗口开不出来无关键损失）。
+    window.kodaxSpace
+      ?.invoke('artifact.openWindow', {
+        id,
+        ...(version !== undefined ? { version } : {}),
+        ...(projectRoot ? { projectRoot } : {}),
+        title,
+      })
+      .catch(() => {});
   }
 
   return (
