@@ -14,6 +14,7 @@ import {
   Terminal,
   Bot,
   Plug,
+  Workflow,
   Check,
   type LucideIcon,
 } from 'lucide-react';
@@ -41,6 +42,7 @@ const POPOUTS: ReadonlyArray<{
   { kind: 'terminal', label: 'Terminal', Icon: Terminal, shortcut: 'Ctrl `' },
   { kind: 'agents', label: 'Agents', Icon: Bot, shortcut: '' },
   { kind: 'mcp', label: 'MCP', Icon: Plug, shortcut: '' },
+  { kind: 'workflow', label: 'Workflow', Icon: Workflow, shortcut: '' },
 ];
 
 export function CommandToolbar({ active, onToggle }: CommandToolbarProps): JSX.Element {

@@ -13,7 +13,9 @@
 // ~/.kodax/space/workflow-origins.json,进程重启仍可归属。SDK 补 origin 字段后此映射可下线。
 
 import { promises as fs } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { WorkflowRunT, WorkflowEventPayload } from '@kodax-space/space-ipc-schema';
 import { getSpaceDataDir } from './data-paths.js';
 import { pushToRenderer } from '../ipc/push.js';
@@ -35,6 +37,49 @@ export interface WorkflowRunManagerLike {
     activeOnly?: boolean;
     limit?: number;
   }): readonly SdkProcessSnapshot[];
+  /** F063 启动:把已解析的 module + options 提交到进程管理器,事件经订阅回流。可能异步。 */
+  startFromOptions(input: Record<string, unknown>): unknown | Promise<unknown>;
+}
+
+// ---- F063 库 / 启动 类型 ----
+export interface WorkflowMetaLite {
+  readonly name: string;
+  readonly description: string;
+  readonly plannedAgents?: number;
+  readonly maxAgents?: number;
+  readonly readOnly?: boolean;
+  // mutable array：与 IPC 出参 schema 推断的 string[] 对齐（SDK 给 readonly，cast 时收敛）。
+  readonly phases?: string[];
+}
+export interface SavedWorkflowLite {
+  readonly name: string;
+  readonly path: string;
+  readonly source?: string;
+}
+export interface WorkflowLibrary {
+  readonly builtin: WorkflowMetaLite[];
+  readonly saved: SavedWorkflowLite[];
+}
+export interface WorkflowPreflight {
+  readonly ok: boolean;
+  readonly issues: { readonly severity?: string; readonly message: string }[];
+}
+/** 发起方 session 的精简字段——足够给 workflow 子 agent 建 KodaXOptions。 */
+export interface LaunchSession {
+  readonly sessionId: string;
+  readonly surface: 'code' | 'partner';
+  readonly provider: string;
+  readonly model?: string;
+  readonly reasoningMode: string;
+  readonly agentMode: string;
+  readonly projectRoot: string;
+}
+export interface LaunchInput {
+  /** built-in name 或 saved 文件路径。 */
+  readonly target: string;
+  readonly source: 'builtin' | 'saved';
+  readonly args?: unknown;
+  readonly session: LaunchSession;
 }
 
 // F062 run 生命周期控制——SDK createWorkflowLifecycleController 的子集(只取本控制器用到的)。
@@ -159,6 +204,99 @@ export class WorkflowController {
       dryRun: options.dryRun ?? false,
     };
     return (await this.lifecycle?.pruneWorkflowRuns(options)) ?? empty;
+  }
+
+  // ---- F063 库 / 启动 / preflight ----
+
+  /** 列出可启动的工作流:built-in(内置)+ saved(用户/项目 ~/.kodax/workflows)。*/
+  async listLibrary(projectRoot?: string): Promise<WorkflowLibrary> {
+    const sdk = await loadCodingSdk();
+    if (!sdk) return { builtin: [], saved: [] };
+    let builtin: WorkflowMetaLite[] = [];
+    let saved: SavedWorkflowLite[] = [];
+    try {
+      builtin = [...(sdk.listBuiltinWorkflows?.() ?? [])] as WorkflowMetaLite[];
+    } catch (err) {
+      console.warn('[WorkflowController] listBuiltinWorkflows:', err instanceof Error ? err.message : err);
+    }
+    try {
+      const refs = (await sdk.discoverSavedWorkflows?.(savedWorkflowDirs(projectRoot))) ?? [];
+      saved = refs.map((r) => ({ name: r.name, path: r.path, source: r.source }));
+    } catch (err) {
+      console.warn('[WorkflowController] discoverSavedWorkflows:', err instanceof Error ? err.message : err);
+    }
+    return { builtin, saved };
+  }
+
+  /** 预检 saved 工作流 capsule（环境/工具/MCP/skills 需求）。built-in 视为可信、直接 ok。*/
+  async preflightSaved(filePath: string): Promise<WorkflowPreflight> {
+    const sdk = await loadCodingSdk();
+    // fail-safe：预检能力缺失时不静默放行（否则用户以为"无问题"却跑了未校验的可执行 capsule）。
+    // 回一条 warning issue → renderer 弹确认，让用户知情后再决定。
+    if (!sdk?.loadSavedWorkflowCapsule || !sdk?.preflightWorkflowCapsule) {
+      return { ok: false, issues: [{ severity: 'warning', message: '预检不可用（SDK 能力缺失），未校验' }] };
+    }
+    try {
+      const capsule = await sdk.loadSavedWorkflowCapsule(filePath);
+      const res = await sdk.preflightWorkflowCapsule({ capsule });
+      return {
+        ok: res.ok,
+        issues: (res.issues ?? []).map((i) => ({ severity: i.severity, message: i.message })),
+      };
+    } catch (err) {
+      return { ok: false, issues: [{ message: err instanceof Error ? err.message : String(err) }] };
+    }
+  }
+
+  /**
+   * 从一个 session 发起工作流:解析 module → 用 session 字段建精简 KodaXOptions →
+   * manager.startFromOptions → 登记归属。事件经 F060 订阅自然回流到 renderer。
+   */
+  async start(input: LaunchInput): Promise<{ runId: string } | { error: string }> {
+    const sdk = await loadCodingSdk();
+    if (!sdk || !this.manager) return { error: 'workflow runtime unavailable' };
+    let module: unknown;
+    try {
+      module =
+        input.source === 'builtin'
+          ? sdk.getBuiltinWorkflow?.(input.target)
+          : await sdk.loadSavedWorkflow?.(input.target);
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+    if (!module) return { error: `workflow not found: ${input.target}` };
+
+    const s = input.session;
+    // 精简 options——workflow 子 agent 只需 provider/model/reasoning/agentMode/context;
+    // 不带主对话的 events/storage/compact 等 per-run 状态(那些是 real-session 对话回路专用)。
+    const options: Record<string, unknown> = {
+      provider: s.provider,
+      reasoningMode: s.reasoningMode,
+      agentMode: s.agentMode,
+      ...(s.model ? { model: s.model } : {}),
+      context: { gitRoot: s.projectRoot, executionCwd: s.projectRoot },
+    };
+    const runId = `wf_${randomUUID()}`;
+    const runDir = path.join(this.runBaseDir, runId);
+    const meta = (module as { meta?: { name?: string } }).meta;
+    try {
+      // await:startFromOptions 可能异步（建 run 目录/注册进程/spawn）。不 await 会让
+      // 异步错误变 unhandled rejection，且 registerOrigin 抢跑在启动确认之前（ghost run）。
+      await this.manager.startFromOptions({
+        module,
+        args: input.args ?? {},
+        // workflow 子 agent 用精简 options（无 session block）——run 是**短命**的，自带
+        // run 目录（run.json/events.jsonl/artifacts），不写对话 lineage。刻意设计。
+        options,
+        runId,
+        runDir,
+        processMetadata: { displayName: meta?.name, source: 'sdk' },
+      });
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+    this.registerOrigin(runId, { sessionId: s.sessionId, surface: s.surface });
+    return { runId };
   }
 
   /**
@@ -302,6 +440,41 @@ export class WorkflowController {
       release();
     }
   }
+}
+
+// F063 用到的 SDK coding 子集(库/启动/preflight)。lazy-load 一次缓存。
+interface CodingSdkSubset {
+  listBuiltinWorkflows?: () => readonly WorkflowMetaLite[];
+  getBuiltinWorkflow?: (name: string) => unknown;
+  discoverSavedWorkflows?: (dirs: {
+    personal?: string;
+    project?: string;
+  }) => Promise<readonly SavedWorkflowLite[]>;
+  loadSavedWorkflow?: (filePath: string) => Promise<unknown>;
+  loadSavedWorkflowCapsule?: (filePath: string) => Promise<unknown>;
+  preflightWorkflowCapsule?: (input: { capsule: unknown }) => Promise<{
+    ok: boolean;
+    issues?: readonly { severity?: string; message: string }[];
+  }>;
+}
+let codingSdkCache: CodingSdkSubset | null = null;
+async function loadCodingSdk(): Promise<CodingSdkSubset | null> {
+  if (codingSdkCache) return codingSdkCache;
+  try {
+    codingSdkCache = (await import('@kodax-ai/kodax/coding')) as unknown as CodingSdkSubset;
+    return codingSdkCache;
+  } catch (err) {
+    console.warn('[WorkflowController] failed to load SDK coding module:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/** saved 工作流搜索目录:个人 ~/.kodax/workflows + 项目 <root>/.kodax/workflows。*/
+function savedWorkflowDirs(projectRoot?: string): { personal: string; project?: string } {
+  return {
+    personal: path.join(os.homedir(), '.kodax', 'workflows'),
+    ...(projectRoot ? { project: path.join(projectRoot, '.kodax', 'workflows') } : {}),
+  };
 }
 
 /** Lazy-load SDK 的进程级 run manager 单例(与 AMAW/REPL 共享同一实例)。*/

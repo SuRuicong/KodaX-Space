@@ -3,8 +3,24 @@
 // list/get：renderer 切 session 时播种已知 run，或按 runId 取单个 snapshot。
 // 实时流走 push 通道 workflow.event（由 WorkflowController 订阅 SDK 后转发）。
 
+import os from 'node:os';
+import path from 'node:path';
 import { registerChannel } from './register.js';
 import { workflowController } from '../kodax/workflow-controller.js';
+import { kodaxHost } from '../kodax/host.js';
+
+/**
+ * SECURITY（F063）：saved 工作流是可执行 JS——loadSavedWorkflow/loadSavedWorkflowCapsule
+ * 会加载并执行它。renderer 传来的 saved 路径必须限定在已知安全目录内，否则一个被攻陷的
+ * renderer（XSS/恶意依赖）能让 main 进程加载任意 .js 以 Node 权限执行。
+ * projectRoot 必须取自**可信的 main 侧 session**（不能信 renderer 传的，否则白名单可绕）。
+ */
+function isSafeWorkflowPath(filePath: string, projectRoot: string | undefined): boolean {
+  const resolved = path.resolve(filePath);
+  const allowed = [path.resolve(os.homedir(), '.kodax', 'workflows')];
+  if (projectRoot) allowed.push(path.resolve(projectRoot, '.kodax', 'workflows'));
+  return allowed.some((prefix) => resolved === prefix || resolved.startsWith(prefix + path.sep));
+}
 
 export function registerWorkflowChannels(): void {
   registerChannel('workflow.list', (input) => {
@@ -47,5 +63,42 @@ export function registerWorkflowChannels(): void {
       candidates: [...r.candidates],
       dryRun: r.dryRun,
     };
+  });
+
+  // F063 库 / preflight / 启动。
+  registerChannel('workflow.library', async (input) => workflowController.listLibrary(input?.projectRoot));
+
+  registerChannel('workflow.preflight', async (input) => {
+    // 可信 projectRoot 取自 session；路径白名单（防任意文件加载执行）。
+    const session = kodaxHost.get(input.sessionId);
+    if (!isSafeWorkflowPath(input.path, session?.projectRoot)) {
+      return { ok: false, issues: [{ severity: 'error', message: '路径不在允许的工作流目录内' }] };
+    }
+    return workflowController.preflightSaved(input.path);
+  });
+
+  registerChannel('workflow.start', async (input) => {
+    // 从发起方 session 取运行时字段建 workflow 子 agent 的 KodaXOptions。
+    const session = kodaxHost.get(input.sessionId);
+    if (!session) return { error: 'session not found' };
+    // SECURITY：saved 路径必须在白名单目录内（可信 projectRoot 来自 session）。
+    if (input.source === 'saved' && !isSafeWorkflowPath(input.target, session.projectRoot)) {
+      return { error: '路径不在允许的工作流目录内' };
+    }
+    const res = await workflowController.start({
+      target: input.target,
+      source: input.source,
+      ...(input.args !== undefined ? { args: input.args } : {}),
+      session: {
+        sessionId: session.sessionId,
+        surface: session.surface,
+        provider: session.provider,
+        ...(session.model !== undefined ? { model: session.model } : {}),
+        reasoningMode: session.reasoningMode,
+        agentMode: session.agentMode,
+        projectRoot: session.projectRoot,
+      },
+    });
+    return 'error' in res ? { error: res.error } : { runId: res.runId };
   });
 }

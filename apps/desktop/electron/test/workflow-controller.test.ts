@@ -23,10 +23,13 @@ type FakeEvent = { type: 'workflow_started' | 'workflow_updated' | 'workflow_fin
 function fakeManager() {
   let listener: ((e: FakeEvent) => void) | null = null;
   const snaps = new Map<string, FakeSnap>();
+  const started: Record<string, unknown>[] = [];
   const mgr: WorkflowRunManagerLike & {
+    started: typeof started;
     _emit(e: FakeEvent): void;
     _seed(s: FakeSnap): void;
   } = {
+    started,
     subscribeWorkflowProcess(l) {
       listener = l as (e: FakeEvent) => void;
       return () => {
@@ -38,6 +41,10 @@ function fakeManager() {
     },
     listWorkflowProcessSnapshots() {
       return [...snaps.values()] as never;
+    },
+    startFromOptions(input) {
+      started.push(input);
+      return { runId: (input as { runId?: string }).runId };
     },
     _emit(e) {
       snaps.set(e.snapshot.runId, e.snapshot);
@@ -253,6 +260,71 @@ test('control methods degrade safely when no lifecycle injected (fake manager pa
     assert.equal(await ctrl.deleteRun('r1'), false);
     const res = await ctrl.prune({ keep: 1 });
     assert.deepEqual(res, { deleted: 0, protectedRuns: 0, candidates: [], dryRun: false });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---- F063 库 / 启动（用真 SDK 解析 module，但 startFromOptions 是 fake → 不跑、不花 token）----
+const LAUNCH_SESSION = {
+  sessionId: 's1',
+  surface: 'code' as const,
+  provider: 'mock',
+  reasoningMode: 'auto',
+  agentMode: 'ama',
+  projectRoot: process.cwd(),
+};
+
+test('start: builtin workflow resolves via real SDK + startFromOptions + origin registered', async () => {
+  const { dir, file } = freshFile();
+  try {
+    const ctrl = new WorkflowController(() => {}, file);
+    const mgr = fakeManager();
+    await ctrl.init(mgr); // fake manager, no lifecycle
+    const res = await ctrl.start({
+      target: 'parallel-investigation',
+      source: 'builtin',
+      session: LAUNCH_SESSION,
+    });
+    assert.ok('runId' in res, JSON.stringify(res));
+    if ('runId' in res) {
+      assert.ok(res.runId.startsWith('wf_'));
+      assert.equal(mgr.started.length, 1);
+      const call = mgr.started[0]!;
+      assert.equal(call.runId, res.runId);
+      assert.equal((call.options as { provider?: string }).provider, 'mock');
+      assert.ok(call.module, 'real module passed');
+      // 归属已登记
+      mgr._seed(sampleSnapshot(res.runId));
+      assert.equal(ctrl.get(res.runId)?.sessionId, 's1');
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('start: unknown builtin returns error (no run started)', async () => {
+  const { dir, file } = freshFile();
+  try {
+    const ctrl = new WorkflowController(() => {}, file);
+    const mgr = fakeManager();
+    await ctrl.init(mgr);
+    const res = await ctrl.start({ target: 'no-such-workflow', source: 'builtin', session: LAUNCH_SESSION });
+    assert.ok('error' in res);
+    assert.equal(mgr.started.length, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('listLibrary: real SDK returns parallel-investigation among built-ins', async () => {
+  const { dir, file } = freshFile();
+  try {
+    const ctrl = new WorkflowController(() => {}, file);
+    await ctrl.init(fakeManager());
+    const lib = await ctrl.listLibrary(process.cwd());
+    assert.ok(lib.builtin.some((w) => w.name === 'parallel-investigation'), JSON.stringify(lib.builtin));
+    assert.ok(Array.isArray(lib.saved));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

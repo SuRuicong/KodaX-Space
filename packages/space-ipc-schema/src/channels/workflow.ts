@@ -256,3 +256,66 @@ export const workflowPruneChannel = {
     dryRun: z.boolean(),
   }),
 } as const;
+
+// ============================================================================
+// F063 — Workflow 库 + 启动 + capsule preflight。
+// ============================================================================
+
+const workflowMetaLiteSchema = z.object({
+  name: z.string().max(SHORT),
+  description: z.string().max(MSG),
+  plannedAgents: z.number().int().nonnegative().optional(),
+  maxAgents: z.number().int().nonnegative().optional(),
+  readOnly: z.boolean().optional(),
+  phases: z.array(z.string().max(SHORT)).max(256).optional(),
+});
+const savedWorkflowLiteSchema = z.object({
+  name: z.string().max(SHORT),
+  path: z.string().max(4096),
+  source: z.string().max(SHORT).optional(),
+});
+
+// ---- Invoke: workflow.library（built-in + saved 发现） ----
+export const workflowLibraryChannel = {
+  name: 'workflow.library',
+  direction: 'invoke',
+  input: z.object({ projectRoot: z.string().max(4096).optional() }).optional(),
+  output: z.object({
+    builtin: z.array(workflowMetaLiteSchema).max(256),
+    saved: z.array(savedWorkflowLiteSchema).max(1000),
+  }),
+} as const;
+
+// ---- Invoke: workflow.preflight（saved capsule 需求校验） ----
+export const workflowPreflightChannel = {
+  name: 'workflow.preflight',
+  direction: 'invoke',
+  // sessionId 用于在 main 侧取**可信** projectRoot 做路径白名单（防任意文件加载执行）。
+  input: z.object({ path: z.string().min(1).max(4096), sessionId: z.string().min(1).max(128) }),
+  output: z.object({
+    ok: z.boolean(),
+    issues: z
+      .array(z.object({ severity: z.string().max(SHORT).optional(), message: z.string().max(MSG) }))
+      .max(256),
+  }),
+} as const;
+
+// ---- Invoke: workflow.start（从 session 发起） ----
+export const workflowStartChannel = {
+  name: 'workflow.start',
+  direction: 'invoke',
+  input: z.object({
+    /** built-in name 或 saved 文件路径。 */
+    target: z.string().min(1).max(4096),
+    source: z.enum(['builtin', 'saved']),
+    /** 发起方 session（main 据此取 provider/model/projectRoot 建 options）。 */
+    sessionId: z.string().min(1).max(128),
+    /** 透传给工作流脚本的 args（JSON 值）。 */
+    args: z.unknown().optional(),
+  }),
+  output: z.object({
+    runId: z.string().max(SHORT).optional(),
+    /** 启动失败时的诊断（runId 缺省时present）。 */
+    error: z.string().max(MSG).optional(),
+  }),
+} as const;

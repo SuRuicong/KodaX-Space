@@ -132,6 +132,9 @@ import {
   workflowRenameChannel,
   workflowDeleteChannel,
   workflowPruneChannel,
+  workflowLibraryChannel,
+  workflowPreflightChannel,
+  workflowStartChannel,
 } from './workflow.js';
 
 export const invokeChannels = {
@@ -225,6 +228,9 @@ export const invokeChannels = {
   [workflowRenameChannel.name]: workflowRenameChannel,
   [workflowDeleteChannel.name]: workflowDeleteChannel,
   [workflowPruneChannel.name]: workflowPruneChannel,
+  [workflowLibraryChannel.name]: workflowLibraryChannel,
+  [workflowPreflightChannel.name]: workflowPreflightChannel,
+  [workflowStartChannel.name]: workflowStartChannel,
 } as const;
 
 export const pushChannels = {

@@ -40,6 +40,7 @@ import type {
 import { useAppStore } from '../../store/appStore.js';
 import { pushToast } from '../../store/toastStore.js';
 import { buildItemTree, type WorkflowTreeNode } from './buildItemTree.js';
+import { WorkflowLauncher } from './WorkflowLauncher.js';
 
 // ---- run / item 状态 → 图标 + 颜色 ----
 const RUN_ICON: Record<WorkflowProcessStatusT, LucideIcon> = {
@@ -141,10 +142,15 @@ export function WorkflowPanel({ runs, variant = 'compact' }: WorkflowPanelProps)
   );
 }
 
-/** Popout 连接版：自取当前 session 的 runs 再渲染。 */
+/** Popout 连接版：顶部启动器（F063）+ 当前 session 的 runs。 */
 export function WorkflowPanelConnected({ variant = 'full' }: { variant?: 'compact' | 'full' }): JSX.Element {
   const runs = useSessionWorkflowRuns();
-  return <WorkflowPanel runs={runs} variant={variant} />;
+  return (
+    <div>
+      <WorkflowLauncher />
+      <WorkflowPanel runs={runs} variant={variant} />
+    </div>
+  );
 }
 
 // 头部控制簇：pause/resume/stop（按 status）+ rename（full）+ delete（终态 + full）。
