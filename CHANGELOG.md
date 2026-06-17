@@ -12,6 +12,29 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 > v0.1.7 内容 (F011/F023/F024/F026/F038) 跟 v0.1.8 一起发。GitHub Releases 顶部仍是 v0.1.5，
 > 0.1.7 这条 section 留作历史记录、git log 引用入口。
 
+## [0.1.17] - 2026-06-17
+
+### Theme
+
+**凭据存储去 keytar 化 + 桌面级 UI 打磨。**
+
+修掉一类隐蔽的启动崩溃（开发机系统 Node ABI 与 Electron 内置 Node 不一致时 keytar native 崩、拖垮 app），换成自带 prebuild 的 `@napi-rs/keyring`；外加 macOS 式自动隐藏滚动条、dashboard 与 titlebar 细节打磨。
+
+### Changed
+
+- **凭据存储 keytar → @napi-rs/keyring** — keytar 已 archived 停维护且走 node-gyp 源码编译，开发机系统 Node ABI 与 Electron 内置 Node ABI 不一致时会编出错 ABI 的 native 模块、`require` 即 native 崩（exit `0xFFFF7003`，try/catch 拦不住）。换成纯 N-API + Rust、各平台自带 prebuild 的 `@napi-rs/keyring`：装下来即匹配运行时，不走 node-gyp、不需构建工具、无 ABI 崩溃。keychain 封装逻辑零改动（动态 import + memory fallback + probe 全保留）。新增 `.nvmrc`（Node 20）对齐 Electron 内置 Node。
+- **KodaX SDK 升级 0.7.50 → 0.7.51**。
+
+### Added
+
+- **macOS 式自动隐藏圆角滚动条** — 滚动时浮现、停止后淡出的圆角滚动条；dashboard 缩高、titlebar 按钮间距打磨。
+
+### Fixed
+
+- **主题 / 特效 titlebar 图标改用 Lucide 并彻底错开** — 消除两个图标"撞脸"。
+
+---
+
 ## [0.1.16] - 2026-06-17
 
 ### Theme
