@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../../store/appStore.js';
 import { ProviderCard } from '../provider/ProviderCard.js';
 import { CustomProviderForm } from '../provider/CustomProviderForm.js';
+import { WorkflowPolicySection } from '../workflow/WorkflowPolicySection.js';
 
 export type SettingsTab = 'providers' | 'preferences';
 
@@ -243,6 +244,8 @@ function PreferencesPanel(): JSX.Element {
       <section className="pt-3 border-t border-border-default">
         <SmartPopoutToggle />
       </section>
+
+      <WorkflowPolicySection />
 
       <section className="pt-2 border-t border-border-default text-xs text-fg-muted">
         More preferences (theme override, language, telemetry) will land in upcoming versions.

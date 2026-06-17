@@ -102,6 +102,7 @@ import { getSessionStorageHandle } from './session-store.js';
 import { wrapSdkError } from './sdk-errors.js';
 import { buildSkillsPrompt } from './skills-prompt.js';
 import { SPACE_MANUAL_TOPICS, SPACE_PRODUCT_NAME } from './space-manual-topics.js';
+import { workflowPolicyStore } from './workflow-policy.js';
 import type {
   ManagedSession,
   PermissionRequestFn,
@@ -812,6 +813,9 @@ export class RealKodaXSession implements ManagedSession {
         productName: SPACE_PRODUCT_NAME,
         topics: SPACE_MANUAL_TOPICS,
       },
+      // F064: Workflow Host Policy —— 治理自然语言 AMAW 自启（off/confirm/on，默认 confirm）
+      // + caps（已 clamp 到 SDK 硬上限）。SDK 据此决定是否自启 + 钳运行时上限/审批/进程上限。
+      workflowHostPolicy: workflowPolicyStore.get(),
     };
 
     try {

@@ -38,6 +38,7 @@ import { registerClipboardChannels } from './ipc/clipboard.js';
 import { registerArtifactChannels } from './ipc/artifact.js';
 import { registerWorkflowChannels } from './ipc/workflow.js';
 import { workflowController } from './kodax/workflow-controller.js';
+import { workflowPolicyStore } from './kodax/workflow-policy.js';
 import { registerArtifactWindowChannel } from './artifact/artifact-window.js';
 import { installNavigationGuards } from './window/navigation-guards.js';
 import { sandboxHost } from './artifact/sandbox-host.js';
@@ -359,6 +360,11 @@ app.whenReady().then(async () => {
     hydrateShellEnvOnce(),
     probeKodaxSdk(),
     probeSkillRegistry(),
+    // F064: 在窗口/首跑前 await 加载 Workflow Host Policy——real-session 同步 get() 读缓存，
+    // 否则首个 session 可能撞上默认值而非用户持久化的策略（~100µs 文件读，零额外延迟）。
+    workflowPolicyStore.load().catch((err) => {
+      console.warn('[main] workflow policy load failed:', err instanceof Error ? err.message : err);
+    }),
   ]);
   // v0.1.10 chore: best-effort 清理早期残留的 ~/.kodax_space 孤儿目录。
   // fire-and-forget,never throws,不阻塞 UI 启动;详见 cleanup-orphan-kodax-space.ts。
@@ -412,6 +418,7 @@ app.whenReady().then(async () => {
   void workflowController.init().catch((err) => {
     console.warn('[main] workflow controller init failed:', err instanceof Error ? err.message : err);
   });
+  // F064 Workflow Host Policy 已在上面启动期 Promise.all 里 await 加载（早于窗口/首跑）。
   // F059c L3：artifact.openWindow → 独立最大化窗口（复用同一 renderer + preload，走 #artifact hash）。
   registerArtifactWindowChannel({
     preloadPath: PRELOAD_PATH,

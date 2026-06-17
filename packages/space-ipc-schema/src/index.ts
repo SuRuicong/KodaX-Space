@@ -256,6 +256,7 @@ export {
   type WorkflowProcessSummaryStatusT,
   type WorkflowRunT,
   type WorkflowEventPayload,
+  type WorkflowPolicyT,
 } from './channels/workflow.js';
 
 export {

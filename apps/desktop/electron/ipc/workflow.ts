@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { registerChannel } from './register.js';
 import { workflowController } from '../kodax/workflow-controller.js';
+import { workflowPolicyStore } from '../kodax/workflow-policy.js';
 import { kodaxHost } from '../kodax/host.js';
 
 /**
@@ -101,4 +102,8 @@ export function registerWorkflowChannels(): void {
     });
     return 'error' in res ? { error: res.error } : { runId: res.runId };
   });
+
+  // F064 Host policy（AMAW 自启治理 + caps）。
+  registerChannel('workflow.policy.get', () => workflowPolicyStore.get());
+  registerChannel('workflow.policy.set', (input) => workflowPolicyStore.set(input));
 }

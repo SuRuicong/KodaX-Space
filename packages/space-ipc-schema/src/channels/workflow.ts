@@ -319,3 +319,37 @@ export const workflowStartChannel = {
     error: z.string().max(MSG).optional(),
   }),
 } as const;
+
+// ============================================================================
+// F064 — Workflow Host Policy（AMAW 自然语言自启治理 + caps）。
+// ============================================================================
+
+const workflowAutoStartSchema = z.enum(['off', 'confirm', 'on']);
+const workflowPolicySchema = z.object({
+  autoStart: workflowAutoStartSchema,
+  maxAgents: z.number().int().positive(),
+  maxConcurrency: z.number().int().positive(),
+  tokenBudget: z.number().int().positive(),
+});
+export type WorkflowPolicyT = z.infer<typeof workflowPolicySchema>;
+
+export const workflowPolicyGetChannel = {
+  name: 'workflow.policy.get',
+  direction: 'invoke',
+  input: z.undefined().optional(),
+  output: workflowPolicySchema,
+} as const;
+
+export const workflowPolicySetChannel = {
+  name: 'workflow.policy.set',
+  direction: 'invoke',
+  // 部分更新（main 侧 normalize + 钳到硬上限后回完整策略）。
+  input: z.object({
+    autoStart: workflowAutoStartSchema.optional(),
+    // 上界不强约束（main 侧 normalize 钳到硬上限）；floor 与 normalizeWorkflowPolicy 对齐。
+    maxAgents: z.number().int().min(1).optional(),
+    maxConcurrency: z.number().int().min(1).optional(),
+    tokenBudget: z.number().int().min(1000).optional(),
+  }),
+  output: workflowPolicySchema,
+} as const;
