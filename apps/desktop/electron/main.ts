@@ -41,7 +41,6 @@ import { workflowController } from './kodax/workflow-controller.js';
 import { workflowPolicyStore } from './kodax/workflow-policy.js';
 import { registerArtifactWindowChannel } from './artifact/artifact-window.js';
 import { installNavigationGuards } from './window/navigation-guards.js';
-import { sandboxHost } from './artifact/sandbox-host.js';
 import { cleanupOrphanKodaxSpaceDirWithLog } from './kodax/cleanup-orphan-kodax-space.js';
 import { getPtyHost } from './terminal/ptyHost.js';
 import { settingsStore } from './settings/store.js';
@@ -407,10 +406,8 @@ app.whenReady().then(async () => {
   registerTerminalChannels();
   // OC-31 v0.1.9 clipboard image paste — renderer 把粘贴板图片落到 app temp dir
   registerClipboardChannels();
-  // F048 路径 D artifact：自托管 LC sandbox bundle on 127.0.0.1（best-effort）。
-  // bundle 未装（LC build:bundle 尚未产出可用产物，见记忆 livecanvas_gap_sandbox_bundle）
-  // 时 ready:false，renderer 显示占位、不开端口。dev parentOrigin = Vite renderer origin
-  // （sandbox 的 localhost bypass 接受）；prod renderer=file:// 无可比对 origin（留待 F055 app://）。
+  // Artifact 数据层（F057，LC-free）：create/list/read/delete/export + openWindow。
+  // LC sandbox（路径 D）的 loopback server 已移除，待 LiveCanvas 稳定后作为独立 feature 重接。
   registerArtifactChannels();
   // F060 Workflow Harness 支持：list/get IPC + 订阅 SDK 进程事件流转发到 renderer（workflow.event）。
   // init 是 best-effort（lazy-load SDK run manager + 加载持久化归属）；失败只降级为"无实时工作流面"。
@@ -425,30 +422,6 @@ app.whenReady().then(async () => {
     rendererDist: RENDERER_DIST,
     devServerUrl: VITE_DEV_SERVER_URL,
   });
-  const sandboxParentOrigin = isDev && VITE_DEV_SERVER_URL ? new URL(VITE_DEV_SERVER_URL).origin : '';
-  void sandboxHost
-    .start({
-      parentOrigin: sandboxParentOrigin,
-      envOverride: process.env.SPACE_LC_SANDBOX_BUNDLE,
-    })
-    .then((info) => {
-      if (info.ready) {
-        console.info('[main] artifact sandbox serving at', info.sandboxOrigin);
-        // F055 gap: with no parent origin to pin, `frame-ancestors` degrades to
-        // 'self' only and the sandbox is NOT origin-isolated from a rogue local
-        // framer. Only reachable if a bundle is dropped into a packaged build
-        // before F055 lands (dev always has the Vite origin). Make it loud.
-        if (!sandboxParentOrigin) {
-          console.warn(
-            '[main] artifact sandbox started with NO parent origin — framing is unrestricted ' +
-              '(packaged app:// host pinning lands in F055). Treat as non-isolated until then.',
-          );
-        }
-      } else {
-        console.info('[main] artifact sandbox not ready:', info.error);
-      }
-    })
-    .catch((err) => console.warn('[main] sandbox host start failed:', err instanceof Error ? err.message : err));
   // F021 v0.1.5 冷启动 file association：用户双击 .mcpb 启动 Space 时，path 在 process.argv 里。
   // mainWindow 还没创建，但 installMcpbFromOsHandoff 内部会拉 BrowserWindow.getAllWindows()[0]
   // ——等 createMainWindow() 跑完才有 window。fire-and-forget，让 window 先建好。
@@ -586,10 +559,6 @@ app.on('before-quit', (event) => {
     // McpManager: 释放 stdio transport 子进程,免得 quit 后 server 进程作为 zombie 留着。
     disposeMcpManager().catch((err) =>
       console.warn('[main] mcp shutdown:', err instanceof Error ? err.message : err),
-    ),
-    // F048 路径 D：关闭 loopback sandbox server（释放 127.0.0.1 端口）。
-    sandboxHost.dispose().catch((err) =>
-      console.warn('[main] sandbox host dispose:', err instanceof Error ? err.message : err),
     ),
     // KodaX in-flight session：abort + drain queue（dispose 本身很快，不 await SDK 后台 run）。
     kodaxHost

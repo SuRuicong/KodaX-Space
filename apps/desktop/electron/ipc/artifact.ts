@@ -1,15 +1,15 @@
-// artifact.* IPC handlers — 路径 D + F057 数据层 (记忆 livecanvas_artifact_plan).
+// artifact.* IPC handlers — F057 数据层 (记忆 livecanvas_artifact_plan).
 //
-// sandboxInfo: where the self-hosted LC sandbox is served (P1, LC tier).
 // create/list/read/delete: the LC-free artifact store (F057). create/delete push
 // `artifact.changed` so the renderer refetches. The generation tool (F058) calls
 // artifactStore directly (same singleton) rather than going through IPC.
+// (LC sandbox `artifact.sandboxInfo` channel removed — re-added with the LiveCanvas
+// interactive tier as a separate feature.)
 
 import { promises as fs } from 'node:fs';
 import { createRequire } from 'node:module';
 import { registerChannel } from './register.js';
 import { pushToRenderer } from './push.js';
-import { sandboxHost } from '../artifact/sandbox-host.js';
 import { artifactStore } from '../artifact/store.js';
 import { extForKind, extForImageMime, parseDataUri, sanitizeFilename } from '../artifact/export-helpers.js';
 
@@ -23,8 +23,6 @@ function getElectron(): typeof import('electron') {
 }
 
 export function registerArtifactChannels(): void {
-  registerChannel('artifact.sandboxInfo', () => sandboxHost.getInfo());
-
   registerChannel('artifact.create', async (input) => {
     const res = await artifactStore.upsert(input);
     pushToRenderer('artifact.changed', {

@@ -1,28 +1,18 @@
 // ArtifactView (F056) — the artifact renderer registry: dispatch a typed artifact
 // to its renderer by `kind`.
 //
-// STATIC tier (LC-free, release baseline): markdown/code/html/svg/image/chart +
-// pdf/docx/xlsx (reusing F024 RichPreview). INTERACTIVE tier ('react') runs in the
-// LiveCanvas sandbox and is GATED by isReactArtifactEnabled() — OFF in shipped
-// builds, so the LC half-product never blocks release.
+// STATIC tier (LC-free, the only tier): markdown/code/html/svg/image/chart +
+// pdf/docx/xlsx (reusing F024 RichPreview). The INTERACTIVE 'react' tier (LiveCanvas
+// sandbox) was removed — its runtime machinery is being re-integrated as a separate
+// feature once LiveCanvas stabilizes; until then a 'react' artifact renders an
+// unavailable placeholder. NO @livecanvas/* dependency anywhere in this path.
 
-import { lazy, Suspense } from 'react';
 import { Markdown } from '../session/messages/Markdown';
 import { MonacoViewer } from '../code/MonacoViewer';
 import { RichPreview } from '../preview/RichPreview';
-import { isReactArtifactEnabled } from './artifactKind';
 import { HtmlArtifact } from './renderers/HtmlArtifact';
 import { ChartArtifact } from './renderers/ChartArtifact';
 import { SvgArtifact, ImageArtifact } from './renderers/MediaArtifact';
-
-// The interactive-React tier (LiveCanvas sandbox) loads via a dynamic import
-// GUARDED by the static `import.meta.env.DEV` constant. In a release build Vite
-// folds DEV to false, so Rollup dead-code-eliminates this branch — the
-// SandboxFrame chunk AND its `@livecanvas/sandbox-bridge` dependency never enter
-// the bundle. **发布构建因此完全不编译/不依赖 LC**;dev 才按需加载(artifactKind 门控)。
-const SandboxFrameLazy = import.meta.env.DEV
-  ? lazy(() => import('./SandboxFrame').then((m) => ({ default: m.SandboxFrame })))
-  : null;
 
 export type { ArtifactContent } from './artifactContent';
 import type { ArtifactContent } from './artifactContent';
@@ -85,17 +75,10 @@ export function ArtifactView(props: ArtifactContent): JSX.Element {
         </div>
       );
     case 'react':
-      if (!isReactArtifactEnabled() || !SandboxFrameLazy) return <ReactTierUnavailable />;
-      return (
-        <Suspense fallback={<div className="flex-1" />}>
-          <SandboxFrameLazy
-            indexUrl={props.indexUrl}
-            sandboxOrigin={props.sandboxOrigin}
-            code={props.code}
-            artifactId={props.artifactId}
-          />
-        </Suspense>
-      );
+      // Interactive tier removed (LiveCanvas sandbox machinery extracted; re-added
+      // as a separate feature). A 'react' artifact is never produced now, but keep
+      // a graceful placeholder so a stray/legacy one doesn't crash the panel.
+      return <ReactTierUnavailable />;
     default: {
       // Exhaustiveness guard: adding an ArtifactContent variant without a branch
       // fails to compile here instead of silently rendering nothing.

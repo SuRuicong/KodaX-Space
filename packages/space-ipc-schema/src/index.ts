@@ -224,8 +224,6 @@ export {
 } from './channels/terminal.js';
 
 export {
-  artifactSandboxInfoChannel,
-  type ArtifactSandboxInfo,
   artifactKindSchema,
   artifactRefSchema,
   artifactCreateChannel,

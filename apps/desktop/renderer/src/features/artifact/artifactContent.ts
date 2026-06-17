@@ -10,4 +10,7 @@ export type ArtifactContent =
   | { kind: 'image'; src: string; alt?: string }
   | { kind: 'chart'; spec: unknown }
   | { kind: 'pdf' | 'docx' | 'xlsx'; projectRoot: string; path: string }
-  | { kind: 'react'; indexUrl: string; sandboxOrigin: string; code: string; artifactId: string };
+  // Interactive tier removed (LiveCanvas sandbox extracted to a future feature).
+  // Kept as an inert variant so ArtifactView's exhaustive switch still covers it
+  // (renders an "unavailable" placeholder); nothing constructs it anymore.
+  | { kind: 'react' };
