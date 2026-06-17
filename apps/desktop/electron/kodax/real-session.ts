@@ -941,6 +941,12 @@ export class RealKodaXSession implements ManagedSession {
         // AMA 路径：SDK catch 已先调过 onError(暂存 err)，这里 throw 上来。统一走
         // emitTerminalError 收口（内部 latch 去重 + wrapSdkError 富文案 + retry 倒计时）。
         await emitTerminalError(err);
+      } else if (pendingTerminalError !== null && !terminalEmitted) {
+        // 竞态：SDK error 与用户 cancel 几乎同时发生（signal 在 throw 前已 aborted）。
+        // 终止事件不再发（host 端在 s.cancel() 前已推过 cancelled，UI 已停），但不能让
+        // SDK error 彻底无声蒸发——落一条 main 日志便于排查（review HIGH-2）。
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[real-session ${sid}] sdk error suppressed by concurrent cancel: ${msg}`);
       }
     } finally {
       // /compact 标记是 one-shot — 不论本轮成功 / 中断 / 报错，consume 后清掉
