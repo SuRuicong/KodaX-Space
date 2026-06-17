@@ -12,6 +12,25 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 > v0.1.7 内容 (F011/F023/F024/F026/F038) 跟 v0.1.8 一起发。GitHub Releases 顶部仍是 v0.1.5，
 > 0.1.7 这条 section 留作历史记录、git log 引用入口。
 
+## [0.1.19] - 2026-06-18
+
+### Theme
+
+**修掉错误/取消后的会话历史错位 + popout 浮层掉位，并升 SDK。**
+
+紧急维护版：收口会话终止事件，修掉「500 报错后历史气泡错乱、回复被甩到列表底部」与取消后界面卡顿；顺带兜回 F060 起 popout 浮层掉到输入框下方的回归。SDK 升到 `@kodax-ai/kodax` 0.7.52（OpenAI-compat provider 健壮性 + Node floor 20）。
+
+### Fixed
+
+- **终止事件单点收口** — SDK AMA 错误路径一轮会触发 `onError` + `onComplete` + 外层 catch 多次，naive 实现会往事件流塞多个终止事件，让 renderer 的 user↔event 段配对整体错位（错误挂错气泡 / 回复甩到列表底部）。改为每轮至多发一个终止事件：`onError` 仅暂存、`onComplete` 见暂存错误则不报完成、`session_error` 由 `emitTerminalError` 统一发（latch 去重 + 富文案 + retry 倒计时）；renderer `findSegmentEnd` 再兜一道并入连续终止事件。
+- **取消即时反馈** — 点 Stop 立刻在本地 append 一个 `cancelled` 终止事件让 UI 马上停，`session.cancel` IPC 改 fire-and-forget；`appStore` 对同轮重复的 `cancelled` 去重；竞态下与 cancel 同时到达的 SDK error 落 main 日志而非无声蒸发。
+- **popout 浮层定位回归** — `.glass`（裸规则 `position: relative`）级联压过 Tailwind `.absolute`，使 plan / diff 浮层退回文档流、掉到输入框下方；用 `!absolute` important utility 精准压回（仅此一处冲突，零波及其它 glass 面板）。
+
+### Changed
+
+- **`@kodax-ai/kodax` 0.7.51 → 0.7.52** — 维护版：OpenAI-compat provider 健壮性（forced `tool_choice` 在 5xx / 不支持参数时回退、重放前修复畸形 tool history）、Node runtime floor 抬到 20、跨平台 CI 测试清理。无新功能、无 LLM-facing prompt 变更。
+- **workflow stop 本地兜底** — `WorkflowController.stop()` 在 lifecycle 未即时回执时，本地合成一个 cancelled 快照推给 renderer（running→cancelled / pending→skipped，重算 counts/progress），避免取消 workflow 后进度树停在旧状态。
+
 ## [0.1.18] - 2026-06-17
 
 ### Theme
