@@ -121,7 +121,20 @@ function findSegmentEnd(events: readonly SessionEvent[], cursor: number): number
   for (let i = cursor; i < events.length; i++) {
     const e = events[i];
     if (e.kind === 'session_complete' || e.kind === 'session_error') {
-      return i + 1; // 包含 complete/error 自身
+      // 防御性：把**紧跟的连续终止事件**一并并入本段，而不是只吃一个。
+      // 单个用户轮次理论上只产一个终止事件，但 SDK AMA 错误路径曾一次冒出
+      // error + complete（+ 重复 error）多个终止事件（见 real-session.ts 收口注释）。
+      // 若只 return i+1，多出来的终止事件会被算进**下一条** user message 的段里，
+      // 导致后续 user ↔ event 配对整体错位（错误挂错气泡、回复被甩到列表底部）。
+      // 主修复在 main 端收口；这里再兜一道，保证即便多终止事件也留在同一段、位置正确。
+      let end = i + 1;
+      while (
+        end < events.length &&
+        (events[end].kind === 'session_complete' || events[end].kind === 'session_error')
+      ) {
+        end++;
+      }
+      return end;
     }
   }
   return events.length;

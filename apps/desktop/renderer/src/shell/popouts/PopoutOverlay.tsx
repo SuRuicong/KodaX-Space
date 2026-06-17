@@ -56,7 +56,11 @@ export function PopoutOverlay({ kind, onClose }: PopoutOverlayProps): JSX.Elemen
     <>
       <div className="absolute inset-0 bg-black/30 z-30" onClick={onClose} aria-hidden />
       <aside
-        className={`glass ix-zone absolute right-0 top-10 bottom-0 ${widthCls} border-l border-border-default z-40 flex flex-col`}
+        // `!absolute`：`.glass`（styles.css，无 @layer 的裸规则）带 `position: relative`，
+        // 在级联里永远压过 Tailwind `@layer utilities` 的 `.absolute` —— 不加 important 这个
+        // 浮层会退回文档流、掉到 BottomBar(输入框) 下面（F060 起的回归）。important utility
+        // 精准压住，且全仓仅此一处 glass+absolute 冲突，零波及其它 glass 面板。
+        className={`glass ix-zone !absolute right-0 top-10 bottom-0 ${widthCls} border-l border-border-default z-40 flex flex-col`}
       >
         <div className="px-3 py-2 border-b border-border-default flex items-center text-xs text-fg-muted flex-shrink-0">
           <span className="capitalize">{kind}</span>

@@ -232,6 +232,79 @@ test('stop/pause/resume/rename delegate to lifecycle controller', async () => {
   }
 });
 
+test('stop pushes an immediate cancelled snapshot fallback', async () => {
+  const { dir, file } = freshFile();
+  try {
+    const pushed: unknown[] = [];
+    const ctrl = new WorkflowController((p) => pushed.push(p), file);
+    const lc = fakeLifecycle();
+    const mgr = fakeManager();
+    await ctrl.init(mgr, lc);
+    ctrl.registerOrigin('r1', { sessionId: 's1', surface: 'code' });
+    await ctrl.flush();
+    mgr._seed(
+      sampleSnapshot('r1', {
+        items: [
+          { id: 'p1', title: 'Find', kind: 'phase', status: 'running' },
+          { id: 'a1', title: 'finder:bugs', kind: 'agent', status: 'pending', phaseId: 'p1' },
+        ],
+        counts: { pending: 1, running: 1, completed: 0, failed: 0, cancelled: 0, skipped: 0 },
+        progress: { spawnedAgents: 1, finishedAgents: 0, activeAgents: 1, failedAgents: 0, stoppedAgents: 0 },
+      }),
+    );
+
+    assert.equal(await ctrl.stop('r1', 'user stop'), true);
+    assert.equal(pushed.length, 1);
+    const parsed = workflowEventChannel.payload.safeParse(pushed[0]);
+    assert.ok(parsed.success, parsed.success ? '' : JSON.stringify(parsed.error.issues));
+    if (parsed.success) {
+      assert.equal(parsed.data.type, 'workflow_finished');
+      assert.equal(parsed.data.sessionId, 's1');
+      assert.equal(parsed.data.snapshot.status, 'cancelled');
+      assert.deepEqual(parsed.data.snapshot.items.map((item) => item.status), ['cancelled', 'skipped']);
+      assert.equal(parsed.data.snapshot.counts.cancelled, 1);
+      assert.equal(parsed.data.snapshot.counts.skipped, 1);
+      assert.equal(parsed.data.snapshot.progress.activeAgents, 0);
+      assert.equal(parsed.data.snapshot.progress.stoppedAgents, 1);
+      assert.equal(parsed.data.snapshot.latestMessage, 'user stop');
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('stop returns after local fallback when lifecycle stop hangs', async () => {
+  const { dir, file } = freshFile();
+  try {
+    const pushed: unknown[] = [];
+    const ctrl = new WorkflowController((p) => pushed.push(p), file);
+    const lc = fakeLifecycle();
+    lc.stopWorkflow = async (runId, reason) => {
+      lc.calls.push(['stop', [runId, reason]]);
+      return new Promise<boolean>(() => {});
+    };
+    const mgr = fakeManager();
+    await ctrl.init(mgr, lc);
+    mgr._seed(sampleSnapshot('r1'));
+
+    const result = await Promise.race([
+      ctrl.stop('r1', 'user stop'),
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 100)),
+    ]);
+    assert.equal(result, true);
+    assert.equal(pushed.length, 1);
+    assert.deepEqual(lc.calls.at(-1), ['stop', ['r1', 'user stop']]);
+    const parsed = workflowEventChannel.payload.safeParse(pushed[0]);
+    assert.ok(parsed.success, parsed.success ? '' : JSON.stringify(parsed.error.issues));
+    if (parsed.success) {
+      assert.equal(parsed.data.type, 'workflow_finished');
+      assert.equal(parsed.data.snapshot.status, 'cancelled');
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('deleteRun drops local origin on success; prune returns lifecycle result', async () => {
   const { dir, file } = freshFile();
   try {

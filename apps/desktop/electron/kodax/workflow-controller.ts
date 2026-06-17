@@ -117,6 +117,12 @@ type PushFn = (payload: WorkflowEventPayload) => void;
 // 映射上限——防止长跑进程里 origins 无界增长(终态 run 的归属不再变,留最近 N 条即可)。
 const MAX_ORIGINS = 500;
 
+function nonnegativeInt(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : 0;
+}
+
 interface OriginsFile {
   readonly version: 1;
   readonly origins: Record<string, WorkflowOrigin>;
@@ -173,7 +179,122 @@ export class WorkflowController {
 
   /** 停止进行中的 run(子 agent 标 cancelled / never-started 标 skipped)。 */
   async stop(runId: string, reason?: string): Promise<boolean> {
-    return (await this.lifecycle?.stopWorkflow(runId, reason)) ?? false;
+    const pushed = this.pushStopFallback(runId, reason);
+    const lifecycleStop = this.lifecycle?.stopWorkflow(runId, reason);
+    if (!lifecycleStop) return pushed;
+    if (pushed) {
+      void lifecycleStop.catch((err) => {
+        console.warn('[workflow] stopWorkflow failed after local fallback:',
+          err instanceof Error ? err.message : err);
+      });
+      return true;
+    }
+    const ok = await lifecycleStop;
+    if (ok) this.pushStopFallback(runId, reason);
+    return ok;
+  }
+
+  private pushStopFallback(runId: string, reason?: string): boolean {
+    const snapshot = this.manager?.getWorkflowProcessSnapshot(runId);
+    if (!snapshot) return false;
+    const status = (snapshot as { status?: unknown }).status;
+    if (status === 'completed' || status === 'failed' || status === 'cancelled') return false;
+    const origin = this.origins.get(runId) ?? {};
+    this.push({
+      type: 'workflow_finished',
+      snapshot: this.toCancelledSnapshot(snapshot, reason),
+      message: reason ?? 'workflow stopped',
+      ...(origin.sessionId !== undefined ? { sessionId: origin.sessionId } : {}),
+      ...(origin.surface !== undefined ? { surface: origin.surface } : {}),
+    });
+    return true;
+  }
+
+  private toCancelledSnapshot(
+    snapshot: SdkProcessSnapshot,
+    reason?: string,
+  ): WorkflowEventPayload['snapshot'] {
+    const raw = snapshot as Record<string, unknown>;
+    const now = new Date().toISOString();
+    const items = Array.isArray(raw.items)
+      ? raw.items.map((item) => this.toSettledWorkflowItem(item, now))
+      : [];
+    return {
+      ...(snapshot as unknown as WorkflowEventPayload['snapshot']),
+      status: 'cancelled',
+      updatedAt: now,
+      items: items as WorkflowEventPayload['snapshot']['items'],
+      counts: this.countWorkflowItems(items, raw.counts),
+      progress: this.cancelledProgress(raw.progress),
+      ...(reason ? { latestMessage: reason } : {}),
+    };
+  }
+
+  private toSettledWorkflowItem(item: unknown, endedAt: string): unknown {
+    if (!item || typeof item !== 'object') return item;
+    const rec = item as Record<string, unknown>;
+    if (rec.status === 'running') {
+      return { ...rec, status: 'cancelled', endedAt: typeof rec.endedAt === 'string' ? rec.endedAt : endedAt };
+    }
+    if (rec.status === 'pending') {
+      return { ...rec, status: 'skipped', endedAt: typeof rec.endedAt === 'string' ? rec.endedAt : endedAt };
+    }
+    return item;
+  }
+
+  private countWorkflowItems(
+    items: readonly unknown[],
+    fallback: unknown,
+  ): WorkflowEventPayload['snapshot']['counts'] {
+    const counts: WorkflowEventPayload['snapshot']['counts'] = {
+      pending: 0,
+      running: 0,
+      completed: 0,
+      failed: 0,
+      cancelled: 0,
+      skipped: 0,
+    };
+    for (const item of items) {
+      const status = item && typeof item === 'object' ? (item as { status?: unknown }).status : undefined;
+      if (
+        status === 'pending' ||
+        status === 'running' ||
+        status === 'completed' ||
+        status === 'failed' ||
+        status === 'cancelled' ||
+        status === 'skipped'
+      ) {
+        counts[status] += 1;
+      }
+    }
+    if (Object.values(counts).some((n) => n > 0)) return counts;
+    const f = fallback && typeof fallback === 'object' ? (fallback as Record<string, unknown>) : {};
+    return {
+      pending: nonnegativeInt(f.pending),
+      running: nonnegativeInt(f.running),
+      completed: nonnegativeInt(f.completed),
+      failed: nonnegativeInt(f.failed),
+      cancelled: nonnegativeInt(f.cancelled),
+      skipped: nonnegativeInt(f.skipped),
+    };
+  }
+
+  private cancelledProgress(progress: unknown): WorkflowEventPayload['snapshot']['progress'] {
+    const p = progress && typeof progress === 'object' ? (progress as Record<string, unknown>) : {};
+    const activeAgents = nonnegativeInt(p.activeAgents);
+    return {
+      spawnedAgents: nonnegativeInt(p.spawnedAgents),
+      finishedAgents: nonnegativeInt(p.finishedAgents) + activeAgents,
+      activeAgents: 0,
+      failedAgents: nonnegativeInt(p.failedAgents),
+      stoppedAgents: nonnegativeInt(p.stoppedAgents) + activeAgents,
+      ...(typeof p.agentCap === 'number' && Number.isFinite(p.agentCap) && p.agentCap >= 0
+        ? { agentCap: Math.floor(p.agentCap) }
+        : {}),
+      ...(typeof p.plannedItems === 'number' && Number.isFinite(p.plannedItems) && p.plannedItems >= 0
+        ? { plannedItems: Math.floor(p.plannedItems) }
+        : {}),
+    };
   }
 
   /** 暂停进行中的 run。 */

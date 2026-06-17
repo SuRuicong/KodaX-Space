@@ -7,6 +7,7 @@ import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { kodaxHost } from '../kodax/host.js';
+import type { ManagedSession } from '../kodax/session-adapter.js';
 import { setRendererTarget } from '../ipc/push.js';
 import { permissionBroker } from '../permission/broker.js';
 import { installSessionStoreMock, type MockSessionState } from './_helpers/session-store-mock.js';
@@ -134,6 +135,43 @@ test('cancel mid-stream emits session_error("cancelled") and aborts further even
   }
   // session_complete 不应该出现在 cancel 后
   assert.equal(events.some((e) => e.kind === 'session_complete'), false);
+});
+
+test('cancel returns and emits cancelled fallback when adapter cancel never resolves', async () => {
+  const never = new Promise<void>(() => {});
+  kodaxHost.setFactory((opts): ManagedSession => ({
+    sessionId: opts.sessionId,
+    projectRoot: opts.projectRoot,
+    provider: opts.provider,
+    reasoningMode: opts.reasoningMode,
+    permissionMode: opts.permissionMode,
+    autoModeEngine: opts.autoModeEngine ?? 'llm',
+    agentMode: opts.agentMode ?? 'ama',
+    surface: opts.surface ?? 'code',
+    createdAt: Date.now(),
+    lastActivityAt: Date.now(),
+    title: undefined,
+    isRunning: () => true,
+    send: async () => ({ queued: false }),
+    cancel: () => never,
+    dispose: async () => {},
+  }));
+  try {
+    const { sessionId } = kodaxHost.createSession({ projectRoot: '/r', provider: 'mock' });
+    const result = await Promise.race([
+      kodaxHost.cancel(sessionId),
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 100)),
+    ]);
+    assert.equal(result, true);
+    const last = getEvents().at(-1);
+    assert.equal(last?.kind, 'session_error');
+    if (last?.kind === 'session_error') {
+      assert.equal(last.error, 'cancelled');
+      assert.equal(last.category, 'cancelled');
+    }
+  } finally {
+    kodaxHost.setFactory(null);
+  }
 });
 
 test('concurrent send on same session is rejected (no queueing in F003 Mock)', async () => {

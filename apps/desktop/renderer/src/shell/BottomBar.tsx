@@ -126,6 +126,7 @@ export function BottomBar(): JSX.Element {
   const pendingAgentMode = useAppStore((s) => s.pendingAgentMode);
   const setPendingProviderId = useAppStore((s) => s.setPendingProviderId);
   const appendUserMessage = useAppStore((s) => s.appendUserMessage);
+  const appendEvent = useAppStore((s) => s.appendEvent);
   const rollbackLastUserMessage = useAppStore((s) => s.rollbackLastUserMessage);
   const resetSessionMessages = useAppStore((s) => s.resetSessionMessages);
   const upsertSession = useAppStore((s) => s.upsertSession);
@@ -994,11 +995,25 @@ export function BottomBar(): JSX.Element {
     });
   }
 
-  async function handleCancel(): Promise<void> {
-    if (!currentSessionId || !window.kodaxSpace) return;
-    const r = await window.kodaxSpace.invoke('session.cancel', { sessionId: currentSessionId });
-    if (r.ok) pushToast('Stop signal sent', 'info', 2000);
-    else pushToast(r.error?.message ?? 'Cancel failed', 'error');
+  function handleCancel(): void {
+    const sid = currentSessionId;
+    if (!sid || !window.kodaxSpace) return;
+    appendEvent({
+      kind: 'session_error',
+      sessionId: sid,
+      error: 'cancelled',
+      category: 'cancelled',
+      retriable: true,
+    });
+    pushToast('Stop signal sent', 'info', 2000);
+    void window.kodaxSpace
+      .invoke('session.cancel', { sessionId: sid })
+      .then((r) => {
+        if (!r.ok) pushToast(r.error?.message ?? 'Cancel failed', 'error');
+      })
+      .catch((err: unknown) => {
+        pushToast(err instanceof Error ? err.message : 'Cancel failed', 'error');
+      });
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {

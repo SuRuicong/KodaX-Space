@@ -936,6 +936,14 @@ export const useAppStore = create<AppState>((set) => ({
       // main 端事件是权威；renderer 只缓存自己 UI 里能见到的部分。
       if (!state.sessions.some((s) => s.sessionId === event.sessionId)) return state;
       const bucket = state.eventsBySession[event.sessionId] ?? [];
+      if (event.kind === 'session_error' && event.error === 'cancelled') {
+        for (let i = bucket.length - 1; i >= 0; i--) {
+          const previous = bucket[i];
+          if (!previous) continue;
+          if (previous.kind === 'session_start') break;
+          if (previous.kind === 'session_error' && previous.error === 'cancelled') return state;
+        }
+      }
       const next: Partial<AppState> = {
         eventsBySession: {
           ...state.eventsBySession,

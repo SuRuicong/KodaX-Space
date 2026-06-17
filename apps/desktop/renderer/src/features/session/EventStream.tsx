@@ -18,6 +18,7 @@ export function EventStream(): JSX.Element {
     currentSessionId ? (s.sessions.find((x) => x.sessionId === currentSessionId) ?? null) : null,
   );
   const appendUserMessage = useAppStore((s) => s.appendUserMessage);
+  const appendEvent = useAppStore((s) => s.appendEvent);
 
   const [prompt, setPrompt] = useState<string>('');
   const [busy, setBusy] = useState<boolean>(false);
@@ -51,9 +52,17 @@ export function EventStream(): JSX.Element {
     }
   }
 
-  async function handleCancel(): Promise<void> {
-    if (!currentSessionId || !window.kodaxSpace) return;
-    await window.kodaxSpace.invoke('session.cancel', { sessionId: currentSessionId });
+  function handleCancel(): void {
+    const sid = currentSessionId;
+    if (!sid || !window.kodaxSpace) return;
+    appendEvent({
+      kind: 'session_error',
+      sessionId: sid,
+      error: 'cancelled',
+      category: 'cancelled',
+      retriable: true,
+    });
+    void window.kodaxSpace.invoke('session.cancel', { sessionId: sid }).catch(() => {});
   }
 
   return (

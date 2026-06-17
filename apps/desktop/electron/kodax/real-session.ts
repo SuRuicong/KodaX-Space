@@ -326,6 +326,63 @@ export class RealKodaXSession implements ManagedSession {
     artifacts?: readonly InputArtifact[],
   ): Promise<void> {
     const sid = this.sessionId;
+    const isStopped = (): boolean => this.disposed || signal.aborted;
+    const emitLive = (event: SessionEvent): void => {
+      if (isStopped()) return;
+      this.emit(event);
+    };
+
+    // 终止事件收口（修复"500 后历史位置错乱"）。
+    //
+    // 背景：SDK AMA 路径（runManagedTask 默认）遇到错误时是
+    //   catch { onError(err); throw }  finally { onComplete() }
+    // 所以同一个错误会触发 **onError + onComplete + 外层 catch** 三次，naive 实现会往
+    // 事件流里塞 [session_error, session_complete, session_error] 三个终止事件。
+    // 而 renderer composeMessages.findSegmentEnd 假设每个用户轮次后只有 **一个**
+    // 终止事件——多出来的两个会把后续 user message ↔ event 段的配对整体错位，表现为
+    // "错误信息挂错气泡 / 回复被甩到列表底部"。
+    //
+    // 收口策略：每轮至多发一个终止事件。
+    //   - onError 只 **暂存** error，不直接发射（SA 路径不 throw，靠这里捕获）
+    //   - onComplete 仅在 **没有** 暂存错误时才发 session_complete（错误轮不报"完成"）
+    //   - 真正的 session_error 由 emitTerminalError 统一发（wrapSdkError 富文案 + retry）
+    //     AMA 走外层 catch、SA 走 await 之后的补发——两条路径互斥，且 latch 防重发。
+    let pendingTerminalError: unknown = null;
+    let terminalEmitted = false;
+    const emitTerminalError = async (err: unknown): Promise<void> => {
+      if (terminalEmitted || isStopped()) return;
+      terminalEmitted = true;
+      // OC-11: SDK 原始异常字符串往往含 stack / HTTP 内部细节，对用户没用。
+      // wrapSdkError 分类并产出友好文案 + action；main 日志保留 debugMessage 便于排查。
+      // OC-23: rate_limit / 5xx 情况下，从 Retry-After header 算出建议等待时间，UI 给倒计时。
+      const retryAfterMs = await extractRetryAfterMs(err);
+      // review MEDIUM-3: 顶部 isStopped() 在 await 前——await 期间 session 可能被 dispose /
+      // abort，此刻再发就是往已关 channel 写。await 后复检一次。
+      if (isStopped()) return;
+      const wrapped = wrapSdkError(err, retryAfterMs !== undefined ? { retryAfterMs } : undefined);
+      console.warn(`[real-session ${sid}] sdk error (${wrapped.category}): ${wrapped.debugMessage}`);
+      // OC-23 review HIGH-2: stamp 绝对时间戳在 main 端（emit 时刻），避免 renderer
+      // composeMessages 每次 events 变都重新 Date.now()+delta 让倒计时不断推后。
+      const retryAvailableAt =
+        wrapped.retryAfterMs !== undefined ? Date.now() + wrapped.retryAfterMs : undefined;
+      this.emit({
+        kind: 'session_error',
+        sessionId: sid,
+        error: wrapped.userMessage,
+        category: wrapped.category,
+        retriable: wrapped.retriable,
+        ...(wrapped.action ? { action: wrapped.action } : {}),
+        ...(retryAvailableAt !== undefined ? { retryAvailableAt } : {}),
+      });
+    };
+    const pushChildActivityLive = (
+      meta: Parameters<typeof pushChildActivity>[0],
+      kind: Parameters<typeof pushChildActivity>[1],
+      extra: Parameters<typeof pushChildActivity>[2],
+    ): void => {
+      if (isStopped()) return;
+      pushChildActivity(meta, kind, extra);
+    };
     // SDK subpath dynamic load — 首次调时拉 chunks，后续命中 cache。
     // planModeBlockCheck (同步) 和 runKodaX (异步) 都需要这个 module。
     const sdk = await loadSdkCoding();
@@ -418,7 +475,7 @@ export class RealKodaXSession implements ManagedSession {
         plan.length > MAX_PLAN_BYTES
           ? plan.slice(0, MAX_PLAN_BYTES) + '\n\n[plan truncated at 250KB]'
           : plan;
-      this.emit({
+      emitLive({
         kind: 'thinking_end',
         sessionId: sid,
         thinking: `[plan] proposed plan:\n\n${truncatedPlan}\n\n— exit_plan_mode 自动拒绝，请用户手动切 Mode selector 到 'accept-edits' 或 'auto' 来执行。`,
@@ -436,24 +493,24 @@ export class RealKodaXSession implements ManagedSession {
         // F065: 子 agent 文本不进主 transcript（不淹）；不逐 delta 推活动（控量），
         // 子 agent 进度由 snapshot.latestMessage + discrete tool 活动体现。
         if (childRunId(meta)) return;
-        this.emit({ kind: 'text_delta', sessionId: sid, text });
+        emitLive({ kind: 'text_delta', sessionId: sid, text });
       },
       onThinkingDelta: (text, meta) => {
         if (childRunId(meta)) return;
-        this.emit({ kind: 'thinking_delta', sessionId: sid, text });
+        emitLive({ kind: 'thinking_delta', sessionId: sid, text });
       },
       onThinkingEnd: (thinking, meta) => {
         if (childRunId(meta)) return;
-        this.emit({ kind: 'thinking_end', sessionId: sid, thinking });
+        emitLive({ kind: 'thinking_end', sessionId: sid, thinking });
       },
 
       // ---- Tool 生命周期 ----
       onToolUseStart: (tool, meta) => {
         if (childRunId(meta)) {
-          pushChildActivity(meta, 'tool_use', { toolName: tool.name });
+          pushChildActivityLive(meta, 'tool_use', { toolName: tool.name });
           return;
         }
-        this.emit({
+        emitLive({
           kind: 'tool_start',
           sessionId: sid,
           toolId: tool.id,
@@ -464,7 +521,7 @@ export class RealKodaXSession implements ManagedSession {
       onToolInputDelta: (toolName, partialJson, meta) => {
         // F065: 子 agent 的 partial-JSON 流不进主 transcript（不淹）；不逐 delta 推活动（控量）。
         if (childRunId(meta)) return;
-        this.emit({
+        emitLive({
           kind: 'tool_input_delta',
           sessionId: sid,
           toolName,
@@ -474,10 +531,10 @@ export class RealKodaXSession implements ManagedSession {
       },
       onToolResult: (result, meta) => {
         if (childRunId(meta)) {
-          pushChildActivity(meta, 'tool_result', { toolName: result.name });
+          pushChildActivityLive(meta, 'tool_result', { toolName: result.name });
           return;
         }
-        this.emit({
+        emitLive({
           kind: 'tool_result',
           sessionId: sid,
           toolId: result.id,
@@ -486,7 +543,7 @@ export class RealKodaXSession implements ManagedSession {
         });
       },
       onToolProgress: (update) => {
-        this.emit({
+        emitLive({
           kind: 'tool_progress',
           sessionId: sid,
           toolId: update.id,
@@ -494,26 +551,26 @@ export class RealKodaXSession implements ManagedSession {
         });
       },
       onStreamEnd: () => {
-        this.emit({ kind: 'stream_end', sessionId: sid });
+        emitLive({ kind: 'stream_end', sessionId: sid });
       },
       // F065: 子 agent 离开 executor 边界——封口其活动流（不进主 transcript）。
       onChildActivityEnd: (meta) => {
-        pushChildActivity(meta, 'end', {});
+        pushChildActivityLive(meta, 'end', {});
       },
 
       // ---- Session / iteration lifecycle ----
       onSessionStart: (info) => {
-        this.emit({
+        emitLive({
           kind: 'session_start',
           sessionId: sid,
           provider: info.provider,
         });
       },
       onIterationStart: (iter, maxIter) => {
-        this.emit({ kind: 'iteration_start', sessionId: sid, iter, maxIter });
+        emitLive({ kind: 'iteration_start', sessionId: sid, iter, maxIter });
       },
       onIterationEnd: (info) => {
-        this.emit({
+        emitLive({
           kind: 'iteration_end',
           sessionId: sid,
           iter: info.iter,
@@ -534,10 +591,10 @@ export class RealKodaXSession implements ManagedSession {
 
       // ---- Context compaction ----
       onCompactStart: () => {
-        this.emit({ kind: 'compact_start', sessionId: sid });
+        emitLive({ kind: 'compact_start', sessionId: sid });
       },
       onCompactStats: (info) => {
-        this.emit({
+        emitLive({
           kind: 'compact_stats',
           sessionId: sid,
           tokensBefore: info.tokensBefore,
@@ -545,12 +602,12 @@ export class RealKodaXSession implements ManagedSession {
         });
       },
       onCompactEnd: () => {
-        this.emit({ kind: 'compact_end', sessionId: sid });
+        emitLive({ kind: 'compact_end', sessionId: sid });
       },
 
       // ---- Provider retry / recovery ----
       onRetryAfter: (payload) => {
-        this.emit({
+        emitLive({
           kind: 'retry_after',
           sessionId: sid,
           payload: {
@@ -564,7 +621,7 @@ export class RealKodaXSession implements ManagedSession {
         });
       },
       onProviderRecovery: (event) => {
-        this.emit({
+        emitLive({
           kind: 'provider_recovery',
           sessionId: sid,
           stage: event.stage,
@@ -583,7 +640,7 @@ export class RealKodaXSession implements ManagedSession {
         // SDK KodaXRepoIntelligenceTraceEvent: { stage, summary, capability?, trace? }
         // IPC repointelTraceSchema: { kind, mode?, engine?, bridge?, status?, latencyMs?, cacheHit? }
         // Mapping: stage→kind; capability.{mode,engine,bridge,status}→IPC optionals; trace.{daemonLatencyMs,cacheHit}→IPC optionals
-        this.emit({
+        emitLive({
           kind: 'repointel_trace',
           sessionId: sid,
           event: {
@@ -611,7 +668,7 @@ export class RealKodaXSession implements ManagedSession {
         // SDK TodoItem uses `subject` (renamed from `content` in v0.7.42)。
         // IPC todoItemSchema 现已接全量 TodoStatus（含 failed/skipped/cancelled），直接透传真实
         // status，不再 lossy 映射成 completed（失败任务不该显示成 ✓ 完成）。
-        this.emit({
+        emitLive({
           kind: 'todo_update',
           sessionId: sid,
           items: items.map((item) => ({
@@ -625,7 +682,7 @@ export class RealKodaXSession implements ManagedSession {
 
       // ---- Managed task / Subagent status ----
       onManagedTaskStatus: (status) => {
-        this.emit({
+        emitLive({
           kind: 'managed_task_status',
           sessionId: sid,
           status: {
@@ -665,12 +722,16 @@ export class RealKodaXSession implements ManagedSession {
       },
 
       // ---- 终止 ----
+      // 注意：AMA 路径 onComplete 在 finally 里触发，错误轮也会被调一次（pre-FEATURE_100
+      // 行为，见 SDK runner-driven.ts）。所以这里必须用 pendingTerminalError 把错误轮的
+      // session_complete 吞掉——否则错误轮会同时冒出 complete + error 两个终止事件。
       onComplete: () => {
-        this.emit({ kind: 'session_complete', sessionId: sid });
+        if (pendingTerminalError !== null) return;
+        emitLive({ kind: 'session_complete', sessionId: sid });
       },
+      // 只暂存，不直接发射——真正的 session_error 由 emitTerminalError 统一收口（去重 + 富文案）。
       onError: (err) => {
-        const message = err instanceof Error ? err.message : String(err);
-        this.emit({ kind: 'session_error', sessionId: sid, error: message });
+        pendingTerminalError = err;
       },
 
       // ---- Permission 钩子 ----
@@ -708,7 +769,7 @@ export class RealKodaXSession implements ManagedSession {
             // 是 omit reason 字段——schema reason 是 optional，renderer 看到 undefined 就
             // 显示通用 "engine fallback" 而不是误导成"due to denials"。
             const isAutoFallback = previousEngine === 'llm' && engine === 'rules';
-            this.emit({
+            emitLive({
               kind: 'auto_engine_change',
               sessionId: sid,
               engine,
@@ -750,7 +811,7 @@ export class RealKodaXSession implements ManagedSession {
         if (this.autoModeEngine !== 'rules') {
           this.autoModeEngine = 'rules';
         }
-        this.emit({
+        emitLive({
           kind: 'auto_engine_change',
           sessionId: sid,
           engine: 'rules',
@@ -861,33 +922,25 @@ export class RealKodaXSession implements ManagedSession {
       await withArtifactContext({ sessionId: sid, surface: this.surface, projectRoot: this.projectRoot }, () =>
         sdk.runManagedTask(options, prompt),
       );
+      // SA 路径（agentMode='sa'）错误时 onError 触发但 Promise **resolve**（success:false），
+      // 不 throw——外层 catch 不会跑。所以这里 await 之后补发暂存的错误。
+      // AMA 路径错误时会 throw，控制流跳到 catch，这一行不会执行（两条路径互斥）。
+      if (pendingTerminalError !== null && !signal.aborted) {
+        await emitTerminalError(pendingTerminalError);
+      }
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
-        this.emit({ kind: 'session_error', sessionId: sid, error: 'cancelled', category: 'cancelled', retriable: true });
+        // 用户取消：必须用 this.emit 而非 emitLive——此刻 signal.aborted=true，emitLive 的
+        // isStopped() 会把"cancelled"通知吞掉。但 disposed 时 channel 已关，无意义且应跳过。
+        // 同时置 terminalEmitted，与 emitTerminalError 共享同一 latch，杜绝任何重发。
+        if (!this.disposed && !terminalEmitted) {
+          terminalEmitted = true;
+          this.emit({ kind: 'session_error', sessionId: sid, error: 'cancelled', category: 'cancelled', retriable: true });
+        }
       } else if (!signal.aborted) {
-        // OC-11: SDK 原始异常字符串往往含 stack / HTTP 内部细节，对用户没用。
-        // wrapSdkError 分类并产出友好文案 + action；main 日志保留 debugMessage 便于排查。
-        // OC-23: rate_limit / 5xx 情况下，从 Retry-After header (Anthropic 还有
-        // retry-after-ms 扩展) 算出建议等待时间，UI 给倒计时按钮。SDK 找不到 header
-        // → parseRetryAfter 返 backoff fallback，我们当 undefined 处理（不显示倒计时，
-        // 只显示普通 Retry 按钮）。
-        const retryAfterMs = await extractRetryAfterMs(err);
-        const wrapped = wrapSdkError(err, retryAfterMs !== undefined ? { retryAfterMs } : undefined);
-        console.warn(`[real-session ${sid}] sdk error (${wrapped.category}): ${wrapped.debugMessage}`);
-        // OC-23 review HIGH-2: stamp 绝对时间戳在 main 端 (emit 时刻)，避免 renderer
-        // composeMessages 每次 events 变都重新 Date.now()+delta 让倒计时不断推后。
-        const retryAvailableAt = wrapped.retryAfterMs !== undefined
-          ? Date.now() + wrapped.retryAfterMs
-          : undefined;
-        this.emit({
-          kind: 'session_error',
-          sessionId: sid,
-          error: wrapped.userMessage,
-          category: wrapped.category,
-          retriable: wrapped.retriable,
-          ...(wrapped.action ? { action: wrapped.action } : {}),
-          ...(retryAvailableAt !== undefined ? { retryAvailableAt } : {}),
-        });
+        // AMA 路径：SDK catch 已先调过 onError(暂存 err)，这里 throw 上来。统一走
+        // emitTerminalError 收口（内部 latch 去重 + wrapSdkError 富文案 + retry 倒计时）。
+        await emitTerminalError(err);
       }
     } finally {
       // /compact 标记是 one-shot — 不论本轮成功 / 中断 / 报错，consume 后清掉

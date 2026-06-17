@@ -196,6 +196,44 @@ test('two user messages with separate event segments: events route to correct us
   if (out[3].kind === 'assistant_text') assert.equal(out[3].text, 'reply2');
 });
 
+test('multi-terminal error sequence stays in its own turn (500-error history scramble regression)', () => {
+  // 回归：SDK AMA 路径一次 500 错误会冒出 [session_error, session_complete, session_error]
+  // 三个终止事件（onError + finally onComplete + 外层 catch）。findSegmentEnd 早先只吃
+  // 一个终止事件，多出来的两个被算进下一轮 user message，导致后续 user ↔ event 配对整体
+  // 错位——错误挂错气泡、回复被甩到列表底部。主修复在 main 端收口为单个终止事件；
+  // 这里验证 selector 侧防御：即便多个连续终止事件，也全部留在**本轮**段内，不溢出到下一轮。
+  const events: SessionEvent[] = [
+    // 第一轮：用户问 q1，回复后 500 错误，main 端 naive 实现的三连终止事件
+    { kind: 'text_delta', sessionId: sid, text: 'partial reply' },
+    { kind: 'session_error', sessionId: sid, error: 'raw 500' },
+    { kind: 'session_complete', sessionId: sid },
+    { kind: 'session_error', sessionId: sid, error: 'Server error (500). Retrying may help.' },
+    // 第二轮：用户重试 q2，正常回复
+    { kind: 'text_delta', sessionId: sid, text: 'reply2' },
+    { kind: 'session_complete', sessionId: sid },
+  ];
+  const out = composeMessages({
+    events,
+    userMessages: [userMsg('u1', 'q1', 1000), userMsg('u2', 'q2', 2000)],
+  });
+  // 期望：q1 段吃掉全部 3 个终止事件——其中 session_complete 被 composeAssistantSegment
+  // 静默消费(零输出 item)，两个 session_error 各产 1 个 error notice → 输出 2 个 notice。
+  // q2 段拿到自己的 reply2。绝不能出现 reply2 漂到 q1、或 q2 下挂着 500 错误。
+  assert.deepEqual(kindsOf(out), [
+    'user', // q1
+    'assistant_text', // partial reply
+    'system_notice', // raw 500
+    'system_notice', // wrapped 500
+    'user', // q2
+    'assistant_text', // reply2 —— 正确挂在 q2 下
+  ]);
+  if (out[1].kind === 'assistant_text') assert.equal(out[1].text, 'partial reply');
+  if (out[5].kind === 'assistant_text') assert.equal(out[5].text, 'reply2');
+  // q2 (out[4]) 之后第一条是 reply2，不是错误 notice
+  assert.equal(out[4].kind, 'user');
+  if (out[4].kind === 'user') assert.equal(out[4].content, 'q2');
+});
+
 test('text_delta after tool_result starts a NEW assistant bubble (flushed by tool_start)', () => {
   // 验证 tool_start 切断了文本气泡，后续 text_delta 不会接续到前一个气泡
   const events: SessionEvent[] = [
