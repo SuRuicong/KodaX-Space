@@ -16,6 +16,7 @@
 import type { PermissionMode, AutoModeEngine, AgentMode } from '@kodax-space/space-ipc-schema';
 import type { SlashCommandDef } from './registry.js';
 import { kodaxHost } from '../kodax/host.js';
+import { loadKodaxCustomProviders, registerKodaxCustomProviders } from '../kodax/user-config.js';
 import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
 import { listSlashCommands } from './registry.js';
@@ -96,11 +97,18 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
         return { ok: false, message: 'Usage: /provider <provider-id>' };
       }
       // 走 session.setProvider 等价的 catalog 检查 (review F008 C1-sec)
+      let shouldRefreshCustomRegistry = false;
       if (target !== 'mock' && !isBuiltinId(target)) {
         await providerConfigStore.load();
-        if (!providerConfigStore.getCustom(target)) {
+        const existsInSpaceStore = Boolean(providerConfigStore.getCustom(target));
+        const existsInKodaxConfig = (await loadKodaxCustomProviders()).some((p) => p.id === target);
+        if (!existsInSpaceStore && !existsInKodaxConfig) {
           return { ok: false, message: `unknown providerId: ${target}` };
         }
+        shouldRefreshCustomRegistry = true;
+      }
+      if (shouldRefreshCustomRegistry) {
+        await registerKodaxCustomProviders(providerConfigStore.listCustom());
       }
       const ok = kodaxHost.setProvider(ctx.sessionId, target);
       return ok

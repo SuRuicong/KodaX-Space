@@ -68,17 +68,20 @@ export type Surface = z.infer<typeof surfaceSchema>;
 
 // ---- Provider ID (review F008 C2-sec)
 //
-// 限制 providerId 字符集到合法形态的并集——避免任意字符串混进 ManagedSession.provider 字段
-// （`../../etc/passwd`、`%00injected`、`<script>` 等）。三类合法 ID：
-//   - 'mock'                      — FEATURE_003 Mock adapter 入口
-//   - kebab-case 字母数字          — built-in（'anthropic'、'zhipu-coding' 等）
-//   - 'custom_' + 16 hex          — 用户自定义（F004 randomBytes(8).hex()）
+// SDK custom provider names are broader than kebab-case. Space accepts a
+// conservative token charset here; main still checks the provider exists.
 //
-// 与 ProviderConfigStore.addCustom 生成的 ID 格式严格对齐
+// 限制 providerId 字符集到合法 token——避免任意字符串混进 ManagedSession.provider 字段
+// （`../../etc/passwd`、`%00injected`、`<script>` 等）。允许：
+//   - 'mock' for the FEATURE_003 mock adapter
+//   - built-ins such as 'anthropic' and 'zhipu-coding'
+//   - Space-generated custom ids such as 'custom_0123456789abcdef'
+//   - SDK config custom names using letters, numbers, dot, underscore, colon, and dash
 const providerIdSchema = z.union([
   z.literal('mock'),
-  z.string().regex(/^[a-z][a-z0-9-]{0,62}$/, { message: 'providerId must be kebab-case' }),
-  z.string().regex(/^custom_[a-f0-9]{16}$/),
+  z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/, {
+    message: 'providerId must be a provider token',
+  }),
 ]);
 
 // ---- 尺寸上限：防 IPC 通道被超大 payload 拖垮（DoS / 内存炸） ----
@@ -354,7 +357,8 @@ export const sessionSetReasoningModeChannel = {
 //
 // 切 provider 同样不重启 session——下一条 prompt 走新 provider。Real adapter 接入后
 // 会重新 import provider class 并 swap LLM client。
-// providerId 必须是 built-in 或 custom_<hex> ('mock' 也允许——FEATURE_003 兼容)
+// providerId 必须是 token-shaped built-in/custom/SDK-config provider name
+// （或 'mock'，用于 FEATURE_003 兼容）
 //
 // 注意：schema 只验格式；main 端 handler 必须再做"是否实际存在于 catalog/custom" 检查
 // （review F008 C1-sec）。否则 attacker 可让 session 指向永不存在的 custom_ID，

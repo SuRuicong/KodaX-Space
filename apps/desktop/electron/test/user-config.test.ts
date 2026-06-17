@@ -12,6 +12,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  loadKodaxCustomProviders,
   loadKodaxUserDefaults,
   registerKodaxCustomProviders,
   setUserConfigImpl,
@@ -126,6 +127,41 @@ test('empty / non-string provider → undefined', async () => {
   assert.equal((await loadKodaxUserDefaults()).provider, undefined);
 });
 
+test('loadKodaxCustomProviders exposes SDK config custom providers as Space summaries', async () => {
+  mockUserConfig({
+    customProviders: [
+      {
+        name: 'newapi-anthropic',
+        protocol: 'anthropic',
+        baseUrl: 'https://llm.example.com/v1',
+        apiKeyEnv: 'NEWAPI_API_KEY',
+        model: 'claude-sonnet-4-6',
+        models: ['claude-sonnet-4-6', { id: 'claude-opus-4-7' }],
+      },
+      {
+        name: 'unsafe/provider',
+        protocol: 'openai',
+        baseUrl: 'https://llm.example.com/v1',
+        apiKeyEnv: 'UNSAFE_API_KEY',
+        model: 'gpt-5',
+      },
+    ],
+  });
+
+  const providers = await loadKodaxCustomProviders();
+  assert.deepEqual(providers, [
+    {
+      id: 'newapi-anthropic',
+      displayName: 'newapi-anthropic',
+      protocol: 'anthropic',
+      baseUrl: 'https://llm.example.com/v1',
+      apiKeyEnv: 'NEWAPI_API_KEY',
+      defaultModel: 'claude-sonnet-4-6',
+      models: ['claude-sonnet-4-6', 'claude-opus-4-7'],
+    },
+  ]);
+});
+
 test('registerKodaxCustomProviders forwards customProviders array to SDK', async () => {
   const calls: Array<{ customProviders?: unknown[] }> = [];
   mockUserConfig(
@@ -135,6 +171,54 @@ test('registerKodaxCustomProviders forwards customProviders array to SDK', async
   await registerKodaxCustomProviders();
   assert.equal(calls.length, 1);
   assert.equal(calls[0].customProviders?.length, 1);
+});
+
+test('registerKodaxCustomProviders merges Space custom providers into SDK registry config', async () => {
+  const calls: Array<{ customProviders?: unknown[] }> = [];
+  mockUserConfig(
+    {
+      customProviders: [
+        {
+          name: 'sdk-custom',
+          protocol: 'openai',
+          baseUrl: 'https://sdk.example.com/v1',
+          apiKeyEnv: 'SDK_API_KEY',
+          model: 'sdk-model',
+        },
+      ],
+    },
+    { registerCalls: calls },
+  );
+
+  await registerKodaxCustomProviders([
+    {
+      id: 'custom_0123456789abcdef',
+      protocol: 'anthropic',
+      baseUrl: 'https://space.example.com/v1',
+      apiKeyEnv: 'SPACE_API_KEY',
+      defaultModel: 'space-model',
+      models: ['space-model', 'space-alt'],
+    },
+  ]);
+
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].customProviders, [
+    {
+      name: 'sdk-custom',
+      protocol: 'openai',
+      baseUrl: 'https://sdk.example.com/v1',
+      apiKeyEnv: 'SDK_API_KEY',
+      model: 'sdk-model',
+    },
+    {
+      name: 'custom_0123456789abcdef',
+      protocol: 'anthropic',
+      baseUrl: 'https://space.example.com/v1',
+      apiKeyEnv: 'SPACE_API_KEY',
+      model: 'space-model',
+      models: ['space-model', 'space-alt'],
+    },
+  ]);
 });
 
 test('registerKodaxCustomProviders skips when customProviders empty', async () => {

@@ -13,6 +13,7 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { kodaxHost } from '../kodax/host.js';
+import { setUserConfigImpl, type KodaxUserConfigImpl } from '../kodax/user-config.js';
 import { setRendererTarget } from '../ipc/push.js';
 import {
   _resetSlashRegistryForTesting,
@@ -39,6 +40,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   setRendererTarget(() => null);
+  setUserConfigImpl(null);
   await kodaxHost.disposeAll();
   _resetSlashRegistryForTesting();
 });
@@ -47,6 +49,14 @@ async function runCmd(name: string, sessionId: string, args: string[] = []) {
   const handler = getSlashHandler(name);
   assert.ok(handler, `handler /${name} should be registered`);
   return handler!.handler({ sessionId, args });
+}
+
+function mockUserConfig(config: Record<string, unknown>): void {
+  const impl: KodaxUserConfigImpl = {
+    loadConfig: (() => config) as never,
+    registerCustomProviders: (() => undefined) as never,
+  };
+  setUserConfigImpl(impl);
 }
 
 test('listSlashCommands returns all builtin commands in alpha order', () => {
@@ -156,6 +166,28 @@ test('/provider mock accepted', async () => {
   });
   const result = await runCmd('provider', sessionId, ['mock']);
   assert.equal(result.ok, true);
+});
+
+test('/provider accepts custom provider from KodaX config.json', async () => {
+  mockUserConfig({
+    customProviders: [
+      {
+        name: 'newapi-anthropic',
+        protocol: 'anthropic',
+        baseUrl: 'https://llm.example.com/v1',
+        apiKeyEnv: 'NEWAPI_API_KEY',
+        model: 'claude-sonnet-4-6',
+      },
+    ],
+  });
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+
+  const result = await runCmd('provider', sessionId, ['newapi-anthropic']);
+  assert.equal(result.ok, true);
+  assert.equal(kodaxHost.get(sessionId)?.provider, 'newapi-anthropic');
 });
 
 test('/clear returns echo=true + clearStream=true for renderer-side reset', async () => {

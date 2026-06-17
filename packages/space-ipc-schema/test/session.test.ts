@@ -196,8 +196,17 @@ test('session.event payload: harness_profile rejects unknown profile', () => {
 
 // --- review F008 C2-sec: providerId format guard ---
 
-test('session.create input accepts mock / builtin / custom_<16hex>', () => {
-  const valid = ['mock', 'anthropic', 'zhipu-coding', 'custom_0123456789abcdef'];
+test('session.create input accepts mock / builtin / custom provider tokens', () => {
+  const valid = [
+    'mock',
+    'anthropic',
+    'zhipu-coding',
+    'custom_0123456789abcdef',
+    'MyProvider',
+    'my_provider',
+    'provider.1',
+    'provider:1',
+  ];
   for (const p of valid) {
     const r = sessionCreateChannel.input.safeParse({
       projectRoot: '/root',
@@ -211,12 +220,9 @@ test('session.create input rejects malformed providerId', () => {
   const invalid = [
     '../../etc/passwd',
     '<script>alert(1)</script>',
-    'custom_short',
-    'custom_NOTHEX0000000000',
-    'Anthropic', // uppercase
     'has space',
     '-leading-dash',
-    'with_underscore',
+    'provider/name',
   ];
   for (const p of invalid) {
     const r = sessionCreateChannel.input.safeParse({

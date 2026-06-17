@@ -15,8 +15,9 @@
 //     这里再额外保证：handler 自己写的 error message 不含 key 值
 
 import { registerChannel } from './register.js';
-import { BUILTIN_PROVIDERS, isBuiltinId, getBuiltin } from '../providers/catalog.js';
-import { providerConfigStore } from '../providers/config.js';
+import { loadKodaxCustomProviders, registerKodaxCustomProviders } from '../kodax/user-config.js';
+import { BUILTIN_PROVIDERS, isBuiltinId, getBuiltin, type BuiltinProvider } from '../providers/catalog.js';
+import { providerConfigStore, type CustomProvider } from '../providers/config.js';
 import {
   setKey,
   deleteKey,
@@ -27,6 +28,9 @@ import {
 import { testProvider } from '../providers/test-connection.js';
 import { validateBaseUrl } from '../providers/url-guard.js';
 import type { ProviderInfo } from '@kodax-space/space-ipc-schema';
+import type { CustomProviderProbe } from '../providers/test-connection.js';
+
+type KnownProvider = BuiltinProvider | CustomProvider | CustomProviderProbe;
 
 // review H2-sec：apiKeyEnv 黑名单——这些 env var 名一旦被 setKey 写入会引发
 // 代码执行 / PATH 劫持。NODE_OPTIONS 是已知 Node 注入向量（--require / --loader）；
@@ -100,7 +104,7 @@ export async function injectAllKeysToEnv(): Promise<void> {
   //    via e2e 测试发现：zhipu-coding 在 shell 有 ZHIPU_API_KEY 但 list 显示未配置)。
   const keychainManagedEnvs = new Set<string>();
   for (const acct of accounts) {
-    const info = resolveProviderInfo(acct);
+    const info = await resolveProviderInfo(acct);
     if (info) keychainManagedEnvs.add(info.apiKeyEnv);
   }
   for (const envName of keychainManagedEnvs) {
@@ -113,7 +117,7 @@ export async function injectAllKeysToEnv(): Promise<void> {
   //    custom_<hex> CSPRNG 永不重生) → 安全删除。
   const orphanAccounts: string[] = [];
   for (const acct of accounts) {
-    const info = resolveProviderInfo(acct);
+    const info = await resolveProviderInfo(acct);
     if (!info) {
       orphanAccounts.push(acct);
       continue;
@@ -138,7 +142,7 @@ export async function injectAllKeysToEnv(): Promise<void> {
   }
   // 4) 默认 provider 的 key 最后注入一次——保证共享 env 时它胜出
   if (defaultId) {
-    const info = resolveProviderInfo(defaultId);
+    const info = await resolveProviderInfo(defaultId);
     if (info) {
       const value = await getKey(defaultId);
       if (value) process.env[info.apiKeyEnv] = value;
@@ -151,21 +155,36 @@ async function injectSingleKey(providerId: string): Promise<void> {
   // 先 load —— setKey handler 不保证调过 load()，custom provider 的 customCache 可能还是 null，
   // 那样 resolveProviderInfo 会 no-op 导致 env 不同步（重构后 SDK 纯靠 env 读 key）。
   await providerConfigStore.load();
-  const info = resolveProviderInfo(providerId);
+  const info = await resolveProviderInfo(providerId);
   if (!info) return;
   const value = await getKey(providerId);
   if (value) process.env[info.apiKeyEnv] = value;
 }
 
-function resolveProviderInfo(
+async function resolveProviderInfo(
   id: string,
-): { apiKeyEnv: string } | undefined {
+): Promise<{ apiKeyEnv: string } | undefined> {
   if (isBuiltinId(id)) {
     const b = getBuiltin(id);
     return b ? { apiKeyEnv: b.apiKeyEnv } : undefined;
   }
   const c = providerConfigStore.getCustom(id);
-  return c ? { apiKeyEnv: c.apiKeyEnv } : undefined;
+  if (c) return { apiKeyEnv: c.apiKeyEnv };
+  const sdkCustom = (await loadKodaxCustomProviders()).find((p) => p.id === id);
+  return sdkCustom ? { apiKeyEnv: sdkCustom.apiKeyEnv } : undefined;
+}
+
+async function resolveKnownProvider(id: string): Promise<KnownProvider | undefined> {
+  if (isBuiltinId(id)) return getBuiltin(id);
+  await providerConfigStore.load();
+  const custom = providerConfigStore.getCustom(id);
+  if (custom) return custom;
+  return (await loadKodaxCustomProviders()).find((p) => p.id === id);
+}
+
+async function refreshSdkCustomProviderRegistry(): Promise<void> {
+  await providerConfigStore.load();
+  await registerKodaxCustomProviders(providerConfigStore.listCustom());
 }
 
 export function registerProviderChannels(): void {
@@ -186,11 +205,13 @@ export function registerProviderChannels(): void {
     };
 
     const list: ProviderInfo[] = [];
+    const seenProviderIds = new Set<string>();
 
     // catalog 模块顶层已经从 SDK JSON 单一事实源 load 完整 provider 数据 ——
     // BuiltinProvider 的 apiKeyEnv / defaultModel / models 就是 SDK 的真相，
     // 不再需要每次 provider.list 调用时二次 dynamic-import SDK 取值。
     for (const b of BUILTIN_PROVIDERS) {
+      seenProviderIds.add(b.id);
       list.push({
         id: b.id,
         displayName: b.displayName,
@@ -204,6 +225,23 @@ export function registerProviderChannels(): void {
       });
     }
     for (const c of providerConfigStore.listCustom()) {
+      seenProviderIds.add(c.id);
+      list.push({
+        id: c.id,
+        displayName: c.displayName,
+        apiKeyEnv: c.apiKeyEnv,
+        protocol: c.protocol,
+        defaultModel: c.defaultModel,
+        models: c.models ? [...c.models] : undefined,
+        configured: keychainAccounts.has(c.id) || hasEnvKey(c.apiKeyEnv),
+        isDefault: defaultId === c.id,
+        isCustom: true,
+        baseUrl: c.baseUrl,
+      });
+    }
+    for (const c of await loadKodaxCustomProviders()) {
+      if (seenProviderIds.has(c.id)) continue;
+      seenProviderIds.add(c.id);
       list.push({
         id: c.id,
         displayName: c.displayName,
@@ -224,7 +262,7 @@ export function registerProviderChannels(): void {
 
   // provider.setKey — renderer 把 key 推给 main 后立即写 keychain + 注入 env
   registerChannel('provider.setKey', async (input) => {
-    if (!isBuiltinId(input.providerId) && !providerConfigStore.getCustom(input.providerId)) {
+    if (!(await resolveKnownProvider(input.providerId))) {
       // 未知 provider — 拒绝（防 LLM 诱导写 key 到任意 account 名占用 keychain 空间）
       throw new Error('unknown providerId');
     }
@@ -248,13 +286,7 @@ export function registerProviderChannels(): void {
 
   // provider.test
   registerChannel('provider.test', async (input) => {
-    await providerConfigStore.load();
-    let probe;
-    if (isBuiltinId(input.providerId)) {
-      probe = getBuiltin(input.providerId);
-    } else {
-      probe = providerConfigStore.getCustom(input.providerId);
-    }
+    const probe = await resolveKnownProvider(input.providerId);
     if (!probe) {
       return { ok: false, error: 'unknown provider' };
     }
@@ -270,7 +302,7 @@ export function registerProviderChannels(): void {
 
   // provider.setDefault
   registerChannel('provider.setDefault', async (input) => {
-    if (!isBuiltinId(input.providerId) && !providerConfigStore.getCustom(input.providerId)) {
+    if (!(await resolveKnownProvider(input.providerId))) {
       throw new Error(`unknown providerId: ${input.providerId}`);
     }
     await providerConfigStore.setDefault(input.providerId);
@@ -301,6 +333,7 @@ export function registerProviderChannels(): void {
       defaultModel: input.defaultModel,
       models: input.models,
     });
+    await refreshSdkCustomProviderRegistry();
     return { ok: true, providerId: id };
   });
 
@@ -311,6 +344,9 @@ export function registerProviderChannels(): void {
       // 删 custom 时同步删 keychain 中的 key
       await deleteKey(input.providerId);
       await injectAllKeysToEnv();
+      if (input.providerId !== 'mock' && !isBuiltinId(input.providerId)) {
+        await refreshSdkCustomProviderRegistry();
+      }
     }
     return { ok: removed };
   });
@@ -327,6 +363,9 @@ export function registerProviderChannels(): void {
   // 否则撞 ERR_PACKAGE_PATH_NOT_EXPORTED（同 sdk-providers.ts 的处理）。
   registerChannel('provider.modelContextWindow', async (input) => {
     try {
+      if (input.providerId !== 'mock' && !isBuiltinId(input.providerId)) {
+        await refreshSdkCustomProviderRegistry();
+      }
       const [{ resolveProvider }, { resolveContextWindow }] = await Promise.all([
         import('@kodax-ai/kodax/coding'),
         import('@kodax-ai/kodax/agent'),

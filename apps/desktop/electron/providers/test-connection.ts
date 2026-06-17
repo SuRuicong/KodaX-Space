@@ -17,7 +17,16 @@ import type { BuiltinProvider } from './catalog.js';
 import type { CustomProvider } from './config.js';
 import { validateBaseUrl } from './url-guard.js';
 
-type Probe = BuiltinProvider | CustomProvider;
+export interface CustomProviderProbe {
+  readonly id: string;
+  readonly protocol: CustomProvider['protocol'];
+  readonly baseUrl: string;
+  readonly apiKeyEnv: string;
+  readonly defaultModel: string;
+  readonly models?: readonly string[];
+}
+
+type Probe = BuiltinProvider | CustomProviderProbe;
 
 export interface TestResult {
   readonly ok: boolean;

@@ -18,7 +18,11 @@ function canonProjectRoot(p: string): string {
 }
 import { loadAgentsMd, type AgentsFile } from '../kodax/agents-md-loader.js';
 import { getKodaxDir } from '../kodax/data-paths.js';
-import { loadKodaxUserDefaults } from '../kodax/user-config.js';
+import {
+  loadKodaxCustomProviders,
+  loadKodaxUserDefaults,
+  registerKodaxCustomProviders,
+} from '../kodax/user-config.js';
 import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
 import { loadPersistedSession } from '../kodax/session-store.js';
@@ -57,7 +61,14 @@ async function assertProviderExists(providerId: string): Promise<void> {
   if (isBuiltinId(providerId)) return;
   await providerConfigStore.load();
   if (providerConfigStore.getCustom(providerId)) return;
+  if ((await loadKodaxCustomProviders()).some((p) => p.id === providerId)) return;
   throw new Error(`unknown providerId: ${providerId}`);
+}
+
+async function ensureCustomProviderRegistered(providerId: string): Promise<void> {
+  if (providerId === 'mock' || isBuiltinId(providerId)) return;
+  await providerConfigStore.load();
+  await registerKodaxCustomProviders(providerConfigStore.listCustom());
 }
 
 export function registerSessionChannels(): void {
@@ -65,6 +76,7 @@ export function registerSessionChannels(): void {
   registerChannel('session.create', async (input) => {
     const projectRoot = validateProjectRoot(input.projectRoot);
     await assertProviderExists(input.provider);
+    await ensureCustomProviderRegistered(input.provider);
     const { sessionId, createdAt } = kodaxHost.createSession({
       projectRoot,
       provider: input.provider,
@@ -288,6 +300,7 @@ export function registerSessionChannels(): void {
   // 必须先验 providerId 真实存在——schema 只验格式，不验 catalog（review C1-sec）
   registerChannel('session.setProvider', async (input) => {
     await assertProviderExists(input.providerId);
+    await ensureCustomProviderRegistered(input.providerId);
     const ok = kodaxHost.setProvider(input.sessionId, input.providerId);
     return { ok };
   });

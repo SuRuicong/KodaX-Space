@@ -34,6 +34,25 @@ export interface KodaxUserDefaults {
   readonly customProvidersCount: number;
 }
 
+export interface KodaxConfigCustomProvider {
+  readonly id: string;
+  readonly displayName: string;
+  readonly protocol: 'anthropic' | 'openai';
+  readonly baseUrl: string;
+  readonly apiKeyEnv: string;
+  readonly defaultModel: string;
+  readonly models?: readonly string[];
+}
+
+export interface SpaceCustomProviderForSdk {
+  readonly id: string;
+  readonly protocol: 'anthropic' | 'openai';
+  readonly baseUrl: string;
+  readonly apiKeyEnv: string;
+  readonly defaultModel: string;
+  readonly models?: readonly string[];
+}
+
 export interface KodaxUserConfigImpl {
   /** SDK loadConfig — 返回完整 config 对象（main 端使用） */
   readonly loadConfig: () => SdkLoadConfigReturn;
@@ -172,7 +191,36 @@ async function computeUserDefaults(): Promise<KodaxUserDefaults> {
  * **失败不阻塞启动**——customProviders 不可用最多让用户没法用那几个 provider，built-in 仍 OK。
  * **不打印 customProviders 详情**——apiKeyEnv 是变量名不是值，但保守起见只 log count。
  */
-export async function registerKodaxCustomProviders(): Promise<void> {
+export async function loadKodaxCustomProviders(): Promise<readonly KodaxConfigCustomProvider[]> {
+  if (activeImpl === DEFAULT_IMPL && sdkModuleCache === null) {
+    try {
+      await loadSdkRootModule();
+    } catch (err) {
+      console.warn(
+        '[kodax-user-config] SDK load failed in loadKodaxCustomProviders:',
+        err instanceof Error ? err.message : err,
+      );
+      return [];
+    }
+  }
+
+  let raw: SdkLoadConfigReturn;
+  try {
+    raw = activeImpl.loadConfig();
+  } catch (err) {
+    console.warn(
+      '[kodax-user-config] SDK loadConfig threw in loadKodaxCustomProviders:',
+      err instanceof Error ? err.message : err,
+    );
+    return [];
+  }
+
+  return normalizeKodaxConfigCustomProviders(raw.customProviders);
+}
+
+export async function registerKodaxCustomProviders(
+  spaceCustomProviders: readonly SpaceCustomProviderForSdk[] = [],
+): Promise<void> {
   if (activeImpl === DEFAULT_IMPL && sdkModuleCache === null) {
     try {
       await loadSdkRootModule();
@@ -185,24 +233,33 @@ export async function registerKodaxCustomProviders(): Promise<void> {
     }
   }
 
-  let raw: SdkLoadConfigReturn;
+  let rawProviders: readonly SdkCustomProviderConfig[] = [];
   try {
-    raw = activeImpl.loadConfig();
+    const raw = activeImpl.loadConfig();
+    rawProviders = Array.isArray(raw.customProviders) ? raw.customProviders : [];
   } catch (err) {
     console.warn(
       '[kodax-user-config] SDK loadConfig threw in registerCustomProviders:',
       err instanceof Error ? err.message : err,
     );
-    return;
   }
 
-  const customProviders = Array.isArray(raw.customProviders) ? raw.customProviders : undefined;
-  if (!customProviders || customProviders.length === 0) return;
+  const mergedByName = new Map<string, SdkCustomProviderConfig>();
+  for (const provider of rawProviders) {
+    const name = getProviderName(provider);
+    if (name) mergedByName.set(name, provider);
+  }
+  for (const provider of spaceCustomProviders) {
+    mergedByName.set(provider.id, spaceCustomProviderToSdk(provider));
+  }
+
+  const customProviders = [...mergedByName.values()];
+  if (customProviders.length === 0) return;
 
   try {
     activeImpl.registerCustomProviders({ customProviders });
     console.info(
-      `[kodax-user-config] registered ${customProviders.length} custom provider(s) from ~/.kodax/config.json`,
+      `[kodax-user-config] registered ${customProviders.length} custom provider(s) from KodaX config + Space store`,
     );
   } catch (err) {
     console.warn(
@@ -239,4 +296,93 @@ function normalizePermissionMode(v: unknown): KodaxMappablePermissionMode | unde
   if (typeof v !== 'string') return undefined;
   if (v === 'plan' || v === 'accept-edits') return v;
   return undefined;
+}
+
+function normalizeKodaxConfigCustomProviders(
+  providers: SdkLoadConfigReturn['customProviders'],
+): readonly KodaxConfigCustomProvider[] {
+  if (!Array.isArray(providers)) return [];
+  const list: KodaxConfigCustomProvider[] = [];
+  for (const provider of providers) {
+    const normalized = normalizeKodaxConfigCustomProvider(provider);
+    if (normalized) list.push(normalized);
+  }
+  return list;
+}
+
+function normalizeKodaxConfigCustomProvider(
+  provider: SdkCustomProviderConfig,
+): KodaxConfigCustomProvider | null {
+  const raw = provider as unknown as Record<string, unknown>;
+  const name = raw.name;
+  const protocol = raw.protocol;
+  const baseUrl = raw.baseUrl;
+  const apiKeyEnv = raw.apiKeyEnv;
+  const model = raw.model;
+  if (
+    !isNonEmptyString(name)
+    || !isSafeProviderId(name)
+    || !isSupportedCustomProtocol(protocol)
+    || !isNonEmptyString(baseUrl)
+    || !isNonEmptyString(apiKeyEnv)
+    || !isNonEmptyString(model)
+  ) {
+    return null;
+  }
+
+  const models = normalizeModelList(raw.models);
+  return {
+    id: name,
+    displayName: name,
+    protocol,
+    baseUrl,
+    apiKeyEnv,
+    defaultModel: model,
+    ...(models ? { models } : {}),
+  };
+}
+
+function spaceCustomProviderToSdk(provider: SpaceCustomProviderForSdk): SdkCustomProviderConfig {
+  const config: Record<string, unknown> = {
+    name: provider.id,
+    protocol: provider.protocol,
+    baseUrl: provider.baseUrl,
+    apiKeyEnv: provider.apiKeyEnv,
+    model: provider.defaultModel,
+  };
+  if (provider.models && provider.models.length > 0) {
+    config.models = [...provider.models];
+  }
+  return config as unknown as SdkCustomProviderConfig;
+}
+
+function getProviderName(provider: SdkCustomProviderConfig): string | null {
+  const name = (provider as unknown as Record<string, unknown>).name;
+  return isNonEmptyString(name) ? name : null;
+}
+
+function normalizeModelList(models: unknown): readonly string[] | undefined {
+  if (!Array.isArray(models)) return undefined;
+  const seen = new Set<string>();
+  for (const item of models) {
+    const id = typeof item === 'string'
+      ? item
+      : item && typeof item === 'object'
+        ? (item as { id?: unknown }).id
+        : undefined;
+    if (isNonEmptyString(id)) seen.add(id);
+  }
+  return seen.size > 0 ? [...seen] : undefined;
+}
+
+function isSupportedCustomProtocol(v: unknown): v is 'anthropic' | 'openai' {
+  return v === 'anthropic' || v === 'openai';
+}
+
+function isNonEmptyString(v: unknown): v is string {
+  return typeof v === 'string' && v.length > 0;
+}
+
+function isSafeProviderId(v: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(v);
 }

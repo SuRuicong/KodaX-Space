@@ -389,7 +389,9 @@ app.whenReady().then(async () => {
   // v0.1.6 cleanup: 同上，预热 root SDK module + 把 ~/.kodax/config.json 的 customProviders
   // 注册进 SDK runtime LLM registry。完成后 `/provider <name>` 可切到 KodaX-CLI 配的
   // 自定义 provider（如用户的 newapi-anthropic / openrouter-xxx）。失败不阻塞启动。
-  void prewarmKodaxUserConfig().then(() => registerKodaxCustomProviders());
+  void prewarmKodaxUserConfig()
+    .then(() => providerConfigStore.load())
+    .then(() => registerKodaxCustomProviders(providerConfigStore.listCustom()));
   registerProviderChannels();
   registerFilesChannels();
   registerTitlebarChannels();
