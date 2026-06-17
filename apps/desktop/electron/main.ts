@@ -93,9 +93,10 @@ function applyCsp(): void {
     //     hash 跟 inline 脚本字符 1:1 锁定；inline 改了 hash 也要改，否则 csp-hash test 会拦下。
     //     hash 与单测同源派生：apps/desktop/electron/test/csp-inline-hash.test.ts 启动 read +
     //     compute 一遍 assert 匹配，未来 inline 漂移 CI 立刻报错）
-    // frame-src 放行 artifact sandbox 的 loopback origin（F048 路径 D：renderer 以
-    // <iframe> 嵌 http://127.0.0.1:<port> 的 sandbox-shell）。仅 127.0.0.1（+dev 的
-    // localhost），不放宽其它。无 frame-src 时 default-src 'self' 会拦掉 iframe。
+    // frame-src 收紧为 'self'：LC sandbox 的 loopback iframe（路径 D，需 http://127.0.0.1:*）
+    // 已随交互层移除（见 F067）。现存唯一 iframe 是 HtmlArtifact 的 srcdoc（sandbox=""，
+    // 'self' 即可）；artifact-window(F059c L3) 是独立 BrowserWindow 不经 iframe。LC 重接时
+    // 在此重新放行 loopback origin（届时配合 F055 app:// 做 frame-ancestors pinning）。
     const csp = isDev
       ? [
           "default-src 'self'",
@@ -104,7 +105,7 @@ function applyCsp(): void {
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data:",
           "font-src 'self' data:",
-          "frame-src 'self' http://127.0.0.1:* http://localhost:*",
+          "frame-src 'self'",
           "connect-src 'self' ws://localhost:* ws://127.0.0.1:* http://localhost:* http://127.0.0.1:*",
         ].join('; ')
       : [
@@ -114,7 +115,7 @@ function applyCsp(): void {
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data:",
           "font-src 'self' data:",
-          "frame-src 'self' http://127.0.0.1:*",
+          "frame-src 'self'",
           "connect-src 'self'",
         ].join('; ');
 
