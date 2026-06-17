@@ -24,6 +24,7 @@ import { Caret } from '../components/Caret.js';
 import { buildWorkerTree } from './popouts/worker-tree.js';
 import { ArtifactsView } from '../features/artifact/ArtifactsView.js';
 import { useArtifacts, useArtifactCreated } from '../features/artifact/useArtifacts.js';
+import { WorkflowPanel, useSessionWorkflowRuns } from '../features/workflow/WorkflowPanel.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 
@@ -114,6 +115,7 @@ export function RightSidebar({ width }: RightSidebarProps = {}): JSX.Element {
         // 概览：原任务态多节堆叠（自身滚动）。
         <div className="flex-1 min-h-0 overflow-y-auto">
           <PlanSection />
+          <WorkflowSection />
           <WorkersSection />
           <ChangesSection />
           <WorkingFolderSection />
@@ -306,6 +308,18 @@ function PlanSection(): JSX.Element | null {
 }
 
 // ---- Workers section（active worker 摘要） ----
+
+// F061 Workflow 进度 Section（Coder-only —— RightSidebar 本就只挂 code surface）。
+// 无归属当前 session 的工作流 run 时整段隐藏（同 Plan/Workers 的"无内容隐藏"策略）。
+function WorkflowSection(): JSX.Element | null {
+  const runs = useSessionWorkflowRuns();
+  if (runs.length === 0) return null;
+  return (
+    <Section title="Workflow" popoutKind="workflow">
+      <WorkflowPanel runs={runs} variant="compact" />
+    </Section>
+  );
+}
 
 function WorkersSection(): JSX.Element | null {
   const currentSessionId = useAppStore((s) => s.currentSessionId);

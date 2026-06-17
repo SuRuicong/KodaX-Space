@@ -74,6 +74,10 @@ export const workflowProcessItemSchema = z.object({
   summaryStatus: workflowProcessSummaryStatusSchema.optional(),
   error: z.string().max(MSG).optional(),
 });
+export type WorkflowProcessItemT = z.infer<typeof workflowProcessItemSchema>;
+export type WorkflowProcessItemStatusT = z.infer<typeof workflowProcessItemStatusSchema>;
+export type WorkflowProcessItemKindT = z.infer<typeof workflowProcessItemKindSchema>;
+export type WorkflowProcessSummaryStatusT = z.infer<typeof workflowProcessSummaryStatusSchema>;
 
 const workflowProcessCountsSchema = z.object({
   pending: z.number().int().nonnegative(),

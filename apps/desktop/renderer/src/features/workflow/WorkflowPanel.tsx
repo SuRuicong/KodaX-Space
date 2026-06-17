@@ -1,0 +1,306 @@
+// F061 — Workflow 进度面板（Coder-only）。
+//
+// REPL inline/fullscreen 工作流面的 GUI 等价物：把 store 里某 session 的工作流 run 渲染成
+// phase/agent/step 树，带 status 图标、counts/progress、token 用量、digest 三态。
+// 纯展示——数据来自 F060 的 workflowRuns store slice；控制动作（stop/pause/resume）F062 接。
+//
+// Space 零编排：本组件只画 SDK 给的 snapshot，不跑、不折叠任何工作流逻辑。
+//
+// 结构（避免重复 selector + hooks-order 陷阱，记忆 leftsidebar_hooks_order_whitescreen）：
+//   - useSessionWorkflowRuns()  —— 唯一 selector（useShallow 作元素级比较，跨 session 事件不误触发）
+//   - WorkflowSection / 调用方  —— 调一次 selector，把 runs 当 prop 传下去
+//   - WorkflowPanel({ runs })    —— 纯展示，不自取 store
+//   - WorkflowPanelConnected     —— popout 用（自取 runs 再渲染 WorkflowPanel）
+
+import { useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
+import {
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  CircleSlash,
+  PauseCircle,
+  Circle,
+  MinusCircle,
+  Bot,
+  Coins,
+  type LucideIcon,
+} from 'lucide-react';
+import type {
+  WorkflowRunT,
+  WorkflowProcessStatusT,
+  WorkflowProcessItemStatusT,
+  WorkflowProcessSummaryStatusT,
+} from '@kodax-space/space-ipc-schema';
+import { useAppStore } from '../../store/appStore.js';
+import { buildItemTree, type WorkflowTreeNode } from './buildItemTree.js';
+
+// ---- run / item 状态 → 图标 + 颜色 ----
+const RUN_ICON: Record<WorkflowProcessStatusT, LucideIcon> = {
+  running: Loader2,
+  paused: PauseCircle,
+  completed: CheckCircle2,
+  failed: XCircle,
+  cancelled: CircleSlash,
+};
+const RUN_COLOR: Record<WorkflowProcessStatusT, string> = {
+  running: 'text-warn',
+  paused: 'text-fg-muted',
+  completed: 'text-ok',
+  failed: 'text-danger',
+  cancelled: 'text-fg-faint',
+};
+const ITEM_ICON: Record<WorkflowProcessItemStatusT, LucideIcon> = {
+  pending: Circle,
+  running: Loader2,
+  completed: CheckCircle2,
+  failed: XCircle,
+  cancelled: CircleSlash,
+  skipped: MinusCircle,
+};
+const ITEM_COLOR: Record<WorkflowProcessItemStatusT, string> = {
+  pending: 'text-fg-faint',
+  running: 'text-warn',
+  completed: 'text-ok',
+  failed: 'text-danger',
+  cancelled: 'text-fg-faint',
+  skipped: 'text-fg-faint',
+};
+const SPIN: ReadonlySet<string> = new Set(['running']);
+const TERMINAL: ReadonlySet<WorkflowProcessStatusT> = new Set(['completed', 'failed', 'cancelled']);
+// 缩进每层 12px，但封顶 8 层——防 SDK 给深树时内层被推出面板（视觉饱和钳制）。
+const MAX_INDENT_DEPTH = 8;
+
+const EMPTY_RUNS: readonly WorkflowRunT[] = [];
+
+/** 紧凑 token 格式：1234 → "1.2k"，1_200_000 → "1.2M"。 */
+function fmtTokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
+/**
+ * Selector：取归属 currentSession 的 run，按开始时间倒序（新的在前）。
+ * useShallow 作元素级浅比较——workflowRuns 每个事件都换新引用（含别的 session 的事件），
+ * 但只要本 session 的结果数组元素引用没变就不重渲染/重算（避免跨 session 事件误触发）。
+ */
+export function useSessionWorkflowRuns(): readonly WorkflowRunT[] {
+  return useAppStore(
+    useShallow((s) => {
+      const sid = s.currentSessionId;
+      if (!sid) return EMPTY_RUNS;
+      return Object.values(s.workflowRuns)
+        .filter((r) => r.sessionId === sid)
+        .sort((a, b) => (a.startedAt < b.startedAt ? 1 : a.startedAt > b.startedAt ? -1 : 0));
+    }),
+  );
+}
+
+interface WorkflowPanelProps {
+  /** 已 selector 出的 runs（由调用方传入，避免重复 selector）。 */
+  readonly runs: readonly WorkflowRunT[];
+  /** compact = RightSidebar 紧凑摘要（终态 run 折叠 tree）；full = popout 全展开。 */
+  readonly variant?: 'compact' | 'full';
+}
+
+/** 纯展示面板：渲染传入的 runs。空 runs 显示空态（popout 路径可达）。 */
+export function WorkflowPanel({ runs, variant = 'compact' }: WorkflowPanelProps): JSX.Element {
+  if (runs.length === 0) {
+    return <div className="text-xs text-fg-muted px-1 py-2">无工作流运行。</div>;
+  }
+  return (
+    <div className="space-y-2">
+      {runs.map((run) => (
+        <WorkflowRunCard key={run.runId} run={run} variant={variant} />
+      ))}
+    </div>
+  );
+}
+
+/** Popout 连接版：自取当前 session 的 runs 再渲染。 */
+export function WorkflowPanelConnected({ variant = 'full' }: { variant?: 'compact' | 'full' }): JSX.Element {
+  const runs = useSessionWorkflowRuns();
+  return <WorkflowPanel runs={runs} variant={variant} />;
+}
+
+function WorkflowRunCard({
+  run,
+  variant,
+}: {
+  run: WorkflowRunT;
+  variant: 'compact' | 'full';
+}): JSX.Element {
+  const RunIcon = RUN_ICON[run.status];
+  const tree = useMemo(() => buildItemTree(run.items), [run.items]);
+  // compact 下终态 run 默认折叠 tree（只留头部摘要）；活跃 / full 展开。
+  const isTerminal = TERMINAL.has(run.status);
+  const showTree = variant === 'full' || !isTerminal;
+  const tokenPct =
+    run.tokens?.total && run.tokens.total > 0
+      ? Math.min(100, (run.tokens.spent / run.tokens.total) * 100)
+      : null;
+  // phase 计数：activePhaseIndex 0-based；活跃时 +1 显示"当前第 N"，终态不 +1（避免 6/5）。
+  const displayPhaseNumber = (run.activePhaseIndex ?? 0) + (isTerminal ? 0 : 1);
+
+  return (
+    <div className="rounded-lg border border-border-default/70 bg-surface-2 p-2">
+      {/* 头部：状态图标 + 名称 + phase 进度 */}
+      <div className="flex items-center gap-1.5 min-w-0">
+        <RunIcon
+          size={13}
+          className={`flex-shrink-0 ${RUN_COLOR[run.status]} ${SPIN.has(run.status) ? 'animate-spin' : ''}`}
+          aria-hidden
+        />
+        <span className="text-[12px] font-medium text-fg-primary truncate" title={run.displayName ?? run.workflowName}>
+          {run.displayName ?? run.workflowName}
+        </span>
+        {run.phaseCount !== undefined && run.phaseCount > 0 && (
+          <span className="ml-auto flex-shrink-0 text-[10px] font-mono text-fg-muted">
+            {displayPhaseNumber}/{run.phaseCount}
+          </span>
+        )}
+      </div>
+
+      {/* 进度计量行：agents + token */}
+      <div className="mt-1 flex items-center gap-2 text-[10px] font-mono text-fg-muted">
+        <span className="inline-flex items-center gap-1" title="agents：完成/已生成（活跃）">
+          <Bot size={10} aria-hidden />
+          {run.progress.finishedAgents}/{run.progress.spawnedAgents}
+          {run.progress.activeAgents > 0 && <span className="text-warn">·{run.progress.activeAgents}</span>}
+        </span>
+        {run.tokens && (
+          <span className="inline-flex items-center gap-1" title="token：已花/预算">
+            <Coins size={10} aria-hidden />
+            {fmtTokens(run.tokens.spent)}
+            {run.tokens.total ? `/${fmtTokens(run.tokens.total)}` : ''}
+          </span>
+        )}
+        {run.counts.failed > 0 && <span className="text-danger">✗ {run.counts.failed}</span>}
+      </div>
+      {tokenPct !== null && (
+        <div className="mt-1 h-0.5 bg-surface-3 rounded overflow-hidden">
+          <div
+            className={`h-full ${tokenPct > 90 ? 'bg-danger' : 'bg-ok'}`}
+            style={{ width: `${tokenPct}%` }}
+          />
+        </div>
+      )}
+
+      {/* 最新活动行 */}
+      {run.latestMessage && !isTerminal && (
+        <div className="mt-1 text-[11px] text-fg-secondary truncate" title={run.latestMessage}>
+          {run.latestMessage}
+        </div>
+      )}
+
+      {/* 结果 / 错误（终态） */}
+      {run.status === 'failed' && run.error && (
+        <div className="mt-1 text-[11px] text-danger break-words">{run.error}</div>
+      )}
+      {run.resultSummary && isTerminal && (
+        <div className="mt-1 text-[11px] text-fg-secondary break-words">{run.resultSummary}</div>
+      )}
+
+      {/* item 树 */}
+      {showTree && tree.length > 0 && (
+        <ul className="mt-1.5 space-y-0.5">
+          {tree.map((node) => (
+            <WorkflowItemRow key={node.item.id} node={node} depth={0} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function WorkflowItemRow({ node, depth }: { node: WorkflowTreeNode; depth: number }): JSX.Element {
+  const { item, children } = node;
+  const Icon = ITEM_ICON[item.status];
+  const indentPx = Math.min(depth, MAX_INDENT_DEPTH) * 12;
+  return (
+    <li>
+      <div className="flex items-center gap-1.5 text-[11px] min-w-0" style={{ paddingLeft: `${indentPx}px` }}>
+        <Icon
+          size={11}
+          className={`flex-shrink-0 ${ITEM_COLOR[item.status]} ${SPIN.has(item.status) ? 'animate-spin' : ''}`}
+          aria-hidden
+        />
+        <span
+          className={`truncate ${item.status === 'running' ? 'text-fg-primary' : 'text-fg-secondary'}`}
+          title={item.title}
+        >
+          {item.title || item.id}
+        </span>
+        {item.model && (
+          <span
+            className="ml-auto flex-shrink-0 text-[9px] font-mono text-fg-faint truncate max-w-[80px]"
+            title={`${item.provider ?? ''} ${item.model}`}
+          >
+            {item.model}
+          </span>
+        )}
+      </div>
+      {/* digest 三态：result/notice 显文本 / pending 显生成中 / unavailable 诚实标不可用 */}
+      {item.summaryStatus !== undefined && (
+        <DigestLine status={item.summaryStatus} summary={item.summary} indentPx={indentPx} />
+      )}
+      {children.length > 0 && (
+        <ul className="space-y-0.5">
+          {children.map((c) => (
+            <WorkflowItemRow key={c.item.id} node={c} depth={depth + 1} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+function DigestLine({
+  status,
+  summary,
+  indentPx,
+}: {
+  status: WorkflowProcessSummaryStatusT;
+  summary?: string;
+  indentPx: number;
+}): JSX.Element | null {
+  const pad = { paddingLeft: `${indentPx + 16}px` };
+  switch (status) {
+    case 'pending':
+      return (
+        <div className="text-[10px] text-fg-faint italic" style={pad}>
+          生成摘要中…
+        </div>
+      );
+    case 'unavailable':
+      return (
+        <div className="text-[10px] text-fg-faint italic" style={pad}>
+          摘要不可用，见原始结果
+        </div>
+      );
+    case 'notice':
+      // 非最终摘要的提示性信息——与 result 区分：弱化 + 前缀标记。
+      if (!summary) return null;
+      return (
+        <div className="text-[10px] text-fg-faint break-words" style={pad} title={summary}>
+          ⓘ {summary}
+        </div>
+      );
+    case 'result':
+      if (!summary) return null;
+      return (
+        <div className="text-[10px] text-fg-muted break-words" style={pad} title={summary}>
+          {summary}
+        </div>
+      );
+    default:
+      // 穷尽性保险：SDK 若加新 summaryStatus，编译期会在此报错。
+      return assertNever(status);
+  }
+}
+
+function assertNever(x: never): null {
+  void x;
+  return null;
+}

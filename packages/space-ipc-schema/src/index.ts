@@ -250,6 +250,10 @@ export {
   workflowRunSchema,
   type WorkflowProcessStatusT,
   type WorkflowProcessSnapshotT,
+  type WorkflowProcessItemT,
+  type WorkflowProcessItemStatusT,
+  type WorkflowProcessItemKindT,
+  type WorkflowProcessSummaryStatusT,
   type WorkflowRunT,
   type WorkflowEventPayload,
 } from './channels/workflow.js';

@@ -39,6 +39,7 @@ import { PlanPanel } from './PlanPanel.js';
 import { AgentsMdPanel } from './AgentsMdPanel.js';
 import { McpPanel } from './McpPanel.js';
 import { ArtifactsView } from '../../features/artifact/ArtifactsView.js';
+import { WorkflowPanelConnected } from '../../features/workflow/WorkflowPanel.js';
 
 interface PopoutOverlayProps {
   kind: PopoutKind;
@@ -81,6 +82,11 @@ export function PopoutOverlay({ kind, onClose }: PopoutOverlayProps): JSX.Elemen
           {kind === 'agents' && <AgentsMdPanel />}
           {kind === 'mcp' && <McpPanel />}
           {kind === 'artifact' && <ArtifactsView />}
+          {kind === 'workflow' && (
+            <div className="h-full overflow-y-auto p-2">
+              <WorkflowPanelConnected variant="full" />
+            </div>
+          )}
         </div>
       </aside>
     </>
