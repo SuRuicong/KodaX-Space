@@ -510,7 +510,16 @@ async function startFileTracingIfEnabled(): Promise<void> {
 // review H3-code（2026-05-17）：先 cancelAll pending 权限请求——disposeAll 会
 // 逐 session cancelSession，但循环被打断时（before-quit 第二次触发等）仍有 pending
 // 可能残留。先一把扫光，幂等
+//
+// 进程残留修复（2026-06-16）：MCP stdio server / sandbox server 这些**会 spawn OS 子进程**
+// 的子系统，之前是 fire-and-forget（`void dispose()`）。退出时序里没有 in-flight session
+// 时 before-quit 直接 return → app.quit() 立刻拆主进程，子进程 kill 还没跑完 → MCP server
+// 等 node 子进程变孤儿残留；有 in-flight 时 app.exit(0) 也只等了 kodaxHost.disposeAll()。
+// 现在统一拦一次，把所有会杀子进程的异步清理一起 await 完再硬退；带看门狗兜底，避免任一
+// 清理卡死导致无窗口僵尸主进程（dev 链路下还会连累 vite/esbuild 跟着挂）。
+let _quitting = false;
 app.on('before-quit', (event) => {
+  // 同步 + 幂等的清理先做（每次 before-quit 触发都安全重入）。
   permissionBroker.cancelAll('shutdown');
   askUserBroker.cancelAll('shutdown');
   // F011: kill all PTYs before exit so shells don't outlive Electron as zombies.
@@ -520,30 +529,54 @@ app.on('before-quit', (event) => {
   } catch (err) {
     console.warn('[main] ptyHost dispose:', err instanceof Error ? err.message : err);
   }
-  // FileTracingProcessor.shutdown() 必须在退出前调,刷 pending write 到磁盘。
-  // 即便没 in-flight session 也得 flush — 单独 fire-and-forget,quit 不等它。
-  if (_fileTracingShutdown !== null) {
-    const shutdown = _fileTracingShutdown;
-    _fileTracingShutdown = null;
-    void shutdown().catch((err) =>
-      console.warn('[main] tracing shutdown:', err instanceof Error ? err.message : err),
+
+  // 第二次 before-quit（理论上不会——app.exit 跳过 before-quit；防 electron quirk）直接放行。
+  if (_quitting) return;
+  _quitting = true;
+  // 异步清理需要 await 完才能让进程死，否则子进程 kill 与进程退出赛跑 → 孤儿残留。
+  event.preventDefault();
+
+  const tracingShutdown = _fileTracingShutdown;
+  _fileTracingShutdown = null;
+
+  // 所有会 spawn 子进程 / 持有句柄的异步清理，统一收口后 allSettled。每个自带 catch，
+  // 不让单个失败短路其它清理。
+  const disposals: Promise<unknown>[] = [
+    // McpManager: 释放 stdio transport 子进程,免得 quit 后 server 进程作为 zombie 留着。
+    disposeMcpManager().catch((err) =>
+      console.warn('[main] mcp shutdown:', err instanceof Error ? err.message : err),
+    ),
+    // F048 路径 D：关闭 loopback sandbox server（释放 127.0.0.1 端口）。
+    sandboxHost.dispose().catch((err) =>
+      console.warn('[main] sandbox host dispose:', err instanceof Error ? err.message : err),
+    ),
+    // KodaX in-flight session：abort + drain queue（dispose 本身很快，不 await SDK 后台 run）。
+    kodaxHost
+      .disposeAll()
+      .catch((err) =>
+        console.error('[main] disposeAll on quit:', err instanceof Error ? err.message : err),
+      ),
+  ];
+  // FileTracingProcessor.shutdown(): 刷 pending write 到磁盘（opt-in，多数用户为 null）。
+  if (tracingShutdown !== null) {
+    disposals.push(
+      tracingShutdown().catch((err) =>
+        console.warn('[main] tracing shutdown:', err instanceof Error ? err.message : err),
+      ),
     );
   }
-  // McpManager: 释放 stdio transport 子进程,免得 quit 后 server 进程作为 zombie 留着。
-  // 同样 fire-and-forget,失败不阻塞退出。
-  void disposeMcpManager().catch((err) =>
-    console.warn('[main] mcp shutdown:', err instanceof Error ? err.message : err),
-  );
-  // F048 路径 D：关闭 loopback sandbox server（释放 127.0.0.1 端口）。fire-and-forget。
-  void sandboxHost.dispose().catch((err) =>
-    console.warn('[main] sandbox host dispose:', err instanceof Error ? err.message : err),
-  );
-  if (kodaxHost.listInFlight().length === 0) return;
-  event.preventDefault();
-  void kodaxHost
-    .disposeAll()
-    .catch((err) => console.error('[main] disposeAll on quit:', err instanceof Error ? err.message : err))
-    .finally(() => app.exit(0));
+
+  // 兜底看门狗：任一清理卡死也不让 app 永远不退。unref 不让它本身把 event loop 拖住。
+  const watchdog = setTimeout(() => {
+    console.warn('[main] shutdown disposals exceeded 2.5s; forcing exit');
+    app.exit(0);
+  }, 2500);
+  watchdog.unref?.();
+
+  void Promise.allSettled(disposals).finally(() => {
+    clearTimeout(watchdog);
+    app.exit(0);
+  });
 });
 
 // 兜底 — 未捕获异常不静默，但**不打印原对象**：
