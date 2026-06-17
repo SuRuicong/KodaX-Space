@@ -141,6 +141,55 @@
   }
 }
 
+/* ============================================================
+   Overlay 自动隐藏滚动条 — macOS / Linear / Arc 式「滚才浮现、停就隐去」。
+   现代感的核心是「行为」不是「长相」：静止时完全隐形（不像老式那样常驻），
+   滚动时细圆条淡入、空闲 ~0.7s 淡出，鼠标触达边缘 gutter 时也浮现以便抓取。
+
+   分工：
+     - 行为：lib/scrollbarAutoHide.ts 在滚动容器上打 [data-scrolling="true"]，空闲移除。
+     - 视觉：下面 CSS。thumb 静止全透明 → [data-scrolling] / hover gutter 时浮现，
+       background-color 过渡负责淡入淡出。background-clip: padding-box + 透明 border
+       让可见滑块比 gutter 更细（悬浮胶囊感）。颜色走 theme token，light/dark 自适应。
+   作用域：原生 overflow 容器（含 xterm viewport）。Monaco 自绘 slider，不受影响。
+   gutter 仅在内容真的溢出时占位（overflow:auto 默认行为），不溢出时内容仍占满宽。
+
+   ⚠️ 关键：绝不要设 scrollbar-width / scrollbar-color。Chromium 121+（Electron 33 =
+   Chromium 130）一旦见到这两个标准属性，就改用「标准滚动条」并彻底忽略 ::-webkit-scrollbar
+   伪元素——而标准滚动条不支持 border-radius，thumb 会渲染成方角。只有保持纯 webkit 伪元素
+   路径，border-radius 才生效、才能做出 macOS 那种圆角胶囊。Electron 永远是 Chromium，
+   不需要 Firefox 的 scrollbar-width 兼容。
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-button {
+  display: none; /* 去掉老式两端箭头 */
+}
+/* 静止态：thumb 全透明，仅占 gutter 位但不可见 */
+::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border: 2.5px solid transparent; /* 透明 border + clip → 可见胶囊 5px，浮在 10px gutter 中 */
+  background-clip: padding-box;
+  border-radius: 999px; /* 圆角胶囊（仅 webkit 伪元素路径支持，故上面禁用 scrollbar-width）*/
+  transition: background-color 320ms var(--ease, ease);
+}
+/* 浮现态：① 正在滚动（JS 打的属性） ② 鼠标触达边缘 gutter（hover thumb）*/
+[data-scrolling='true']::-webkit-scrollbar-thumb {
+  background-color: rgb(var(--fg-faint) / 0.7);
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(var(--fg-muted) / 0.9);
+}
+::-webkit-scrollbar-thumb:active {
+  background-color: rgb(var(--fg-secondary) / 1);
+}
+
 /* F054: zinc 反转 hack 已删除 —— 组件已全量迁移到语义 token (bg-surface / text-fg-* /
    border-border-* / hover:bg-hover-bg)，这些 token 本身 theme-aware，不再需要 light-mode
    逐类反转。(grep "zinc-" renderer/src 仅余注释与 Monaco 主题 hex。) */

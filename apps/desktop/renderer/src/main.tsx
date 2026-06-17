@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { ArtifactWindow, parseArtifactHash } from './features/artifact/ArtifactWindow';
+import { installScrollbarAutoHide } from './lib/scrollbarAutoHide';
 // F054 视觉刷新：本地打包字体 (Electron 无网 + CSP)，不走 Google Fonts CDN。
 // Variable 字体单文件覆盖全字重；--ui / --mono 在 styles.css 指向它们。
 import '@fontsource-variable/geist';
@@ -28,6 +29,9 @@ import './styles.css';
     document.documentElement.classList.add('dark');
   }
 })();
+
+// Overlay 自动隐藏滚动条 —— 滚动/触达 gutter 时浮现，空闲淡出（视觉在 styles.css）。
+installScrollbarAutoHide();
 
 const rootEl = document.getElementById('root');
 if (!rootEl) {

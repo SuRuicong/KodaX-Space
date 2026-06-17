@@ -294,9 +294,9 @@ export function WelcomeDashboard(): JSX.Element {
   }, [stats.favModel, stats.favProviderId, stats.favIsRealModel, providers]);
 
   return (
-    <div className="ix-zone flex-1 overflow-auto px-6 py-10 flex flex-col items-center">
+    <div className="ix-zone flex-1 overflow-auto px-6 py-6 flex flex-col items-center">
       {/* 大标题 */}
-      <h1 className="text-2xl text-fg-primary mb-8 flex items-center gap-2">
+      <h1 className="text-2xl text-fg-primary mb-6 flex items-center gap-2">
         <span className="text-warn" aria-hidden>
           ✱
         </span>
@@ -336,7 +336,7 @@ export function WelcomeDashboard(): JSX.Element {
           <>
             {/* Stats — 4 列 × 2 行布局；cells 等宽撑满父容器，与 heatmap 父宽对齐
                 Favorite model 占第 8 cell（col-span-1）但允许内容 wrap 2-3 行。 */}
-            <div className="grid grid-cols-4 gap-x-4 gap-y-4 mb-6">
+            <div className="grid grid-cols-4 gap-x-4 gap-y-3 mb-5">
               <StatCell label="Sessions" value={formatNum(stats.sessions)} />
               <StatCell label="Messages" value={formatNum(stats.messages)} />
               <StatCell label="Total tokens" value={formatTokensBig(stats.tokens)} />
@@ -377,7 +377,7 @@ export function WelcomeDashboard(): JSX.Element {
       </div>
 
       {/* 像素狗占位 */}
-      <div className="mt-8 text-2xl select-none" aria-hidden>
+      <div className="mt-6 text-2xl select-none" aria-hidden>
         🐕
       </div>
     </div>

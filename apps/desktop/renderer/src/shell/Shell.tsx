@@ -255,8 +255,10 @@ export function Shell(): JSX.Element {
           </span>
         </div>
         <div className="flex-1" />
-        <VisualQualityToggle />
-        <ThemeToggle />
+        <div className="flex items-center gap-1.5">
+          <VisualQualityToggle />
+          <ThemeToggle />
+        </div>
       </div>
 
       {/* F060: 面板区。Liquid Glass —— 立体感来自光影材质（光向描边 + 光标 specular + 分层柔影），
