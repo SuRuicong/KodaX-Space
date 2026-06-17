@@ -7,7 +7,10 @@ import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WorkflowController } from '../kodax/workflow-controller.js';
-import type { WorkflowRunManagerLike } from '../kodax/workflow-controller.js';
+import type {
+  WorkflowRunManagerLike,
+  WorkflowLifecycleLike,
+} from '../kodax/workflow-controller.js';
 import { workflowEventChannel, workflowProcessSnapshotSchema } from '@kodax-space/space-ipc-schema';
 
 // ---- fake run manager（可手动 emit 进程事件 + 持有 snapshot）----
@@ -155,6 +158,101 @@ test('origins persist across controller instances (interim attribution survives 
     const got = ctrl2.get('r1');
     assert.equal(got?.sessionId, 's_persist');
     assert.equal(got?.surface, 'partner');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---- F062 控制方法 ----
+function fakeLifecycle() {
+  const calls: Array<[string, unknown[]]> = [];
+  const lc: WorkflowLifecycleLike & { calls: typeof calls } = {
+    calls,
+    async stopWorkflow(runId, reason) {
+      calls.push(['stop', [runId, reason]]);
+      return true;
+    },
+    async pauseWorkflow(runId) {
+      calls.push(['pause', [runId]]);
+      return true;
+    },
+    async resumeWorkflow(runId) {
+      calls.push(['resume', [runId]]);
+      return true;
+    },
+    async renameWorkflowRun(runId, name) {
+      calls.push(['rename', [runId, name]]);
+      return true;
+    },
+    async deleteWorkflowRun(runId, opts) {
+      calls.push(['delete', [runId, opts]]);
+      return true;
+    },
+    async pruneWorkflowRuns(opts) {
+      calls.push(['prune', [opts]]);
+      return { deleted: 2, protectedRuns: 1, candidates: ['r1', 'r2'], dryRun: opts.dryRun ?? false };
+    },
+  };
+  return lc;
+}
+
+test('stop/pause/resume/rename delegate to lifecycle controller', async () => {
+  const { dir, file } = freshFile();
+  try {
+    const ctrl = new WorkflowController(() => {}, file);
+    const lc = fakeLifecycle();
+    await ctrl.init(fakeManager(), lc);
+    assert.equal(await ctrl.stop('r1', 'because'), true);
+    assert.equal(await ctrl.pause('r1'), true);
+    assert.equal(await ctrl.resume('r1'), true);
+    assert.equal(await ctrl.rename('r1', 'New Name'), true);
+    assert.deepEqual(lc.calls, [
+      ['stop', ['r1', 'because']],
+      ['pause', ['r1']],
+      ['resume', ['r1']],
+      ['rename', ['r1', 'New Name']],
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('deleteRun drops local origin on success; prune returns lifecycle result', async () => {
+  const { dir, file } = freshFile();
+  try {
+    const ctrl = new WorkflowController(() => {}, file);
+    const lc = fakeLifecycle();
+    const mgr = fakeManager();
+    await ctrl.init(mgr, lc);
+    ctrl.registerOrigin('r1', { sessionId: 's1', surface: 'code' });
+    mgr._seed(sampleSnapshot('r1'));
+    await ctrl.flush();
+
+    assert.equal(await ctrl.deleteRun('r1', true), true);
+    assert.deepEqual(lc.calls.at(-1), ['delete', ['r1', { force: true }]]);
+    // 归属被清（get 不再带 sessionId — 虽 snapshot 还在 fake manager 里）
+    assert.equal(ctrl.get('r1')?.sessionId, undefined);
+
+    const res = await ctrl.prune({ keep: 5, dryRun: true });
+    assert.equal(res.deleted, 2);
+    assert.equal(res.dryRun, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('control methods degrade safely when no lifecycle injected (fake manager path)', async () => {
+  const { dir, file } = freshFile();
+  try {
+    const ctrl = new WorkflowController(() => {}, file);
+    // 只注入 manager，不注入 lifecycle → 不自动建真 SDK lifecycle（managerInjected=true）。
+    await ctrl.init(fakeManager());
+    assert.equal(await ctrl.stop('r1'), false);
+    assert.equal(await ctrl.pause('r1'), false);
+    assert.equal(await ctrl.rename('r1', 'x'), false);
+    assert.equal(await ctrl.deleteRun('r1'), false);
+    const res = await ctrl.prune({ keep: 1 });
+    assert.deepEqual(res, { deleted: 0, protectedRuns: 0, candidates: [], dryRun: false });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

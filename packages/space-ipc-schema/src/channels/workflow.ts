@@ -188,3 +188,71 @@ export const workflowGetChannel = {
   input: z.object({ runId: z.string().min(1).max(SHORT) }),
   output: z.object({ run: workflowRunSchema.nullable() }),
 } as const;
+
+// ============================================================================
+// F062 — Run 生命周期控制（stop/pause/resume/rename/delete/prune）。
+// 控制后状态由 workflow.event 自然回流（如 stop → 后续 workflow_finished status=cancelled），
+// renderer 不乐观假设，等事件。
+// ============================================================================
+
+const okResult = z.object({ ok: z.boolean() });
+const runIdInput = z.object({ runId: z.string().min(1).max(SHORT) });
+
+export const workflowStopChannel = {
+  name: 'workflow.stop',
+  direction: 'invoke',
+  input: z.object({ runId: z.string().min(1).max(SHORT), reason: z.string().max(SHORT).optional() }),
+  output: okResult,
+} as const;
+
+export const workflowPauseChannel = {
+  name: 'workflow.pause',
+  direction: 'invoke',
+  input: runIdInput,
+  output: okResult,
+} as const;
+
+export const workflowResumeChannel = {
+  name: 'workflow.resume',
+  direction: 'invoke',
+  input: runIdInput,
+  output: okResult,
+} as const;
+
+export const workflowRenameChannel = {
+  name: 'workflow.rename',
+  direction: 'invoke',
+  input: z.object({
+    runId: z.string().min(1).max(SHORT),
+    displayName: z.string().min(1).max(SHORT),
+  }),
+  output: okResult,
+} as const;
+
+export const workflowDeleteChannel = {
+  name: 'workflow.delete',
+  direction: 'invoke',
+  input: z.object({ runId: z.string().min(1).max(SHORT), force: z.boolean().optional() }),
+  output: okResult,
+} as const;
+
+export const workflowPruneChannel = {
+  name: 'workflow.prune',
+  direction: 'invoke',
+  // 至少给一个保留策略——防 `{}` / 只带 dryRun 触发无界清理（依赖 SDK 行为不可控）。
+  input: z
+    .object({
+      keep: z.number().int().nonnegative().max(100000).optional(),
+      olderThanDays: z.number().nonnegative().max(36500).optional(),
+      dryRun: z.boolean().optional(),
+    })
+    .refine((o) => o.keep !== undefined || o.olderThanDays !== undefined, {
+      message: 'prune requires keep or olderThanDays',
+    }),
+  output: z.object({
+    deleted: z.number().int().nonnegative(),
+    protectedRuns: z.number().int().nonnegative(),
+    candidates: z.array(z.string().max(SHORT)).max(100000),
+    dryRun: z.boolean(),
+  }),
+} as const;

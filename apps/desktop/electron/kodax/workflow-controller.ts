@@ -37,6 +37,26 @@ export interface WorkflowRunManagerLike {
   }): readonly SdkProcessSnapshot[];
 }
 
+// F062 run 生命周期控制——SDK createWorkflowLifecycleController 的子集(只取本控制器用到的)。
+export interface WorkflowRetentionResult {
+  readonly deleted: number;
+  readonly protectedRuns: number;
+  readonly candidates: readonly string[];
+  readonly dryRun: boolean;
+}
+export interface WorkflowLifecycleLike {
+  stopWorkflow(runId: string, reason?: string): Promise<boolean>;
+  pauseWorkflow(runId: string): Promise<boolean>;
+  resumeWorkflow(runId: string): Promise<boolean>;
+  renameWorkflowRun(runId: string, displayName: string): Promise<boolean>;
+  deleteWorkflowRun(runId: string, options?: { force?: boolean }): Promise<boolean>;
+  pruneWorkflowRuns(options: {
+    keep?: number;
+    olderThanDays?: number;
+    dryRun?: boolean;
+  }): Promise<WorkflowRetentionResult>;
+}
+
 export interface WorkflowOrigin {
   readonly sessionId?: string;
   readonly surface?: 'code' | 'partner';
@@ -59,6 +79,8 @@ const defaultPush: PushFn = (payload) => pushToRenderer('workflow.event', payloa
 
 export class WorkflowController {
   private manager: WorkflowRunManagerLike | null = null;
+  /** F062 run 生命周期控制器(stop/pause/resume/rename/delete/prune)。 */
+  private lifecycle: WorkflowLifecycleLike | null = null;
   private unsubscribe: (() => void) | null = null;
   /** 插入序的 runId→origin。Map 迭代序 = 插入序,用于 MAX_ORIGINS LRU 淘汰。*/
   private origins = new Map<string, WorkflowOrigin>();
@@ -68,19 +90,75 @@ export class WorkflowController {
   constructor(
     private readonly push: PushFn = defaultPush,
     private readonly originsFile: string = path.join(getSpaceDataDir(), 'workflow-origins.json'),
+    /** Space 自有 run base dir——F063 启动 run 与 F062 durable 控制(delete/prune)共用。 */
+    private readonly runBaseDir: string = path.join(getSpaceDataDir(), 'workflow-runs'),
   ) {}
 
   /**
-   * 初始化:加载持久化归属 + 订阅 run manager 的进程事件流。
-   * manager 缺省 lazy-load SDK 的进程单例(与 AMAW/REPL 共享);测试注入 fake。
+   * 初始化:加载持久化归属 + 订阅 run manager 的进程事件流 + 建生命周期控制器。
+   * manager/lifecycle 缺省 lazy-load 真 SDK(与 AMAW/REPL 共享进程单例);测试注入 fake。
+   * 注:仅当 manager 未注入(生产路径)时才自动建真 lifecycle——避免拿 fake manager 去
+   * 实例化真 SDK 控制器。测试需要控制能力时显式注入 lifecycle。
    * 幂等:重复 init 先解订阅旧的。
    */
-  async init(manager?: WorkflowRunManagerLike): Promise<void> {
+  async init(manager?: WorkflowRunManagerLike, lifecycle?: WorkflowLifecycleLike): Promise<void> {
     await this.loadOrigins();
     this.unsubscribe?.();
+    const managerInjected = manager !== undefined;
     this.manager = manager ?? (await loadDefaultManager());
+    // 先重置——re-init 换 manager 时别留着绑在旧 manager 上的 lifecycle。
+    this.lifecycle = null;
+    if (lifecycle !== undefined) {
+      this.lifecycle = lifecycle;
+    } else if (!managerInjected && this.manager) {
+      this.lifecycle = await loadLifecycle(this.manager, this.runBaseDir);
+    }
     if (!this.manager) return; // SDK 不可用(理论上不会)——降级:无实时流,list/get 返回空
     this.unsubscribe = this.manager.subscribeWorkflowProcess((event) => this.onEvent(event));
+  }
+
+  // ---- F062 run 生命周期控制(委托 lifecycle controller;未就绪一律安全降级)----
+
+  /** 停止进行中的 run(子 agent 标 cancelled / never-started 标 skipped)。 */
+  async stop(runId: string, reason?: string): Promise<boolean> {
+    return (await this.lifecycle?.stopWorkflow(runId, reason)) ?? false;
+  }
+
+  /** 暂停进行中的 run。 */
+  async pause(runId: string): Promise<boolean> {
+    return (await this.lifecycle?.pauseWorkflow(runId)) ?? false;
+  }
+
+  /** 恢复已暂停的 run。 */
+  async resume(runId: string): Promise<boolean> {
+    return (await this.lifecycle?.resumeWorkflow(runId)) ?? false;
+  }
+
+  /** 改 run 显示名(不改 runId)。 */
+  async rename(runId: string, displayName: string): Promise<boolean> {
+    return (await this.lifecycle?.renameWorkflowRun(runId, displayName)) ?? false;
+  }
+
+  /** 删终态 run(活跃 run 被 SDK 拒,除非 force)。删后清本地归属。 */
+  async deleteRun(runId: string, force?: boolean): Promise<boolean> {
+    const ok = (await this.lifecycle?.deleteWorkflowRun(runId, force ? { force } : undefined)) ?? false;
+    if (ok && this.origins.delete(runId)) void this.persistOrigins();
+    return ok;
+  }
+
+  /** 清理终态 run(保留最近 keep / olderThanDays 之外)。 */
+  async prune(options: {
+    keep?: number;
+    olderThanDays?: number;
+    dryRun?: boolean;
+  }): Promise<WorkflowRetentionResult> {
+    const empty: WorkflowRetentionResult = {
+      deleted: 0,
+      protectedRuns: 0,
+      candidates: [],
+      dryRun: options.dryRun ?? false,
+    };
+    return (await this.lifecycle?.pruneWorkflowRuns(options)) ?? empty;
   }
 
   /**
@@ -128,6 +206,7 @@ export class WorkflowController {
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.manager = null;
+    this.lifecycle = null;
     this.loaded = false;
   }
 
@@ -242,6 +321,32 @@ async function loadDefaultManager(): Promise<WorkflowRunManagerLike | null> {
   } catch (err) {
     console.warn(
       '[WorkflowController] failed to load SDK workflow run manager:',
+      err instanceof Error ? err.message : String(err),
+    );
+    return null;
+  }
+}
+
+/** Lazy-load 并实例化 SDK 的 run 生命周期控制器(F062 控制能力)。 */
+async function loadLifecycle(
+  manager: WorkflowRunManagerLike,
+  runBaseDir: string,
+): Promise<WorkflowLifecycleLike | null> {
+  try {
+    const sdk = (await import('@kodax-ai/kodax/coding')) as unknown as {
+      createWorkflowLifecycleController?: (opts: {
+        runManager: unknown;
+        runBaseDir: string;
+      }) => WorkflowLifecycleLike;
+    };
+    if (typeof sdk.createWorkflowLifecycleController !== 'function') {
+      console.warn('[WorkflowController] sdk.createWorkflowLifecycleController unavailable');
+      return null;
+    }
+    return sdk.createWorkflowLifecycleController({ runManager: manager, runBaseDir });
+  } catch (err) {
+    console.warn(
+      '[WorkflowController] failed to create workflow lifecycle controller:',
       err instanceof Error ? err.message : String(err),
     );
     return null;

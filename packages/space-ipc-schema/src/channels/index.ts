@@ -126,6 +126,12 @@ import {
   workflowListChannel,
   workflowGetChannel,
   workflowEventChannel,
+  workflowStopChannel,
+  workflowPauseChannel,
+  workflowResumeChannel,
+  workflowRenameChannel,
+  workflowDeleteChannel,
+  workflowPruneChannel,
 } from './workflow.js';
 
 export const invokeChannels = {
@@ -213,6 +219,12 @@ export const invokeChannels = {
   [artifactOpenWindowChannel.name]: artifactOpenWindowChannel,
   [workflowListChannel.name]: workflowListChannel,
   [workflowGetChannel.name]: workflowGetChannel,
+  [workflowStopChannel.name]: workflowStopChannel,
+  [workflowPauseChannel.name]: workflowPauseChannel,
+  [workflowResumeChannel.name]: workflowResumeChannel,
+  [workflowRenameChannel.name]: workflowRenameChannel,
+  [workflowDeleteChannel.name]: workflowDeleteChannel,
+  [workflowPruneChannel.name]: workflowPruneChannel,
 } as const;
 
 export const pushChannels = {

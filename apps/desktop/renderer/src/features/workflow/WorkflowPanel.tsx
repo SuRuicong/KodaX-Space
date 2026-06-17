@@ -12,7 +12,7 @@
 //   - WorkflowPanel({ runs })    —— 纯展示，不自取 store
 //   - WorkflowPanelConnected     —— popout 用（自取 runs 再渲染 WorkflowPanel）
 
-import { useMemo } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import {
   Loader2,
@@ -24,6 +24,11 @@ import {
   MinusCircle,
   Bot,
   Coins,
+  Pause,
+  Play,
+  Square,
+  Pencil,
+  Trash2,
   type LucideIcon,
 } from 'lucide-react';
 import type {
@@ -33,6 +38,7 @@ import type {
   WorkflowProcessSummaryStatusT,
 } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
+import { pushToast } from '../../store/toastStore.js';
 import { buildItemTree, type WorkflowTreeNode } from './buildItemTree.js';
 
 // ---- run / item 状态 → 图标 + 颜色 ----
@@ -72,6 +78,23 @@ const TERMINAL: ReadonlySet<WorkflowProcessStatusT> = new Set(['completed', 'fai
 const MAX_INDENT_DEPTH = 8;
 
 const EMPTY_RUNS: readonly WorkflowRunT[] = [];
+
+/**
+ * fire-and-forget 控制调用：吞掉 IPC 拒绝（启动期无 handler / 通道未放行）避免 unhandled rejection；
+ * 对带 failMsg 的破坏性操作（delete）在 ok=false / 抛错时弹 toast。状态变化仍由 workflow.event 回流。
+ */
+function fireControl(p: Promise<unknown> | undefined, failMsg?: string): void {
+  if (!p) return;
+  void p
+    .then((r) => {
+      if (!failMsg) return;
+      const env = r as { ok?: boolean; data?: { ok?: boolean } };
+      if (env.ok === false || env.data?.ok === false) pushToast(failMsg, 'warning');
+    })
+    .catch(() => {
+      if (failMsg) pushToast(failMsg, 'warning');
+    });
+}
 
 /** 紧凑 token 格式：1234 → "1.2k"，1_200_000 → "1.2M"。 */
 function fmtTokens(n: number): string {
@@ -124,6 +147,88 @@ export function WorkflowPanelConnected({ variant = 'full' }: { variant?: 'compac
   return <WorkflowPanel runs={runs} variant={variant} />;
 }
 
+// 头部控制簇：pause/resume/stop（按 status）+ rename（full）+ delete（终态 + full）。
+// 控制后状态由 workflow.event 自然回流，按钮不乐观改本地态。
+function WorkflowControls({
+  run,
+  variant,
+  isTerminal,
+  hasPhaseCounter,
+  onRename,
+}: {
+  run: WorkflowRunT;
+  variant: 'compact' | 'full';
+  isTerminal: boolean;
+  hasPhaseCounter: boolean;
+  onRename: () => void;
+}): JSX.Element {
+  const runId = run.runId;
+  const active = run.status === 'running' || run.status === 'paused';
+  return (
+    <div className={`flex items-center gap-0.5 flex-shrink-0 ${hasPhaseCounter ? 'ml-1.5' : 'ml-auto'}`}>
+      {run.status === 'running' && (
+        <CtlBtn label="暂停" onClick={() => fireControl(window.kodaxSpace?.invoke('workflow.pause', { runId }))}>
+          <Pause size={12} />
+        </CtlBtn>
+      )}
+      {run.status === 'paused' && (
+        <CtlBtn label="恢复" onClick={() => fireControl(window.kodaxSpace?.invoke('workflow.resume', { runId }))}>
+          <Play size={12} />
+        </CtlBtn>
+      )}
+      {active && (
+        <CtlBtn label="停止" danger onClick={() => fireControl(window.kodaxSpace?.invoke('workflow.stop', { runId }))}>
+          <Square size={12} />
+        </CtlBtn>
+      )}
+      {variant === 'full' && (
+        <CtlBtn label="重命名" onClick={onRename}>
+          <Pencil size={11} />
+        </CtlBtn>
+      )}
+      {variant === 'full' && isTerminal && (
+        <CtlBtn
+          label="删除"
+          danger
+          onClick={() => {
+            if (window.confirm(`删除工作流 run「${run.displayName ?? run.workflowName}」？`)) {
+              fireControl(window.kodaxSpace?.invoke('workflow.delete', { runId }), '删除失败');
+            }
+          }}
+        >
+          <Trash2 size={11} />
+        </CtlBtn>
+      )}
+    </div>
+  );
+}
+
+function CtlBtn({
+  label,
+  danger,
+  onClick,
+  children,
+}: {
+  label: string;
+  danger?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className={`w-5 h-5 inline-flex items-center justify-center rounded text-fg-muted hover:bg-surface-3 ${
+        danger ? 'hover:text-danger' : 'hover:text-fg-primary'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
 function WorkflowRunCard({
   run,
   variant,
@@ -143,22 +248,67 @@ function WorkflowRunCard({
   // phase 计数：activePhaseIndex 0-based；活跃时 +1 显示"当前第 N"，终态不 +1（避免 6/5）。
   const displayPhaseNumber = (run.activePhaseIndex ?? 0) + (isTerminal ? 0 : 1);
 
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState('');
+  // 防双触发:Enter 提交后 setRenaming(false) 卸载 input → 触发 blur 又调一次 commitRename。
+  // ref 跨 Enter+blur 序列守一次（state 重置在同事件内读不到，必须用 ref）。
+  const committingRef = useRef(false);
+  const name = run.displayName ?? run.workflowName;
+  function startRename(): void {
+    committingRef.current = false;
+    setDraft(name);
+    setRenaming(true);
+  }
+  function commitRename(): void {
+    if (committingRef.current) return;
+    committingRef.current = true;
+    const next = draft.trim();
+    setRenaming(false);
+    if (next && next !== name) {
+      void window.kodaxSpace?.invoke('workflow.rename', { runId: run.runId, displayName: next }).catch(() => {});
+    }
+  }
+
   return (
     <div className="rounded-lg border border-border-default/70 bg-surface-2 p-2">
-      {/* 头部：状态图标 + 名称 + phase 进度 */}
+      {/* 头部：状态图标 + 名称（可改名）+ phase 进度 + 控制 */}
       <div className="flex items-center gap-1.5 min-w-0">
         <RunIcon
           size={13}
           className={`flex-shrink-0 ${RUN_COLOR[run.status]} ${SPIN.has(run.status) ? 'animate-spin' : ''}`}
           aria-hidden
         />
-        <span className="text-[12px] font-medium text-fg-primary truncate" title={run.displayName ?? run.workflowName}>
-          {run.displayName ?? run.workflowName}
-        </span>
-        {run.phaseCount !== undefined && run.phaseCount > 0 && (
+        {renaming ? (
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitRename();
+              else if (e.key === 'Escape') setRenaming(false);
+            }}
+            className="flex-1 min-w-0 text-[12px] bg-surface-3 border border-border-default rounded px-1 py-0.5 text-fg-primary"
+            aria-label="重命名工作流"
+          />
+        ) : (
+          <span className="text-[12px] font-medium text-fg-primary truncate" title={name}>
+            {name}
+          </span>
+        )}
+        {run.phaseCount !== undefined && run.phaseCount > 0 && !renaming && (
           <span className="ml-auto flex-shrink-0 text-[10px] font-mono text-fg-muted">
             {displayPhaseNumber}/{run.phaseCount}
           </span>
+        )}
+        {!renaming && (
+          <WorkflowControls
+            run={run}
+            variant={variant}
+            isTerminal={isTerminal}
+            hasPhaseCounter={run.phaseCount !== undefined && run.phaseCount > 0}
+            onRename={startRename}
+          />
         )}
       </div>
 
