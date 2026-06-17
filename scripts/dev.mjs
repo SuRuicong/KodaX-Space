@@ -90,7 +90,7 @@ function spawnProc(name, cmd, args, env = {}, opts = {}) {
     cwd: opts.cwd ?? root,
     stdio: [stdinMode, 'inherit', 'inherit'],
     shell: false,
-    windowsHide: true,
+    windowsHide: opts.windowsHide ?? true,
     env: { ...baseEnv, ...env },
   });
   proc.on('exit', (code) => {
@@ -206,7 +206,7 @@ try {
       NODE_ENV: 'development',
     },
     // stdinMode 默认就是 'ignore'，留参数显式可读
-    { stdinMode: 'ignore' },
+    { stdinMode: 'ignore', windowsHide: false },
   );
 } catch (err) {
   console.error('[dev] failed:', err);

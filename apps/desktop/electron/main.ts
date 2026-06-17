@@ -76,6 +76,7 @@ const ALLOWED_FILE_PREFIX = pathToFileURL(RENDERER_DIST).href.replace(/\/?$/, '/
 import { THEME_BOOTSTRAP_INLINE_HASH } from './csp-config.js';
 
 let mainWindow: BrowserWindow | null = null;
+setRendererTarget(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null));
 
 function applyCsp(): void {
   // CSP：renderer 只允许 self；dev 时放行 vite HMR（仅 script-src/connect-src）
@@ -134,7 +135,7 @@ function createMainWindow(): void {
   // Menu.setApplicationMenu(null) 在 app.whenReady 里彻底禁掉默认 File/Edit/View 菜单。
   const isWin = process.platform === 'win32';
   const isMac = process.platform === 'darwin';
-  mainWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 960,
@@ -158,37 +159,64 @@ function createMainWindow(): void {
       sandbox: true,
       webSecurity: true,
       allowRunningInsecureContent: false,
+      // Some Windows/GPU combinations throttle hidden windows enough that
+      // ready-to-show never fires. Keep first paint moving while show:false.
+      backgroundThrottling: false,
     },
   });
+  mainWindow = win;
 
   // 外链白名单 + in-page 导航锁定 —— 与 artifact 独立窗口共用同一套守卫（F059c），
   // 避免两处窗口的安全策略漂移。理由：renderer 终会渲染 LLM/MCP 产生的内容，必须
   // 只放行应用自身资源（dev: Vite origin / prod: 打包 file:// 前缀），https 外链走系统
   // 浏览器，其余一律 deny（防 LLM 注入 file:///etc/passwd 等任意路径）。
-  installNavigationGuards(mainWindow.webContents, {
+  installNavigationGuards(win.webContents, {
     devServerUrl: VITE_DEV_SERVER_URL,
     allowedFilePrefix: ALLOWED_FILE_PREFIX,
     openExternal: (url) => void shell.openExternal(url),
   });
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
+  let windowShown = false;
+  const revealWindow = (source: string): void => {
+    if (windowShown || win.isDestroyed()) return;
+    windowShown = true;
+    win.show();
+    console.info(`[main] main window shown via ${source}`);
+  };
+
+  const revealTimer = setTimeout(() => revealWindow('timeout'), 2500);
+  revealTimer.unref?.();
+
+  win.once('ready-to-show', () => revealWindow('ready-to-show'));
+  win.webContents.once('did-finish-load', () => revealWindow('did-finish-load'));
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    if (errorCode === -3) return; // ERR_ABORTED is normal for cancelled dev navigations.
+    console.error(
+      `[main] renderer did-fail-load: code=${errorCode} ${errorDescription} url=${validatedURL}`,
+    );
+    revealWindow('did-fail-load');
+  });
+  win.webContents.on('render-process-gone', (_event, details) => {
+    console.error(
+      `[main] renderer process gone: reason=${details.reason} exitCode=${details.exitCode}`,
+    );
   });
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
+  win.on('closed', () => {
+    clearTimeout(revealTimer);
+    if (mainWindow === win) mainWindow = null;
   });
 
   if (isDev && VITE_DEV_SERVER_URL) {
-    void mainWindow.loadURL(VITE_DEV_SERVER_URL);
+    void win.loadURL(VITE_DEV_SERVER_URL);
     // dev mode 也不再自动开 DevTools——用户用 View → Toggle Developer Tools 菜单或
     // Ctrl+Shift+I 快捷键按需打开。默认开会让首次启动多个浮窗显得突兀。
     // 若开发期想要自动打开，设环境变量 SPACE_AUTO_DEVTOOLS=1。
     if (process.env.SPACE_AUTO_DEVTOOLS === '1') {
-      mainWindow.webContents.openDevTools({ mode: 'detach' });
+      win.webContents.openDevTools({ mode: 'detach' });
     }
   } else {
-    void mainWindow.loadFile(path.join(RENDERER_DIST, 'index.html'));
+    void win.loadFile(path.join(RENDERER_DIST, 'index.html'));
   }
 }
 
@@ -416,8 +444,6 @@ app.whenReady().then(async () => {
   // 启动期保证默认 workspace 目录存在 (~/kodax_workspace 或用户改过的路径)。
   // 不阻塞窗口创建——mkdir 失败 (磁盘满 / 权限) 不致命，UI 仍能用 + 用户可走 Open folder.
   void settingsStore.ensureWorkspaceExists();
-  // push 目标走 getter 间接拿当前 window——dev HMR / 用户重开窗口都能正确切换
-  setRendererTarget(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null));
   // KodaX SDK MessageQueue (process-global) 订阅 — 实时把 enqueued/dequeued/cleared 推 renderer.
   // 失败 (SDK chunk import 错) 不阻塞启动,renderer 仍能调 kodax.queueGet 轮询。
   void startQueueWatch().catch((err) => {
