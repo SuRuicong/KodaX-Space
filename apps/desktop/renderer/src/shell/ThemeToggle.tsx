@@ -3,10 +3,12 @@
 // Titlebar 右侧 dropdown — 三档主题快速切换：
 //   ┌─────────────────────────┐
 //   │ Theme       ⇧Ctrl T     │
-//   │   ☀  Light              │
-//   │   ◐  Dark         ✓     │
-//   │   ◑  System             │
+//   │  ☀  Light  (Sun)        │
+//   │  ☾  Dark   (Moon)  ✓    │
+//   │  ▢  System (Monitor)    │
 //   └─────────────────────────┘
+// 图标用 Lucide Sun/Moon/Monitor（随状态变），与 VisualQualityToggle 的 Droplet 系
+// 零视觉重叠（太阳/月亮 vs 水滴），不再撞脸。
 //
 // 行为：
 //   - 点击图标按钮 → 弹下拉
@@ -17,6 +19,7 @@
 // 'system' 时读 prefers-color-scheme + 监听变化，跟随 OS。
 
 import { useEffect, useRef, useState } from 'react';
+import { Sun, Moon, Monitor, type LucideIcon } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
 
 const DARK_OVERLAY = { color: '#0b0b0c', symbolColor: '#a1a1aa' };
@@ -24,10 +27,10 @@ const LIGHT_OVERLAY = { color: '#ffffff', symbolColor: '#3f3f46' };
 
 type ThemeKey = 'dark' | 'light' | 'system';
 
-const OPTIONS: ReadonlyArray<{ key: ThemeKey; label: string; icon: string }> = [
-  { key: 'light', label: 'Light', icon: '☀' },
-  { key: 'dark', label: 'Dark', icon: '◐' },
-  { key: 'system', label: 'System', icon: '◑' },
+const OPTIONS: ReadonlyArray<{ key: ThemeKey; label: string; Icon: LucideIcon }> = [
+  { key: 'light', label: 'Light', Icon: Sun },
+  { key: 'dark', label: 'Dark', Icon: Moon },
+  { key: 'system', label: 'System', Icon: Monitor },
 ];
 
 const CYCLE_ORDER: ReadonlyArray<ThemeKey> = ['dark', 'light', 'system'];
@@ -106,7 +109,7 @@ export function ThemeToggle(): JSX.Element {
         title={`Theme: ${current.label} (⇧Ctrl+T)`}
         aria-label={`Theme ${current.label}`}
       >
-        <span aria-hidden>{current.icon}</span>
+        <current.Icon className="w-4 h-4" strokeWidth={1.75} aria-hidden />
       </button>
 
       {open && (
@@ -133,9 +136,7 @@ export function ThemeToggle(): JSX.Element {
                   selected ? 'text-fg-primary' : 'text-fg-secondary'
                 }`}
               >
-                <span className="w-4" aria-hidden>
-                  {o.icon}
-                </span>
+                <o.Icon className="w-4 h-4" strokeWidth={1.75} aria-hidden />
                 <span className="flex-1">{o.label}</span>
                 {selected && (
                   <span className="text-ok" aria-hidden>

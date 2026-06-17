@@ -3,15 +3,20 @@
 // Titlebar 右侧 dropdown — 视觉质量三档快速切换（玻璃/景深/aurora 总开关）：
 //   ┌──────────────────────────────────┐
 //   │ 视觉质量                          │
-//   │  ◍ 极简    实色无模糊 · 最省       │
-//   │  ◐ 均衡    CSS 玻璃+极光      ✓   │
-//   │  ✦ 全特效  WebGL 极光+厚玻璃       │
+//   │  ✧ 极简    实色无模糊 · 最省       │
+//   │  ✦ 均衡    CSS 玻璃+极光      ✓   │
+//   │  ✸ 全特效  WebGL 极光+厚玻璃       │
 //   └──────────────────────────────────┘
+//
+// 图标用 Lucide 水滴系（Liquid Glass 语义）：titlebar 按钮固定 Droplet 表示「视觉质量」
+// 这个控件本身；下拉里用 DropletOff → Droplet → Droplets 体现极简/均衡/全特效三档玻璃强度。
+// 与 ThemeToggle 的 Sun/Moon/Monitor 零视觉重叠（水滴 vs 太阳/月亮），不再撞脸。
 //
 // 行为对齐 ThemeToggle：点图标弹下拉、选一项立即生效并持久化、点外/Esc 关。
 // 「不卡上全特效，卡就降均衡/极简」——纯手动配置，不做自动测帧降级（会因偶发卡顿误降）。
 
 import { useEffect, useRef, useState } from 'react';
+import { Droplet, Droplets, DropletOff, type LucideIcon } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
 import {
   applyVisualQualityToDocument,
@@ -19,10 +24,11 @@ import {
   type VisualQuality,
 } from '../lib/visualQuality.js';
 
-const ICON: Record<VisualQuality, string> = {
-  minimal: '◍',
-  balanced: '◐',
-  full: '✦',
+// 三档玻璃强度梯度：无玻璃 → 单滴 → 多滴。
+const LEVEL_ICON: Record<VisualQuality, LucideIcon> = {
+  minimal: DropletOff,
+  balanced: Droplet,
+  full: Droplets,
 };
 
 export function VisualQualityToggle(): JSX.Element {
@@ -35,7 +41,6 @@ export function VisualQualityToggle(): JSX.Element {
   // 之后的切换由 setVisualQuality 自身 apply，无需在此重复。
   useEffect(() => {
     applyVisualQualityToDocument(useAppStore.getState().visualQuality);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -64,7 +69,7 @@ export function VisualQualityToggle(): JSX.Element {
         title={`视觉质量：${current.label}`}
         aria-label={`Visual quality ${current.label}`}
       >
-        <span aria-hidden>{ICON[quality]}</span>
+        <Droplet className="w-4 h-4" strokeWidth={1.75} aria-hidden />
       </button>
 
       {open && (
@@ -72,6 +77,7 @@ export function VisualQualityToggle(): JSX.Element {
           <div className="px-3 py-1 text-fg-muted text-[11px] uppercase tracking-wider">视觉质量</div>
           {VISUAL_QUALITY_OPTIONS.map((o) => {
             const selected = o.key === quality;
+            const LevelIcon = LEVEL_ICON[o.key];
             return (
               <button
                 key={o.key}
@@ -84,9 +90,7 @@ export function VisualQualityToggle(): JSX.Element {
                   selected ? 'text-fg-primary' : 'text-fg-secondary'
                 }`}
               >
-                <span className="w-4 mt-0.5" aria-hidden>
-                  {ICON[o.key]}
-                </span>
+                <LevelIcon className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={1.75} aria-hidden />
                 <span className="flex-1">
                   <span className="block">{o.label}</span>
                   <span className="block text-[10.5px] text-fg-muted">{o.hint}</span>
