@@ -126,6 +126,7 @@ import {
   workflowListChannel,
   workflowGetChannel,
   workflowEventChannel,
+  workflowActivityChannel,
   workflowStopChannel,
   workflowPauseChannel,
   workflowResumeChannel,
@@ -251,6 +252,7 @@ export const pushChannels = {
   [terminalOutputChannel.name]: terminalOutputChannel,
   [terminalExitChannel.name]: terminalExitChannel,
   [workflowEventChannel.name]: workflowEventChannel,
+  [workflowActivityChannel.name]: workflowActivityChannel,
 } as const;
 
 export type InvokeChannels = typeof invokeChannels;

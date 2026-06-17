@@ -254,8 +254,10 @@ export {
   type WorkflowProcessItemStatusT,
   type WorkflowProcessItemKindT,
   type WorkflowProcessSummaryStatusT,
+  workflowActivityChannel,
   type WorkflowRunT,
   type WorkflowEventPayload,
+  type WorkflowActivityPayload,
   type WorkflowPolicyT,
 } from './channels/workflow.js';
 

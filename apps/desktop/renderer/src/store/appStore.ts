@@ -22,6 +22,7 @@ import type {
   QueuedMessageT,
   WorkflowRunT,
   WorkflowEventPayload,
+  WorkflowActivityPayload,
 } from '@kodax-space/space-ipc-schema';
 import { canonProjectRoot as canonProjectRootShared } from '@kodax-space/space-ipc-schema';
 import {
@@ -195,6 +196,13 @@ interface AppState {
   upsertWorkflowRun: (payload: WorkflowEventPayload) => void;
   /** F060：workflow.list 播种已知 run（覆盖式合并进 workflowRuns）。*/
   seedWorkflowRuns: (runs: readonly WorkflowRunT[]) => void;
+  /**
+   * F065：子 agent 活动遥测，按 runId 存有界活动流（每 run 最近 N 条 discrete 事件）。
+   * 来自 push workflow.activity；不进主 transcript（不淹）。
+   */
+  workflowActivityByRun: Readonly<Record<string, readonly WorkflowActivityPayload[]>>;
+  /** F065：追加一条子 agent 活动（按 runId 有界）。*/
+  appendWorkflowActivity: (activity: WorkflowActivityPayload) => void;
   /**
    * 当前无 session 时由 ModelEffortSelector 写入的"下一次新 session 用这些"。
    * 用户点 picker 选 glm/zai-glm-coding/effort 等 → 存这里 → 下次 BottomBar 自动建 session
@@ -608,6 +616,8 @@ function clampSidebarWidth(raw: number, fallback: number): number {
 // 每次涉及 workflowRuns 的 store 更新。与 main 侧 WorkflowController 的 MAX_ORIGINS 对齐。
 // 超限时按插入序（JS 对象 string key 保序）淘汰最旧的；更新已存在 run 不改其插入位（不 churn）。
 const MAX_WORKFLOW_RUNS = 500;
+// F065：每个 run 保留的子 agent 活动条数上限（有界，防长跑无界增长）。
+const MAX_ACTIVITY_PER_RUN = 40;
 function capWorkflowRuns(runs: Record<string, WorkflowRunT>): Record<string, WorkflowRunT> {
   const keys = Object.keys(runs);
   if (keys.length <= MAX_WORKFLOW_RUNS) return runs;
@@ -636,6 +646,7 @@ export const useAppStore = create<AppState>((set) => ({
   todoListBySession: {},
   managedTaskStatusBySession: {},
   workflowRuns: {},
+  workflowActivityByRun: {},
   lastDiffPath: null,
   pendingToolPaths: {},
   pendingSendBySession: {},
@@ -895,6 +906,27 @@ export const useAppStore = create<AppState>((set) => ({
       // immutable：用 Object.fromEntries 构造增量，再一次性 spread（不原地 mutate 中间对象）。
       const additions = Object.fromEntries(runs.map((r) => [r.runId, r]));
       return { workflowRuns: capWorkflowRuns({ ...state.workflowRuns, ...additions }) };
+    }),
+
+  // F065：子 agent 活动——按 runId 有界追加（每 run 最近 MAX_ACTIVITY_PER_RUN 条）。
+  appendWorkflowActivity: (activity) =>
+    set((state) => {
+      const bucket = state.workflowActivityByRun[activity.runId] ?? [];
+      const nextBucket = [...bucket, activity].slice(-MAX_ACTIVITY_PER_RUN);
+      const next: Record<string, readonly WorkflowActivityPayload[]> = {
+        ...state.workflowActivityByRun,
+        [activity.runId]: nextBucket,
+      };
+      // 上限 run 数（与 workflowRuns 对齐），按插入序淘汰最旧的（immutable 构造）。
+      const keys = Object.keys(next);
+      if (keys.length > MAX_WORKFLOW_RUNS) {
+        return {
+          workflowActivityByRun: Object.fromEntries(
+            keys.slice(keys.length - MAX_WORKFLOW_RUNS).map((k) => [k, next[k]!]),
+          ),
+        };
+      }
+      return { workflowActivityByRun: next };
     }),
 
   appendEvent: (event) =>

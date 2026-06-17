@@ -166,6 +166,23 @@ export const workflowEventChannel = {
 } as const;
 export type WorkflowEventPayload = z.infer<typeof workflowEventChannel.payload>;
 
+// ---- Push: workflow.activity（F065 子 agent 活动遥测） ----
+// SDK 0.7.50 给 KodaXEvents 回调加了 workflowCorrelation 尾参——带 workflowRunId 的事件
+// 来自工作流子 agent。Space 把这些归到对应 run + 子 agent 的有界活动桶，不淹主 transcript。
+export const workflowActivityChannel = {
+  name: 'workflow.activity',
+  direction: 'push',
+  payload: z.object({
+    runId: z.string().min(1).max(SHORT),
+    childAgentId: z.string().max(SHORT).optional(),
+    childAgentName: z.string().max(SHORT).optional(),
+    // 仅 discrete 事件（text/thinking 流不推——控量、由 snapshot.latestMessage 体现）。
+    kind: z.enum(['tool_use', 'tool_result', 'end']),
+    toolName: z.string().max(SHORT).optional(),
+  }),
+} as const;
+export type WorkflowActivityPayload = z.infer<typeof workflowActivityChannel.payload>;
+
 // ---- Invoke: workflow.list(切 session 时播种;可按 sessionId 过滤) ----
 export const workflowListChannel = {
   name: 'workflow.list',

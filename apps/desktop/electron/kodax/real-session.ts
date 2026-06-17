@@ -103,6 +103,8 @@ import { wrapSdkError } from './sdk-errors.js';
 import { buildSkillsPrompt } from './skills-prompt.js';
 import { SPACE_MANUAL_TOPICS, SPACE_PRODUCT_NAME } from './space-manual-topics.js';
 import { workflowPolicyStore } from './workflow-policy.js';
+import { pushToRenderer } from '../ipc/push.js';
+import { childRunId, buildChildActivity } from './workflow-activity.js';
 import type {
   ManagedSession,
   PermissionRequestFn,
@@ -112,6 +114,16 @@ import type {
 import { enqueueUserPrompt, drainQueueForSession } from '../ipc/queue.js';
 
 type SpaceReasoning = 'off' | 'auto' | 'quick' | 'balanced' | 'deep';
+
+/** F065：推一条子 agent 活动到 renderer（仅 discrete 事件调用——控 IPC 量，不推每个 text delta）。 */
+function pushChildActivity(
+  meta: Parameters<typeof buildChildActivity>[0],
+  kind: 'tool_use' | 'tool_result' | 'end',
+  extra: { toolName?: string },
+): void {
+  const payload = buildChildActivity(meta, kind, extra);
+  if (payload) pushToRenderer('workflow.activity', payload);
+}
 
 // Plan-mode 工具拦截：v0.7.42 切到 SDK `isToolPlanModeAllowed`，基于工具注册时的
 // `sideEffect` / `planModeAllowed` 元数据自动判定——SDK 新增 'mutates-fs' 工具
@@ -419,19 +431,28 @@ export class RealKodaXSession implements ManagedSession {
 
     const events: KodaXEvents = {
       // ---- 流式文本 / 思考 ----
-      onTextDelta: (text) => {
+      onTextDelta: (text, meta) => {
         this.lastActivityAt = Date.now();
+        // F065: 子 agent 文本不进主 transcript（不淹）；不逐 delta 推活动（控量），
+        // 子 agent 进度由 snapshot.latestMessage + discrete tool 活动体现。
+        if (childRunId(meta)) return;
         this.emit({ kind: 'text_delta', sessionId: sid, text });
       },
-      onThinkingDelta: (text) => {
+      onThinkingDelta: (text, meta) => {
+        if (childRunId(meta)) return;
         this.emit({ kind: 'thinking_delta', sessionId: sid, text });
       },
-      onThinkingEnd: (thinking) => {
+      onThinkingEnd: (thinking, meta) => {
+        if (childRunId(meta)) return;
         this.emit({ kind: 'thinking_end', sessionId: sid, thinking });
       },
 
       // ---- Tool 生命周期 ----
-      onToolUseStart: (tool) => {
+      onToolUseStart: (tool, meta) => {
+        if (childRunId(meta)) {
+          pushChildActivity(meta, 'tool_use', { toolName: tool.name });
+          return;
+        }
         this.emit({
           kind: 'tool_start',
           sessionId: sid,
@@ -441,6 +462,8 @@ export class RealKodaXSession implements ManagedSession {
         });
       },
       onToolInputDelta: (toolName, partialJson, meta) => {
+        // F065: 子 agent 的 partial-JSON 流不进主 transcript（不淹）；不逐 delta 推活动（控量）。
+        if (childRunId(meta)) return;
         this.emit({
           kind: 'tool_input_delta',
           sessionId: sid,
@@ -449,7 +472,11 @@ export class RealKodaXSession implements ManagedSession {
           partialJson,
         });
       },
-      onToolResult: (result) => {
+      onToolResult: (result, meta) => {
+        if (childRunId(meta)) {
+          pushChildActivity(meta, 'tool_result', { toolName: result.name });
+          return;
+        }
         this.emit({
           kind: 'tool_result',
           sessionId: sid,
@@ -468,6 +495,10 @@ export class RealKodaXSession implements ManagedSession {
       },
       onStreamEnd: () => {
         this.emit({ kind: 'stream_end', sessionId: sid });
+      },
+      // F065: 子 agent 离开 executor 边界——封口其活动流（不进主 transcript）。
+      onChildActivityEnd: (meta) => {
+        pushChildActivity(meta, 'end', {});
       },
 
       // ---- Session / iteration lifecycle ----

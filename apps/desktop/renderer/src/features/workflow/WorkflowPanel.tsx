@@ -36,6 +36,7 @@ import type {
   WorkflowProcessStatusT,
   WorkflowProcessItemStatusT,
   WorkflowProcessSummaryStatusT,
+  WorkflowActivityPayload,
 } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
 import { pushToast } from '../../store/toastStore.js';
@@ -79,6 +80,7 @@ const TERMINAL: ReadonlySet<WorkflowProcessStatusT> = new Set(['completed', 'fai
 const MAX_INDENT_DEPTH = 8;
 
 const EMPTY_RUNS: readonly WorkflowRunT[] = [];
+const EMPTY_ACTIVITY: readonly WorkflowActivityPayload[] = [];
 
 /**
  * fire-and-forget 控制调用：吞掉 IPC 拒绝（启动期无 handler / 通道未放行）避免 unhandled rejection；
@@ -366,6 +368,41 @@ function WorkflowRunCard({
           ))}
         </ul>
       )}
+
+      {/* F065 子 agent 活动遥测（活跃 / full 时显示，不淹主 transcript） */}
+      {showTree && <WorkflowActivityStrip runId={run.runId} />}
+    </div>
+  );
+}
+
+const ACTIVITY_ICON: Record<WorkflowActivityPayload['kind'], string> = {
+  tool_use: '▸',
+  tool_result: '✓',
+  end: '■',
+};
+const ACTIVITY_WINDOW = 6;
+
+/** 子 agent 活动条：显示最近几条 discrete 活动（工具调用/结果/封口），按子 agent 标注。 */
+function WorkflowActivityStrip({ runId }: { runId: string }): JSX.Element | null {
+  const activity = useAppStore(useShallow((s) => s.workflowActivityByRun[runId] ?? EMPTY_ACTIVITY));
+  if (activity.length === 0) return null;
+  // 用 bucket 内绝对位置作 key——滑动窗口下保持稳定（不随 slice 起点漂移）。
+  const base = Math.max(0, activity.length - ACTIVITY_WINDOW);
+  const recent = activity.slice(base);
+  return (
+    <div className="mt-1.5 border-t border-border-default/40 pt-1 space-y-0.5">
+      {recent.map((a, i) => (
+        <div
+          key={`${a.runId}-${base + i}`}
+          className="flex items-center gap-1.5 text-[10px] text-fg-muted min-w-0"
+        >
+          <span className="text-fg-faint flex-shrink-0">{ACTIVITY_ICON[a.kind]}</span>
+          {a.childAgentName && (
+            <span className="text-fg-faint flex-shrink-0 max-w-[90px] truncate">{a.childAgentName}</span>
+          )}
+          <span className="truncate">{a.kind === 'end' ? '完成' : (a.toolName ?? a.kind)}</span>
+        </div>
+      ))}
     </div>
   );
 }
