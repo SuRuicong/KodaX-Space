@@ -20,6 +20,8 @@ import type {
   AskUserRequestPayload,
   KodaxUserDefaults,
   QueuedMessageT,
+  WorkflowRunT,
+  WorkflowEventPayload,
 } from '@kodax-space/space-ipc-schema';
 import { canonProjectRoot as canonProjectRootShared } from '@kodax-space/space-ipc-schema';
 import {
@@ -182,6 +184,17 @@ interface AppState {
       | undefined
     >
   >;
+  /**
+   * Workflow Harness（F060）：已知 / 进行中的工作流 run，按 runId 扁平存（带 host 归属的 snapshot）。
+   * push `workflow.event` 覆盖式 upsert（每事件带全量 snapshot，无需折叠）；切 session 时 workflow.list 播种。
+   * 扁平按 runId（非按 session 嵌套）——归属在 run.sessionId 上，外部发起（REPL/CLI）的 run 也能存；
+   * 视图（F061）按 currentSession 过滤。
+   */
+  workflowRuns: Readonly<Record<string, WorkflowRunT>>;
+  /** F060：消费 push workflow.event，按 runId 覆盖式 upsert。*/
+  upsertWorkflowRun: (payload: WorkflowEventPayload) => void;
+  /** F060：workflow.list 播种已知 run（覆盖式合并进 workflowRuns）。*/
+  seedWorkflowRuns: (runs: readonly WorkflowRunT[]) => void;
   /**
    * 当前无 session 时由 ModelEffortSelector 写入的"下一次新 session 用这些"。
    * 用户点 picker 选 glm/zai-glm-coding/effort 等 → 存这里 → 下次 BottomBar 自动建 session
@@ -591,6 +604,18 @@ function clampSidebarWidth(raw: number, fallback: number): number {
   return clampSidebarWidthPx(raw);
 }
 
+// F060：renderer 侧 workflowRuns 上限——长跑桌面 session 可能处理大量 run，无界增长会拖慢
+// 每次涉及 workflowRuns 的 store 更新。与 main 侧 WorkflowController 的 MAX_ORIGINS 对齐。
+// 超限时按插入序（JS 对象 string key 保序）淘汰最旧的；更新已存在 run 不改其插入位（不 churn）。
+const MAX_WORKFLOW_RUNS = 500;
+function capWorkflowRuns(runs: Record<string, WorkflowRunT>): Record<string, WorkflowRunT> {
+  const keys = Object.keys(runs);
+  if (keys.length <= MAX_WORKFLOW_RUNS) return runs;
+  const trimmed: Record<string, WorkflowRunT> = {};
+  for (const k of keys.slice(keys.length - MAX_WORKFLOW_RUNS)) trimmed[k] = runs[k]!;
+  return trimmed;
+}
+
 export const useAppStore = create<AppState>((set) => ({
   projects: [],
   currentProjectPath: lsGet(LS_KEY_PROJECT),
@@ -610,6 +635,7 @@ export const useAppStore = create<AppState>((set) => ({
   tokensBySession: {},
   todoListBySession: {},
   managedTaskStatusBySession: {},
+  workflowRuns: {},
   lastDiffPath: null,
   pendingToolPaths: {},
   pendingSendBySession: {},
@@ -849,6 +875,27 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({
       notifications: state.notifications.filter((n) => n.id !== id),
     })),
+
+  // F060 Workflow Harness：push workflow.event → 覆盖式 upsert（每事件带全量 snapshot）。
+  upsertWorkflowRun: (payload) =>
+    set((state) => {
+      const { snapshot, sessionId, surface } = payload;
+      const run: WorkflowRunT = {
+        ...snapshot,
+        ...(sessionId !== undefined ? { sessionId } : {}),
+        ...(surface !== undefined ? { surface } : {}),
+      };
+      return { workflowRuns: capWorkflowRuns({ ...state.workflowRuns, [run.runId]: run }) };
+    }),
+
+  // F060：workflow.list 播种——覆盖式合并（已存在的 runId 用新值覆盖，保留其它）。
+  seedWorkflowRuns: (runs) =>
+    set((state) => {
+      if (runs.length === 0) return state;
+      // immutable：用 Object.fromEntries 构造增量，再一次性 spread（不原地 mutate 中间对象）。
+      const additions = Object.fromEntries(runs.map((r) => [r.runId, r]));
+      return { workflowRuns: capWorkflowRuns({ ...state.workflowRuns, ...additions }) };
+    }),
 
   appendEvent: (event) =>
     set((state) => {

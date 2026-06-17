@@ -242,6 +242,19 @@ export {
 } from './channels/artifact.js';
 
 export {
+  workflowListChannel,
+  workflowGetChannel,
+  workflowEventChannel,
+  workflowProcessItemSchema,
+  workflowProcessSnapshotSchema,
+  workflowRunSchema,
+  type WorkflowProcessStatusT,
+  type WorkflowProcessSnapshotT,
+  type WorkflowRunT,
+  type WorkflowEventPayload,
+} from './channels/workflow.js';
+
+export {
   INVOKE_CHANNEL_NAMES,
   PUSH_CHANNEL_NAMES,
   getInvokeChannel,

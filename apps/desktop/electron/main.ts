@@ -36,6 +36,8 @@ import { registerMcpbChannels, installMcpbFromOsHandoff } from './ipc/mcpb.js';
 import { registerTerminalChannels } from './ipc/terminal.js';
 import { registerClipboardChannels } from './ipc/clipboard.js';
 import { registerArtifactChannels } from './ipc/artifact.js';
+import { registerWorkflowChannels } from './ipc/workflow.js';
+import { workflowController } from './kodax/workflow-controller.js';
 import { registerArtifactWindowChannel } from './artifact/artifact-window.js';
 import { installNavigationGuards } from './window/navigation-guards.js';
 import { sandboxHost } from './artifact/sandbox-host.js';
@@ -404,6 +406,12 @@ app.whenReady().then(async () => {
   // 时 ready:false，renderer 显示占位、不开端口。dev parentOrigin = Vite renderer origin
   // （sandbox 的 localhost bypass 接受）；prod renderer=file:// 无可比对 origin（留待 F055 app://）。
   registerArtifactChannels();
+  // F060 Workflow Harness 支持：list/get IPC + 订阅 SDK 进程事件流转发到 renderer（workflow.event）。
+  // init 是 best-effort（lazy-load SDK run manager + 加载持久化归属）；失败只降级为"无实时工作流面"。
+  registerWorkflowChannels();
+  void workflowController.init().catch((err) => {
+    console.warn('[main] workflow controller init failed:', err instanceof Error ? err.message : err);
+  });
   // F059c L3：artifact.openWindow → 独立最大化窗口（复用同一 renderer + preload，走 #artifact hash）。
   registerArtifactWindowChannel({
     preloadPath: PRELOAD_PATH,

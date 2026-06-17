@@ -122,6 +122,11 @@ import {
   artifactOpenWindowChannel,
   artifactChangedChannel,
 } from './artifact.js';
+import {
+  workflowListChannel,
+  workflowGetChannel,
+  workflowEventChannel,
+} from './workflow.js';
 
 export const invokeChannels = {
   [versionChannel.name]: versionChannel,
@@ -206,6 +211,8 @@ export const invokeChannels = {
   [artifactDeleteChannel.name]: artifactDeleteChannel,
   [artifactExportChannel.name]: artifactExportChannel,
   [artifactOpenWindowChannel.name]: artifactOpenWindowChannel,
+  [workflowListChannel.name]: workflowListChannel,
+  [workflowGetChannel.name]: workflowGetChannel,
 } as const;
 
 export const pushChannels = {
@@ -221,6 +228,7 @@ export const pushChannels = {
   [mcpbChangedChannel.name]: mcpbChangedChannel,
   [terminalOutputChannel.name]: terminalOutputChannel,
   [terminalExitChannel.name]: terminalExitChannel,
+  [workflowEventChannel.name]: workflowEventChannel,
 } as const;
 
 export type InvokeChannels = typeof invokeChannels;

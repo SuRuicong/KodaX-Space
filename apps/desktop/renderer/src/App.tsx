@@ -53,6 +53,8 @@ export default function App(): JSX.Element {
   const setProviders = useAppStore((s) => s.setProviders);
   const setKodaxDefaults = useAppStore((s) => s.setKodaxDefaults);
   const setQueueState = useAppStore((s) => s.setQueueState);
+  const upsertWorkflowRun = useAppStore((s) => s.upsertWorkflowRun);
+  const seedWorkflowRuns = useAppStore((s) => s.seedWorkflowRuns);
   const providers = useAppStore((s) => s.providers);
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
   const unsubsRef = useRef<Array<() => void>>([]);
@@ -164,6 +166,21 @@ export default function App(): JSX.Element {
       }),
     );
 
+    // F060 Workflow Harness — 启动期播种已知 run，然后订阅 SDK 进程事件实时流（按 runId 覆盖式 upsert）。
+    bridge
+      .invoke('workflow.list', undefined)
+      .then((r) => {
+        if (r.ok) seedWorkflowRuns(r.data.runs);
+      })
+      .catch(() => {
+        /* best-effort 播种；失败由后续实时事件补齐 */
+      });
+    unsubsRef.current.push(
+      bridge.on('workflow.event', (payload) => {
+        upsertWorkflowRun(payload);
+      }),
+    );
+
     return () => {
       for (const u of unsubsRef.current) u();
       unsubsRef.current = [];
@@ -177,6 +194,8 @@ export default function App(): JSX.Element {
     setProviders,
     setKodaxDefaults,
     setQueueState,
+    upsertWorkflowRun,
+    seedWorkflowRuns,
   ]);
 
   // (Esc 关 settings 面板已下放到 SettingsModal 自己 own —— 见 features/settings/SettingsModal.tsx)
