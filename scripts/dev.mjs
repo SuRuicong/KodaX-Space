@@ -8,7 +8,6 @@
 // raw mode，backspace 显示成 ^H、Ctrl+C 显示成 ^C）。
 
 import { spawn, spawnSync } from 'node:child_process';
-import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import net from 'node:net';
 import path from 'node:path';
@@ -137,31 +136,10 @@ function shutdown(code = 0) {
 process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
 
-// Self-heal the @livecanvas/* dev junctions. They're manually linked into
-// node_modules (npm run link:livecanvas) and NOT in package.json/lockfile, so any
-// `npm install` (tgz bump, dep add, plain install) prunes them — after which
-// SandboxFrame.tsx's `@livecanvas/sandbox-bridge` import fails the Vite optimize
-// and the renderer won't load. Restoring here makes "npm install → npm run dev"
-// just work. No-op when links are intact; non-fatal if relink fails (e.g. LC repo
-// absent) — dev still launches, only the artifact preview is affected.
-function ensureLivecanvasLinks() {
-  const canary = path.join(root, 'node_modules', '@livecanvas', 'sandbox-bridge');
-  if (fs.existsSync(canary)) return;
-  console.log('[dev] @livecanvas/* link missing (npm install pruned it) — restoring via link:livecanvas');
-  const res = spawnSync(NODE, [path.join(root, 'scripts/link-livecanvas.mjs')], {
-    cwd: root,
-    stdio: 'inherit',
-    windowsHide: true,
-    timeout: 30_000, // 防 LC 缺失时 link 脚本(可能拉 npm/等网络)无限挂住 dev 启动
-  });
-  if (res.status !== 0 || res.error) {
-    console.warn(
-      `[dev] link:livecanvas failed (exit ${res.status ?? res.error?.code ?? 'signal'}) — LiveCanvas artifact preview may not load. ` +
-        'Fix LC build then run `npm run link:livecanvas`.',
-    );
-  }
-}
-ensureLivecanvasLinks();
+// (Removed: @livecanvas/* dev-junction self-heal. The LiveCanvas interactive
+// artifact tier was extracted — see F067 — so there's no @livecanvas import to
+// keep alive; dev no longer depends on LC being linked. The link:livecanvas
+// helper scripts are likewise dead and pending removal.)
 
 // A stale Vite process on 5173 makes wait-on succeed before this run's Vite has
 // started. Electron then opens against the stale server and the new Vite exits
