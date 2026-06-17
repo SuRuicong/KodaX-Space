@@ -59,6 +59,11 @@ const sharedOptions = {
   // 详见 apps/desktop/electron/kodax/{user-config,mcp/config-reader}.ts 的 lazy 模式。
   external: ['electron', 'keytar', '@kodax-ai/kodax', '@kodax-ai/kodax/coding', '@kodax-ai/kodax/skills', '@kodax-ai/kodax/repl', '@kodax-ai/kodax/session', '@kodax-ai/kodax/mcp', '@kodax-ai/kodax/llm', '@kodax-ai/kodax/agent', 'electron-updater'],
   logLevel: 'info',
+  // 双轨 require 模式（register/catalog/ptyHost/artifact 的 `typeof require !== 'undefined' ? ... : import.meta`）：
+  // CJS bundle 里 `require` 永远有定义 → import.meta 分支是死代码、永不求值，仅供 tsx/esm 测试 loader 走。
+  // esbuild 静态分析看不出这点，会对每处发 empty-import-meta warning（CJS 下 import.meta 被置空）。
+  // 这是该 dual-runtime 模式的预期行为，显式静音以保持 dev/build 输出干净。
+  logOverride: { 'empty-import-meta': 'silent' },
 };
 
 async function buildOne(entry, outfile) {

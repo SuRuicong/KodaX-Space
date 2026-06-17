@@ -8,6 +8,8 @@
 // raw mode，backspace 显示成 ^H、Ctrl+C 显示成 ^C）。
 
 import { spawn, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +17,31 @@ import waitOn from 'wait-on';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
+const require = createRequire(import.meta.url);
+
+// 直接 spawn 真二进制用的解析路径（见 spawnProc 注释：不再经 `npm run -w` / `npx` 包装）。
+//   - NODE         : 当前 node 可执行（跑 vite.js / build-main.mjs）
+//   - VITE_BIN     : 提升到 root node_modules 的 vite CLI 入口
+//   - ELECTRON_BIN : electron npm 包从 Node import 时导出的是二进制绝对路径（跨平台）
+const NODE = process.execPath;
+const ELECTRON_BIN = require('electron');
+const APPS_DESKTOP = path.join(root, 'apps/desktop');
+
+// vite 的 package.json `exports` 不暴露 ./bin/vite.js（require.resolve 直取会报
+// ERR_PACKAGE_PATH_NOT_EXPORTED），改从 package.json 的 bin 字段解析；失败兜底到提升后的
+// root node_modules 下的已知路径。
+function resolveViteBin() {
+  try {
+    const pkgPath = require.resolve('vite/package.json');
+    const pkg = require('vite/package.json');
+    const binRel = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.vite;
+    if (binRel) return path.join(path.dirname(pkgPath), binRel);
+  } catch {
+    /* fall through to known path */
+  }
+  return path.join(root, 'node_modules/vite/bin/vite.js');
+}
+const VITE_BIN = resolveViteBin();
 
 const VITE_URL = 'http://127.0.0.1:5173';
 const VITE_HOST = '127.0.0.1';
@@ -55,10 +82,15 @@ function spawnProc(name, cmd, args, env = {}, opts = {}) {
   //     PowerShell 看到的就是 raw mode（backspace=^H、Ctrl+C=^C）。
   // 调用方仍可 opts.stdinMode='inherit' 显式覆盖（目前没人用到）。
   const stdinMode = opts.stdinMode ?? 'ignore';
+  // **shell: false（关键）**：直接 spawn 真二进制（node / electron.exe），proc.pid 即真实进程。
+  // 旧版 shell:true + `npm run -w` / `npx` 把进程链拉成 cmd→npm→cmd-shim→node 多层；退出时
+  // taskkill /pid <最外层cmd> /t 一旦中间 shim 先退出断链就遍历不到底层 → vite/MCP 变孤儿残留
+  // （用户实测 PID 残留）。直跑真二进制后链路扁平，taskkill /t 可靠杀整棵子树。
   const proc = spawn(cmd, args, {
-    cwd: root,
+    cwd: opts.cwd ?? root,
     stdio: [stdinMode, 'inherit', 'inherit'],
-    shell: process.platform === 'win32',
+    shell: false,
+    windowsHide: true,
     env: { ...baseEnv, ...env },
   });
   proc.on('exit', (code) => {
@@ -105,6 +137,31 @@ function shutdown(code = 0) {
 process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
 
+// Self-heal the @livecanvas/* dev junctions. They're manually linked into
+// node_modules (npm run link:livecanvas) and NOT in package.json/lockfile, so any
+// `npm install` (tgz bump, dep add, plain install) prunes them — after which
+// SandboxFrame.tsx's `@livecanvas/sandbox-bridge` import fails the Vite optimize
+// and the renderer won't load. Restoring here makes "npm install → npm run dev"
+// just work. No-op when links are intact; non-fatal if relink fails (e.g. LC repo
+// absent) — dev still launches, only the artifact preview is affected.
+function ensureLivecanvasLinks() {
+  const canary = path.join(root, 'node_modules', '@livecanvas', 'sandbox-bridge');
+  if (fs.existsSync(canary)) return;
+  console.log('[dev] @livecanvas/* link missing (npm install pruned it) — restoring via link:livecanvas');
+  const res = spawnSync(NODE, [path.join(root, 'scripts/link-livecanvas.mjs')], {
+    cwd: root,
+    stdio: 'inherit',
+    windowsHide: true,
+  });
+  if (res.status !== 0) {
+    console.warn(
+      `[dev] link:livecanvas failed (exit ${res.status ?? 'signal'}) — LiveCanvas artifact preview may not load. ` +
+        'Fix LC build then run `npm run link:livecanvas`.',
+    );
+  }
+}
+ensureLivecanvasLinks();
+
 // A stale Vite process on 5173 makes wait-on succeed before this run's Vite has
 // started. Electron then opens against the stale server and the new Vite exits
 // with "Port 5173 is already in use", which presents as a blank window.
@@ -114,12 +171,15 @@ if (await isPortOpen(VITE_HOST, VITE_PORT)) {
   process.exit(1);
 }
 
-// 1. Vite dev server
-const viteProc = spawnProc('vite', 'npm', ['run', 'dev', '-w', '@kodax-space/desktop']);
+// 1. Vite dev server —— 直接 node 跑 vite.js，cwd=apps/desktop（等价 `npm run dev -w
+//    @kodax-space/desktop`，vite 从该 cwd 解析 vite.config）。去掉 npm 包装层，proc.pid 即 vite。
+const viteProc = spawnProc('vite', NODE, [VITE_BIN], {}, { cwd: APPS_DESKTOP });
 
-// 2. esbuild watch —— 显式传 NODE_ENV=development，让 build-main 出带 sourcemap 的 dev 产物。
-//    build-main 默认 production，不靠外层 shell；dev 调试体验靠这里显式开启。
-spawnProc('esbuild', 'node', ['scripts/build-main.mjs', '--watch'], { NODE_ENV: 'development' });
+// 2. esbuild watch —— 直接 node 跑 build-main。显式传 NODE_ENV=development，让 build-main 出带
+//    sourcemap 的 dev 产物（build-main 默认 production，不靠外层 shell；dev 体验靠这里显式开启）。
+spawnProc('esbuild', NODE, [path.join(root, 'scripts/build-main.mjs'), '--watch'], {
+  NODE_ENV: 'development',
+});
 
 // 3. Electron when Vite AND main bundle are both ready.
 // 之前用 setTimeout(1500) 等 esbuild 首轮产出——慢机器/CI 上不稳；改成
@@ -139,8 +199,8 @@ try {
 
   spawnProc(
     'electron',
-    'npx',
-    ['electron', 'dist-electron'],
+    ELECTRON_BIN,
+    ['dist-electron'],
     {
       VITE_DEV_SERVER_URL: VITE_URL,
       NODE_ENV: 'development',
