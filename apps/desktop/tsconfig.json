@@ -10,7 +10,8 @@
     "rootDir": "renderer",
     "noEmit": true,
     "paths": {
-      "@/*": ["./renderer/src/*"]
+      "@/*": ["./renderer/src/*"],
+      "@livecanvas/sandbox-bridge": ["./renderer/src/types/livecanvas-sandbox-bridge.d.ts"]
     }
   },
   "include": ["renderer/src/**/*.ts", "renderer/src/**/*.tsx"],
