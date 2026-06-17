@@ -341,15 +341,16 @@ push ask-user.request 变体 / 或新 push workflow.autostart.request : { intent
 
 ### 影响范围
 - `workflow-controller.ts` 接 `readWorkflowResult(runId)` / `readWorkflowArtifact(runId, name)`。
-- 把 workflow artifacts 桥进 `artifactStore`（或并列展示，二选一，见技术方案）。
+- 把 workflow artifacts **桥进 `artifactStore`**（方案 A，已定）。
 - revise 流程接 `controller`（rename/revise/replace saved）。
 
 ### 技术方案
 - **结果**：`workflow_finished` 后 `readWorkflowResult(runId)` 取最终 displayable result（SDK 已 lint 过非空对象/数组），渲染进进度面顶部「结果」区，可复制/导出（复用 F059b 导出）。
-- **artifacts**：snapshot.artifacts[] 给元数据，`readWorkflowArtifact(runId, name)` 取内容。两条路线：
-  - (A) 桥进 `artifactStore.upsert`（surface=code，attribution 到发起 session）——复用 F057-F059 全套展示/版本/导出。**推荐**。
-  - (B) 独立只读展示，不进 store。
-  - 取 A：workflow artifact 和 agent 直接产的 artifact 统一在一个面里，符合「artifact 全局可见」（F059）。
+- **artifacts（方案 A —— 桥进 Space artifact 层，2026-06-17 定）**：snapshot.artifacts[] 给元数据，`readWorkflowArtifact(runId, name)` 取内容；Space 把每个 workflow artifact `artifactStore.upsert({ sessionId: <发起 session>, surface:'code', kind, title, content })` 复制进自己的 store。于是 workflow 产物与 agent 直接产的 artifact **统一在同一面板**，复用 F057-F059 全套预览/版本/导出/弹窗，符合 F059「artifact 全局可见」。
+  - **kind 映射**：workflow artifact 的类型 → Space `ArtifactKindT`（markdown/code/html/svg/chart/image/...）。无法识别的回退 `code` 或 `markdown`（按内容嗅探），不丢内容。
+  - **幂等/去重**：同一 run 的同名 artifact 重复 upsert 用稳定 id（如 `wf:<runId>:<name>`）走「追加版本」而非新建，避免重复条目。
+  - **数据双份**：artifact 同时在 run 目录与 artifacts.json —— 可接受（artifact 有大小上限）；run 目录是 SDK 真相源，artifacts.json 是 Space 展示副本。
+  - **attribution**：归到发起该 run 的 session（依赖 F060 的 `runId→sessionId` 映射）。
 - **revise**：`/workflow revise <runId|name> <change>` → SDK 生成新 capsule 修订（append-only，不改历史 run 图）；`--replace <savedName>` 移动 saved 名并归档旧版到 `.revisions/`。Space 给修订入口 + 审批。
 
 ### 接口契约
@@ -384,5 +385,5 @@ workflow.revise   : { target, change, replace?: boolean } → { capsule, preflig
 
 1. **版本**：✅ **v0.1.15**。（暂不强制拆小版本；若工期紧再把地基 F060-F062 先 ship。）
 2. **run→session 归属**：⚠️ **确认为 SDK 缺口，已开需求转交 KodaX**。`WorkflowRunProcessMetadata = Pick<…,'displayName'|'goal'|'source'|'savedWorkflowName'|'sourceRunId'|'sourceWorkflowName'|'revisionOf'>` 无 host 自定义槽位；`WorkflowProcessSnapshot` 不回显归属、run.json 不持久化。诉求：加 `origin?:{sessionId?;tag?}` 或 `hostMetadata?` 并持久化 + 回显。**SDK 补之前**：F060 用 Space 自持久化的 `runId→{sessionId,surface}` 映射做 interim；外部（REPL/CLI）发起的 run 归到 `__external__` 桶只读展示。
-3. **artifact 桥接**：⏳ 待用户选（A 进 artifactStore / B 独立只读 / 折中）。本文推荐 **A**。
+3. **artifact 桥接**：✅ **方案 A（桥进 `artifactStore`）**。workflow 产物复制进 Space artifact 层，与 agent 直接产的统一面板，复用 F057-F059 预览/版本/导出/弹窗。见 F066 技术方案（kind 映射 + 稳定 id 幂等 + attribution）。
 4. **Partner surface**：✅ **只给 Coder**。workflow 仅在 Coder surface 接通；Partner 暂不开（F061/F066 的展示面只挂 Coder 布局）。
