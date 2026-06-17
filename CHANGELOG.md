@@ -12,6 +12,25 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 > v0.1.7 内容 (F011/F023/F024/F026/F038) 跟 v0.1.8 一起发。GitHub Releases 顶部仍是 v0.1.5，
 > 0.1.7 这条 section 留作历史记录、git log 引用入口。
 
+## [0.1.18] - 2026-06-17
+
+### Theme
+
+**打通 KodaX CLI 自定义 provider。**
+
+让 Space 直接识别并使用 KodaX CLI 在 `~/.kodax/config.json` 的 `customProviders` 里配置的自定义 provider（如 `newapi-anthropic`、`openrouter-*`），不必再在 Space 里重复添加。之前 Space 只认自己的 `~/.kodax/custom-providers.json`，CLI 配的 provider 在 Space 完全不可见。
+
+### Added
+
+- **读取 KodaX `config.json` 的 customProviders** — `loadKodaxCustomProviders()` 读取并归一化 CLI 配置中的自定义 provider；provider 列表、`session.create/setProvider`、`/provider <name>` slash 命令均识别该来源，并按需注册进 SDK runtime LLM registry。
+
+### Changed
+
+- **`registerKodaxCustomProviders()` 合并来源** — 同时注册 config.json customProviders + Space store 自定义 provider。
+- **IPC `providerId` schema 放宽** — 接受 SDK 风格的 provider 名（字母/数字/`.`/`_`/`:`/`-`），main 端仍校验 provider 真实存在。
+
+> ⚠️ **已知安全项（紧急发版未修）**：config.json 来源的 provider 的 `apiKeyEnv` 未经 `RESERVED_ENV_VARS` 黑名单校验、`baseUrl` 未经 `validateBaseUrl` SSRF 校验。后续版本补。
+
 ## [0.1.17] - 2026-06-17
 
 ### Theme
