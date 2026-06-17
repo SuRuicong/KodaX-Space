@@ -138,6 +138,7 @@ import {
   workflowStartChannel,
   workflowPolicyGetChannel,
   workflowPolicySetChannel,
+  workflowResultChannel,
 } from './workflow.js';
 
 export const invokeChannels = {
@@ -236,6 +237,7 @@ export const invokeChannels = {
   [workflowStartChannel.name]: workflowStartChannel,
   [workflowPolicyGetChannel.name]: workflowPolicyGetChannel,
   [workflowPolicySetChannel.name]: workflowPolicySetChannel,
+  [workflowResultChannel.name]: workflowResultChannel,
 } as const;
 
 export const pushChannels = {

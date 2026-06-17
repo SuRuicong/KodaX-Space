@@ -12,7 +12,7 @@
 //   - WorkflowPanel({ runs })    —— 纯展示，不自取 store
 //   - WorkflowPanelConnected     —— popout 用（自取 runs 再渲染 WorkflowPanel）
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import {
   Loader2,
@@ -29,6 +29,9 @@ import {
   Square,
   Pencil,
   Trash2,
+  ChevronDown,
+  ChevronRight,
+  Copy,
   type LucideIcon,
 } from 'lucide-react';
 import type {
@@ -360,6 +363,9 @@ function WorkflowRunCard({
         <div className="mt-1 text-[11px] text-fg-secondary break-words">{run.resultSummary}</div>
       )}
 
+      {/* F066 完整结果（终态懒取）；artifacts 已自动桥进 artifact 面板（方案 A）。 */}
+      {isTerminal && run.status === 'completed' && <WorkflowResultView runId={run.runId} />}
+
       {/* item 树 */}
       {showTree && tree.length > 0 && (
         <ul className="mt-1.5 space-y-0.5">
@@ -371,6 +377,62 @@ function WorkflowRunCard({
 
       {/* F065 子 agent 活动遥测（活跃 / full 时显示，不淹主 transcript） */}
       {showTree && <WorkflowActivityStrip runId={run.runId} />}
+    </div>
+  );
+}
+
+/** F066 完整结果视图：终态懒取 workflow.result，可展开 + 复制。 */
+function WorkflowResultView({ runId }: { runId: string }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const mountedRef = useRef(true);
+  useEffect(() => () => void (mountedRef.current = false), []);
+  async function toggle(): Promise<void> {
+    const next = !open;
+    setOpen(next);
+    if (next && result === null) {
+      setLoading(true);
+      const r = await window.kodaxSpace?.invoke('workflow.result', { runId }).catch(() => null);
+      if (!mountedRef.current) return; // 卸载后不再 setState
+      setResult(r?.ok ? (r.data.result ?? '') : '');
+      setLoading(false);
+    }
+  }
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        onClick={() => void toggle()}
+        className="inline-flex items-center gap-1 text-[10px] text-fg-muted hover:text-fg-primary"
+      >
+        {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        完整结果
+      </button>
+      {open && (
+        <div className="mt-1">
+          {loading ? (
+            <div className="text-[10px] text-fg-faint">加载中…</div>
+          ) : result ? (
+            <div className="relative">
+              <pre className="max-h-48 overflow-auto rounded bg-surface-3 p-1.5 text-[10px] text-fg-secondary whitespace-pre-wrap break-words">
+                {result}
+              </pre>
+              <button
+                type="button"
+                onClick={() => void navigator.clipboard?.writeText(result).then(() => pushToast('已复制结果', 'success'))}
+                title="复制"
+                aria-label="复制结果"
+                className="absolute top-1 right-1 w-5 h-5 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-2"
+              >
+                <Copy size={11} />
+              </button>
+            </div>
+          ) : (
+            <div className="text-[10px] text-fg-faint">无结果内容。</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -350,6 +350,16 @@ const workflowPolicySchema = z.object({
 });
 export type WorkflowPolicyT = z.infer<typeof workflowPolicySchema>;
 
+// ============================================================================
+// F066 — Workflow 结果读取（artifacts 走方案 A 自动桥进 artifactStore，无需单独通道）。
+// ============================================================================
+export const workflowResultChannel = {
+  name: 'workflow.result',
+  direction: 'invoke',
+  input: z.object({ runId: z.string().min(1).max(SHORT) }),
+  output: z.object({ result: z.string().max(1_048_576).optional() }), // 1MB 上限
+} as const;
+
 export const workflowPolicyGetChannel = {
   name: 'workflow.policy.get',
   direction: 'invoke',

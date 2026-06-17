@@ -19,6 +19,8 @@ import { randomUUID } from 'node:crypto';
 import type { WorkflowRunT, WorkflowEventPayload } from '@kodax-space/space-ipc-schema';
 import { getSpaceDataDir } from './data-paths.js';
 import { pushToRenderer } from '../ipc/push.js';
+import { artifactStore } from '../artifact/store.js';
+import { detectArtifactKind } from '../artifact/workflow-artifact-bridge.js';
 
 // ---- SDK 形状(只取本控制器用到的子集,避免硬依赖 SDK 类型导出) ----
 interface SdkProcessSnapshot {
@@ -100,6 +102,9 @@ export interface WorkflowLifecycleLike {
     olderThanDays?: number;
     dryRun?: boolean;
   }): Promise<WorkflowRetentionResult>;
+  // F066 结果 / artifact 读取。
+  readWorkflowResult(runId: string): Promise<string | undefined>;
+  readWorkflowArtifact(runId: string, name: string): Promise<unknown | undefined>;
 }
 
 export interface WorkflowOrigin {
@@ -129,6 +134,8 @@ export class WorkflowController {
   private unsubscribe: (() => void) | null = null;
   /** 插入序的 runId→origin。Map 迭代序 = 插入序,用于 MAX_ORIGINS LRU 淘汰。*/
   private origins = new Map<string, WorkflowOrigin>();
+  /** F066:已桥接过 artifact 的 run（防 workflow_finished 重发导致重复桥接）。*/
+  private bridgedRuns = new Set<string>();
   private loaded = false;
   private writeLock: Promise<void> = Promise.resolve();
 
@@ -187,7 +194,10 @@ export class WorkflowController {
   /** 删终态 run(活跃 run 被 SDK 拒,除非 force)。删后清本地归属。 */
   async deleteRun(runId: string, force?: boolean): Promise<boolean> {
     const ok = (await this.lifecycle?.deleteWorkflowRun(runId, force ? { force } : undefined)) ?? false;
-    if (ok && this.origins.delete(runId)) void this.persistOrigins();
+    if (ok) {
+      this.bridgedRuns.delete(runId);
+      if (this.origins.delete(runId)) void this.persistOrigins();
+    }
     return ok;
   }
 
@@ -299,6 +309,18 @@ export class WorkflowController {
     return { runId };
   }
 
+  // ---- F066 结果 / artifact 读取 ----
+
+  /** 读 run 的最终 displayable result（SDK 已 lint 过非空）。无 lifecycle / 不存在 → undefined。 */
+  async readResult(runId: string): Promise<string | undefined> {
+    return this.lifecycle?.readWorkflowResult(runId);
+  }
+
+  /** 读 run 的某个 artifact 内容（unknown JSON 值）。 */
+  async readArtifact(runId: string, name: string): Promise<unknown | undefined> {
+    return this.lifecycle?.readWorkflowArtifact(runId, name);
+  }
+
   /**
    * F063/F064 在启动 run 时登记其发起方,供归属。立即 push 一条不发生——只记映射;
    * 后续该 run 的事件/list 自动带上 sessionId/surface。持久化(best-effort)。
@@ -360,6 +382,54 @@ export class WorkflowController {
       ...(origin.sessionId !== undefined ? { sessionId: origin.sessionId } : {}),
       ...(origin.surface !== undefined ? { surface: origin.surface } : {}),
     });
+    // F066:run 终态时把产出的 artifact 桥进 Space artifact 层（方案 A）。fire-and-forget + 顶层 catch。
+    if (event.type === 'workflow_finished') {
+      void this.bridgeArtifacts(event.snapshot, origin).catch((err) =>
+        console.warn('[WorkflowController] bridgeArtifacts:', err instanceof Error ? err.message : err),
+      );
+    }
+  }
+
+  /**
+   * F066：把 workflow run 的 artifacts 复制进 artifactStore（方案 A——统一面板，复用 F057-F059）。
+   * 每个 run 仅桥接一次（防 workflow_finished 重发）。归属到发起 session；外部 run（无 sessionId）跳过。
+   */
+  private async bridgeArtifacts(snapshot: SdkProcessSnapshot, origin: WorkflowOrigin): Promise<void> {
+    const runId = snapshot.runId;
+    if (this.bridgedRuns.has(runId) || !origin.sessionId) return;
+    const artifacts = (snapshot as { artifacts?: { name?: string }[] }).artifacts;
+    if (!artifacts || artifacts.length === 0) return;
+    // 先标记（防并发重入 + workflow_finished 重发导致重复桥接——artifactStore.upsert 无外部键去重,
+    // 重桥会产生重复 artifact）。取舍:首个 artifact 读/写失败不会在 re-finish 重试(已记日志);
+    // 重复 artifact 对用户更糟,故优先防重复而非失败重试。
+    this.bridgedRuns.add(runId);
+    // 有界 LRU:超 MAX_ORIGINS*2 淘汰最旧(Set 插入序),不 clear-all——避免清空后老 run 重发被重桥成重复。
+    while (this.bridgedRuns.size > MAX_ORIGINS * 2) {
+      const oldest = this.bridgedRuns.values().next().value;
+      if (oldest === undefined) break;
+      this.bridgedRuns.delete(oldest);
+    }
+    for (const a of artifacts) {
+      const name = a?.name;
+      if (!name) continue;
+      try {
+        const value = await this.readArtifact(runId, name);
+        if (value === undefined) continue;
+        const { kind, content } = detectArtifactKind(value);
+        const wfName = typeof snapshot.workflowName === 'string' ? snapshot.workflowName : '';
+        await artifactStore.upsert({
+          sessionId: origin.sessionId,
+          surface: origin.surface ?? 'code',
+          kind,
+          title: name,
+          content,
+          summary: `workflow ${wfName}`.trim(),
+        });
+        pushToRenderer('artifact.changed', { sessionId: origin.sessionId, reason: 'created' });
+      } catch (err) {
+        console.warn('[WorkflowController] bridge artifact failed:', name, err instanceof Error ? err.message : err);
+      }
+    }
   }
 
   private attribute(snapshot: SdkProcessSnapshot): WorkflowRunT {

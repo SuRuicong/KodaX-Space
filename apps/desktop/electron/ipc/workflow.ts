@@ -106,4 +106,10 @@ export function registerWorkflowChannels(): void {
   // F064 Host policy（AMAW 自启治理 + caps）。
   registerChannel('workflow.policy.get', () => workflowPolicyStore.get());
   registerChannel('workflow.policy.set', (input) => workflowPolicyStore.set(input));
+
+  // F066 结果读取（artifacts 由 controller 在 run 终态自动桥进 artifactStore，无单独通道）。
+  registerChannel('workflow.result', async (input) => {
+    const result = await workflowController.readResult(input.runId);
+    return result !== undefined ? { result } : {};
+  });
 }

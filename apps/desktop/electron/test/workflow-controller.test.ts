@@ -199,6 +199,14 @@ function fakeLifecycle() {
       calls.push(['prune', [opts]]);
       return { deleted: 2, protectedRuns: 1, candidates: ['r1', 'r2'], dryRun: opts.dryRun ?? false };
     },
+    async readWorkflowResult(runId) {
+      calls.push(['readResult', [runId]]);
+      return `result for ${runId}`;
+    },
+    async readWorkflowArtifact(runId, name) {
+      calls.push(['readArtifact', [runId, name]]);
+      return `# ${name}\nartifact body`;
+    },
   };
   return lc;
 }
