@@ -96,7 +96,7 @@ export const SPACE_MANUAL_TOPICS: readonly KodaXManualTopicInput[] = [
       '   Google / DeepSeek / Mistral / Cohere / Together / Groq / Fireworks / Replicate /',
       '   Ollama) + 用户自定义 (+ Add custom).',
       '3. 选 provider → 右边填 API key + 可选 baseURL + 默认 model.',
-      '4. Save —— key 优先存系统 keychain (keytar),不可用时 fall back in-memory (重启丢).',
+      '4. Save —— key 优先存系统 keychain (@napi-rs/keyring),不可用时 fall back in-memory (重启丢).',
       '',
       '运行中切 provider: 命令面板 (⌘Shift+P) 搜 "Switch provider",或新建 session 时挑.',
       '/model 命令在 session 内改本 session 模型,/thinking 切 reasoning mode.',
