@@ -69,14 +69,15 @@
 | 057 | Artifact 数据层（ArtifactRef store + 持久化 ~/.kodax/space/artifacts + IPC create/list/read/delete + changed push） | New | Critical | v0.1.12 | Done | [v0.1.12.md#feature_057](features/v0.1.12.md#feature_057-artifact-数据层) |
 | 058 | Artifact 生成（in-process `create_artifact` tool 走 SDK registerTool + agent steering 优先静态 kind） | New | Critical | v0.1.12 | Done | [v0.1.12.md#feature_058](features/v0.1.12.md#feature_058-artifact-生成) |
 | 059 | ArtifactPanel UX（列表 + 版本切换 + ArtifactView 渲染 + 迭代"再改一版" + 导出）+ Coder popout | New | High | v0.1.12 | Done | [v0.1.12.md#feature_059](features/v0.1.12.md#feature_059-artifactpanel-ux--迭代导出) |
-| 060 | Workflow 进程事件管线（`onWorkflowProcessEvent` → `workflow.event` 通道 → store；run→session 自持久化归属 interim） | New | Critical | v0.1.15 | Planned | [批次设计](features/workflow-harness-support.md#feature_060-workflow-进程事件管线mainrenderer) |
-| 061 | Workflow 进度面板（phase/agent/step 树 + counts/progress/token + digest 三态；Coder-only，复用 F059 popout） | New | High | v0.1.15 | Planned | [批次设计](features/workflow-harness-support.md#feature_061-workflow-进度面板phaseagentstep-树) |
-| 062 | Run 生命周期控制（stop/pause/resume/rename/delete/prune，活跃保护） | New | High | v0.1.15 | Planned | [批次设计](features/workflow-harness-support.md#feature_062-run-生命周期控制stoppauseresumerenameprune) |
-| 063 | Workflow 库 + 启动 + capsule preflight（built-in/saved 发现 + 需求校验 + `/workflow create` 生成保存） | New | High | v0.1.15 | Planned | [批次设计](features/workflow-harness-support.md#feature_063-workflow-库--启动--capsule-preflight) |
-| 064 | AMAW 自然语言自启 + Host policy（`autoStart` off/confirm/on，默认 confirm；caps 智能默认不暴露裸旋钮） | New | Medium | v0.1.15 | Planned | [批次设计](features/workflow-harness-support.md#feature_064-amaw-自然语言自启--host-policy极简) |
-| 065 | 子 agent 活动遥测面（`WorkflowEventCorrelation` 归因，不淹主 transcript） | New | Medium | v0.1.15 | Planned | [批次设计](features/workflow-harness-support.md#feature_065-子-agent-活动遥测面correlation-归因) |
-| 066 | Workflow 结果 + artifact 展示（`readWorkflowResult`/`readWorkflowArtifact` → 桥进 artifactStore 方案 A，复用 F057-F059） | New | Medium | v0.1.15 | Planned | [批次设计](features/workflow-harness-support.md#feature_066-workflow-结果--artifact-展示复用-f057-f059) |
-| 067 | LiveCanvas Artifact Sandbox 重新集成（交互 `react` tier；2026-06-17 整支移除以解 LC 半成品卡死 dev/build/pack，待 LC 包稳定后重接，硬约束=无 LC 也能构建） | New | Medium | TBD | Planned | [设计](features/livecanvas-artifact-sandbox-reintegration.md) |
+| 060 | Workflow 进程事件管线（`onWorkflowProcessEvent` → `workflow.event` 通道 → store；run→session 自持久化归属 interim） | New | Critical | v0.1.15 | Done | [批次设计](features/v0.1.15.md#feature_060-workflow-进程事件管线mainrenderer) |
+| 061 | Workflow 进度面板（phase/agent/step 树 + counts/progress/token + digest 三态；Coder-only，复用 F059 popout） | New | High | v0.1.15 | Done | [批次设计](features/v0.1.15.md#feature_061-workflow-进度面板phaseagentstep-树) |
+| 062 | Run 生命周期控制（stop/pause/resume/rename/delete/prune，活跃保护） | New | High | v0.1.15 | Done | [批次设计](features/v0.1.15.md#feature_062-run-生命周期控制stoppauseresumerenameprune) |
+| 063 | Workflow 库 + 启动 + capsule preflight（built-in/saved 发现 + 需求校验 + `/workflow create` 生成保存） | New | High | v0.1.15 | Done | [批次设计](features/v0.1.15.md#feature_063-workflow-库--启动--capsule-preflight) |
+| 064 | AMAW 自然语言自启 + Host policy（`autoStart` off/confirm/on，默认 confirm；caps 智能默认不暴露裸旋钮） | New | Medium | v0.1.15 | Done | [批次设计](features/v0.1.15.md#feature_064-amaw-自然语言自启--host-policy极简) |
+| 065 | 子 agent 活动遥测面（`WorkflowEventCorrelation` 归因，不淹主 transcript） | New | Medium | v0.1.15 | Done | [批次设计](features/v0.1.15.md#feature_065-子-agent-活动遥测面correlation-归因) |
+| 066 | Workflow 结果 + artifact 展示（`readWorkflowResult`/`readWorkflowArtifact` → 桥进 artifactStore 方案 A，复用 F057-F059） | New | Medium | v0.1.15 | Done | [批次设计](features/v0.1.15.md#feature_066-workflow-结果--artifact-展示复用-f057-f059) |
+| 067 | LiveCanvas Artifact Sandbox 重新集成（交互 `react` tier；2026-06-17 整支移除以解 LC 半成品卡死 dev/build/pack，待 LC 包稳定后重接，硬约束=无 LC 也能构建） | New | Medium | TBD | Planned | [设计](features/unplanned.md) |
+| 068 | 对话流全量交互动画系统（Conversation Motion System · CSS-first expoOut/overshoot 运动 + Reveal/Collapse 组件 + motion.ts 单一配置源 + 复用 F060 三档门控） | Enhancement | High | v0.1.16 | In Progress | [设计](features/conversation-motion-system.md) |
 | ~~027~~ | ~~代码签名 + notarize~~ — 2026-06-05 移除，KodaX Space 不走"陌生人公开 Beta"路径 | ~~Internal~~ | — | — | Dropped | — |
 | ~~028~~ | ~~隐私政策 + 文档站~~ — 同上 | ~~Internal~~ | — | — | Dropped | — |
 | 029 | Permission Mode canonical 3 + Auto engine 子档 | Refactor | Critical | v0.1.0-alpha.1 | Completed | [v0.1.0.md#029](features/v0.1.0.md#feature_029-permission-mode-canonical-3--auto-engine-子档) |
