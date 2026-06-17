@@ -152,10 +152,11 @@ function ensureLivecanvasLinks() {
     cwd: root,
     stdio: 'inherit',
     windowsHide: true,
+    timeout: 30_000, // 防 LC 缺失时 link 脚本(可能拉 npm/等网络)无限挂住 dev 启动
   });
-  if (res.status !== 0) {
+  if (res.status !== 0 || res.error) {
     console.warn(
-      `[dev] link:livecanvas failed (exit ${res.status ?? 'signal'}) — LiveCanvas artifact preview may not load. ` +
+      `[dev] link:livecanvas failed (exit ${res.status ?? res.error?.code ?? 'signal'}) — LiveCanvas artifact preview may not load. ` +
         'Fix LC build then run `npm run link:livecanvas`.',
     );
   }

@@ -12,6 +12,34 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 > v0.1.7 内容 (F011/F023/F024/F026/F038) 跟 v0.1.8 一起发。GitHub Releases 顶部仍是 v0.1.5，
 > 0.1.7 这条 section 留作历史记录、git log 引用入口。
 
+## [0.1.11] - 2026-06-17
+
+### Theme
+
+**Liquid Glass 视觉刷新 + Windows 启动/构建修复。**
+
+视觉质量三档（极简 / 均衡 / 全特效）+ Apple Liquid Glass / visionOS 风格的光向描边、光标 specular 高光、分层柔影、作用域微交互；修复 Windows 下 dev 窗口不显示的根因；新增 Windows portable 构建；KodaX SDK 升 0.7.50。
+
+> **Gap note**：[0.1.10] 未单独写 section（内容为 F056–F059 Artifact 子系统：数据层 / 生成 / Panel / 三级展示 / 导出），见 `git log v0.1.9..v0.1.10` + `docs/features/`。
+
+### Added
+
+- **F060 Liquid Glass 视觉质量档** ([2fb9420](https://github.com/icetomoyo/KodaX-Space/commit/2fb9420)) — minimal / balanced / full 三档，localStorage 持久化 + index.html 预挂载防闪。立体感来自光·影·材质而非运动：`.glass::before` 光向渐变描边（左上亮→右下暗）、`.glass::after` 光标 specular 高光（`useSpotlight` 写 `--mx/--my`，`pointer-events:none` 不挡点击 / 不移动布局）、分层柔影 `.lift` + hover 抬升、极淡 2 团 CSS 柔光背景；full 档中央阅读区半透明。
+  - 性能护栏：`backdrop-filter` 仅用于静止 chrome（标题栏 / 侧栏 / 输入框 / 模态 / 命令面板 / Popout），对话滚动区绝不挂 `.glass`。
+  - 标题栏 `✦` 下拉切档，浅色模式光标高光提亮可见。
+- **F060 `.ix-zone` 作用域微交互** ([63ef180](https://github.com/icetomoyo/KodaX-Space/commit/63ef180) / [164d823](https://github.com/icetomoyo/KodaX-Space/commit/164d823)) — 容器标 `.ix-zone` → 区内所有 `button`/`[role=button]` 自动获 hover 浮起 + active 按下（纯 transform，GPU，无 JS）；`.no-ix` 豁免、`.ix-pop` 图标放大、`.monaco-editor`/`.xterm` 硬豁免。
+- **F010 Windows portable 免安装单文件构建 target** ([66d61ca](https://github.com/icetomoyo/KodaX-Space/commit/66d61ca)) — electron-builder portable，随安装包一起出。
+
+### Fixed
+
+- **Windows 下 dev 启动 Electron 窗口不显示** ([0588f71](https://github.com/icetomoyo/KodaX-Space/commit/0588f71)) — 根因：`scripts/dev.mjs` spawn Electron 时 `windowsHide: true` 让 Windows 按隐藏方式启动 GUI 进程（窗口创建并 `show()` 但永不可见，DevTools 偶尔激活才带出来，误导成 GPU / 渲染 / 离屏问题）。仅对 Electron GUI 进程传 `windowsHide: false`（vite/esbuild console 进程仍 true）。`main.ts` 加 ready-to-show / did-finish-load / did-fail-load / 超时 多路兜底显示 + did-fail-load / render-process-gone 大声报错。
+- **before-quit 子进程清理** ([6f6fffa](https://github.com/icetomoyo/KodaX-Space/commit/6f6fffa)) — 统一 `await` 四路 disposal（`Promise.allSettled`）+ watchdog（`.unref()`）+ `app.exit(0)`，消除孤儿进程残留。
+
+### Changed
+
+- **KodaX SDK 0.7.50** ([a2aa9b8](https://github.com/icetomoyo/KodaX-Space/commit/a2aa9b8) / [73d01f6](https://github.com/icetomoyo/KodaX-Space/commit/73d01f6)) — 0.7.50 上架 npm 后从本地 tarball 切到 registry `^0.7.50`（他机 `npm ci` 可复现，lockfile 锁 registry + integrity）。
+- 构建链 typecheck 与 LiveCanvas 解耦 ([c356a6f](https://github.com/icetomoyo/KodaX-Space/commit/c356a6f)) — 仓库零 LC 依赖即可 install / build / typecheck。
+
 ## [0.1.9] - 2026-06-08
 
 ### Theme
