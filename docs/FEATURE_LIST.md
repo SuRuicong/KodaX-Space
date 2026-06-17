@@ -22,77 +22,77 @@
 
 ## Index
 
-| ID | Title | Category | Priority | Version | Status | Design |
-|----|-------|----------|----------|---------|--------|--------|
-| 001 | Electron 工程骨架 | New | Critical | v0.1.0 | Completed | [v0.1.0.md#001](features/v0.1.0.md#feature_001-electron-工程骨架) |
-| 002 | IPC schema (zod) | New | Critical | v0.1.0 | Completed | [v0.1.0.md#002](features/v0.1.0.md#feature_002-ipc-schema-zod) |
-| 003 | Main 进程 KodaX runtime 集成 | New | Critical | v0.1.0 | Completed | [v0.1.0.md#003](features/v0.1.0.md#feature_003-main-进程-kodax-runtime-集成) |
-| 003R | Real KodaX adapter（@kodax-ai/kodax@0.7.40） | New | Critical | v0.1.0-alpha.1 | Completed | 见下方 alpha.1 重构 plan |
-| 004 | Provider 配置 GUI + Keychain | New | Critical | v0.1.0 | Completed | [v0.1.0.md#004](features/v0.1.0.md#feature_004-provider-配置-gui--keychain) |
-| 005 | 项目与 Session 管理 UI | New | Critical | v0.1.0 | Completed | [v0.1.0.md#005](features/v0.1.0.md#feature_005-项目与-session-管理-ui) |
-| 006 | 对话流 UI + tool call 渲染 | New | Critical | v0.1.0 | Completed | [v0.1.0.md#006](features/v0.1.0.md#feature_006-对话流-ui--tool-call-渲染) |
-| 007 | Permission 弹窗组件 | New | Critical | v0.1.0 | Completed | [v0.1.0.md#007](features/v0.1.0.md#feature_007-permission-弹窗组件) |
-| 008 | Work 进度 + reasoning mode 切换 | New | High | v0.1.0 | Completed | [v0.1.0.md#008](features/v0.1.0.md#feature_008-work-进度--reasoning-mode-切换) |
-| 009 | 文件面板（Monaco read-only + diff） | New | High | v0.1.0 | Completed | [v0.1.0.md#009](features/v0.1.0.md#feature_009-文件面板monaco-read-only--diff) |
-| 010 | 跨平台安装包（unsigned dev） | New | Critical | v0.1.0 | Completed | [v0.1.0.md#010](features/v0.1.0.md#feature_010-跨平台安装包unsigned-dev) |
-| 011 | 内置终端（xterm.js + node-pty 单 tab） | New | High | v0.1.7 | Completed | [v0.1.1.md#011](features/v0.1.1.md#feature_011-内置终端xtermjs--node-pty-单-tab) |
-| ~~012~~ | ~~Subagent tree 视图~~ — 由 [F037](#) 取代 | ~~New~~ | — | — | Superseded | — |
-| ~~013~~ | ~~MCP 管理 v1~~ — 由 [F036](#)（read-only listing） + [F039](#)（完整版）取代 | ~~New~~ | — | — | Superseded | — |
-| 014 | NAPI native-tokenizer — 与 F025/F026b 合并入 [F042](features/v0.1.4.md#feature_042-napi-native-helpers合并版) | Refactor | Low | v0.1.x+ | Deferred | [v0.1.1.md#014](features/v0.1.1.md#feature_014-napi-native-tokenizer) |
-| 015 | Repointel 状态条 + warm | New | High | v0.1.3 / v0.1.8 | Partial | [v0.1.2.md#015](features/v0.1.2.md#feature_015-repointel-状态条--warm) |
-| 016 | Session lineage 图 | New | High | v0.1.5 | Completed | [v0.1.2.md#016](features/v0.1.2.md#feature_016-session-lineage-图) |
-| 017 | CLI ↔ Space 文件级 teleport | New | High | TBD | Deferred | [v0.1.2.md#017](features/v0.1.2.md#feature_017-cli--space-文件级-teleport) |
-| 018 | Quick Ask popover | New | High | v0.1.3 / v0.1.8 | Partial | [v0.1.2.md#018](features/v0.1.2.md#feature_018-quick-ask-popover) |
-| 019 | 主题（明/暗/系统跟随） | Enhancement | Medium | v0.1.3 | Completed | [v0.1.3.md#019](features/v0.1.3.md#feature_019-主题明暗系统跟随) |
-| 020 | 桌面通知 | Enhancement | Medium | v0.1.3 | Completed | [v0.1.3.md#020](features/v0.1.3.md#feature_020-桌面通知) |
-| 021 | `.mcpb` 一键安装（button + file association + drag-drop） | New | Medium | v0.1.5 | Completed | [v0.1.3.md#021](features/v0.1.3.md#feature_021-mcpb-一键安装) |
-| 022 | 自动更新（Squirrel） | New | Medium | v0.1.3 | Completed | [v0.1.3.md#022](features/v0.1.3.md#feature_022-自动更新squirrel) |
-| 023 | 内置终端多 tab | Enhancement | Medium | v0.1.7 | Completed | [v0.1.4.md#023](features/v0.1.4.md#feature_023-内置终端多-tab) |
-| 024 | 文件富预览（PDF / docx / xlsx） | Enhancement | Medium | v0.1.7 | Completed | [v0.1.4.md#024](features/v0.1.4.md#feature_024-文件富预览pdf--docx--xlsx) |
-| ~~025~~ | ~~NAPI native-diff~~ — 2026-06-05 合并入 [F042](features/v0.1.4.md#feature_042-napi-native-helpers合并版) | ~~Refactor~~ | — | — | Merged | — |
-| 026 | ⌘Shift+P 命令面板（JS fuzzy MVP） | New | High | v0.1.7 | Completed | [v0.1.4.md#026](features/v0.1.4.md#feature_026-shiftp-命令面板js-fuzzy-mvp) |
-| 042 | NAPI native-helpers（合并 F014 tokenizer + F025 diff + F026b fuzzy） | Refactor | Low | v0.1.x+ | Deferred | [v0.1.4.md#042](features/v0.1.4.md#feature_042-napi-native-helpers合并版) |
-| 043 | 项目级 contextmenu（rename / archive / remove from Space） — codex 形态对齐 | New | High | v0.1.8 | Completed | [v0.1.8.md#043](features/v0.1.8.md#feature_043-项目级-contextmenu) |
-| 044 | 右侧 Changes 点文件打开 git working-tree diff popout | Enhancement | High | v0.1.10 | Completed | [v0.1.10.md#feature_044](features/v0.1.10.md#feature_044-右侧-changes-点文件打开-git-working-tree-diff-popout) |
-| 045 | Surface 抽象 + `[Coder][Partner]` tab + session 分面（SDK tag；**砍隐式入口**，显式手动切） | New | Critical | v0.1.11 | Done | [v0.1.11.md#feature_045](features/v0.1.11.md#feature_045-surface-抽象落地--coderpartner-tab--隐式入口判定) |
-| 046 | Partner doc-workspace 三栏（**功能可用**：中栏真对话 + per-surface session 记忆 + 持久化面） | New | High | v0.1.11 | Done | [v0.1.11.md#feature_046](features/v0.1.11.md#feature_046-partner-doc-workspace-三栏布局骨架) |
-| 047 | Partner 工具白名单（non-bash-subset，走 SDK `resolveToolCapability`=R3）+ 非 git 作用域（项目系统本就 git-agnostic） | New | High | v0.1.11 | Done | [v0.1.11.md#feature_047](features/v0.1.11.md#feature_047-partner-工具白名单non-bash-subset-非-git-文件作用域) |
-| ~~048~~ | ~~Artifact 一等概念（登记 / 富预览 / 迭代版本 / 导出）~~ — 由 F056（静态基线）+ F057（数据层）+ F058（生成）+ F059（Panel UX）取代落地（reframe 渲染基底走 LC sandbox / 路径 D） | ~~New~~ | — | — | Superseded | — |
-| 049 | Partner skill pack：代码相关知识工作（复用 Repointel） | New | High | v0.1.12 | Planned | [v0.1.12.md#feature_049](features/v0.1.12.md#feature_049-partner-skill-pack代码相关知识工作) |
-| 050 | Space 有头浏览器能力（in-process registerTool，双 surface） | New | High | v0.1.13 | Planned | [v0.1.13.md#feature_050](features/v0.1.13.md#feature_050-space-有头浏览器能力) |
-| 051 | Partner skill pack：文档事务（PDF 抽表 / 总结 / slides 生成） | New | Medium | v0.1.13 | Planned | [v0.1.13.md#feature_051](features/v0.1.13.md#feature_051-partner-skill-pack文档事务) |
-| 052 | Partner skill pack：研究（deep-research 内化 + web 知识源） | New | Medium | v0.1.14 | Planned | [v0.1.14.md#feature_052](features/v0.1.14.md#feature_052-partner-skill-pack研究) |
-| 053 | Partner 自定义画像 + H1-Partner 完整 harness（依赖 SDK R1/R2） | New | High | v0.1.14 | Blocked | [v0.1.14.md#feature_053](features/v0.1.14.md#feature_053-partner-自定义画像--h1-partner-完整-harness) |
-| 054 | 视觉系统刷新（refined dark+light token / Geist+JetBrains Mono / Lucide / 单一琥珀金 + 语义调色板） | Enhancement | High | v0.1.10 | Completed | [v0.1.10.md#feature_054](features/v0.1.10.md#feature_054-视觉系统刷新-refined-darklight-token--geistjetbrains-mono--lucide--单一琥珀金强调) |
-| 055 | 打包 renderer 迁 `app://` 自定义标准协议（artifact 嵌入安全地基；file:// → app://space 真实可锁 origin） | Refactor | High | v0.1.12 | Planned | [v0.1.12.md#feature_055](features/v0.1.12.md#feature_055-打包-renderer-迁-app-自定义标准协议) |
-| 056 | 静态 Artifact 基线（LC-free）+ tier 门控（md/code/html/svg/pdf·docx·xlsx/chart 静态渲染；react/交互 tier 门控待 LC GA） | New | Critical | v0.1.12 | Done | [v0.1.12.md#feature_056](features/v0.1.12.md#feature_056-静态-artifact-基线lc-free--tier-门控) |
-| 057 | Artifact 数据层（ArtifactRef store + 持久化 ~/.kodax/space/artifacts + IPC create/list/read/delete + changed push） | New | Critical | v0.1.12 | Done | [v0.1.12.md#feature_057](features/v0.1.12.md#feature_057-artifact-数据层) |
-| 058 | Artifact 生成（in-process `create_artifact` tool 走 SDK registerTool + agent steering 优先静态 kind） | New | Critical | v0.1.12 | Done | [v0.1.12.md#feature_058](features/v0.1.12.md#feature_058-artifact-生成) |
-| 059 | ArtifactPanel UX（列表 + 版本切换 + ArtifactView 渲染 + 迭代"再改一版" + 导出）+ Coder popout | New | High | v0.1.12 | Done | [v0.1.12.md#feature_059](features/v0.1.12.md#feature_059-artifactpanel-ux--迭代导出) |
-| 060 | Workflow 进程事件管线（`onWorkflowProcessEvent` → `workflow.event` 通道 → store；run→session 自持久化归属 interim） | New | Critical | v0.1.15 | Done | [批次设计](features/v0.1.15.md#feature_060-workflow-进程事件管线mainrenderer) |
-| 061 | Workflow 进度面板（phase/agent/step 树 + counts/progress/token + digest 三态；Coder-only，复用 F059 popout） | New | High | v0.1.15 | Done | [批次设计](features/v0.1.15.md#feature_061-workflow-进度面板phaseagentstep-树) |
-| 062 | Run 生命周期控制（stop/pause/resume/rename/delete/prune，活跃保护） | New | High | v0.1.15 | Done | [批次设计](features/v0.1.15.md#feature_062-run-生命周期控制stoppauseresumerenameprune) |
-| 063 | Workflow 库 + 启动 + capsule preflight（built-in/saved 发现 + 需求校验 + `/workflow create` 生成保存） | New | High | v0.1.15 | Done | [批次设计](features/v0.1.15.md#feature_063-workflow-库--启动--capsule-preflight) |
-| 064 | AMAW 自然语言自启 + Host policy（`autoStart` off/confirm/on，默认 confirm；caps 智能默认不暴露裸旋钮） | New | Medium | v0.1.15 | Done | [批次设计](features/v0.1.15.md#feature_064-amaw-自然语言自启--host-policy极简) |
-| 065 | 子 agent 活动遥测面（`WorkflowEventCorrelation` 归因，不淹主 transcript） | New | Medium | v0.1.15 | Done | [批次设计](features/v0.1.15.md#feature_065-子-agent-活动遥测面correlation-归因) |
-| 066 | Workflow 结果 + artifact 展示（`readWorkflowResult`/`readWorkflowArtifact` → 桥进 artifactStore 方案 A，复用 F057-F059） | New | Medium | v0.1.15 | Done | [批次设计](features/v0.1.15.md#feature_066-workflow-结果--artifact-展示复用-f057-f059) |
-| 067 | LiveCanvas Artifact Sandbox 重新集成（交互 `react` tier；2026-06-17 整支移除以解 LC 半成品卡死 dev/build/pack，待 LC 包稳定后重接，硬约束=无 LC 也能构建） | New | Medium | TBD | Planned | [设计](features/unplanned.md) |
-| 068 | 对话流全量交互动画系统（Conversation Motion System · CSS-first expoOut/overshoot 运动 + Reveal/Collapse 组件 + motion.ts 单一配置源 + 复用 F060 三档门控） | Enhancement | High | v0.1.16 | In Progress | [设计](features/conversation-motion-system.md) |
-| ~~027~~ | ~~代码签名 + notarize~~ — 2026-06-05 移除，KodaX Space 不走"陌生人公开 Beta"路径 | ~~Internal~~ | — | — | Dropped | — |
-| ~~028~~ | ~~隐私政策 + 文档站~~ — 同上 | ~~Internal~~ | — | — | Dropped | — |
-| 029 | Permission Mode canonical 3 + Auto engine 子档 | Refactor | Critical | v0.1.0-alpha.1 | Completed | [v0.1.0.md#029](features/v0.1.0.md#feature_029-permission-mode-canonical-3--auto-engine-子档) |
-| 030 | AutoModeToolGuardrail bootstrap | New | Critical | v0.1.1 | Completed | [v0.1.1.md#030](features/v0.1.1.md#feature_030-automodetoolguardrail-bootstrap) |
-| 031 | Slash command runtime + 第一批命令 | New | Critical | v0.1.1 | Completed | [v0.1.1.md#031](features/v0.1.1.md#feature_031-slash-command-runtime--第一批命令) |
-| 032 | askUser modal + IPC | New | Critical | v0.1.1 | Completed | [v0.1.1.md#032](features/v0.1.1.md#feature_032-askuser-modal--ipc) |
-| 033 | Sessions tree + fork + rewind (in-memory) | New | High | v0.1.1 | Completed | [v0.1.1.md#033](features/v0.1.1.md#feature_033-sessions-tree--fork--rewind) |
-| 034 | AGENTS.md auto-load + 显示 | New | High | v0.1.1 | Completed | [v0.1.1.md#034](features/v0.1.1.md#feature_034-agentsmd-auto-load--显示) |
-| 035 | Skills 发现 + 执行 | New | High | v0.1.1 | Completed | [v0.1.1.md#035](features/v0.1.1.md#feature_035-skills-发现--执行) |
-| 036 | MCP 管理 UI (read-only listing；F039 出 SDK manager 后升级) | New | High | v0.1.1 | Completed | [v0.1.1.md#036](features/v0.1.1.md#feature_036-mcp-管理-ui-替换原-feature_013-计划) |
-| 037 | Subagent tree 视图 | New | High | v0.1.1 | Completed | [v0.1.1.md#037](features/v0.1.1.md#feature_037-subagent-tree-视图-refine-原-feature_012) |
-| 038 | F033 Sessions 持久化升级（SDK ≥ 0.7.42） | Refactor | High | v0.1.6 | Completed | [v0.1.6.md#038](features/v0.1.6.md#feature_038-f033-sessions-持久化升级接-kodax-sdk--0742) |
-| 039 | F036 MCP 管理完整版（start/stop/diag/tool catalog；接 KodaX SDK MCP manager） | Refactor | High | v0.1.5 | Completed | [v0.1.7.md#039](features/v0.1.7.md#feature_039-f036-mcp-管理完整版) |
-| 040 | 多项目可折叠 session 侧栏 + per-session 状态指示 | Enhancement | High | v0.1.5 | Completed | [v0.1.4.md#040](features/v0.1.4.md#feature_040-多项目可折叠-session-侧栏--per-session-状态指示) |
-| 041 | 右侧栏改造为任务态 mission control（Plan/Workers/Changes）+ 退役 StashNotice | Enhancement | High | v0.1.5 | Completed | [v0.1.4.md#041](features/v0.1.4.md#feature_041-右侧栏改造为任务态-mission-controlplan--workers--changes-退役-stashnotice) |
+| ID      | Title                                                                                                                                                                            | Category     | Priority | Version         | Status     | Design                                                                                                                                      |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | -------- | --------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 001     | Electron 工程骨架                                                                                                                                                                | New          | Critical | v0.1.0          | Completed  | [v0.1.0.md#001](features/v0.1.0.md#feature_001-electron-工程骨架)                                                                           |
+| 002     | IPC schema (zod)                                                                                                                                                                 | New          | Critical | v0.1.0          | Completed  | [v0.1.0.md#002](features/v0.1.0.md#feature_002-ipc-schema-zod)                                                                              |
+| 003     | Main 进程 KodaX runtime 集成                                                                                                                                                     | New          | Critical | v0.1.0          | Completed  | [v0.1.0.md#003](features/v0.1.0.md#feature_003-main-进程-kodax-runtime-集成)                                                                |
+| 003R    | Real KodaX adapter（@kodax-ai/kodax@0.7.40）                                                                                                                                     | New          | Critical | v0.1.0-alpha.1  | Completed  | 见下方 alpha.1 重构 plan                                                                                                                    |
+| 004     | Provider 配置 GUI + Keychain                                                                                                                                                     | New          | Critical | v0.1.0          | Completed  | [v0.1.0.md#004](features/v0.1.0.md#feature_004-provider-配置-gui--keychain)                                                                 |
+| 005     | 项目与 Session 管理 UI                                                                                                                                                           | New          | Critical | v0.1.0          | Completed  | [v0.1.0.md#005](features/v0.1.0.md#feature_005-项目与-session-管理-ui)                                                                      |
+| 006     | 对话流 UI + tool call 渲染                                                                                                                                                       | New          | Critical | v0.1.0          | Completed  | [v0.1.0.md#006](features/v0.1.0.md#feature_006-对话流-ui--tool-call-渲染)                                                                   |
+| 007     | Permission 弹窗组件                                                                                                                                                              | New          | Critical | v0.1.0          | Completed  | [v0.1.0.md#007](features/v0.1.0.md#feature_007-permission-弹窗组件)                                                                         |
+| 008     | Work 进度 + reasoning mode 切换                                                                                                                                                  | New          | High     | v0.1.0          | Completed  | [v0.1.0.md#008](features/v0.1.0.md#feature_008-work-进度--reasoning-mode-切换)                                                              |
+| 009     | 文件面板（Monaco read-only + diff）                                                                                                                                              | New          | High     | v0.1.0          | Completed  | [v0.1.0.md#009](features/v0.1.0.md#feature_009-文件面板monaco-read-only--diff)                                                              |
+| 010     | 跨平台安装包（unsigned dev）                                                                                                                                                     | New          | Critical | v0.1.0          | Completed  | [v0.1.0.md#010](features/v0.1.0.md#feature_010-跨平台安装包unsigned-dev)                                                                    |
+| 011     | 内置终端（xterm.js + node-pty 单 tab）                                                                                                                                           | New          | High     | v0.1.7          | Completed  | [v0.1.1.md#011](features/v0.1.1.md#feature_011-内置终端xtermjs--node-pty-单-tab)                                                            |
+| ~~012~~ | ~~Subagent tree 视图~~ — 由 [F037](#) 取代                                                                                                                                       | ~~New~~      | —        | —               | Superseded | —                                                                                                                                           |
+| ~~013~~ | ~~MCP 管理 v1~~ — 由 [F036](#)（read-only listing） + [F039](#)（完整版）取代                                                                                                    | ~~New~~      | —        | —               | Superseded | —                                                                                                                                           |
+| 014     | NAPI native-tokenizer — 与 F025/F026b 合并入 [F042](features/v0.1.4.md#feature_042-napi-native-helpers合并版)                                                                    | Refactor     | Low      | v0.1.x+         | Deferred   | [v0.1.1.md#014](features/v0.1.1.md#feature_014-napi-native-tokenizer)                                                                       |
+| 015     | Repointel 状态条 + warm                                                                                                                                                          | New          | High     | v0.1.3 / v0.1.8 | Partial    | [v0.1.2.md#015](features/v0.1.2.md#feature_015-repointel-状态条--warm)                                                                      |
+| 016     | Session lineage 图                                                                                                                                                               | New          | High     | v0.1.5          | Completed  | [v0.1.2.md#016](features/v0.1.2.md#feature_016-session-lineage-图)                                                                          |
+| 017     | CLI ↔ Space 文件级 teleport                                                                                                                                                      | New          | High     | TBD             | Deferred   | [v0.1.2.md#017](features/v0.1.2.md#feature_017-cli--space-文件级-teleport)                                                                  |
+| 018     | Quick Ask popover                                                                                                                                                                | New          | High     | v0.1.3 / v0.1.8 | Partial    | [v0.1.2.md#018](features/v0.1.2.md#feature_018-quick-ask-popover)                                                                           |
+| 019     | 主题（明/暗/系统跟随）                                                                                                                                                           | Enhancement  | Medium   | v0.1.3          | Completed  | [v0.1.3.md#019](features/v0.1.3.md#feature_019-主题明暗系统跟随)                                                                            |
+| 020     | 桌面通知                                                                                                                                                                         | Enhancement  | Medium   | v0.1.3          | Completed  | [v0.1.3.md#020](features/v0.1.3.md#feature_020-桌面通知)                                                                                    |
+| 021     | `.mcpb` 一键安装（button + file association + drag-drop）                                                                                                                        | New          | Medium   | v0.1.5          | Completed  | [v0.1.3.md#021](features/v0.1.3.md#feature_021-mcpb-一键安装)                                                                               |
+| 022     | 自动更新（Squirrel）                                                                                                                                                             | New          | Medium   | v0.1.3          | Completed  | [v0.1.3.md#022](features/v0.1.3.md#feature_022-自动更新squirrel)                                                                            |
+| 023     | 内置终端多 tab                                                                                                                                                                   | Enhancement  | Medium   | v0.1.7          | Completed  | [v0.1.4.md#023](features/v0.1.4.md#feature_023-内置终端多-tab)                                                                              |
+| 024     | 文件富预览（PDF / docx / xlsx）                                                                                                                                                  | Enhancement  | Medium   | v0.1.7          | Completed  | [v0.1.4.md#024](features/v0.1.4.md#feature_024-文件富预览pdf--docx--xlsx)                                                                   |
+| ~~025~~ | ~~NAPI native-diff~~ — 2026-06-05 合并入 [F042](features/v0.1.4.md#feature_042-napi-native-helpers合并版)                                                                        | ~~Refactor~~ | —        | —               | Merged     | —                                                                                                                                           |
+| 026     | ⌘Shift+P 命令面板（JS fuzzy MVP）                                                                                                                                                | New          | High     | v0.1.7          | Completed  | [v0.1.4.md#026](features/v0.1.4.md#feature_026-shiftp-命令面板js-fuzzy-mvp)                                                                 |
+| 042     | NAPI native-helpers（合并 F014 tokenizer + F025 diff + F026b fuzzy）                                                                                                             | Refactor     | Low      | v0.1.x+         | Deferred   | [v0.1.4.md#042](features/v0.1.4.md#feature_042-napi-native-helpers合并版)                                                                   |
+| 043     | 项目级 contextmenu（rename / archive / remove from Space） — codex 形态对齐                                                                                                      | New          | High     | v0.1.8          | Completed  | [v0.1.8.md#043](features/v0.1.8.md#feature_043-项目级-contextmenu)                                                                          |
+| 044     | 右侧 Changes 点文件打开 git working-tree diff popout                                                                                                                             | Enhancement  | High     | v0.1.10         | Completed  | [v0.1.10.md#feature_044](features/v0.1.10.md#feature_044-右侧-changes-点文件打开-git-working-tree-diff-popout)                              |
+| 045     | Surface 抽象 + `[Coder][Partner]` tab + session 分面（SDK tag；**砍隐式入口**，显式手动切）                                                                                      | New          | Critical | v0.1.11         | Done       | [v0.1.11.md#feature_045](features/v0.1.11.md#feature_045-surface-抽象落地--coderpartner-tab--隐式入口判定)                                  |
+| 046     | Partner doc-workspace 三栏（**功能可用**：中栏真对话 + per-surface session 记忆 + 持久化面）                                                                                     | New          | High     | v0.1.11         | Done       | [v0.1.11.md#feature_046](features/v0.1.11.md#feature_046-partner-doc-workspace-三栏布局骨架)                                                |
+| 047     | Partner 工具白名单（non-bash-subset，走 SDK `resolveToolCapability`=R3）+ 非 git 作用域（项目系统本就 git-agnostic）                                                             | New          | High     | v0.1.11         | Done       | [v0.1.11.md#feature_047](features/v0.1.11.md#feature_047-partner-工具白名单non-bash-subset-非-git-文件作用域)                               |
+| ~~048~~ | ~~Artifact 一等概念（登记 / 富预览 / 迭代版本 / 导出）~~ — 由 F056（静态基线）+ F057（数据层）+ F058（生成）+ F059（Panel UX）取代落地（reframe 渲染基底走 LC sandbox / 路径 D） | ~~New~~      | —        | —               | Superseded | —                                                                                                                                           |
+| 049     | Partner skill pack：代码相关知识工作（复用 Repointel）                                                                                                                           | New          | High     | v0.1.12         | Planned    | [v0.1.12.md#feature_049](features/v0.1.12.md#feature_049-partner-skill-pack代码相关知识工作)                                                |
+| 050     | Space 有头浏览器能力（in-process registerTool，双 surface）                                                                                                                      | New          | High     | v0.1.13         | Planned    | [v0.1.13.md#feature_050](features/v0.1.13.md#feature_050-space-有头浏览器能力)                                                              |
+| 051     | Partner skill pack：文档事务（PDF 抽表 / 总结 / slides 生成）                                                                                                                    | New          | Medium   | v0.1.13         | Planned    | [v0.1.13.md#feature_051](features/v0.1.13.md#feature_051-partner-skill-pack文档事务)                                                        |
+| 052     | Partner skill pack：研究（deep-research 内化 + web 知识源）                                                                                                                      | New          | Medium   | v0.1.14         | Planned    | [v0.1.14.md#feature_052](features/v0.1.14.md#feature_052-partner-skill-pack研究)                                                            |
+| 053     | Partner 自定义画像 + H1-Partner 完整 harness（依赖 SDK R1/R2）                                                                                                                   | New          | High     | v0.1.14         | Blocked    | [v0.1.14.md#feature_053](features/v0.1.14.md#feature_053-partner-自定义画像--h1-partner-完整-harness)                                       |
+| 054     | 视觉系统刷新（refined dark+light token / Geist+JetBrains Mono / Lucide / 单一琥珀金 + 语义调色板）                                                                               | Enhancement  | High     | v0.1.10         | Completed  | [v0.1.10.md#feature_054](features/v0.1.10.md#feature_054-视觉系统刷新-refined-darklight-token--geistjetbrains-mono--lucide--单一琥珀金强调) |
+| 055     | 打包 renderer 迁 `app://` 自定义标准协议（artifact 嵌入安全地基；file:// → app://space 真实可锁 origin）                                                                         | Refactor     | High     | v0.1.12         | Planned    | [v0.1.12.md#feature_055](features/v0.1.12.md#feature_055-打包-renderer-迁-app-自定义标准协议)                                               |
+| 056     | 静态 Artifact 基线（LC-free）+ tier 门控（md/code/html/svg/pdf·docx·xlsx/chart 静态渲染；react/交互 tier 门控待 LC GA）                                                          | New          | Critical | v0.1.12         | Done       | [v0.1.12.md#feature_056](features/v0.1.12.md#feature_056-静态-artifact-基线lc-free--tier-门控)                                              |
+| 057     | Artifact 数据层（ArtifactRef store + 持久化 ~/.kodax/space/artifacts + IPC create/list/read/delete + changed push）                                                              | New          | Critical | v0.1.12         | Done       | [v0.1.12.md#feature_057](features/v0.1.12.md#feature_057-artifact-数据层)                                                                   |
+| 058     | Artifact 生成（in-process `create_artifact` tool 走 SDK registerTool + agent steering 优先静态 kind）                                                                            | New          | Critical | v0.1.12         | Done       | [v0.1.12.md#feature_058](features/v0.1.12.md#feature_058-artifact-生成)                                                                     |
+| 059     | ArtifactPanel UX（列表 + 版本切换 + ArtifactView 渲染 + 迭代"再改一版" + 导出）+ Coder popout                                                                                    | New          | High     | v0.1.12         | Done       | [v0.1.12.md#feature_059](features/v0.1.12.md#feature_059-artifactpanel-ux--迭代导出)                                                        |
+| 060     | Workflow 进程事件管线（`onWorkflowProcessEvent` → `workflow.event` 通道 → store；run→session 自持久化归属 interim）                                                              | New          | Critical | v0.1.15         | Done       | [批次设计](features/v0.1.15.md#feature_060-workflow-进程事件管线mainrenderer)                                                               |
+| 061     | Workflow 进度面板（phase/agent/step 树 + counts/progress/token + digest 三态；Coder-only，复用 F059 popout）                                                                     | New          | High     | v0.1.15         | Done       | [批次设计](features/v0.1.15.md#feature_061-workflow-进度面板phaseagentstep-树)                                                              |
+| 062     | Run 生命周期控制（stop/pause/resume/rename/delete/prune，活跃保护）                                                                                                              | New          | High     | v0.1.15         | Done       | [批次设计](features/v0.1.15.md#feature_062-run-生命周期控制stoppauseresumerenameprune)                                                      |
+| 063     | Workflow 库 + 启动 + capsule preflight（built-in/saved 发现 + 需求校验 + `/workflow create` 生成保存）                                                                           | New          | High     | v0.1.15         | Done       | [批次设计](features/v0.1.15.md#feature_063-workflow-库--启动--capsule-preflight)                                                            |
+| 064     | AMAW 自然语言自启 + Host policy（`autoStart` off/confirm/on，默认 confirm；caps 智能默认不暴露裸旋钮）                                                                           | New          | Medium   | v0.1.15         | Done       | [批次设计](features/v0.1.15.md#feature_064-amaw-自然语言自启--host-policy极简)                                                              |
+| 065     | 子 agent 活动遥测面（`WorkflowEventCorrelation` 归因，不淹主 transcript）                                                                                                        | New          | Medium   | v0.1.15         | Done       | [批次设计](features/v0.1.15.md#feature_065-子-agent-活动遥测面correlation-归因)                                                             |
+| 066     | Workflow 结果 + artifact 展示（`readWorkflowResult`/`readWorkflowArtifact` → 桥进 artifactStore 方案 A，复用 F057-F059）                                                         | New          | Medium   | v0.1.15         | Done       | [批次设计](features/v0.1.15.md#feature_066-workflow-结果--artifact-展示复用-f057-f059)                                                      |
+| 067     | LiveCanvas Artifact Sandbox 重新集成（交互 `react` tier；2026-06-17 整支移除以解 LC 半成品卡死 dev/build/pack，待 LC 包稳定后重接，硬约束=无 LC 也能构建）                       | New          | Medium   | TBD             | Planned    | [设计](features/unplanned.md)                                                                                                               |
+| 068     | 对话流全量交互动画系统（Conversation Motion System · CSS-first expoOut/overshoot 运动 + Reveal/Collapse 组件 + motion.ts 单一配置源 + 复用 F060 三档门控）                       | Enhancement  | High     | v0.1.16         | Done       | [v0.1.16.md#068](features/v0.1.16.md#feature_068-对话流全量交互动画系统conversation-motion-system)                                          |
+| ~~027~~ | ~~代码签名 + notarize~~ — 2026-06-05 移除，KodaX Space 不走"陌生人公开 Beta"路径                                                                                                 | ~~Internal~~ | —        | —               | Dropped    | —                                                                                                                                           |
+| ~~028~~ | ~~隐私政策 + 文档站~~ — 同上                                                                                                                                                     | ~~Internal~~ | —        | —               | Dropped    | —                                                                                                                                           |
+| 029     | Permission Mode canonical 3 + Auto engine 子档                                                                                                                                   | Refactor     | Critical | v0.1.0-alpha.1  | Completed  | [v0.1.0.md#029](features/v0.1.0.md#feature_029-permission-mode-canonical-3--auto-engine-子档)                                               |
+| 030     | AutoModeToolGuardrail bootstrap                                                                                                                                                  | New          | Critical | v0.1.1          | Completed  | [v0.1.1.md#030](features/v0.1.1.md#feature_030-automodetoolguardrail-bootstrap)                                                             |
+| 031     | Slash command runtime + 第一批命令                                                                                                                                               | New          | Critical | v0.1.1          | Completed  | [v0.1.1.md#031](features/v0.1.1.md#feature_031-slash-command-runtime--第一批命令)                                                           |
+| 032     | askUser modal + IPC                                                                                                                                                              | New          | Critical | v0.1.1          | Completed  | [v0.1.1.md#032](features/v0.1.1.md#feature_032-askuser-modal--ipc)                                                                          |
+| 033     | Sessions tree + fork + rewind (in-memory)                                                                                                                                        | New          | High     | v0.1.1          | Completed  | [v0.1.1.md#033](features/v0.1.1.md#feature_033-sessions-tree--fork--rewind)                                                                 |
+| 034     | AGENTS.md auto-load + 显示                                                                                                                                                       | New          | High     | v0.1.1          | Completed  | [v0.1.1.md#034](features/v0.1.1.md#feature_034-agentsmd-auto-load--显示)                                                                    |
+| 035     | Skills 发现 + 执行                                                                                                                                                               | New          | High     | v0.1.1          | Completed  | [v0.1.1.md#035](features/v0.1.1.md#feature_035-skills-发现--执行)                                                                           |
+| 036     | MCP 管理 UI (read-only listing；F039 出 SDK manager 后升级)                                                                                                                      | New          | High     | v0.1.1          | Completed  | [v0.1.1.md#036](features/v0.1.1.md#feature_036-mcp-管理-ui-替换原-feature_013-计划)                                                         |
+| 037     | Subagent tree 视图                                                                                                                                                               | New          | High     | v0.1.1          | Completed  | [v0.1.1.md#037](features/v0.1.1.md#feature_037-subagent-tree-视图-refine-原-feature_012)                                                    |
+| 038     | F033 Sessions 持久化升级（SDK ≥ 0.7.42）                                                                                                                                         | Refactor     | High     | v0.1.6          | Completed  | [v0.1.6.md#038](features/v0.1.6.md#feature_038-f033-sessions-持久化升级接-kodax-sdk--0742)                                                  |
+| 039     | F036 MCP 管理完整版（start/stop/diag/tool catalog；接 KodaX SDK MCP manager）                                                                                                    | Refactor     | High     | v0.1.5          | Completed  | [v0.1.7.md#039](features/v0.1.7.md#feature_039-f036-mcp-管理完整版)                                                                         |
+| 040     | 多项目可折叠 session 侧栏 + per-session 状态指示                                                                                                                                 | Enhancement  | High     | v0.1.5          | Completed  | [v0.1.4.md#040](features/v0.1.4.md#feature_040-多项目可折叠-session-侧栏--per-session-状态指示)                                             |
+| 041     | 右侧栏改造为任务态 mission control（Plan/Workers/Changes）+ 退役 StashNotice                                                                                                     | Enhancement  | High     | v0.1.5          | Completed  | [v0.1.4.md#041](features/v0.1.4.md#feature_041-右侧栏改造为任务态-mission-controlplan--workers--changes-退役-stashnotice)                   |
 
 ## v0.1.0-alpha.1 重构 plan（2026-05-18）
 
@@ -102,20 +102,20 @@
 
 **重做的 feature**：
 
-| ID | 原状 | alpha.1 调整 |
-|----|-----|-------------|
-| F006 | 对话流 + 1 tool = 1 卡 | tool 聚合 "Ran N commands ›" 折叠 |
+| ID   | 原状                                          | alpha.1 调整                                                              |
+| ---- | --------------------------------------------- | ------------------------------------------------------------------------- |
+| F006 | 对话流 + 1 tool = 1 卡                        | tool 聚合 "Ran N commands ›" 折叠                                         |
 | F008 | 常驻 TopBar (provider/work/harness/reasoning) | 拆掉常驻栏；provider+Effort 进底部 selector；Work/harness 进 Tasks popout |
-| F009 | 右抽屉 FilePanel + FileTree + Monaco 常驻 | 砍 FileTree + 抽屉；Monaco 改 Preview/Diff popout 按需呼出 |
+| F009 | 右抽屉 FilePanel + FileTree + Monaco 常驻     | 砍 FileTree + 抽屉；Monaco 改 Preview/Diff popout 按需呼出                |
 
 **新增（alpha.1）**：
 
-| ID | 标题 | 范围 | 状态 |
-|----|------|------|------|
-| F011-revised | Coder shell layout (Claude Desktop 对标) | sidebar mode tab + 顶部面包屑 + 右上 5 popout toolbar + 底部 chip bar + model+Effort selector | ✅ 1c4dc73 |
-| F011-P0/P1 | Mode selector + Context window + Session menu + Attach menu + tool 聚合 | 4 modes + Ctrl+M + 1M cap + 8-item dropdown + + popup + "Ran N commands ›" | ✅ a981955 / 05b1646 |
-| F012-revised | Tasks / Plan popout | 右上 Tasks popout 装 Work 预算 + harness profile；Plan popout 装多步任务 | ⚠️ skeleton 已搭，事件待 KodaX SDK 暴露 |
-| F003R | Real KodaX adapter | `npm i @kodax-ai/kodax@0.7.40` + `RealKodaXSession` 实接 `runKodaX`；8 个 KodaXEvents 映射到 SessionEvent push；session 落 `~/.kodax/sessions/` 跟 CLI 共享；provider key 走用户 env vars | ✅ 11469f2 |
+| ID           | 标题                                                                    | 范围                                                                                                                                                                                      | 状态                                    |
+| ------------ | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| F011-revised | Coder shell layout (Claude Desktop 对标)                                | sidebar mode tab + 顶部面包屑 + 右上 5 popout toolbar + 底部 chip bar + model+Effort selector                                                                                             | ✅ 1c4dc73                              |
+| F011-P0/P1   | Mode selector + Context window + Session menu + Attach menu + tool 聚合 | 4 modes + Ctrl+M + 1M cap + 8-item dropdown + + popup + "Ran N commands ›"                                                                                                                | ✅ a981955 / 05b1646                    |
+| F012-revised | Tasks / Plan popout                                                     | 右上 Tasks popout 装 Work 预算 + harness profile；Plan popout 装多步任务                                                                                                                  | ⚠️ skeleton 已搭，事件待 KodaX SDK 暴露 |
+| F003R        | Real KodaX adapter                                                      | `npm i @kodax-ai/kodax@0.7.40` + `RealKodaXSession` 实接 `runKodaX`；8 个 KodaXEvents 映射到 SessionEvent push；session 落 `~/.kodax/sessions/` 跟 CLI 共享；provider key 走用户 env vars | ✅ 11469f2                              |
 
 **原 F011 / F012 (v0.1.1)**：内置终端单 tab / Subagent tree → 这些设计要按新形态重写，留 v0.1.1 重新打包成"Terminal popout"和"Subagent panel in Tasks"。
 
@@ -125,15 +125,15 @@
 
 用户指令"先把 KodaX 已有的能力在 desktop 中接通"，v0.1.1 重排为：
 
-| 优先级 | Feature | 性质 | 说明 |
-|--------|---------|------|------|
-| P0 | F013 MCP 管理 v1 | 暴露 KodaX 已有 | KodaX SDK 已有 mcp config 解析与启停 |
-| P0 | F012 Subagent tree | 暴露 KodaX 已有 | KodaX runtime 已 emit subagent 事件，desktop 接 UI |
-| P0 | F015 Repointel 状态条 | 暴露 KodaX 已有 | KodaX 已有 Repointel pool，desktop 加 status bar |
-| P1 | F016 Session lineage 图 | 暴露 KodaX 已有 | `~/.kodax/sessions/` 已存 parent/child 关系 |
-| P1 | (新) Skills/Slash commands 展示 | 暴露 KodaX 已有 | KodaX 已有 skill registry，接 attach 菜单 / `/` 自动补全 |
-| P2 | F011 内置终端 (popout) | desktop 新增 | 后移 — 非 KodaX 已有 |
-| P2 | F014 NAPI tokenizer | 性能优化 | 后移 |
+| 优先级 | Feature                         | 性质            | 说明                                                     |
+| ------ | ------------------------------- | --------------- | -------------------------------------------------------- |
+| P0     | F013 MCP 管理 v1                | 暴露 KodaX 已有 | KodaX SDK 已有 mcp config 解析与启停                     |
+| P0     | F012 Subagent tree              | 暴露 KodaX 已有 | KodaX runtime 已 emit subagent 事件，desktop 接 UI       |
+| P0     | F015 Repointel 状态条           | 暴露 KodaX 已有 | KodaX 已有 Repointel pool，desktop 加 status bar         |
+| P1     | F016 Session lineage 图         | 暴露 KodaX 已有 | `~/.kodax/sessions/` 已存 parent/child 关系              |
+| P1     | (新) Skills/Slash commands 展示 | 暴露 KodaX 已有 | KodaX 已有 skill registry，接 attach 菜单 / `/` 自动补全 |
+| P2     | F011 内置终端 (popout)          | desktop 新增    | 后移 — 非 KodaX 已有                                     |
+| P2     | F014 NAPI tokenizer             | 性能优化        | 后移                                                     |
 
 ---
 
@@ -229,21 +229,21 @@ OC-01~50 (50) + KX-I-01~09 (9) — 见下方「opencode 对标批次」段；穿
 
 ## Version Roadmap
 
-| Version | Theme | Done When | Target |
-|---------|-------|-----------|--------|
-| **v0.1.0** | Alpha foundation | 在桌面跑 KodaX session，发消息、看 tool call、批准权限、看 diff | 2026-Q2 |
-| **v0.1.1** | Productivity baseline | 内置终端 + Subagent 可视化 + MCP 管理 + 第一个 Rust 加速器 | 2026-Q2 末 |
-| **v0.1.2** | KodaX 生态打通 | Repointel + session lineage + CLI ↔ Space teleport + Quick Ask | 2026-Q3 中 |
-| **v0.1.3** | UX polish | 主题 + 通知 + `.mcpb` 安装 + 自动更新 | 2026-Q3 末 |
-| **v0.1.4** | Power features | （重组散到 v0.1.7：F023/F024/F026 + F042 deferred） | — |
-| **v0.1.5** | Sidebar overhaul + review closeout | ✅ F021 mcpb + F039/F040/F041 + F005 + B1/C3 review long-tail + F019/F020/F022 closeout | 2026-Q4 |
-| **v0.1.6** | Internal milestone | F011 + F026 + F038 — 合并进 v0.1.7 release，无独立 tag | — |
-| **v0.1.7** | Terminal + preview + palette | ⚠️ 已 ship 但 release tag 撤掉（v0.1.7 binary 有白屏 + sessions 加载 bug）；内容合并进 v0.1.8 | 撤 |
-| **v0.1.8** | Polish + project menu + tool registry + permission batch | ✅ CSP fix + HelpOverlay 跨平台 + OC-25 已实现 + renderer-boot gate + F043 项目 contextmenu + OC-21 ToolRegistry + KX-I-05 智能权限批 — 等 KodaX SDK 0.7.46 publish 后 bump + tag | 2026-06-07 |
-| **v0.1.9+** | F015 warm / F018 Quick Ask 全集 / 其它 OC+KX-I 批次 | TBD |
-| **v0.1.x+** | NAPI native-helpers | F042（F014 + F025 + F026b）— 等 F026 上线后用数据决定启动 | TBD |
-| **v0.1.8** | 工具渲染 + 事件架构 + 智能（opencode 批次） | ToolRegistry + 全局 session bus + 智能权限批处理 + Quick Ask 智能升级 | 2026-Q4 |
-| **v0.1.9** | Provider/Model 智能 + i18n + UI 基建（opencode 批次） | 任务感知 model 路由 + 中/英 i18n + 命令面板 + 设置弹窗 | 2026-Q4 末 |
+| Version     | Theme                                                    | Done When                                                                                                                                                                         | Target     |
+| ----------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| **v0.1.0**  | Alpha foundation                                         | 在桌面跑 KodaX session，发消息、看 tool call、批准权限、看 diff                                                                                                                   | 2026-Q2    |
+| **v0.1.1**  | Productivity baseline                                    | 内置终端 + Subagent 可视化 + MCP 管理 + 第一个 Rust 加速器                                                                                                                        | 2026-Q2 末 |
+| **v0.1.2**  | KodaX 生态打通                                           | Repointel + session lineage + CLI ↔ Space teleport + Quick Ask                                                                                                                    | 2026-Q3 中 |
+| **v0.1.3**  | UX polish                                                | 主题 + 通知 + `.mcpb` 安装 + 自动更新                                                                                                                                             | 2026-Q3 末 |
+| **v0.1.4**  | Power features                                           | （重组散到 v0.1.7：F023/F024/F026 + F042 deferred）                                                                                                                               | —          |
+| **v0.1.5**  | Sidebar overhaul + review closeout                       | ✅ F021 mcpb + F039/F040/F041 + F005 + B1/C3 review long-tail + F019/F020/F022 closeout                                                                                           | 2026-Q4    |
+| **v0.1.6**  | Internal milestone                                       | F011 + F026 + F038 — 合并进 v0.1.7 release，无独立 tag                                                                                                                            | —          |
+| **v0.1.7**  | Terminal + preview + palette                             | ⚠️ 已 ship 但 release tag 撤掉（v0.1.7 binary 有白屏 + sessions 加载 bug）；内容合并进 v0.1.8                                                                                     | 撤         |
+| **v0.1.8**  | Polish + project menu + tool registry + permission batch | ✅ CSP fix + HelpOverlay 跨平台 + OC-25 已实现 + renderer-boot gate + F043 项目 contextmenu + OC-21 ToolRegistry + KX-I-05 智能权限批 — 等 KodaX SDK 0.7.46 publish 后 bump + tag | 2026-06-07 |
+| **v0.1.9+** | F015 warm / F018 Quick Ask 全集 / 其它 OC+KX-I 批次      | TBD                                                                                                                                                                               |
+| **v0.1.x+** | NAPI native-helpers                                      | F042（F014 + F025 + F026b）— 等 F026 上线后用数据决定启动                                                                                                                         | TBD        |
+| **v0.1.8**  | 工具渲染 + 事件架构 + 智能（opencode 批次）              | ToolRegistry + 全局 session bus + 智能权限批处理 + Quick Ask 智能升级                                                                                                             | 2026-Q4    |
+| **v0.1.9**  | Provider/Model 智能 + i18n + UI 基建（opencode 批次）    | 任务感知 model 路由 + 中/英 i18n + 命令面板 + 设置弹窗                                                                                                                            | 2026-Q4 末 |
 
 ## opencode 对标批次（OC-01~50 + KX-I-01~09）
 
@@ -253,72 +253,72 @@ OC-01~50 (50) + KX-I-01~09 (9) — 见下方「opencode 对标批次」段；穿
 
 ### OC features（opencode 直接借鉴，50 项）
 
-| ID | Title | 价值 | 工作量 | SDK | Version |
-|----|-------|------|--------|-----|---------|
-| OC-01 | 单实例锁 + 二次启动聚焦（修数据正确性 bug） | 高 | S | — | v0.1.2 |
-| OC-02 | 渲染进程崩溃恢复弹窗 (reshape: 恢复 session) | 中 | S | — | v0.1.3 |
-| OC-03 | 优雅退出强制超时 | 中 | S | — | v0.1.2 |
-| OC-04 | Crashpad 集成 + per-run 日志轮转 | 高 | M | — | v0.1.5 |
-| OC-05 | debug 日志 ZIP 导出 (min) | 中 | M | — | v0.1.5 |
-| OC-06 | renderer 致命错误 IPC 通道 | 中 | S | — | v0.1.3 |
-| OC-07 | macOS Dock 启动 cwd 修复 | 中 | S | — | v0.1.2 |
-| OC-08 | 系统 CA 证书 + HTTP 代理转发 | 中 | S | — | v0.1.5 |
-| OC-09 | IPC schema 校验错误截断（防敏感内容入日志） | 高 | S | — | v0.1.2 |
-| OC-10 | 主进程日志 secret 脱敏 (reshape: 含 GUI key) | 高 | S | — | v0.1.3 |
-| OC-11 | wrapSdkError 人类可读会话错误 | 中 | S | — | v0.1.3 |
-| OC-12 | E2E 测试隔离 KODAX_TEST_ONBOARDING | 高 | S | — | v0.1.2 |
-| OC-13 | 窗口状态持久化 | 中 | S | — | v0.1.3 |
-| OC-14 | 原生右键菜单 | 中 | S | — | v0.1.3 |
-| OC-15 | macOS 原生菜单栏扩展 (min) | 中 | M | — | v0.1.5 |
-| OC-16 | 多渠道构建 dev/beta/prod | 中 | M | — | v0.1.5 |
-| OC-17 | 虚拟化消息时间线 (reshape: 智能滚动锚定) | 高 | M | — | v0.1.4 |
-| OC-18 | auto-scroll markAuto 守卫 | 高 | S | — | v0.1.4 |
-| OC-19 | 流式 markdown LRU 记忆化 | 高 | S | — | v0.1.4 |
-| OC-20 | context/action 工具分组 (reshape: 驱动 popout) | 中 | S | — | v0.1.4 |
-| OC-21 | 可扩展工具渲染注册表 ToolRegistry | 中 | M | — | v0.1.8 |
-| OC-22 | 上下文压缩分隔线 (reshape: + fork CTA) | 中 | S | ✓ | v0.1.7 |
-| OC-23 | 限流重试倒计时显示 | 高 | S | ✓ | v0.1.4 |
-| OC-24 | 运行中工具卡 shimmer (min: 仅完成淡出) | 低 | S | — | v0.1.4 |
-| OC-25 | 代码块复制按钮 | 高 | S | — | v0.1.4 |
-| OC-26 | React i18n 中/英 (reshape: locale 自动检测) | 高 | M | — | v0.1.9 |
-| OC-27 | CSS token 主题层 (reshape: 仅 3 模式, = F019 补全) | 中 | M | — | v0.1.3 |
-| OC-28 | 命令面板 Mod+Shift+P (reshape: 砍 keybind 编辑器) | 中 | M | — | v0.1.9 |
-| OC-29 | 统一设置弹窗 (min: 仅 2 tab) | 中 | M | — | v0.1.9 |
-| OC-30 | 共享 useFuzzyFilteredList hook | 中 | S | — | v0.1.4 |
-| OC-31 | 输入框增强（历史/图片粘贴/@file 提及） | 高 | M | — | v0.1.9 |
-| OC-32 | provider key 来源枚举 (min: 仅配置屏) | 中 | S | — | v0.1.9 |
-| OC-33 | model 能力 (reshape: 内联图标非矩阵表) | 高 | M | ✓ | v0.1.4 |
-| OC-34 | 按 model 过滤 reasoning effort 档位 | 中 | S | ✓ | v0.1.4 |
-| OC-35 | model 名规范化工具 | 中 | S | — | v0.1.9 |
-| OC-36 | OpenAI 兼容 provider 预填 profile (min) | 中 | S | — | v0.1.9 |
-| OC-37 | 结构化会话错误分类 (reshape: 错误即导航) | 中 | S | ✓ | v0.1.4 |
-| OC-38 | 会话导出 JSON/HTML (min: 1 菜单项 + 主动 CTA) | 高 | M | ✓ | v0.1.5 |
-| OC-39 | 多文件会话 diff 面板 (reshape: 自动浮出) | 高 | M | ✓ | v0.1.4 |
-| OC-40 | session 列表游标分页 | 中 | M | ✓ | v0.1.5 |
-| OC-41 | 会话删除 ACK 后延迟 dispose | 中 | S | — | v0.1.3 |
-| OC-42 | 两层事件架构（全局 session bus） | 高 | M | — | v0.1.8 |
-| OC-43 | 模块级 env 改惰性读 | 中 | S | — | v0.1.2 |
-| OC-44 | Playwright mock-server E2E 框架 | 高 | M | — | v0.1.5 |
-| OC-45 | React SlotRegistry UI 扩展点 (defer → M2) | 中 | M | — | M2 |
-| OC-46 | ProviderAuthDefinition 接口 (defer → M2) | 中 | M | — | M2 |
-| OC-47 | 分层 CI Docker 镜像 | 中 | M | — | v0.1.5 |
-| OC-48 | Sentry source map 上传 + 删除 | 中 | S | — | v0.1.5 |
-| OC-49 | WelcomeDashboard 统计增强 (reshape: + 成本 nudge) | 中 | S | — | v0.1.8 |
-| OC-50 | NAPI 二进制平台选择构建插件 | 中 | S | — | v0.1.1 |
+| ID    | Title                                              | 价值 | 工作量 | SDK | Version |
+| ----- | -------------------------------------------------- | ---- | ------ | --- | ------- |
+| OC-01 | 单实例锁 + 二次启动聚焦（修数据正确性 bug）        | 高   | S      | —   | v0.1.2  |
+| OC-02 | 渲染进程崩溃恢复弹窗 (reshape: 恢复 session)       | 中   | S      | —   | v0.1.3  |
+| OC-03 | 优雅退出强制超时                                   | 中   | S      | —   | v0.1.2  |
+| OC-04 | Crashpad 集成 + per-run 日志轮转                   | 高   | M      | —   | v0.1.5  |
+| OC-05 | debug 日志 ZIP 导出 (min)                          | 中   | M      | —   | v0.1.5  |
+| OC-06 | renderer 致命错误 IPC 通道                         | 中   | S      | —   | v0.1.3  |
+| OC-07 | macOS Dock 启动 cwd 修复                           | 中   | S      | —   | v0.1.2  |
+| OC-08 | 系统 CA 证书 + HTTP 代理转发                       | 中   | S      | —   | v0.1.5  |
+| OC-09 | IPC schema 校验错误截断（防敏感内容入日志）        | 高   | S      | —   | v0.1.2  |
+| OC-10 | 主进程日志 secret 脱敏 (reshape: 含 GUI key)       | 高   | S      | —   | v0.1.3  |
+| OC-11 | wrapSdkError 人类可读会话错误                      | 中   | S      | —   | v0.1.3  |
+| OC-12 | E2E 测试隔离 KODAX_TEST_ONBOARDING                 | 高   | S      | —   | v0.1.2  |
+| OC-13 | 窗口状态持久化                                     | 中   | S      | —   | v0.1.3  |
+| OC-14 | 原生右键菜单                                       | 中   | S      | —   | v0.1.3  |
+| OC-15 | macOS 原生菜单栏扩展 (min)                         | 中   | M      | —   | v0.1.5  |
+| OC-16 | 多渠道构建 dev/beta/prod                           | 中   | M      | —   | v0.1.5  |
+| OC-17 | 虚拟化消息时间线 (reshape: 智能滚动锚定)           | 高   | M      | —   | v0.1.4  |
+| OC-18 | auto-scroll markAuto 守卫                          | 高   | S      | —   | v0.1.4  |
+| OC-19 | 流式 markdown LRU 记忆化                           | 高   | S      | —   | v0.1.4  |
+| OC-20 | context/action 工具分组 (reshape: 驱动 popout)     | 中   | S      | —   | v0.1.4  |
+| OC-21 | 可扩展工具渲染注册表 ToolRegistry                  | 中   | M      | —   | v0.1.8  |
+| OC-22 | 上下文压缩分隔线 (reshape: + fork CTA)             | 中   | S      | ✓   | v0.1.7  |
+| OC-23 | 限流重试倒计时显示                                 | 高   | S      | ✓   | v0.1.4  |
+| OC-24 | 运行中工具卡 shimmer (min: 仅完成淡出)             | 低   | S      | —   | v0.1.4  |
+| OC-25 | 代码块复制按钮                                     | 高   | S      | —   | v0.1.4  |
+| OC-26 | React i18n 中/英 (reshape: locale 自动检测)        | 高   | M      | —   | v0.1.9  |
+| OC-27 | CSS token 主题层 (reshape: 仅 3 模式, = F019 补全) | 中   | M      | —   | v0.1.3  |
+| OC-28 | 命令面板 Mod+Shift+P (reshape: 砍 keybind 编辑器)  | 中   | M      | —   | v0.1.9  |
+| OC-29 | 统一设置弹窗 (min: 仅 2 tab)                       | 中   | M      | —   | v0.1.9  |
+| OC-30 | 共享 useFuzzyFilteredList hook                     | 中   | S      | —   | v0.1.4  |
+| OC-31 | 输入框增强（历史/图片粘贴/@file 提及）             | 高   | M      | —   | v0.1.9  |
+| OC-32 | provider key 来源枚举 (min: 仅配置屏)              | 中   | S      | —   | v0.1.9  |
+| OC-33 | model 能力 (reshape: 内联图标非矩阵表)             | 高   | M      | ✓   | v0.1.4  |
+| OC-34 | 按 model 过滤 reasoning effort 档位                | 中   | S      | ✓   | v0.1.4  |
+| OC-35 | model 名规范化工具                                 | 中   | S      | —   | v0.1.9  |
+| OC-36 | OpenAI 兼容 provider 预填 profile (min)            | 中   | S      | —   | v0.1.9  |
+| OC-37 | 结构化会话错误分类 (reshape: 错误即导航)           | 中   | S      | ✓   | v0.1.4  |
+| OC-38 | 会话导出 JSON/HTML (min: 1 菜单项 + 主动 CTA)      | 高   | M      | ✓   | v0.1.5  |
+| OC-39 | 多文件会话 diff 面板 (reshape: 自动浮出)           | 高   | M      | ✓   | v0.1.4  |
+| OC-40 | session 列表游标分页                               | 中   | M      | ✓   | v0.1.5  |
+| OC-41 | 会话删除 ACK 后延迟 dispose                        | 中   | S      | —   | v0.1.3  |
+| OC-42 | 两层事件架构（全局 session bus）                   | 高   | M      | —   | v0.1.8  |
+| OC-43 | 模块级 env 改惰性读                                | 中   | S      | —   | v0.1.2  |
+| OC-44 | Playwright mock-server E2E 框架                    | 高   | M      | —   | v0.1.5  |
+| OC-45 | React SlotRegistry UI 扩展点 (defer → M2)          | 中   | M      | —   | M2      |
+| OC-46 | ProviderAuthDefinition 接口 (defer → M2)           | 中   | M      | —   | M2      |
+| OC-47 | 分层 CI Docker 镜像                                | 中   | M      | —   | v0.1.5  |
+| OC-48 | Sentry source map 上传 + 删除                      | 中   | S      | —   | v0.1.5  |
+| OC-49 | WelcomeDashboard 统计增强 (reshape: + 成本 nudge)  | 中   | S      | —   | v0.1.8  |
+| OC-50 | NAPI 二进制平台选择构建插件                        | 中   | S      | —   | v0.1.1  |
 
 ### KX-I features（「极简且智能」lens 新增，opencode 没有，9 项）
 
-| ID | Title | 价值 | 工作量 | SDK | Version |
-|----|-------|------|--------|-----|---------|
-| KX-I-01 | 零配置 provider 自动激活（扫 env key 一键激活） | 高 | S | — | v0.1.2 |
-| KX-I-02 | 智能 popout 导播（按 session 状态自动浮 Tasks/Diff/Plan） | 高 | M | — | v0.1.4 |
-| KX-I-03 | 会话自动命名（首条回复后小模型生成语义标题） | 高 | S | — | v0.1.4 |
-| KX-I-04 | 任务感知 model 自动路由（本地分类 prompt 预选 model+effort） | 高 | M | — | v0.1.9 |
-| KX-I-05 | 智能权限批处理（一个合并批准框代替 N 个弹窗） | 高 | M | ✓ | v0.1.8 |
-| KX-I-06 | Repointel 情境感知自动 warm（切项目自动后台 warm） | 高 | S | — | v0.1.5 |
-| KX-I-07 | 会话完成智能通知（>60s 任务原生通知 + 审查动作） | 中 | S | — | v0.1.5 |
-| KX-I-08 | 环境化 provider 健康点（chip 上绿/黄/红延迟点） | 中 | S | — | v0.1.4 |
-| KX-I-09 | Diff 感知 Quick Ask 升级（检测文件/栈/diff 才提示升级） | 中 | S | — | v0.1.8 |
+| ID      | Title                                                        | 价值 | 工作量 | SDK | Version |
+| ------- | ------------------------------------------------------------ | ---- | ------ | --- | ------- |
+| KX-I-01 | 零配置 provider 自动激活（扫 env key 一键激活）              | 高   | S      | —   | v0.1.2  |
+| KX-I-02 | 智能 popout 导播（按 session 状态自动浮 Tasks/Diff/Plan）    | 高   | M      | —   | v0.1.4  |
+| KX-I-03 | 会话自动命名（首条回复后小模型生成语义标题）                 | 高   | S      | —   | v0.1.4  |
+| KX-I-04 | 任务感知 model 自动路由（本地分类 prompt 预选 model+effort） | 高   | M      | —   | v0.1.9  |
+| KX-I-05 | 智能权限批处理（一个合并批准框代替 N 个弹窗）                | 高   | M      | ✓   | v0.1.8  |
+| KX-I-06 | Repointel 情境感知自动 warm（切项目自动后台 warm）           | 高   | S      | —   | v0.1.5  |
+| KX-I-07 | 会话完成智能通知（>60s 任务原生通知 + 审查动作）             | 中   | S      | —   | v0.1.5  |
+| KX-I-08 | 环境化 provider 健康点（chip 上绿/黄/红延迟点）              | 中   | S      | —   | v0.1.4  |
+| KX-I-09 | Diff 感知 Quick Ask 升级（检测文件/栈/diff 才提示升级）      | 中   | S      | —   | v0.1.8  |
 
 ## ID Conventions
 

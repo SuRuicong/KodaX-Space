@@ -29,7 +29,9 @@ import {
 import { WelcomeDashboard } from './WelcomeDashboard.js';
 import { ActivitySpinner, useIsStreaming } from './ActivitySpinner.js';
 import { Caret } from '../components/Caret.js';
-
+import { Reveal } from '../components/Reveal.js';
+import { Collapse } from '../components/Collapse.js';
+import { ArrowDown } from 'lucide-react';
 // 聚合后的 view-only message kind —— 两层折叠对齐 Claude Desktop "Ran 6 commands ⌄":
 //
 //   ▸ Ran 6 commands · 12s              ← 外层 cluster (此处折叠 = 默认)
@@ -469,7 +471,7 @@ export function ConversationStreamV2(): JSX.Element {
               ) : (
                 <div className="text-fg-faint italic text-sm">Send a prompt below to start.</div>
               ))}
-            {displayMessages.map((m) => {
+            {displayMessages.map((m, i) => {
               const isMatch = matchSet.has(m.id);
               const isCurrent = currentMatchId === m.id;
               const ringClass = isCurrent
@@ -514,9 +516,13 @@ export function ConversationStreamV2(): JSX.Element {
                   break;
               }
               return (
-                <div key={m.id} data-msg-id={m.id} className={`relative ${ringClass}`}>
+                <div
+                  key={m.id}
+                  data-msg-id={m.id}
+                  className={`relative search-ring-anim ${ringClass}`}
+                >
                   <TimelineMarker tone={markerTone} />
-                  {inner}
+                  <Reveal index={i}>{inner}</Reveal>
                 </div>
               );
             })}
@@ -588,14 +594,20 @@ export function ConversationStreamV2(): JSX.Element {
         </div>
       )}
 
+      {/* 跳到底：极简圆形箭头。外层 div 负责居中定位（transform），内层 button 的 .ix-pop
+          悬停缩放不会和居中 translate 打架。 */}
       {showJumpToBottom && (
-        <button
-          type="button"
-          onClick={jumpToBottom}
-          className="absolute bottom-3 right-4 text-xs px-2 py-1 rounded-full bg-surface-3/90 border border-border-strong hover:bg-hover-bg text-fg-secondary shadow-lg"
-        >
-          ↓ Jump to bottom
-        </button>
+        <div className="reveal-marker absolute bottom-4 left-1/2 -ml-4 z-10">
+          <button
+            type="button"
+            onClick={jumpToBottom}
+            aria-label="Jump to bottom"
+            title="Jump to bottom"
+            className="ix-pop w-8 h-8 rounded-full flex items-center justify-center bg-surface-3/95 border border-border-default lift text-fg-secondary hover:text-fg-primary"
+          >
+            <ArrowDown className="w-4 h-4" strokeWidth={2} aria-hidden />
+          </button>
+        </div>
       )}
     </div>
   );
@@ -616,11 +628,10 @@ function TimelineMarker({ tone }: { tone: MarkerTone }): JSX.Element {
   return (
     <span
       aria-hidden
-      className={`absolute left-[-22px] top-[10px] w-[9px] h-[9px] rounded-full ring-2 ring-surface ${MARKER_TONE_CLASS[tone]}`}
+      className={`reveal-marker absolute left-[-22px] top-[10px] w-[9px] h-[9px] rounded-full ring-2 ring-surface ${MARKER_TONE_CLASS[tone]}`}
     />
   );
 }
-
 /**
  * 流式 spinner 行 —— 对话流末尾的"正在做什么"指示。
  * 跟其它消息一样在时间线 rail 上挂一个 marker；不在 streaming 时整行返 null。
@@ -632,10 +643,11 @@ function StreamingSpinnerRow(): JSX.Element | null {
     <div className="relative">
       <TimelineMarker tone="assistant" />
       <ActivitySpinner />
+      {/* F068: 流式打字光标 —— 竖条呼吸，给「正在生成」即时物理反馈 */}
+      <span className="caret-stream text-fg-secondary ml-1" aria-hidden />
     </div>
   );
 }
-
 /**
  * ThinkingBlock — 对齐 VSCode Claude Code "Thought for Xs" 折叠行。
  * 折叠态 = 紫色一行 `▸ Thinking · ~N tokens`，展开态 = 多行 pre-wrap 文本。
@@ -666,7 +678,7 @@ function ThinkingBlock({
         <Caret open={expanded} />
         <span>Thinking · ~{tokens} tokens</span>
       </button>
-      {expanded && (
+      <Collapse open={expanded}>
         <div
           className={[
             'mt-1.5 ml-3 pl-2 border-l text-xs whitespace-pre-wrap',
@@ -676,7 +688,7 @@ function ThinkingBlock({
         >
           {thinking}
         </div>
-      )}
+      </Collapse>{' '}
     </div>
   );
 }
@@ -736,8 +748,9 @@ function ToolCluster({ cluster, expanded, onToggle }: ToolClusterProps): JSX.Ele
         {thinkingTokens > 0 && <span className="text-thinking">· 💭 ~{thinkingTokens} tokens</span>}
         {!allDone && <span className="text-warn">{runningHint}</span>}
       </button>
-      {expanded && (
+      <Collapse open={expanded}>
         <div className="mt-1.5 ml-3 space-y-2 border-l border-border-default pl-3">
+          {' '}
           {cluster.subClusters.map((sc) => {
             const subRunning = sc.tools.find((t) => t.status === 'running');
             return (
@@ -773,7 +786,7 @@ function ToolCluster({ cluster, expanded, onToggle }: ToolClusterProps): JSX.Ele
             );
           })}
         </div>
-      )}
+      </Collapse>
     </div>
   );
 }

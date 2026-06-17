@@ -12,6 +12,37 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 > v0.1.7 内容 (F011/F023/F024/F026/F038) 跟 v0.1.8 一起发。GitHub Releases 顶部仍是 v0.1.5，
 > 0.1.7 这条 section 留作历史记录、git log 引用入口。
 
+## [0.1.16] - 2026-06-17
+
+### Theme
+
+**Workflow 支持链路 + 对话流全量交互动画。**
+
+本版本把 v0.1.15 Workflow Harness 批次落地为可用 UI/事件/结果桥接，并补上 F068 对话流 motion layer：CSS-first、无新 runtime 动画依赖、复用视觉质量三档与 reduced-motion 门控。
+
+### Added
+
+- **F060-F066 Workflow Harness 支持** — main→renderer workflow 事件管线、进度面板、run 生命周期控制、workflow 库/启动/preflight、AMAW 自然语言自启与 Host policy、子 agent 活动遥测面、workflow 结果桥进 artifactStore。
+- **F068 对话流全量交互动画系统** — 新增 `motion.ts` 单一配置源、`Reveal`/`Collapse` 通用组件、消息入场 stagger、timeline marker pop、工具/思考折叠动画、tool running→done 高光、复制脉冲、系统通知入场、流式光标与 jump-to-bottom 图标化反馈。
+
+### Changed
+
+- **Recharts v3.8.1 升级** — 将 renderer 图表依赖从 v2.15.4 升到 v3.8.1。
+- **LiveCanvas artifact sandbox 暂时移除** — 移除不稳定的 LC 交互 sandbox tier 与 dev 自愈噪音，保持无 LC 依赖时 install/build/typecheck 可复现。
+- **F068 文档与 feature tracker** — 新增 `docs/features/v0.1.16.md`，`docs/FEATURE_LIST.md` 链接到 v0.1.16 真理源。
+
+### Fixed
+
+- **F068 motion 无障碍门控** — CSS reduced-motion 现在以同等选择器 + `!important` 覆盖所有 F068 动画；WAAPI 完成高光在 JS 侧同步检查 `prefers-reduced-motion` 与 `q-minimal`。
+- **F068 Collapse 可访问性** — 折叠态内容用 `aria-hidden` + `inert` 移出 accessibility tree 与键盘 Tab 序，避免视觉隐藏但仍可聚焦。
+- **CSP theme bootstrap hash drift** — 同步 theme-bootstrap inline hash，避免 F060 Liquid Glass 预挂载脚本与生产 CSP 不匹配。
+
+### Verified
+
+- `npm run typecheck`
+- targeted renderer ESLint for changed TS/TSX files
+- `npm run build:smoke`
+
 ## [0.1.11] - 2026-06-17
 
 ### Theme

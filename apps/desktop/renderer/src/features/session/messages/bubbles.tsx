@@ -1,11 +1,13 @@
 // Bubble + ToolCallCard + SystemNotice 组件集合。
 // 单文件聚合：每个组件 < 80 行，共享 ConversationMessage 类型，拆分反而提高复杂度。
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import type { ConversationMessage } from '../composeMessages.js';
 import { Markdown } from './Markdown.js';
 import { Caret } from '../../../components/Caret.js';
+import { Collapse } from '../../../components/Collapse.js';
+import { EASE_EXPO, usePrefersReducedMotion } from '../../../lib/motion.js';
 // OC-21: side-effect import 让内置 tool renderers (write/edit/multi_edit) 注册到 registry
 import './toolRenderers.js';
 import { getToolInputRenderer, getToolResultRenderer } from './toolRegistry.js';
@@ -126,7 +128,7 @@ function MessageFooter({ text, sentAt }: { text: string; sentAt?: number }): JSX
         aria-label="Copy message"
       >
         {copied ? (
-          <span className="text-ok inline-flex items-center gap-1">
+          <span className="copy-pulse text-ok inline-flex items-center gap-1">
             <Check className="w-3 h-3" strokeWidth={2.5} aria-hidden /> copied
           </span>
         ) : (
@@ -238,16 +240,18 @@ export function AssistantBubble({
           <span>Thinking (~{approxTokens(thinking)} tokens)</span>
         </button>
       )}
-      {showThinking && thinking !== undefined && (
-        <div
-          className={[
-            'mb-2 ml-3 pl-2 border-l text-xs whitespace-pre-wrap',
-            'dark:border-thinking/60 dark:text-thinking/80',
-            'border-thinking/50 text-thinking/90',
-          ].join(' ')}
-        >
-          {thinking}
-        </div>
+      {thinking !== undefined && (
+        <Collapse open={showThinking}>
+          <div
+            className={[
+              'mb-2 ml-3 pl-2 border-l text-xs whitespace-pre-wrap',
+              'dark:border-thinking/60 dark:text-thinking/80',
+              'border-thinking/50 text-thinking/90',
+            ].join(' ')}
+          >
+            {thinking}
+          </div>
+        </Collapse>
       )}
       <div className="text-sm leading-relaxed text-fg-primary">
         {text.length > 0 ? (
@@ -307,6 +311,28 @@ export function ToolCallCard({
     FILE_MUTATION_TOOLS_DEFAULT_EXPANDED.has(toolName),
   );
   const [showFullResult, setShowFullResult] = useState(false);
+  // F068: 运行→完成瞬间触发 WAAPI 一次性高光闪（比 CSS class 更适合一次性效果，无需 cleanup）
+  const prevStatusRef = useRef(status);
+  const cardRef = useRef<HTMLDivElement>(null);
+  // 门控：与 CSS 一致——极简档 (q-minimal) 或 prefers-reduced-motion 下跳过 WAAPI 动画（瞬切）。
+  // WAAPI 绕过 CSS 门控，必须在 JS 侧显式判断，否则极简档/减弱动效用户仍会看到一次高光闪。
+  const prefersReducedMotion = usePrefersReducedMotion();
+  useEffect(() => {
+    if (prevStatusRef.current === 'running' && status === 'done' && cardRef.current) {
+      const isMinimal =
+        typeof document !== 'undefined' && document.documentElement.classList.contains('q-minimal');
+      if (!prefersReducedMotion && !isMinimal) {
+        cardRef.current.animate(
+          [
+            { boxShadow: '0 0 0 0 rgb(var(--ok) / 0.5)' },
+            { boxShadow: '0 0 0 8px rgb(var(--ok) / 0)' },
+          ],
+          { duration: 600, easing: EASE_EXPO },
+        );
+      }
+    }
+    prevStatusRef.current = status;
+  }, [status, prefersReducedMotion]);
   // showFullInput / inputPretty / inputCollapse 状态已搬进 ToolEditInputView —
   // OC-21 之后 raw-JSON fallback 由那边统一处理
   const colorClass = TOOL_STATUS_COLOR[status] ?? 'border-border-strong bg-surface-2/50';
@@ -320,7 +346,7 @@ export function ToolCallCard({
   }, [result]);
 
   return (
-    <div className={`rounded border ${colorClass} text-xs font-mono`}>
+    <div ref={cardRef} className={`tool-card-anim rounded border ${colorClass} text-xs font-mono`}>
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
@@ -332,7 +358,7 @@ export function ToolCallCard({
         <StatusBadge status={status} />
       </button>
 
-      {expanded && (
+      <Collapse open={expanded}>
         <div className="border-t border-border-default px-3 py-2 space-y-2">
           {/* OC-21 (v0.1.8): tool input 渲染走 toolRegistry 查表分发。任意 toolName 都进
               ToolEditInputView，registry 找不到 / 返 null 就回退到 raw-JSON collapse 视图。
@@ -356,7 +382,7 @@ export function ToolCallCard({
             />
           )}
         </div>
-      )}
+      </Collapse>
     </div>
   );
 }
@@ -462,7 +488,7 @@ export function SystemNotice({
 
   return (
     <div
-      className={`text-[11px] font-mono text-center py-1 border-y ${color} flex items-center justify-center gap-2 flex-wrap`}
+      className={`notice-in text-[11px] font-mono text-center py-1 border-y ${color} flex items-center justify-center gap-2 flex-wrap`}
     >
       <span>{text}</span>
       {actionDef && (

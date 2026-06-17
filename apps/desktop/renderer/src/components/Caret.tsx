@@ -35,6 +35,7 @@ export function Caret({ open, className = '' }: CaretProps): JSX.Element {
       className={`inline-block h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${
         open ? 'rotate-90' : ''
       } ${className}`}
+      style={{ transitionTimingFunction: 'var(--ease-expo)' }}
     >
       <path d="m9 18 6-6-6-6" />
     </svg>
