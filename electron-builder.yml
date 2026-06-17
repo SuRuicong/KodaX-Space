@@ -3,7 +3,8 @@
 # 自家与可信用户使用，OS 首启的 Gatekeeper / SmartScreen 警告由用户手动 Open 接受。
 #
 # 产物（F010）：
-#   - Windows:  out/KodaX-Space-Setup-${version}.exe       (NSIS, x64)
+#   - Windows:  out/KodaX Space-Setup-${version}.exe       (NSIS 安装版, x64)
+#               out/KodaX Space-Portable-${version}.exe    (Portable 单文件免安装版, x64)
 #   - macOS:    out/KodaX-Space-${version}-${arch}.dmg     (DMG, x64 + arm64)
 #   - Linux:    out/KodaX-Space-${version}.AppImage        (AppImage, x64)
 #               out/KodaX-Space_${version}_amd64.deb       (deb, x64)
@@ -70,10 +71,14 @@ win:
     - target: nsis
       arch:
         - x64
+    - target: portable
+      arch:
+        - x64
   # 不签名（FEATURE_027 已 drop）
   signAndEditExecutable: false
   icon: resources/icon.png  # electron-builder 自动从 PNG 生成 ico（256x256+）
-  artifactName: '${productName}-Setup-${version}.${ext}'
+  # ⚠️ artifactName 不放在 win 顶层 —— 否则 nsis / portable 两个 target 共用同名 → 产物互相覆盖。
+  # 每个 target 块各自指定 artifactName。
 
 nsis:
   oneClick: false
@@ -84,6 +89,14 @@ nsis:
   # 卸载时清理 %APPDATA%/kodax-space —— 不留 user data 残留
   deleteAppDataOnUninstall: true
   shortcutName: KodaX Space
+  artifactName: '${productName}-Setup-${version}.${ext}'
+
+# Portable 单文件免安装版（F010 v0.1.9 起）：双击直接运行，无需安装、无写注册表。
+# electron-builder 会把整个 app 解包到临时目录运行；启动时设 PORTABLE_EXECUTABLE_DIR
+# 指向 exe 所在目录。注意：默认 userData 仍写 %APPDATA%/kodax-space（与安装版共用），
+# 这是刻意为之——便携版与安装版数据互通；若要"数据随身、零系统残留"再单独处理 userData 路径。
+portable:
+  artifactName: '${productName}-Portable-${version}.${ext}'
 
 linux:
   category: Development
