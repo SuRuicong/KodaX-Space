@@ -937,6 +937,14 @@ export const useAppStore = create<AppState>((set) => ({
       if (!state.sessions.some((s) => s.sessionId === event.sessionId)) return state;
       const bucket = state.eventsBySession[event.sessionId] ?? [];
       if (event.kind === 'session_error' && event.error === 'cancelled') {
+        // 乐观取消(BottomBar handleCancel)与 main 端真实 cancelled 去重,防同一次取消显示两条。
+        // 倒序回溯到本 turn 起点(session_start)为止;命中已存在的 cancelled 即判定重复 drop。
+        //
+        // 已知边界 (review MEDIUM-2(b)):序列 `cancelled,session_start,cancelled` 有二义——
+        // 既可能是"取消→重发→再取消"两次独立取消(都要保留,见 app-store-cancel-event 测试),
+        // 也可能是"乐观 cancelled→重发→main 迟到 cancelled"同一次取消(该去重)。两者事件结构
+        // 完全相同,纯位置扫描无法区分,故此处**保留** session_start 边界(优先不误删合法的两次
+        // 独立取消)。彻底根治需给事件唯一序号 / 乐观标记,属独立 feature,不在本修复范围。
         for (let i = bucket.length - 1; i >= 0; i--) {
           const previous = bucket[i];
           if (!previous) continue;

@@ -745,7 +745,19 @@ export class RealKodaXSession implements ManagedSession {
     if (this.permissionMode === 'auto') {
       // F030 review MEDIUM#1: 检查 abort 状态早退，避免 cancel 后还白白等 30s I/O
       if (signal.aborted) {
-        this.emit({ kind: 'session_error', sessionId: sid, error: 'cancelled' });
+        // review HIGH-2: 取消提示必须在 aborted 下照常发，故用 this.emit 而非 emitLive——
+        // 后者的 isStopped() 含 aborted，会把这条 cancelled 吞掉。但 disposed 时 channel 已关、
+        // appendEvent 也会 drop，跳过 emit。字段与 catch AbortError 分支 / BottomBar 乐观取消
+        // 对齐（category + retriable），避免同一"取消"在不同路径渲染形态不一致。
+        if (!this.disposed) {
+          this.emit({
+            kind: 'session_error',
+            sessionId: sid,
+            error: 'cancelled',
+            category: 'cancelled',
+            retriable: true,
+          });
+        }
         return;
       }
       try {

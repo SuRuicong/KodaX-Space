@@ -59,3 +59,48 @@ Schema：`artifactSandboxInfoChannel` + `ArtifactSandboxInfo` 类型 + `channels
 
 - 在**没有** LiveCanvas 仓/link 的干净机器上：`npm run dev`、`npm run build`、win pack 启动全部正常。
 - 有 LC link 时交互 React artifact 在 sandbox iframe 内渲染。
+
+---
+
+# F069 — Electron 主进程统一日志（Logger）工程
+
+> Status: **Planned** · Category: Internal · Priority: Low · Version: TBD
+> 来源：500-error history-scramble 修复的 code-review LOW-3 技术债（2026-06-18）
+> 关联：OC-10（主进程日志 secret 脱敏）、OC-04（per-run 日志轮转）、OC-05（debug 日志 ZIP 导出）
+
+## 背景
+
+`apps/desktop/electron` 下 **33 个文件**直接用 `console.log/warn/info/error` 做诊断，
+**无任何 logger 抽象**（已 grep 确认无 pino / winston / createLogger）。这违反项目
+TypeScript coding-style 的「生产代码不用 console」规则，且单文件就有十余处（如
+`real-session.ts` 14 处）。因此 review 里逐处挑 `console.*` 是「全文件级技术债」，
+不能在功能 PR 里顺手改半套——单独换一处只会让文件内更不一致。
+
+## 问题
+
+1. **违反规则**：生产代码散落 `console.*`，PostToolUse / lint 无法收口。
+2. **无分级 / 无结构化**：debug / info / warn / error 不分层；无法按 session / 模块
+   过滤；无法落盘供用户回传排查（与 OC-04/OC-05 的"日志轮转 / ZIP 导出"诉求相接）。
+3. **脱敏散落**：错误信息可能裹挟绝对路径 / secrets，目前各处自己 `sanitize*`
+   （`real-session.ts` 的 `sanitizeAutoModeErrorMessage`、`updater.ts` 的 path strip…），
+   没有统一出口（与 OC-10「主进程日志 secret 脱敏」同源）。
+
+## 目标 / 范围
+
+- 引入统一 logger：**分级 + 结构化（含 sessionId / module 字段）+ 可选落盘（轮转）+
+  统一敏感信息脱敏出口**。
+- 逐文件把 `console.*` 替换为 logger 调用；收编现有散落的 `sanitize*` 到 logger 脱敏层。
+- 加 lint 规则（`no-console`，allow 限定 bootstrap 早期）禁止新增 `console.*`。
+- **范围仅 Space 仓库 electron 主进程**，不碰 KodaX SDK（[[dont_touch_kodax_sdk]]）。
+- 与 OC-04 / OC-05 / OC-10 合流评估：若一并做，logger 即这三项的公共地基。
+
+## 非目标
+
+- renderer 端日志（另议）。
+- 替换 KodaX SDK 内部日志。
+
+## 验收
+
+- electron 主进程 `console.*` 计数归零（bootstrap 白名单除外），lint 守住不回潮。
+- logger 支持分级 + 结构化字段；敏感路径 / secret 经统一脱敏层。
+- 现有测试全绿；新增 logger 脱敏单测。
