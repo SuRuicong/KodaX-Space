@@ -129,6 +129,7 @@ type PushFn = (payload: WorkflowEventPayload) => void;
 
 // 映射上限——防止长跑进程里 origins 无界增长(终态 run 的归属不再变,留最近 N 条即可)。
 const MAX_ORIGINS = 500;
+const GENERATED_RUN_ID_RE = /^wf_[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 function nonnegativeInt(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
@@ -492,9 +493,11 @@ export class WorkflowController {
   ): Promise<WorkflowStartResult> {
     const sdk = await loadCodingSdk();
     if (!sdk?.loadGeneratedWorkflowFromRun) return { error: 'workflow rerun unavailable' };
+    const runDir = generatedRunDir(this.runBaseDir, runId);
+    if (runDir === null) return { error: 'invalid runId' };
     let loaded: LoadedGeneratedWorkflowLite;
     try {
-      loaded = await sdk.loadGeneratedWorkflowFromRun({ runDir: path.join(this.runBaseDir, runId) });
+      loaded = await sdk.loadGeneratedWorkflowFromRun({ runDir });
       if (sdk.preflightWorkflowCapsule) {
         const preflight = await preflightCapsule(sdk, loaded.capsule);
         if (!preflight.ok) return { error: formatPreflightIssues(preflight) };
@@ -523,9 +526,11 @@ export class WorkflowController {
   ): Promise<WorkflowSavedResult> {
     const sdk = await loadCodingSdk();
     if (!sdk?.saveGeneratedWorkflowFromRun) return { error: 'workflow save unavailable' };
+    const runDir = generatedRunDir(this.runBaseDir, runId);
+    if (runDir === null) return { error: 'invalid runId' };
     try {
       const ref = await sdk.saveGeneratedWorkflowFromRun({
-        runDir: path.join(this.runBaseDir, runId),
+        runDir,
         targetDir: savedWorkflowDirs(projectRoot).project ?? path.join(projectRoot, '.kodax', 'workflows'),
         name,
       });
@@ -593,8 +598,10 @@ export class WorkflowController {
         capsule = asWorkflowCapsule(await sdk.loadSavedWorkflowCapsule(input.saved.path));
       } else {
         if (!sdk.loadGeneratedWorkflowFromRun) return { error: 'generated run loading unavailable' };
+        const runDir = generatedRunDir(this.runBaseDir, input.target);
+        if (runDir === null) return { error: 'invalid runId' };
         const loaded = await sdk.loadGeneratedWorkflowFromRun({
-          runDir: path.join(this.runBaseDir, input.target),
+          runDir,
         });
         capsule = asWorkflowCapsule(loaded.capsule);
       }
@@ -1093,6 +1100,10 @@ function asWorkflowCapsule(value: unknown): WorkflowCapsuleLite {
 function workflowNameFromModule(module: unknown): string | undefined {
   const meta = module && typeof module === 'object' ? (module as { meta?: { name?: unknown } }).meta : undefined;
   return typeof meta?.name === 'string' ? meta.name : undefined;
+}
+
+function generatedRunDir(baseDir: string, runId: string): string | null {
+  return GENERATED_RUN_ID_RE.test(runId) ? path.join(baseDir, runId) : null;
 }
 
 function scriptSnapshotFromCapsule(capsule: unknown): WorkflowScriptSnapshotLite | undefined {

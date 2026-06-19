@@ -440,11 +440,11 @@ test('generated workflow controller methods delegate to SDK and start/save succe
     assert.equal(mgr.started.length, 1);
     assert.equal((mgr.started[0]!.processMetadata as { source?: string }).source, 'command');
 
-    const rerun = await ctrl.rerunGeneratedWorkflow('run_1', { foo: true }, LAUNCH_SESSION);
+    const rerun = await ctrl.rerunGeneratedWorkflow('wf_run_1', { foo: true }, LAUNCH_SESSION);
     assert.ok('runId' in rerun, JSON.stringify(rerun));
     assert.equal(mgr.started.length, 2);
 
-    assert.deepEqual(await ctrl.saveGeneratedWorkflowFromRun('run_1', 'saved-name', process.cwd()), {
+    assert.deepEqual(await ctrl.saveGeneratedWorkflowFromRun('wf_run_1', 'saved-name', process.cwd()), {
       name: 'saved-name',
       path: '/tmp/saved.workflow.ts',
     });
@@ -464,6 +464,52 @@ test('generated workflow controller methods delegate to SDK and start/save succe
       'rename-saved:renamed',
       'delete-saved:renamed',
     ]);
+  } finally {
+    _setCodingSdkForTesting(null);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('generated workflow run helpers reject unsafe runId before filesystem access', async () => {
+  const { dir, file } = freshFile();
+  try {
+    let loadRunCalled = false;
+    let saveRunCalled = false;
+    _setCodingSdkForTesting({
+      async loadGeneratedWorkflowFromRun() {
+        loadRunCalled = true;
+        return { capsule: generatedCapsule('unsafe-flow'), module: {} };
+      },
+      async saveGeneratedWorkflowFromRun(input: { name: string }) {
+        saveRunCalled = true;
+        return { name: input.name, path: '/tmp/unsafe.workflow.ts' };
+      },
+      async generateWorkflowFromOptions() {
+        return generatedWorkflow('unsafe-flow');
+      },
+    });
+
+    const ctrl = new WorkflowController(() => {}, file);
+    await ctrl.init(fakeManager());
+
+    assert.deepEqual(
+      await ctrl.rerunGeneratedWorkflow('../outside', {}, LAUNCH_SESSION),
+      { error: 'invalid runId' },
+    );
+    assert.deepEqual(
+      await ctrl.saveGeneratedWorkflowFromRun('wf_../outside', 'saved-name', process.cwd()),
+      { error: 'invalid runId' },
+    );
+    assert.deepEqual(
+      await ctrl.reviseWorkflow({
+        target: 'wf_../outside',
+        request: 'revise',
+        session: LAUNCH_SESSION,
+      }),
+      { error: 'invalid runId' },
+    );
+    assert.equal(loadRunCalled, false);
+    assert.equal(saveRunCalled, false);
   } finally {
     _setCodingSdkForTesting(null);
     rmSync(dir, { recursive: true, force: true });
@@ -493,7 +539,7 @@ test('reviseWorkflow handles discovery failure inside error contract', async () 
     const ctrl = new WorkflowController(() => {}, file);
     await ctrl.init(fakeManager());
     const result = await ctrl.reviseWorkflow({
-      target: 'run_1',
+      target: 'wf_run_1',
       request: 'tighten validation',
       session: LAUNCH_SESSION,
     });
@@ -524,7 +570,7 @@ test('reviseWorkflow validates replace target before loading run artifacts', asy
     const ctrl = new WorkflowController(() => {}, file);
     await ctrl.init(fakeManager());
     const result = await ctrl.reviseWorkflow({
-      target: 'run_1',
+      target: 'wf_run_1',
       request: 'change it',
       replace: true,
       session: LAUNCH_SESSION,
@@ -560,7 +606,7 @@ test('rerunGeneratedWorkflow logs direct preflight fallback before boxed retry',
 
     const ctrl = new WorkflowController(() => {}, file);
     await ctrl.init(fakeManager());
-    const result = await ctrl.rerunGeneratedWorkflow('run_1', {}, LAUNCH_SESSION);
+    const result = await ctrl.rerunGeneratedWorkflow('wf_run_1', {}, LAUNCH_SESSION);
 
     assert.ok('runId' in result, JSON.stringify(result));
     assert.equal(preflightCalls, 2);

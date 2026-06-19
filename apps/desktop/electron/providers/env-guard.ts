@@ -7,6 +7,7 @@ const RESERVED_ENV_VARS = new Set([
   'PATH',
   'NODE_OPTIONS',
   'NODE_PATH',
+  'NODE_ENV',
   'ELECTRON_RUN_AS_NODE',
   'ELECTRON_NO_ASAR',
   'NODE_EXTRA_CA_CERTS',
@@ -25,7 +26,7 @@ const RESERVED_ENV_VARS = new Set([
 
 export function validateApiKeyEnv(name: string): string | null {
   if (!/^[A-Z_][A-Z0-9_]{0,127}$/.test(name)) {
-    return 'apiKeyEnv must match /^[A-Z_][A-Z0-9_]*$/ (uppercase snake)';
+    return 'apiKeyEnv must match /^[A-Z_][A-Z0-9_]{0,127}$/ (uppercase snake, max 128 chars)';
   }
   if (RESERVED_ENV_VARS.has(name)) {
     return `apiKeyEnv "${name}" is reserved and cannot be used`;
