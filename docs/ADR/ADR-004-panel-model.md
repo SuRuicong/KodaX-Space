@@ -16,7 +16,7 @@ KodaX Space 对标 Claude Desktop（Chat / Cowork / Code 三面板）与 Codex D
 
 - **Coder 面板**（M0 起）：可视化的 KodaX coding agent，主舞台
 - **Partner 面板**（M2 起）：对标 Claude Cowork，非编码 / 文档任务
-- **Quick Ask popover**（M1 起）：全局热键唤出的浮窗，临时问答；无 session、无工具、无持久化
+- **Quick Ask popover**（M1 起）：全局热键唤出的浮窗，临时问答；目标语义为无 session、无工具、无持久化。v0.1.20 interim 实现使用临时 plan-mode session 模拟，关闭时清理，用户显式 Continue in Coder 时晋升为正常 session。
 
 **不做独立 Chat 面板**。
 

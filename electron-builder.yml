@@ -53,6 +53,8 @@ asarUnpack:
   - '**/*.node'
   - '**/node_modules/node-pty/**'
 
+afterPack: scripts/after-pack-win-rcedit.cjs
+
 mac:
   category: public.app-category.developer-tools
   target:
@@ -74,7 +76,9 @@ win:
     - target: portable
       arch:
         - x64
-  # 不签名（FEATURE_027 已 drop）
+  # Keep the built-in sign/edit step disabled for unsigned builds. The
+  # afterPack hook edits only the main exe resources so Windows process/task
+  # lists show KodaX Space instead of Electron without pulling winCodeSign.
   signAndEditExecutable: false
   icon: resources/icon.png  # electron-builder 自动从 PNG 生成 ico（256x256+）
   # ⚠️ artifactName 不放在 win 顶层 —— 否则 nsis / portable 两个 target 共用同名 → 产物互相覆盖。

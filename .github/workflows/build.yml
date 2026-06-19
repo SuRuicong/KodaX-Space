@@ -33,7 +33,15 @@ jobs:
         # FEATURE_002+ 起强制——renderer 误用未注册 channel / handler 返回 schema-错配 shape 都被 TS 拦
         run: npm run typecheck
 
+      - name: Configure npm script-shell (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: npm config set script-shell bash
+
       - name: Unit tests (schema validation, envelope, registry)
+        shell: bash
+        env:
+          SKIP_PTY_TESTS: '1'
         run: npm test
 
       - name: Build renderer + main
@@ -50,3 +58,6 @@ jobs:
       # F010: gen-icon 是 release workflow 的前置；这里只 smoke 验证它不报错
       - name: Verify icon generation script
         run: node scripts/gen-icon.mjs
+
+      - name: Verify packaging hooks
+        run: node --check scripts/after-pack-win-rcedit.cjs
