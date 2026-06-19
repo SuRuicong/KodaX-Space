@@ -28,7 +28,32 @@ export { canonProjectRoot } from './path-canon.js';
 export { invokeChannels, pushChannels } from './channels/index.js';
 export type { InvokeChannels, PushChannels } from './channels/index.js';
 
-export { versionChannel, type SpaceVersionOutput } from './channels/version.js';
+export {
+  versionChannel,
+  spaceCapabilitySchema,
+  spaceCapabilityStatusSchema,
+  type SpaceCapability,
+  type SpaceCapabilityStatus,
+  type SpaceVersionOutput,
+} from './channels/version.js';
+
+export {
+  repointelStatusChannel,
+  repointelStatusItemSchema,
+  type RepointelStatusItemT,
+  type RepointelStatusOutput,
+} from './channels/repointel.js';
+
+export {
+  handoffAcceptChannel,
+  handoffChangedChannel,
+  handoffDismissChannel,
+  handoffFileSchema,
+  handoffListChannel,
+  handoffStatusSchema,
+  type HandoffFileT,
+  type HandoffStatusT,
+} from './channels/handoff.js';
 
 export {
   sessionCreateChannel,

@@ -56,7 +56,10 @@ export function registerWorkflowChannels(): void {
   }));
 
   registerChannel('workflow.prune', async (input) => {
-    const r = await workflowController.prune(input);
+    const options = input.dryRun === true && input.keep === undefined && input.olderThanDays === undefined
+      ? { ...input, keep: 50 }
+      : input;
+    const r = await workflowController.prune(options);
     // readonly candidates → mutable copy（schema 推断 string[]）。
     return {
       deleted: r.deleted,

@@ -13,9 +13,15 @@
 // 实现哲学：每个 handler 只调 host setter + emit 提示事件；renderer 看到事件再渲染。
 // 不在 main 做"美化输出"——和 KodaX REPL 一样保持 main 端最小职责。
 
-import type { PermissionMode, AutoModeEngine, AgentMode } from '@kodax-space/space-ipc-schema';
+import type {
+  PermissionMode,
+  AutoModeEngine,
+  AgentMode,
+  WorkflowRunT,
+} from '@kodax-space/space-ipc-schema';
 import type { SlashCommandDef } from './registry.js';
 import { kodaxHost } from '../kodax/host.js';
+import { workflowController, type LaunchSession, type SavedWorkflowLite } from '../kodax/workflow-controller.js';
 import { loadKodaxCustomProviders, registerKodaxCustomProviders } from '../kodax/user-config.js';
 import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
@@ -27,7 +33,7 @@ type ReasoningMode = (typeof REASONING_MODES)[number];
 
 const PERMISSION_MODES: readonly PermissionMode[] = ['plan', 'accept-edits', 'auto'];
 const AUTO_ENGINES: readonly AutoModeEngine[] = ['llm', 'rules'];
-const AGENT_MODES: readonly AgentMode[] = ['ama', 'sa'];
+const AGENT_MODES: readonly AgentMode[] = ['ama', 'amaw', 'sa'];
 
 function isPermissionMode(s: string): s is PermissionMode {
   return PERMISSION_MODES.includes(s as PermissionMode);
@@ -41,106 +47,537 @@ function isReasoningMode(s: string): s is ReasoningMode {
   return REASONING_MODES.includes(s as ReasoningMode);
 }
 
-function isAgentMode(s: string): s is AgentMode {
-  return AGENT_MODES.includes(s as AgentMode);
+function normalizeAgentMode(s: string): AgentMode | 'toggle' | undefined {
+  const lower = s.toLowerCase();
+  if (lower === 'toggle') return 'toggle';
+  if (lower === 'ama-workflow') return 'amaw';
+  return AGENT_MODES.includes(lower as AgentMode) ? (lower as AgentMode) : undefined;
+}
+
+function nextAgentMode(current: AgentMode): AgentMode {
+  const idx = AGENT_MODES.indexOf(current);
+  return AGENT_MODES[(idx + 1) % AGENT_MODES.length] ?? 'ama';
+}
+
+function compactSlashMessage(message: string, max = 1900): string {
+  if (message.length <= max) return message;
+  return `${message.slice(0, max - 12)}\n... truncated`;
+}
+
+function isFinalWorkflowStatus(status: WorkflowRunT['status']): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled';
+}
+
+function workflowTitle(run: WorkflowRunT): string {
+  return run.displayName || run.workflowName || run.runId;
+}
+
+function formatWorkflowRun(run: WorkflowRunT): string {
+  const title = workflowTitle(run);
+  const progress = run.progress
+    ? ` agents ${run.progress.finishedAgents}/${Math.max(
+        run.progress.plannedItems ?? run.progress.spawnedAgents,
+        run.progress.finishedAgents,
+      )}`
+    : '';
+  const message = run.latestMessage ? ` - ${run.latestMessage}` : '';
+  return `${run.runId}  ${run.status}  ${title}${progress}${message}`;
+}
+
+function latestWorkflowRun(sessionId: string, preferActive = false): WorkflowRunT | undefined {
+  const runs = workflowController.list(sessionId).sort((a, b) => {
+    const at = Date.parse(a.updatedAt || a.startedAt || '');
+    const bt = Date.parse(b.updatedAt || b.startedAt || '');
+    return bt - at;
+  });
+  if (!preferActive) return runs[0];
+  return runs.find((r) => !isFinalWorkflowStatus(r.status)) ?? runs[0];
+}
+
+type WorkflowInvocation =
+  | { readonly kind: 'help' }
+  | { readonly kind: 'list' }
+  | { readonly kind: 'runs'; readonly rawArgs: readonly string[] }
+  | { readonly kind: 'show'; readonly runId: string; readonly full?: boolean }
+  | { readonly kind: 'pause'; readonly runId: string }
+  | { readonly kind: 'resume'; readonly runId: string }
+  | { readonly kind: 'stop'; readonly runId: string }
+  | {
+      readonly kind: 'delete';
+      readonly target: string;
+      readonly force?: boolean;
+      readonly scope?: 'run' | 'saved' | 'conflict';
+    }
+  | { readonly kind: 'prune'; readonly rawArgs: readonly string[] }
+  | { readonly kind: 'save'; readonly runId: string; readonly name: string }
+  | { readonly kind: 'rename'; readonly target: string; readonly newName: string }
+  | { readonly kind: 'revise'; readonly target: string; readonly request: string; readonly replace?: boolean }
+  | { readonly kind: 'rerun'; readonly runId: string; readonly rawArgs: string }
+  | { readonly kind: 'create'; readonly request: string }
+  | { readonly kind: 'start'; readonly name: string; readonly rawArgs: string };
+
+const DEFAULT_WORKFLOW_RUNS_LIMIT = 20;
+const DEFAULT_WORKFLOW_PRUNE_KEEP = 50;
+const MAX_WORKFLOW_RUNS_LIMIT = 200;
+const WORKFLOW_ARG_HINT = 'help | list | runs [--all|--limit N] | show [runId] | pause <runId> | resume <runId> | stop [runId] | delete [--force] [--run|--saved] <runId|savedName> | prune --dry-run|--keep N|--older-than Nd | rerun <runId|savedName> [args] | save <runId> <name> | rename <runId|alias|savedName> <newName> | revise [--replace] <runId|alias|savedName> <change> | create <request> | <name> [args]';
+
+function parseWorkflowInvocation(args: readonly string[]): WorkflowInvocation {
+  const first = args[0]?.toLowerCase();
+  if (first === 'help' || first === '--help' || first === '-h') return { kind: 'help' };
+  if (!first || first === 'list' || first === 'ls') return { kind: 'list' };
+  if (first === 'runs') return { kind: 'runs', rawArgs: args.slice(1) };
+  if (first === 'show') {
+    const rest = args.slice(1);
+    const full = rest.includes('--full');
+    const runId = rest.find((arg) => arg !== '--full') ?? '';
+    return full ? { kind: 'show', runId, full: true } : { kind: 'show', runId };
+  }
+  if (first === 'pause') return { kind: 'pause', runId: args[1] ?? '' };
+  if (first === 'resume') return { kind: 'resume', runId: args[1] ?? '' };
+  if (first === 'stop') return { kind: 'stop', runId: args[1] ?? '' };
+  if (first === 'delete') {
+    const rest = args.slice(1);
+    const force = rest.includes('--force');
+    const saved = rest.includes('--saved');
+    const run = rest.includes('--run');
+    const target = rest.find((arg) => arg !== '--force' && arg !== '--saved' && arg !== '--run') ?? '';
+    const scope = saved && run ? 'conflict' : saved ? 'saved' : run ? 'run' : undefined;
+    return {
+      kind: 'delete',
+      target,
+      ...(force ? { force: true } : {}),
+      ...(scope ? { scope } : {}),
+    };
+  }
+  if (first === 'prune') return { kind: 'prune', rawArgs: args.slice(1) };
+  if (first === 'save') return { kind: 'save', runId: args[1] ?? '', name: args[2] ?? '' };
+  if (first === 'rename') return { kind: 'rename', target: args[1] ?? '', newName: args.slice(2).join(' ').trim() };
+  if (first === 'revise') {
+    const raw = args.slice(1);
+    const replace = raw.includes('--replace');
+    const cleaned = raw.filter((arg) => arg !== '--replace');
+    return {
+      kind: 'revise',
+      target: cleaned[0] ?? '',
+      request: cleaned.slice(1).join(' ').trim(),
+      ...(replace ? { replace: true } : {}),
+    };
+  }
+  if (first === 'rerun') return { kind: 'rerun', runId: args[1] ?? '', rawArgs: args.slice(2).join(' ').trim() };
+  if (first === 'create') return { kind: 'create', request: args.slice(1).join(' ').trim() };
+  return { kind: 'start', name: args[0]!, rawArgs: args.slice(1).join(' ').trim() };
+}
+
+function parseWorkflowArgs(raw: string): unknown {
+  const trimmed = raw.trim();
+  if (!trimmed) return {};
+  if (trimmed.startsWith('{')) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return { question: trimmed };
+    }
+  }
+  return { question: trimmed };
+}
+
+function parseNonNegativeInteger(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function parseOlderThanMs(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const match = /^(\d+)([dh]?)$/i.exec(value.trim());
+  if (!match) return undefined;
+  const amount = Number(match[1]);
+  if (!Number.isInteger(amount) || amount <= 0) return undefined;
+  return (match[2]?.toLowerCase() === 'h' ? amount * 60 * 60 : amount * 24 * 60 * 60) * 1000;
+}
+
+function parseWorkflowRunsOptions(args: readonly string[]): {
+  readonly all: boolean;
+  readonly limit: number;
+  readonly error?: string;
+} {
+  let all = false;
+  let limit = DEFAULT_WORKFLOW_RUNS_LIMIT;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--all') {
+      all = true;
+      continue;
+    }
+    if (arg === '--limit') {
+      const parsed = parseNonNegativeInteger(args[index + 1]);
+      if (parsed === undefined || parsed < 1) return { all, limit, error: '--limit expects a positive integer' };
+      limit = Math.min(parsed, MAX_WORKFLOW_RUNS_LIMIT);
+      index += 1;
+      continue;
+    }
+    return { all, limit, error: `unknown option: ${arg ?? ''}` };
+  }
+  return { all, limit };
+}
+
+function parseWorkflowPruneOptions(args: readonly string[]): {
+  readonly dryRun: boolean;
+  readonly keep?: number;
+  readonly olderThanDays?: number;
+  readonly error?: string;
+} {
+  let dryRun = false;
+  let keep: number | undefined;
+  let olderThanDays: number | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--dry-run') {
+      dryRun = true;
+      continue;
+    }
+    if (arg === '--keep') {
+      const parsed = parseNonNegativeInteger(args[index + 1]);
+      if (parsed === undefined) return { dryRun, error: '--keep expects a non-negative integer' };
+      keep = parsed;
+      index += 1;
+      continue;
+    }
+    if (arg === '--older-than') {
+      const parsed = parseOlderThanMs(args[index + 1]);
+      if (parsed === undefined) return { dryRun, error: '--older-than expects a value like 7d or 24h' };
+      olderThanDays = Math.ceil(parsed / (24 * 60 * 60 * 1000));
+      index += 1;
+      continue;
+    }
+    return { dryRun, error: `unknown option: ${arg ?? ''}` };
+  }
+  if (dryRun && keep === undefined && olderThanDays === undefined) {
+    return { dryRun, keep: DEFAULT_WORKFLOW_PRUNE_KEEP };
+  }
+  return {
+    dryRun,
+    ...(keep !== undefined ? { keep } : {}),
+    ...(olderThanDays !== undefined ? { olderThanDays } : {}),
+  };
+}
+
+function workflowHelp(): string {
+  return [
+    'Usage:',
+    '  /workflow help',
+    '  /workflow list',
+    '  /workflow runs [--all|--limit N]',
+    '  /workflow show [--full] [runId]',
+    '  /workflow pause <runId>',
+    '  /workflow resume <runId>',
+    '  /workflow stop [runId]',
+    '  /workflow delete [--force] [--run|--saved] <runId|savedName>',
+    '  /workflow prune --dry-run|--keep N|--older-than Nd',
+    '  /workflow rerun <runId|savedName> [args]',
+    '  /workflow save <runId> <name>',
+    '  /workflow rename <runId|savedName> <newName>',
+    '  /workflow revise [--replace] <runId|savedName> <change>',
+    '  /workflow create <request>',
+    '  /workflow <name> [args]',
+  ].join('\n');
+}
+
+function sessionToLaunchSession(s: ReturnType<typeof kodaxHost.get>): LaunchSession | null {
+  if (!s) return null;
+  return {
+    sessionId: s.sessionId,
+    surface: s.surface,
+    provider: s.provider,
+    ...(s.model ? { model: s.model } : {}),
+    reasoningMode: s.reasoningMode,
+    agentMode: s.agentMode,
+    projectRoot: s.projectRoot,
+  };
+}
+
+function workflowRunsForSession(sessionId: string): WorkflowRunT[] {
+  return workflowController.list(sessionId).sort((a, b) => {
+    const at = Date.parse(a.updatedAt || a.startedAt || '');
+    const bt = Date.parse(b.updatedAt || b.startedAt || '');
+    return bt - at;
+  });
+}
+
+function findWorkflowRun(sessionId: string, target: string): WorkflowRunT | undefined {
+  if (!target || target === 'latest') return latestWorkflowRun(sessionId);
+  const lower = target.toLowerCase();
+  const direct = workflowController.get(target);
+  if (direct?.sessionId === sessionId) return direct;
+  return workflowRunsForSession(sessionId).find((run) => {
+    const title = workflowTitle(run).toLowerCase();
+    return run.runId === target || run.workflowName.toLowerCase() === lower || title === lower;
+  });
+}
+
+function findSavedWorkflow(saved: readonly SavedWorkflowLite[], target: string): SavedWorkflowLite | undefined {
+  const lower = target.toLowerCase();
+  return saved.find((w) => w.name === target || w.name.toLowerCase() === lower || w.path === target);
+}
+
+function workflowRunDetails(run: WorkflowRunT, full = false): string {
+  const lines = [
+    formatWorkflowRun(run),
+    run.goal ? `Goal: ${run.goal}` : '',
+    run.resultSummary ? `Result: ${run.resultSummary}` : '',
+    run.error ? `Error: ${run.error}` : '',
+  ];
+  if (full) {
+    if (run.artifacts?.length) lines.push(`Artifacts: ${run.artifacts.map((a) => a.name).join(', ')}`);
+    if (run.items?.length) {
+      lines.push('Items:');
+      lines.push(
+        ...run.items.slice(0, 24).map((item) => `  ${item.status} ${item.kind} ${item.title}`),
+      );
+      if (run.items.length > 24) lines.push(`  ... ${run.items.length - 24} more`);
+    }
+  }
+  return lines.filter(Boolean).join('\n');
+}
+
+function formatSavedAction(prefix: string, result: { readonly name?: string; readonly path?: string; readonly previousPath?: string }): string {
+  return [
+    `${prefix}: ${result.name ?? ''}`.trim(),
+    result.path ? `Path: ${result.path}` : '',
+    result.previousPath ? `Previous: ${result.previousPath}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+type ToggleValue = 'on' | 'off';
+
+function parseToggleValue(value: string | undefined): ToggleValue | undefined {
+  const lower = value?.toLowerCase();
+  if (lower === 'on' || lower === 'true' || lower === '1') return 'on';
+  if (lower === 'off' || lower === 'false' || lower === '0') return 'off';
+  return undefined;
+}
+
+function formatSlashCommandUsage(c: { readonly name: string; readonly aliases?: readonly string[]; readonly argsHint?: string; readonly description: string }): string {
+  const hint = c.argsHint ? ` ${c.argsHint}` : '';
+  const aliases = c.aliases?.length ? ` (aliases: ${c.aliases.map((a) => `/${a}`).join(', ')})` : '';
+  return `/${c.name}${hint}${aliases} - ${c.description}`;
+}
+
+function shellAction(action: string): { ok: true; message: string; echo: false } {
+  return { ok: true, message: `__action__:${action}`, echo: false };
+}
+
+type GoalStatus = 'active' | 'paused' | 'complete' | 'blocked';
+interface SlashGoalState {
+  readonly objective: string;
+  readonly status: GoalStatus;
+  readonly tokenBudget: number | null;
+  readonly tokensUsed: number;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+const goalBySession = new Map<string, SlashGoalState>();
+
+export function clearSlashGoalForSession(sessionId: string): void {
+  goalBySession.delete(sessionId);
+}
+
+function parseGoalCreateArgs(args: readonly string[]): {
+  readonly objective: string;
+  readonly tokenBudget: number | null;
+} | { readonly error: string } {
+  let tokenBudget: number | null = null;
+  const objectiveParts: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--tokens') {
+      const raw = args[index + 1];
+      const parsed = raw ? Number(raw) : NaN;
+      if (!Number.isInteger(parsed) || parsed <= 0) return { error: '--tokens requires a positive integer' };
+      tokenBudget = parsed;
+      index += 1;
+      continue;
+    }
+    if (arg?.startsWith('--tokens=')) {
+      const parsed = Number(arg.slice('--tokens='.length));
+      if (!Number.isInteger(parsed) || parsed <= 0) return { error: '--tokens requires a positive integer' };
+      tokenBudget = parsed;
+      continue;
+    }
+    if (arg?.startsWith('--')) return { error: `unknown flag: ${arg}` };
+    if (arg) objectiveParts.push(arg);
+  }
+  const objective = objectiveParts.join(' ').trim();
+  return objective ? { objective, tokenBudget } : { error: 'objective is required' };
+}
+
+function formatGoalStatus(goal: SlashGoalState | undefined): string {
+  if (!goal) return 'No goal set. Use /goal <objective> [--tokens N] to create one.';
+  const lines = [
+    `Goal: ${goal.objective}`,
+    `Status: ${goal.status}`,
+    `Tokens used: ${goal.tokensUsed}`,
+    goal.tokenBudget === null
+      ? 'Token budget: none'
+      : `Token budget: ${goal.tokenBudget} (remaining ${Math.max(0, goal.tokenBudget - goal.tokensUsed)})`,
+  ];
+  return lines.join('\n');
+}
+
+function goalHelp(): string {
+  return [
+    'Usage:',
+    '  /goal <objective> [--tokens N]',
+    '  /goal status',
+    '  /goal pause',
+    '  /goal resume',
+    '  /goal clear',
+    '  /goal help',
+  ].join('\n');
 }
 
 export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
   {
     name: 'mode',
-    description: 'Switch permission mode (plan / accept-edits / auto)',
-    argsHint: '<plan|accept-edits|auto>',
+    description: 'Show or switch permission mode (plan / accept-edits / auto)',
+    argsHint: '[plan|accept-edits|auto]',
     source: 'builtin',
     handler: async (ctx) => {
-      const target = ctx.args[0];
+      const target = ctx.args[0] === 'auto-in-project' ? 'auto' : ctx.args[0];
+      const session = kodaxHost.get(ctx.sessionId);
+      if (!session) return { ok: false, message: `session not found: ${ctx.sessionId}` };
       if (!target) {
-        return { ok: false, message: 'Usage: /mode <plan|accept-edits|auto>' };
+        return {
+          ok: true,
+          message: `Current mode: ${session.permissionMode}\nUsage: /mode [plan|accept-edits|auto]`,
+          echo: true,
+        };
       }
       if (!isPermissionMode(target)) {
         return { ok: false, message: `unknown mode '${target}'; valid: ${PERMISSION_MODES.join(', ')}` };
       }
       const ok = kodaxHost.setPermissionMode(ctx.sessionId, target);
-      return ok
-        ? { ok: true, message: `mode → ${target}` }
-        : { ok: false, message: `session not found: ${ctx.sessionId}` };
+      if (ok) return { ok: true, message: `mode -> ${target}` };
+      return { ok: false, message: `session not found: ${ctx.sessionId}` };
     },
   },
 
   {
     name: 'auto-engine',
-    description: 'Switch auto-mode classifier engine (llm / rules)',
-    argsHint: '<llm|rules>',
+    description: 'Show or switch auto-mode classifier engine (llm / rules)',
+    argsHint: '[llm|rules]',
     source: 'builtin',
     handler: async (ctx) => {
+      const session = kodaxHost.get(ctx.sessionId);
+      if (!session) return { ok: false, message: `session not found: ${ctx.sessionId}` };
       const target = ctx.args[0];
       if (!target) {
-        return { ok: false, message: 'Usage: /auto-engine <llm|rules>' };
+        return {
+          ok: true,
+          message: `Classifier engine: ${session.autoModeEngine}\nUsage: /auto-engine [llm|rules]`,
+          echo: true,
+        };
       }
       if (!isAutoEngine(target)) {
         return { ok: false, message: `unknown engine '${target}'; valid: ${AUTO_ENGINES.join(', ')}` };
       }
       const ok = kodaxHost.setAutoModeEngine(ctx.sessionId, target);
       return ok
-        ? { ok: true, message: `auto-engine → ${target}` }
+        ? { ok: true, message: `auto-engine -> ${target}` }
         : { ok: false, message: `session not found: ${ctx.sessionId}` };
     },
   },
 
   {
     name: 'provider',
-    description: 'Switch provider (must exist in catalog or custom)',
-    argsHint: '<provider-id>',
+    description: 'Show or switch provider (must exist in catalog or custom)',
+    argsHint: '[provider-id[/model]]',
     source: 'builtin',
     handler: async (ctx) => {
+      const session = kodaxHost.get(ctx.sessionId);
+      if (!session) return { ok: false, message: `session not found: ${ctx.sessionId}` };
       const target = ctx.args[0];
       if (!target) {
-        return { ok: false, message: 'Usage: /provider <provider-id>' };
+        await providerConfigStore.load();
+        const custom = providerConfigStore.listCustom().map((p) => p.id);
+        return {
+          ok: true,
+          message: [
+            `Current provider: ${session.provider}${session.model ? ` / ${session.model}` : ''}`,
+            'Usage: /provider [provider-id[/model]]',
+            `Custom providers: ${custom.length ? custom.join(', ') : '(none)'}`,
+          ].join('\n'),
+          echo: true,
+        };
+      }
+      const slashIdx = target.indexOf('/');
+      const targetProvider = slashIdx >= 0 ? target.slice(0, slashIdx) : target;
+      const targetModel = slashIdx >= 0 ? target.slice(slashIdx + 1) : undefined;
+      if (!targetProvider || targetModel === '') {
+        return { ok: false, message: 'Usage: /provider <provider-id[/model]>' };
       }
       // 走 session.setProvider 等价的 catalog 检查 (review F008 C1-sec)
       let shouldRefreshCustomRegistry = false;
-      if (target !== 'mock' && !isBuiltinId(target)) {
+      if (targetProvider !== 'mock' && !isBuiltinId(targetProvider)) {
         await providerConfigStore.load();
-        const existsInSpaceStore = Boolean(providerConfigStore.getCustom(target));
-        const existsInKodaxConfig = (await loadKodaxCustomProviders()).some((p) => p.id === target);
+        const existsInSpaceStore = Boolean(providerConfigStore.getCustom(targetProvider));
+        const existsInKodaxConfig = (await loadKodaxCustomProviders()).some((p) => p.id === targetProvider);
         if (!existsInSpaceStore && !existsInKodaxConfig) {
-          return { ok: false, message: `unknown providerId: ${target}` };
+          return { ok: false, message: `unknown providerId: ${targetProvider}` };
         }
         shouldRefreshCustomRegistry = true;
       }
       if (shouldRefreshCustomRegistry) {
         await registerKodaxCustomProviders(providerConfigStore.listCustom());
       }
-      const ok = kodaxHost.setProvider(ctx.sessionId, target);
+      const providerInfo = getBuiltin(targetProvider);
+      if (targetModel && providerInfo?.models?.length && !providerInfo.models.includes(targetModel)) {
+        return {
+          ok: false,
+          message: `Unknown model "${targetModel}" for provider ${targetProvider}.\nAvailable: ${providerInfo.models.join(', ')}`,
+        };
+      }
+      const ok = kodaxHost.setProvider(ctx.sessionId, targetProvider);
+      if (ok) kodaxHost.setModel(ctx.sessionId, targetModel);
       return ok
-        ? { ok: true, message: `provider → ${target}` }
+        ? { ok: true, message: `provider -> ${targetProvider}${targetModel ? ` / ${targetModel}` : ''}` }
         : { ok: false, message: `session not found: ${ctx.sessionId}` };
     },
   },
 
   {
     name: 'reasoning',
-    description: 'Switch reasoning mode',
-    argsHint: '<off|auto|quick|balanced|deep>',
+    aliases: ['reason'],
+    description: 'Show or switch reasoning mode',
+    argsHint: '[off|auto|quick|balanced|deep]',
     source: 'builtin',
     handler: async (ctx) => {
+      const session = kodaxHost.get(ctx.sessionId);
+      if (!session) return { ok: false, message: `session not found: ${ctx.sessionId}` };
       const target = ctx.args[0];
       if (!target) {
-        return { ok: false, message: `Usage: /reasoning <${REASONING_MODES.join('|')}>` };
+        return {
+          ok: true,
+          message: `Reasoning mode: ${session.reasoningMode}\nUsage: /reasoning [${REASONING_MODES.join('|')}]`,
+          echo: true,
+        };
       }
       if (!isReasoningMode(target)) {
         return { ok: false, message: `unknown reasoning '${target}'; valid: ${REASONING_MODES.join(', ')}` };
       }
       const ok = kodaxHost.setReasoningMode(ctx.sessionId, target);
       return ok
-        ? { ok: true, message: `reasoning → ${target}` }
+        ? { ok: true, message: `reasoning -> ${target}` }
         : { ok: false, message: `session not found: ${ctx.sessionId}` };
     },
   },
 
   {
     name: 'model',
-    description: 'Override model for next turn. Use /model default to clear, /model list to see options.',
-    argsHint: '<model-name | default | list>',
+    aliases: ['m'],
+    description: 'Show or switch provider/model. Use /model default to clear the model override.',
+    argsHint: '[provider[/model] | /model | default | list]',
     source: 'builtin',
     handler: async (ctx) => {
       const target = ctx.args[0];
@@ -162,18 +599,20 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
         const list = providerInfo?.models ?? [];
         if (list.length === 0) {
           return {
-            ok: false,
-            message: `Usage: /model <model-name | default | list>\nCurrent: ${currentModel} (no model list for provider ${providerId})`,
+            ok: true,
+            message: `Usage: /model [provider[/model] | /model | default | list]\nCurrent: ${currentModel} (no model list for provider ${providerId})`,
+            echo: true,
           };
         }
         return {
-          ok: false,
+          ok: true,
           message: [
-            `Usage: /model <model-name | default | list>`,
+            'Usage: /model [provider[/model] | /model | default | list]',
             `Current: ${currentModel}`,
             `Available for ${providerId}:`,
             ...list.map((m) => `  • ${m}${m === currentModel ? ' ← current' : ''}`),
           ].join('\n'),
+          echo: true,
         };
       }
 
@@ -205,7 +644,56 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
       if (isClear) {
         const ok = kodaxHost.setModel(ctx.sessionId, undefined);
         if (!ok) return { ok: false, message: `session not found: ${ctx.sessionId}` };
-        return { ok: true, message: 'model → provider default (cleared override)' };
+        return { ok: true, message: 'model -> provider default (cleared override)' };
+      }
+
+      if (target.startsWith('/')) {
+        const targetModel = target.slice(1);
+        if (!targetModel) return { ok: false, message: 'Usage: /model /<model-name>' };
+        if (providerInfo && providerInfo.models.length > 0 && !providerInfo.models.includes(targetModel)) {
+          return {
+            ok: false,
+            message: `Unknown model "${targetModel}" for provider ${providerId}.\nAvailable: ${providerInfo.models.join(', ')}`,
+          };
+        }
+        const ok = kodaxHost.setModel(ctx.sessionId, targetModel);
+        if (!ok) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+        return { ok: true, message: `model -> ${providerId}/${targetModel} (applies on next send)` };
+      }
+
+      if (target.includes('/')) {
+        const slashIdx = target.indexOf('/');
+        const targetProvider = target.slice(0, slashIdx);
+        const targetModel = target.slice(slashIdx + 1);
+        if (!targetProvider || !targetModel) return { ok: false, message: 'Usage: /model <provider>/<model>' };
+        if (targetProvider !== 'mock' && !isBuiltinId(targetProvider)) {
+          await providerConfigStore.load();
+          const existsInSpaceStore = Boolean(providerConfigStore.getCustom(targetProvider));
+          const existsInKodaxConfig = (await loadKodaxCustomProviders()).some((p) => p.id === targetProvider);
+          if (!existsInSpaceStore && !existsInKodaxConfig) {
+            return { ok: false, message: `unknown providerId: ${targetProvider}` };
+          }
+          await registerKodaxCustomProviders(providerConfigStore.listCustom());
+        }
+        const targetProviderInfo = getBuiltin(targetProvider);
+        if (targetProviderInfo?.models?.length && !targetProviderInfo.models.includes(targetModel)) {
+          return {
+            ok: false,
+            message: `Unknown model "${targetModel}" for provider ${targetProvider}.\nAvailable: ${targetProviderInfo.models.join(', ')}`,
+          };
+        }
+        const providerOk = kodaxHost.setProvider(ctx.sessionId, targetProvider);
+        const modelOk = providerOk ? kodaxHost.setModel(ctx.sessionId, targetModel) : false;
+        return providerOk && modelOk
+          ? { ok: true, message: `model -> ${targetProvider}/${targetModel} (applies on next send)` }
+          : { ok: false, message: `session not found: ${ctx.sessionId}` };
+      }
+
+      if (target === 'mock' || isBuiltinId(target)) {
+        const ok = kodaxHost.setProvider(ctx.sessionId, target);
+        if (!ok) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+        kodaxHost.setModel(ctx.sessionId, undefined);
+        return { ok: true, message: `provider -> ${target} (model cleared to provider default)` };
       }
 
       // 真实 model 名 — 校验在可用列表里。如果 provider 没暴露列表则放过 (保守 fallback)。
@@ -226,23 +714,39 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
 
       const ok = kodaxHost.setModel(ctx.sessionId, target);
       if (!ok) return { ok: false, message: `session not found: ${ctx.sessionId}` };
-      return { ok: true, message: `model → ${target} (applies on next send)` };
+      return { ok: true, message: `model -> ${target} (applies on next send)` };
     },
   },
 
   {
     name: 'thinking',
-    description: 'Toggle thinking output for next turn (v0.7.42 SDK wired).',
-    argsHint: '<on | off>',
+    aliases: ['think', 't'],
+    description: 'Show or change thinking/reasoning output for next turn.',
+    argsHint: '[on|off|auto|quick|balanced|deep]',
     source: 'builtin',
     handler: async (ctx) => {
       const target = ctx.args[0];
-      if (target !== 'on' && target !== 'off') {
-        return { ok: false, message: 'Usage: /thinking <on | off>' };
+      const session = kodaxHost.get(ctx.sessionId);
+      if (!session) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      if (!target) {
+        return {
+          ok: true,
+          message: `Thinking: ${session.thinking === undefined ? 'default' : session.thinking ? 'on' : 'off'}\nReasoning mode: ${session.reasoningMode}\nUsage: /thinking [on|off|auto|quick|balanced|deep]`,
+          echo: true,
+        };
       }
-      const ok = kodaxHost.setThinking(ctx.sessionId, target === 'on');
-      if (!ok) return { ok: false, message: `session not found: ${ctx.sessionId}` };
-      return { ok: true, message: `thinking → ${target} (applies on next send)` };
+      if (target === 'on' || target === 'off') {
+        const thinkingOk = kodaxHost.setThinking(ctx.sessionId, target === 'on');
+        const reasoningOk = kodaxHost.setReasoningMode(ctx.sessionId, target === 'on' ? 'auto' : 'off');
+        if (!thinkingOk || !reasoningOk) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+        return { ok: true, message: `thinking -> ${target}; reasoning -> ${target === 'on' ? 'auto' : 'off'} (applies on next send)` };
+      }
+      if (isReasoningMode(target)) {
+        const ok = kodaxHost.setReasoningMode(ctx.sessionId, target);
+        if (!ok) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+        return { ok: true, message: `reasoning -> ${target} (applies on next send)` };
+      }
+      return { ok: false, message: 'Usage: /thinking [on|off|auto|quick|balanced|deep]' };
     },
   },
 
@@ -263,19 +767,279 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
 
   {
     name: 'agent-mode',
-    description: 'Switch agent orchestration mode (ama=multi-agent / sa=single-agent)',
-    argsHint: '<ama|sa>',
+    aliases: ['am'],
+    description: 'Switch agent mode (ama=explicit workflow / amaw=auto workflow / sa=single-agent)',
+    argsHint: '[ama|amaw|ama-workflow|sa|toggle]',
     source: 'builtin',
     handler: async (ctx) => {
-      const target = ctx.args[0];
-      if (!target) return { ok: false, message: 'Usage: /agent-mode <ama|sa>' };
-      if (!isAgentMode(target)) {
-        return { ok: false, message: `unknown agent mode '${target}'; valid: ${AGENT_MODES.join(', ')}` };
+      const session = kodaxHost.get(ctx.sessionId);
+      if (!session) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      const raw = ctx.args[0];
+      if (!raw) {
+        return {
+          ok: true,
+          message: `Agent mode: ${session.agentMode.toUpperCase()}\nUsage: /agent-mode [ama|amaw|ama-workflow|sa|toggle]`,
+          echo: true,
+        };
       }
+      const parsed = normalizeAgentMode(raw);
+      if (!parsed) {
+        return { ok: false, message: `unknown agent mode '${raw}'; valid: ${AGENT_MODES.join(', ')}, ama-workflow, toggle` };
+      }
+      const target = parsed === 'toggle' ? nextAgentMode(session.agentMode) : parsed;
       const ok = kodaxHost.setAgentMode(ctx.sessionId, target);
       return ok
-        ? { ok: true, message: `agent mode → ${target}` }
+        ? { ok: true, message: `agent mode -> ${target}` }
         : { ok: false, message: `session not found: ${ctx.sessionId}` };
+    },
+  },
+
+  {
+    name: 'workflow',
+    description: 'Run and inspect workflows for the current session',
+    argsHint: WORKFLOW_ARG_HINT,
+    source: 'builtin',
+    handler: async (ctx) => {
+      const session = kodaxHost.get(ctx.sessionId);
+      const launchSession = sessionToLaunchSession(session);
+      if (!session || !launchSession) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+
+      const invocation = parseWorkflowInvocation(ctx.args);
+
+      if (invocation.kind === 'help') {
+        return { ok: true, message: workflowHelp(), echo: true };
+      }
+
+      if (invocation.kind === 'list') {
+        const library = await workflowController.listLibrary(session.projectRoot);
+        const lines = ['Available workflows:'];
+        if (library.builtin.length > 0) {
+          lines.push('Built-in:');
+          lines.push(
+            ...library.builtin
+              .slice(0, 12)
+              .map((w) => `  ${w.name}${w.description ? ` - ${w.description}` : ''}`),
+          );
+        }
+        if (library.patterns.length > 0) {
+          lines.push('Pattern templates:');
+          lines.push(...library.patterns.slice(0, 12).map((w) => `  ${w.name} (${w.pattern}) - ${w.description}`));
+        }
+        if (library.saved.length > 0) {
+          lines.push('Saved:');
+          lines.push(
+            ...library.saved
+              .slice(0, 12)
+              .map((w) => `  ${w.name}${w.source ? ` (${w.source}${w.execution ? `, ${w.execution}` : ''})` : ''} - ${w.path}`),
+          );
+        }
+        if (library.builtin.length === 0 && library.patterns.length === 0 && library.saved.length === 0) {
+          lines.push('  none found');
+        }
+        lines.push('Run with: /workflow <name> [args]');
+        return { ok: true, message: compactSlashMessage(lines.join('\n')), echo: true };
+      }
+
+      if (invocation.kind === 'runs') {
+        const options = parseWorkflowRunsOptions(invocation.rawArgs);
+        if (options.error) return { ok: false, message: `Usage: /workflow runs [--all] [--limit N]\n${options.error}` };
+        const runs = workflowRunsForSession(ctx.sessionId);
+        if (runs.length === 0) {
+          return { ok: true, message: 'No workflow runs for this session.', echo: true };
+        }
+        const shown = options.all ? runs : runs.slice(0, options.limit);
+        const overflow = !options.all && runs.length > shown.length
+          ? [`... ${runs.length - shown.length} more; use /workflow runs --all`]
+          : [];
+        return {
+          ok: true,
+          message: compactSlashMessage(['Workflow runs:', ...shown.map(formatWorkflowRun), ...overflow].join('\n')),
+          echo: true,
+        };
+      }
+
+      if (invocation.kind === 'show') {
+        const selected = invocation.runId
+          ? findWorkflowRun(ctx.sessionId, invocation.runId)
+          : latestWorkflowRun(ctx.sessionId);
+        if (!selected) return { ok: false, message: 'No workflow run found for this session.' };
+        if (selected.sessionId !== ctx.sessionId) {
+          return { ok: false, message: `workflow run does not belong to this session: ${selected.runId}` };
+        }
+        return {
+          ok: true,
+          message: compactSlashMessage(workflowRunDetails(selected, invocation.full === true)),
+          echo: true,
+        };
+      }
+
+      if (invocation.kind === 'pause' || invocation.kind === 'resume' || invocation.kind === 'stop') {
+        if (invocation.kind !== 'stop' && !invocation.runId) {
+          return { ok: false, message: `Usage: /workflow ${invocation.kind} <runId>` };
+        }
+        const selected = invocation.runId
+          ? findWorkflowRun(ctx.sessionId, invocation.runId)
+          : latestWorkflowRun(ctx.sessionId, true);
+        if (!selected) return { ok: false, message: 'No workflow run found for this session.' };
+        if (selected.sessionId !== ctx.sessionId) {
+          return { ok: false, message: `workflow run does not belong to this session: ${selected.runId}` };
+        }
+        const ok =
+          invocation.kind === 'stop'
+            ? await workflowController.stop(selected.runId, 'stopped from /workflow')
+            : invocation.kind === 'pause'
+              ? await workflowController.pause(selected.runId)
+              : await workflowController.resume(selected.runId);
+        return ok
+          ? { ok: true, message: `workflow ${invocation.kind}: ${selected.runId}`, echo: true }
+          : { ok: false, message: `workflow ${invocation.kind} failed: ${selected.runId}` };
+      }
+
+      if (invocation.kind === 'delete') {
+        if (!invocation.target) return { ok: false, message: 'Usage: /workflow delete [--force] [--run|--saved] <runId|savedName>' };
+        if (invocation.scope === 'conflict') return { ok: false, message: 'choose only one delete scope: --run or --saved' };
+        const library = await workflowController.listLibrary(session.projectRoot);
+        const run = invocation.scope === 'saved' ? undefined : findWorkflowRun(ctx.sessionId, invocation.target);
+        const saved = invocation.scope === 'run' ? undefined : findSavedWorkflow(library.saved, invocation.target);
+        if (run && saved && invocation.scope === undefined) {
+          return { ok: false, message: `ambiguous delete target: ${invocation.target}; use --run or --saved` };
+        }
+        if (saved && !run) {
+          const result = await workflowController.deleteSavedWorkflow(saved.name, session.projectRoot, saved.source);
+          return 'error' in result
+            ? { ok: false, message: result.error }
+            : { ok: true, message: formatSavedAction('Deleted saved workflow', result), echo: true };
+        }
+        if (!run) return { ok: false, message: `workflow target not found: ${invocation.target}` };
+        const ok = await workflowController.deleteRun(run.runId, invocation.force);
+        return ok
+          ? { ok: true, message: `Deleted workflow run ${run.runId}${invocation.force ? ' with --force' : ''}.`, echo: true }
+          : { ok: false, message: `workflow delete failed: ${run.runId}` };
+      }
+
+      if (invocation.kind === 'prune') {
+        const options = parseWorkflowPruneOptions(invocation.rawArgs);
+        if (options.error) return { ok: false, message: `Usage: /workflow prune --dry-run | --keep N | --older-than Nd\n${options.error}` };
+        if (!options.dryRun && options.keep === undefined && options.olderThanDays === undefined) {
+          return { ok: false, message: 'Usage: /workflow prune --dry-run | --keep N | --older-than Nd\nNo cleanup rule was provided.' };
+        }
+        const result = await workflowController.prune(options);
+        const lines = [
+          options.dryRun ? 'Workflow prune preview:' : 'Workflow prune:',
+          `Candidates: ${result.candidates.length ? result.candidates.join(', ') : '(none)'}`,
+          `Protected active runs: ${result.protectedRuns}`,
+          options.dryRun ? 'Dry run only.' : `Deleted: ${result.deleted}`,
+        ];
+        return { ok: true, message: compactSlashMessage(lines.join('\n')), echo: true };
+      }
+
+      if (invocation.kind === 'save') {
+        if (!invocation.runId || !invocation.name) return { ok: false, message: 'Usage: /workflow save <runId> <name>' };
+        const run = findWorkflowRun(ctx.sessionId, invocation.runId);
+        if (!run) return { ok: false, message: `workflow run not found: ${invocation.runId}` };
+        const result = await workflowController.saveGeneratedWorkflowFromRun(run.runId, invocation.name, session.projectRoot);
+        return 'error' in result
+          ? { ok: false, message: result.error }
+          : { ok: true, message: formatSavedAction('Saved workflow', result), echo: true };
+      }
+
+      if (invocation.kind === 'rename') {
+        if (!invocation.target || !invocation.newName) return { ok: false, message: 'Usage: /workflow rename <runId|savedName> <newName>' };
+        const library = await workflowController.listLibrary(session.projectRoot);
+        const run = findWorkflowRun(ctx.sessionId, invocation.target);
+        const saved = findSavedWorkflow(library.saved, invocation.target);
+        if (run && saved) return { ok: false, message: `ambiguous rename target: ${invocation.target}; use the concrete runId or saved workflow name` };
+        if (run) {
+          const ok = await workflowController.rename(run.runId, invocation.newName);
+          return ok
+            ? { ok: true, message: `Renamed workflow run ${run.runId} to ${invocation.newName}.`, echo: true }
+            : { ok: false, message: `workflow rename failed: ${run.runId}` };
+        }
+        if (saved) {
+          const result = await workflowController.renameSavedWorkflow(saved.name, invocation.newName, session.projectRoot, saved.source);
+          return 'error' in result
+            ? { ok: false, message: result.error }
+            : { ok: true, message: formatSavedAction('Renamed saved workflow', result), echo: true };
+        }
+        return { ok: false, message: `workflow target not found: ${invocation.target}` };
+      }
+
+      if (invocation.kind === 'revise') {
+        if (!invocation.target || !invocation.request) {
+          return { ok: false, message: 'Usage: /workflow revise [--replace] <runId|savedName> <change request>' };
+        }
+        const library = await workflowController.listLibrary(session.projectRoot);
+        const run = findWorkflowRun(ctx.sessionId, invocation.target);
+        const saved = findSavedWorkflow(library.saved, invocation.target);
+        if (run && saved) return { ok: false, message: `ambiguous revise target: ${invocation.target}; use the concrete runId or saved workflow name` };
+        if (invocation.replace && !saved) return { ok: false, message: 'revise --replace requires a saved workflow name target' };
+        if (!run && !saved) return { ok: false, message: `workflow target not found: ${invocation.target}` };
+        const result = await workflowController.reviseWorkflow({
+          target: run?.runId ?? saved!.name,
+          request: invocation.request,
+          ...(invocation.replace ? { replace: true } : {}),
+          session: launchSession,
+          ...(saved ? { saved } : {}),
+        });
+        return 'error' in result
+          ? { ok: false, message: result.error }
+          : { ok: true, message: formatSavedAction(invocation.replace ? 'Replaced saved workflow' : 'Saved workflow revision', result), echo: true };
+      }
+
+      if (invocation.kind === 'rerun') {
+        if (!invocation.runId) return { ok: false, message: 'Usage: /workflow rerun <runId|savedName> [args]' };
+        const library = await workflowController.listLibrary(session.projectRoot);
+        const run = findWorkflowRun(ctx.sessionId, invocation.runId);
+        const saved = findSavedWorkflow(library.saved, invocation.runId);
+        if (run && saved) return { ok: false, message: `ambiguous rerun target: ${invocation.runId}; use /workflow ${saved.name} for saved or a concrete runId` };
+        const args = parseWorkflowArgs(invocation.rawArgs);
+        const result = saved
+          ? await workflowController.start({
+              target: saved.path,
+              source: 'saved',
+              args,
+              session: launchSession,
+            })
+          : run
+            ? await workflowController.rerunGeneratedWorkflow(run.runId, args, launchSession)
+            : { error: `workflow target not found: ${invocation.runId}` };
+        return 'error' in result
+          ? { ok: false, message: result.error }
+          : { ok: true, message: `workflow started: ${saved?.name ?? run?.workflowName ?? invocation.runId} (${result.runId})`, echo: true };
+      }
+
+      if (invocation.kind === 'create') {
+        if (!invocation.request) return { ok: false, message: 'Usage: /workflow create <request>' };
+        const result = await workflowController.createGeneratedWorkflow(invocation.request, launchSession);
+        return 'error' in result
+          ? { ok: false, message: result.error }
+          : { ok: true, message: `workflow started: generated (${result.runId})`, echo: true };
+      }
+
+      const library = await workflowController.listLibrary(session.projectRoot);
+      const targetName = invocation.name;
+      const targetLower = targetName.toLowerCase();
+      const builtin = library.builtin.find((w) => w.name === targetName || w.name.toLowerCase() === targetLower);
+      const saved = library.saved.find((w) => w.name === targetName || w.name.toLowerCase() === targetLower || w.path === targetName);
+      if (!builtin && !saved) {
+        return {
+          ok: false,
+          message: compactSlashMessage(`workflow not found: ${targetName}\n\n${workflowHelp()}`),
+        };
+      }
+
+      const result = await workflowController.start({
+        target: builtin ? builtin.name : saved!.path,
+        source: builtin ? 'builtin' : 'saved',
+        args: parseWorkflowArgs(invocation.rawArgs),
+        session: launchSession,
+      });
+      if ('error' in result) return { ok: false, message: result.error };
+      return {
+        ok: true,
+        message: `workflow started: ${builtin?.name ?? saved!.name} (${result.runId})`,
+        echo: true,
+      };
     },
   },
 
@@ -327,7 +1091,7 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
   {
     name: 'compact',
     description: 'Request context compaction on next turn (spikes token budget to force trigger)',
-    argsHint: '',
+    argsHint: '[instructions]',
     source: 'builtin',
     handler: async (ctx) => {
       const s = kodaxHost.get(ctx.sessionId);
@@ -349,6 +1113,7 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
   {
     name: 'tree',
     description: 'Show current session fork lineage tree',
+    argsHint: '[entry-id|label] | label <entry-id|label> <name> | unlabel <entry-id|label>',
     source: 'builtin',
     handler: async (ctx) => {
       if (!kodaxHost.get(ctx.sessionId)) {
@@ -360,6 +1125,7 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
 
   {
     name: 'history',
+    aliases: ['hist'],
     description: 'List user messages in current session',
     source: 'builtin',
     handler: async (ctx) => {
@@ -372,18 +1138,32 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
 
   {
     name: 'help',
+    aliases: ['h', '?'],
     description: 'List all available slash commands',
+    argsHint: '[command]',
     source: 'builtin',
-    handler: async () => {
+    handler: async (ctx) => {
       const cmds = listSlashCommands();
+      const topic = ctx.args[0]?.toLowerCase();
+      if (topic) {
+        const cmd = cmds.find((c) => c.name === topic || c.aliases?.includes(topic));
+        if (!cmd) {
+          return {
+            ok: false,
+            message: `Unknown help topic: ${topic}\nUse /help to list available commands.`,
+          };
+        }
+        return {
+          ok: true,
+          message: formatSlashCommandUsage(cmd),
+          echo: true,
+        };
+      }
       // 把命令列表当 message 文本返回——renderer 渲染时按行 split 显示
-      const lines = cmds.map((c) => {
-        const hint = c.argsHint ? ` ${c.argsHint}` : '';
-        return `/${c.name}${hint} — ${c.description}`;
-      });
+      const lines = cmds.map(formatSlashCommandUsage);
       return {
         ok: true,
-        message: `Available commands (${cmds.length}):\n${lines.join('\n')}`,
+        message: compactSlashMessage(`Available commands (${cmds.length}):\n${lines.join('\n')}`),
         echo: true,
       };
     },
@@ -391,14 +1171,47 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
 
   {
     name: 'repointel',
+    aliases: ['ri'],
     description: 'Show recent KodaX repo-intelligence trace events',
+    argsHint: '[status|mode|trace|warm|endpoint|bin]',
     source: 'builtin',
     handler: async (ctx) => {
       if (!kodaxHost.get(ctx.sessionId)) {
         return { ok: false, message: `session not found: ${ctx.sessionId}` };
       }
       // renderer 端 dispatchSlashAction 读 events buffer 抽 repointel_trace
-      return { ok: true, message: '__action__:show-repointel', echo: false };
+      const detailMode = ctx.args[0]?.toLowerCase();
+      if (!detailMode || detailMode === 'status' || detailMode === 'doctor') {
+        return { ok: true, message: '__action__:show-repointel-status', echo: false };
+      }
+      if (detailMode === 'trace') {
+        if (ctx.args[1]) {
+          return {
+            ok: true,
+            message:
+              '[repointel] trace is read-only in Space v0.1.20 planning; use /repointel trace to show recent session trace events.',
+            echo: true,
+          };
+        }
+        return { ok: true, message: '__action__:show-repointel-trace', echo: false };
+      }
+      if (detailMode === 'warm') {
+        return {
+          ok: true,
+          message:
+            '[repointel] warm is not available: the current KodaX SDK does not expose a standalone warm API. Send a session message to trigger repo-intelligence trace events.',
+          echo: true,
+        };
+      }
+      if (detailMode === 'mode' || detailMode === 'endpoint' || detailMode === 'bin') {
+        return {
+          ok: true,
+          message:
+            `[repointel] ${detailMode} is read-only in Space v0.1.20 planning; manage it through KodaX config until a stable SDK setter exists.`,
+          echo: true,
+        };
+      }
+      return { ok: true, message: '__action__:show-repointel-status', echo: false };
     },
   },
 
@@ -414,17 +1227,46 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
 
   {
     name: 'status',
-    description: 'Show other KodaX peer instances (other Space windows / CLI / REPL running)',
+    aliases: ['info', 'ctx'],
+    description: 'Show current session status',
+    argsHint: '[workspace|worktree|runtime|peers]',
     source: 'builtin',
-    handler: async () => {
+    handler: async (ctx) => {
+      const detailMode = ctx.args[0]?.toLowerCase();
+      if (detailMode === 'peers') {
+        return shellAction('show-status');
+      }
+      const session = kodaxHost.get(ctx.sessionId);
+      if (!session) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      const lines = [
+        'Session Status:',
+        `  Provider:    ${session.provider}${session.model ? ` / ${session.model}` : ''}`,
+        `  Permission:  ${session.permissionMode}`,
+        `  Auto engine: ${session.autoModeEngine}`,
+        `  Reasoning:   ${session.reasoningMode}`,
+        `  Thinking:    ${session.thinking === undefined ? 'default' : session.thinking ? 'on' : 'off'}`,
+        `  Agent Mode:  ${session.agentMode.toUpperCase()}`,
+        `  Session ID:  ${session.sessionId}`,
+        `  Surface:     ${session.surface}`,
+        `  Project:     ${session.projectRoot}`,
+        `  Created:     ${new Date(session.createdAt).toISOString()}`,
+        `  Last Active: ${new Date(session.lastActivityAt).toISOString()}`,
+      ];
+      if (session.parentSessionId) lines.push(`  Parent:      ${session.parentSessionId}`);
+      if (session.forkPointTurnIdx !== undefined) lines.push(`  Fork point:  ${session.forkPointTurnIdx}`);
+      if (detailMode === 'workspace' || detailMode === 'worktree' || detailMode === 'runtime') {
+        lines.push('  Runtime:     KodaX Space desktop host');
+      }
+      lines.push('  Peers:       use /status peers');
+      return { ok: true, message: lines.join('\n'), echo: true };
       // renderer 调 session.listRunning + 输出格式化的 peer 列表
-      return { ok: true, message: '__action__:show-status', echo: false };
     },
   },
 
   {
     name: 'review',
     description: 'Insert a review template + current uncommitted diff for LLM review',
+    argsHint: '[--workflow] [base | sha <hash>]',
     source: 'builtin',
     handler: async () => {
       // renderer 端拉 git diff (project.gitDiff IPC) → 拼模板 → 塞入输入框
@@ -435,8 +1277,366 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
   },
 
   {
+    name: 'auto',
+    aliases: ['a'],
+    description: 'Switch the current session to auto permission mode',
+    source: 'builtin',
+    handler: async (ctx) => {
+      const session = kodaxHost.get(ctx.sessionId);
+      if (!session) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      const ok = kodaxHost.setPermissionMode(ctx.sessionId, 'auto');
+      return ok
+        ? { ok: true, message: `mode -> auto; auto-engine -> ${session.autoModeEngine}` }
+        : { ok: false, message: `session not found: ${ctx.sessionId}` };
+    },
+  },
+
+  {
+    name: 'auto-denials',
+    description: 'Show auto-mode classifier denial thresholds and current engine',
+    source: 'builtin',
+    handler: async (ctx) => {
+      const session = kodaxHost.get(ctx.sessionId);
+      if (!session) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      if (session.permissionMode !== 'auto') {
+        return {
+          ok: true,
+          message: `[auto-denials] not in auto mode. Current mode: ${session.permissionMode}. Use /mode auto first.`,
+          echo: true,
+        };
+      }
+      return {
+        ok: true,
+        message: [
+          '[auto-mode classifier stats]',
+          `  engine: ${session.autoModeEngine}`,
+          '  thresholds:',
+          '    consecutive blocks: 3',
+          '    cumulative blocks: 20',
+          '    circuit breaker: 5 errors / 10 min',
+          '  counters: not exposed by the Space host yet',
+        ].join('\n'),
+        echo: true,
+      };
+    },
+  },
+
+  {
+    name: 'fallback',
+    description: 'Configure the child-task provider fallback chain for this Space process',
+    argsHint: '[status | <p1,p2,...> | off]',
+    source: 'builtin',
+    handler: async (ctx) => {
+      const current = (process.env.KODAX_FALLBACK_PROVIDERS ?? '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+      const sub = ctx.args[0]?.toLowerCase();
+      if (!sub || sub === 'status') {
+        return {
+          ok: true,
+          message: current.length === 0
+            ? 'Child-task provider fallback: off (no chain configured)'
+            : `Child-task provider fallback: on\n  Order: ${current.join(' -> ')}`,
+          echo: true,
+        };
+      }
+      if (sub === 'off' || sub === 'clear' || sub === 'none') {
+        delete process.env.KODAX_FALLBACK_PROVIDERS;
+        return { ok: true, message: 'Child-task provider fallback disabled for this Space process.', echo: true };
+      }
+      const chain = ctx.args
+        .join(',')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+      if (chain.length === 0) {
+        return { ok: false, message: 'Usage: /fallback ark-coding,kimi-code (or /fallback off)' };
+      }
+      process.env.KODAX_FALLBACK_PROVIDERS = chain.join(',');
+      return {
+        ok: true,
+        message: `Child-task fallback order: ${chain.join(' -> ')}\nNote: this is a runtime override for the current Space process.`,
+        echo: true,
+      };
+    },
+  },
+
+  {
+    name: 'verifier-log',
+    description: 'Show or toggle Sidecar Verifier one-line logs',
+    argsHint: '[on|off]',
+    source: 'builtin',
+    handler: async (ctx) => {
+      const parsed = parseToggleValue(ctx.args[0]);
+      if (!ctx.args[0]) {
+        return {
+          ok: true,
+          message: `Sidecar Verifier log: ${process.env.KODAX_VERIFIER_LOG === '1' ? 'on' : 'off'}\nUsage: /verifier-log [on|off]`,
+          echo: true,
+        };
+      }
+      if (!parsed) return { ok: false, message: 'Usage: /verifier-log [on|off]' };
+      if (parsed === 'on') process.env.KODAX_VERIFIER_LOG = '1';
+      else delete process.env.KODAX_VERIFIER_LOG;
+      return { ok: true, message: `Sidecar Verifier log: ${parsed}`, echo: true };
+    },
+  },
+
+  {
+    name: 'stall-log',
+    description: 'Show or toggle Stall Sidecar one-line logs',
+    argsHint: '[on|off]',
+    source: 'builtin',
+    handler: async (ctx) => {
+      const parsed = parseToggleValue(ctx.args[0]);
+      if (!ctx.args[0]) {
+        return {
+          ok: true,
+          message: `Stall Sidecar log: ${process.env.KODAX_STALL_LOG === '1' ? 'on' : 'off'}\nUsage: /stall-log [on|off]`,
+          echo: true,
+        };
+      }
+      if (!parsed) return { ok: false, message: 'Usage: /stall-log [on|off]' };
+      if (parsed === 'on') process.env.KODAX_STALL_LOG = '1';
+      else delete process.env.KODAX_STALL_LOG;
+      return { ok: true, message: `Stall Sidecar log: ${parsed}`, echo: true };
+    },
+  },
+
+  {
+    name: 'goal',
+    description: 'Track a lightweight active goal for the current session',
+    argsHint: '[status|pause|resume|complete|blocked|clear|help|<objective> [--tokens N]]',
+    source: 'builtin',
+    handler: async (ctx) => {
+      if (!kodaxHost.get(ctx.sessionId)) {
+        return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      }
+      const sub = ctx.args[0]?.toLowerCase();
+      const current = goalBySession.get(ctx.sessionId);
+      if (!sub || sub === 'status') {
+        return { ok: true, message: formatGoalStatus(current), echo: true };
+      }
+      if (sub === 'help' || sub === '--help' || sub === '-h') {
+        return { ok: true, message: goalHelp(), echo: true };
+      }
+      if (sub === 'clear') {
+        goalBySession.delete(ctx.sessionId);
+        return { ok: true, message: 'Goal cleared.', echo: true };
+      }
+      if (sub === 'pause' || sub === 'resume' || sub === 'complete' || sub === 'blocked') {
+        if (!current) return { ok: false, message: 'No goal set. Use /goal <objective> [--tokens N] first.' };
+        const status: GoalStatus = sub === 'resume'
+          ? 'active'
+          : sub === 'pause'
+            ? 'paused'
+            : sub === 'complete'
+              ? 'complete'
+              : 'blocked';
+        goalBySession.set(ctx.sessionId, { ...current, status, updatedAt: Date.now() });
+        return { ok: true, message: formatGoalStatus(goalBySession.get(ctx.sessionId)), echo: true };
+      }
+      const parsed = parseGoalCreateArgs(ctx.args);
+      if ('error' in parsed) return { ok: false, message: `${goalHelp()}\n${parsed.error}` };
+      const now = Date.now();
+      goalBySession.set(ctx.sessionId, {
+        objective: parsed.objective,
+        tokenBudget: parsed.tokenBudget,
+        tokensUsed: current?.tokensUsed ?? 0,
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      });
+      return { ok: true, message: formatGoalStatus(goalBySession.get(ctx.sessionId)), echo: true };
+    },
+  },
+
+  {
+    name: 'exit',
+    aliases: ['quit', 'q', 'bye'],
+    description: 'Close the KodaX Space window',
+    source: 'builtin',
+    handler: async () => shellAction('exit-app'),
+  },
+
+  {
+    name: 'paste',
+    description: 'Inspect pasted text stored by the composer',
+    argsHint: '[list|show <id>|help]',
+    source: 'builtin',
+    handler: async (ctx) => {
+      if (!kodaxHost.get(ctx.sessionId)) {
+        return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      }
+      const sub = ctx.args[0]?.toLowerCase();
+      if (!sub || sub === 'help') {
+        return {
+          ok: true,
+          message: 'Usage: /paste list | /paste show <id>\nKodaX Space currently sends pasted text directly from the composer; no paste registry is exposed yet.',
+          echo: true,
+        };
+      }
+      if (sub === 'list') {
+        return {
+          ok: true,
+          message: '[paste] No paste registry is active in KodaX Space yet. Text and images pasted in the composer are sent inline.',
+          echo: true,
+        };
+      }
+      if (sub === 'show') {
+        return { ok: false, message: 'KodaX Space does not expose saved paste ids yet.' };
+      }
+      return { ok: false, message: 'Usage: /paste list | /paste show <id>' };
+    },
+  },
+
+  {
+    name: 'reload',
+    description: 'Reload runtime context shown by Space panels',
+    source: 'builtin',
+    handler: async (ctx) => {
+      if (!kodaxHost.get(ctx.sessionId)) {
+        return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      }
+      return shellAction('reload-context');
+    },
+  },
+
+  {
+    name: 'extensions',
+    aliases: ['ext'],
+    description: 'Show configured MCP/plugin extensions',
+    source: 'builtin',
+    handler: async (ctx) => {
+      if (!kodaxHost.get(ctx.sessionId)) {
+        return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      }
+      return shellAction('show-extensions');
+    },
+  },
+
+  {
+    name: 'mcp',
+    description: 'Show MCP server runtime status',
+    argsHint: '[status|refresh]',
+    source: 'builtin',
+    handler: async (ctx) => {
+      if (!kodaxHost.get(ctx.sessionId)) {
+        return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      }
+      const sub = ctx.args[0]?.toLowerCase();
+      if (sub && sub !== 'status' && sub !== 'refresh') {
+        return { ok: false, message: 'Usage: /mcp [status|refresh]' };
+      }
+      return shellAction('show-mcp');
+    },
+  },
+
+  {
+    name: 'save',
+    description: 'Save current session',
+    source: 'builtin',
+    handler: async (ctx) => {
+      if (!kodaxHost.get(ctx.sessionId)) {
+        return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      }
+      return {
+        ok: true,
+        message: 'Session is auto-saved by KodaX Space after each message. Current in-memory state is active.',
+        echo: true,
+      };
+    },
+  },
+
+  {
+    name: 'load',
+    aliases: ['resume'],
+    description: 'Load a session by id, or list sessions when no id is provided',
+    argsHint: '[session-id]',
+    source: 'builtin',
+    handler: async (ctx) => (ctx.args[0] ? shellAction('load-session') : shellAction('list-sessions')),
+  },
+
+  {
+    name: 'sessions',
+    aliases: ['ls', 'list'],
+    description: 'List recent sessions',
+    source: 'builtin',
+    handler: async () => shellAction('list-sessions'),
+  },
+
+  {
+    name: 'delete',
+    aliases: ['rm', 'del'],
+    description: 'Delete a saved session',
+    argsHint: '<session-id>',
+    source: 'builtin',
+    handler: async (ctx) => {
+      const target = ctx.args[0];
+      if (!target) return shellAction('list-sessions');
+      if (target.toLowerCase() === 'all') {
+        return { ok: false, message: '/delete all is intentionally not available from KodaX Space slash commands. Delete sessions individually.' };
+      }
+      return shellAction('delete-session');
+    },
+  },
+
+  {
+    name: 'fork',
+    description: 'Fork the current branch into a new session',
+    argsHint: '[entry-id|label]',
+    source: 'builtin',
+    handler: async (ctx) => {
+      if (!kodaxHost.get(ctx.sessionId)) {
+        return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      }
+      return shellAction('fork-session');
+    },
+  },
+
+  {
+    name: 'rewind',
+    description: 'Rewind the current session to a previous turn',
+    argsHint: '[entry-id|label]',
+    source: 'builtin',
+    handler: async (ctx) => {
+      if (!kodaxHost.get(ctx.sessionId)) {
+        return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      }
+      return shellAction('rewind-session');
+    },
+  },
+
+  {
+    name: 'skills',
+    description: 'List available skills',
+    source: 'builtin',
+    handler: async (ctx) => {
+      if (!kodaxHost.get(ctx.sessionId)) {
+        return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      }
+      return shellAction('list-skills');
+    },
+  },
+
+  {
+    name: 'skill',
+    description: 'List skills; invoke a skill with /skill:<name> [args]',
+    argsHint: '[:name] [args]',
+    source: 'builtin',
+    handler: async (ctx) => {
+      if (!kodaxHost.get(ctx.sessionId)) {
+        return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      }
+      return shellAction('list-skills');
+    },
+  },
+
+  {
     name: 'memory',
     description: 'Show loaded AGENTS.md files (global + project)',
+    argsHint: '[list|rebuild|open|help]',
     source: 'builtin',
     handler: async (ctx) => {
       if (!kodaxHost.get(ctx.sessionId)) {

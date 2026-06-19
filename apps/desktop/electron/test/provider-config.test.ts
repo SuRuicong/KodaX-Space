@@ -113,6 +113,42 @@ test('removeCustom returns true for existing, false for missing', async () => {
   assert.equal(await store.removeCustom(id), false);
 });
 
+test('removeCustom clears default when deleting the default custom provider', async () => {
+  const store = newStore();
+  await store.load();
+  const id = await store.addCustom({
+    displayName: 'Default Custom',
+    protocol: 'openai',
+    baseUrl: 'https://default-custom.example.com/v1',
+    apiKeyEnv: 'DEFAULT_CUSTOM_KEY',
+    defaultModel: 'm',
+  });
+  await store.setDefault(id);
+
+  assert.equal(await store.removeCustom(id), true);
+  assert.equal(store.getDefaultProviderId(), null);
+
+  const reloaded = newStore();
+  await reloaded.load();
+  assert.equal(reloaded.getDefaultProviderId(), null);
+});
+
+test('removeCustom leaves built-in default intact when deleting another custom provider', async () => {
+  const store = newStore();
+  await store.load();
+  const id = await store.addCustom({
+    displayName: 'Other Custom',
+    protocol: 'openai',
+    baseUrl: 'https://other-custom.example.com/v1',
+    apiKeyEnv: 'OTHER_CUSTOM_KEY',
+    defaultModel: 'm',
+  });
+  await store.setDefault('anthropic');
+
+  assert.equal(await store.removeCustom(id), true);
+  assert.equal(store.getDefaultProviderId(), 'anthropic');
+});
+
 test('removeCustom refuses to remove a built-in id', async () => {
   const store = newStore();
   await store.load();

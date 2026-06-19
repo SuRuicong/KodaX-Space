@@ -140,7 +140,7 @@ export class RealKodaXSession implements ManagedSession {
   permissionMode: ManagedSession['permissionMode'];
   /** FEATURE_029：auto mode 子档；非 auto mode 时持有也无害（下次切 auto 时生效）。*/
   autoModeEngine: ManagedSession['autoModeEngine'];
-  /** AMA (默认 / 多智能体协作) vs SA (单 agent，接口并发受限时降级)。*/
+  /** AMA / AMAW / SA agent mode. */
   agentMode: ManagedSession['agentMode'];
   /**
    * F045: 工作面归属（'code' = Coder / 'partner' = Partner）。session 创建时定死，
@@ -686,10 +686,8 @@ export class RealKodaXSession implements ManagedSession {
           kind: 'managed_task_status',
           sessionId: sid,
           status: {
-            // SDK 0.7.49+ 把 KodaXAgentMode 扩成 'ama'|'sa'|'amaw'（新增 AMA 变体）。
-            // Space 的 agentMode 是粗粒度二元（ama=多智能体 / sa=单 agent），'amaw' 仍是
-            // AMA 家族 → 在边界折叠成 'ama'，不让新枚举漏进 IPC schema(z.enum['ama','sa'])。
-            agentMode: status.agentMode === 'sa' ? 'sa' : 'ama',
+            // Space now keeps the SDK's three agent modes intact: ama / amaw / sa.
+            agentMode: status.agentMode,
             harnessProfile: status.harnessProfile,
             activeWorkerId: status.activeWorkerId,
             activeWorkerTitle: status.activeWorkerTitle,
@@ -852,7 +850,7 @@ export class RealKodaXSession implements ManagedSession {
     const options: KodaXOptions = {
       provider: this.provider,
       reasoningMode: this.reasoningMode,
-      // KodaX agent 形态：AMA (默认) / SA。SDK 默认也是 ama，这里显式传以便用户切换生效。
+      // KodaX agent 形态：AMA / AMAW / SA。显式传以便用户切换生效。
       agentMode: this.agentMode,
       // SDK 0.7.42 wired (P0): /model + /thinking 设置在下一 turn 生效
       ...(this.model !== undefined ? { model: this.model } : {}),
@@ -924,8 +922,8 @@ export class RealKodaXSession implements ManagedSession {
 
     try {
       // runManagedTask（不是 runKodaX）：这是 agentMode-aware 分派器——
-      // agentMode='sa' 走直路，'ama'(默认) 走 Scout/Worker 链 + Sidecar Verifier。
-      // runKodaX 是 SA-only 入口、静默忽略 options.agentMode；直接调它会让 AMA/SA
+      // agentMode='sa' 走直路，'ama'/'amaw' 走 Scout/Worker 链 + Sidecar Verifier。
+      // runKodaX 是 SA-only 入口、静默忽略 options.agentMode；直接调它会让 agent mode
       // 选择器空接（每个 turn 都跑 SA、无 verifier → "只报计划就停" 没人拦截）。
       // 见 task-engine.ts dispatchManagedTask / runner-driven.ts(verifier 挂载点)。
       // F058: bind artifact attribution context for this run so the

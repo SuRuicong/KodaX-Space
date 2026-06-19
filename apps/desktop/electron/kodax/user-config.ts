@@ -16,6 +16,9 @@
 
 // 不直接 import Space 的 PermissionMode（含 'auto'，KodaX 不会产生），改用窄子集。
 
+import { validateApiKeyEnv } from '../providers/env-guard.js';
+import { validateBaseUrl } from '../providers/url-guard.js';
+
 type SdkRootModule = typeof import('@kodax-ai/kodax');
 type SdkLoadConfigReturn = ReturnType<SdkRootModule['loadConfig']>;
 type SdkCustomProviderConfig = NonNullable<SdkLoadConfigReturn['customProviders']>[number];
@@ -233,10 +236,10 @@ export async function registerKodaxCustomProviders(
     }
   }
 
-  let rawProviders: readonly SdkCustomProviderConfig[] = [];
+  let rawProviders: SdkLoadConfigReturn['customProviders'];
   try {
     const raw = activeImpl.loadConfig();
-    rawProviders = Array.isArray(raw.customProviders) ? raw.customProviders : [];
+    rawProviders = raw.customProviders;
   } catch (err) {
     console.warn(
       '[kodax-user-config] SDK loadConfig threw in registerCustomProviders:',
@@ -245,12 +248,12 @@ export async function registerKodaxCustomProviders(
   }
 
   const mergedByName = new Map<string, SdkCustomProviderConfig>();
-  for (const provider of rawProviders) {
-    const name = getProviderName(provider);
-    if (name) mergedByName.set(name, provider);
+  for (const provider of normalizeKodaxConfigCustomProviders(rawProviders)) {
+    mergedByName.set(provider.id, spaceCustomProviderToSdk(provider));
   }
   for (const provider of spaceCustomProviders) {
-    mergedByName.set(provider.id, spaceCustomProviderToSdk(provider));
+    const normalized = normalizeSpaceCustomProviderForSdk(provider);
+    if (normalized) mergedByName.set(provider.id, normalized);
   }
 
   const customProviders = [...mergedByName.values()];
@@ -330,12 +333,18 @@ function normalizeKodaxConfigCustomProvider(
     return null;
   }
 
+  const envErr = validateApiKeyEnv(apiKeyEnv);
+  if (envErr) return null;
+
+  const urlCheck = validateBaseUrl(baseUrl);
+  if (!urlCheck.ok || !urlCheck.normalizedUrl) return null;
+
   const models = normalizeModelList(raw.models);
   return {
     id: name,
     displayName: name,
     protocol,
-    baseUrl,
+    baseUrl: urlCheck.normalizedUrl,
     apiKeyEnv,
     defaultModel: model,
     ...(models ? { models } : {}),
@@ -356,9 +365,17 @@ function spaceCustomProviderToSdk(provider: SpaceCustomProviderForSdk): SdkCusto
   return config as unknown as SdkCustomProviderConfig;
 }
 
-function getProviderName(provider: SdkCustomProviderConfig): string | null {
-  const name = (provider as unknown as Record<string, unknown>).name;
-  return isNonEmptyString(name) ? name : null;
+function normalizeSpaceCustomProviderForSdk(
+  provider: SpaceCustomProviderForSdk,
+): SdkCustomProviderConfig | null {
+  const envErr = validateApiKeyEnv(provider.apiKeyEnv);
+  if (envErr) return null;
+  const urlCheck = validateBaseUrl(provider.baseUrl);
+  if (!urlCheck.ok || !urlCheck.normalizedUrl) return null;
+  return spaceCustomProviderToSdk({
+    ...provider,
+    baseUrl: urlCheck.normalizedUrl,
+  });
 }
 
 function normalizeModelList(models: unknown): readonly string[] | undefined {

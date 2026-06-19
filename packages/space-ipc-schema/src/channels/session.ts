@@ -47,9 +47,10 @@ export type AutoModeEngine = z.infer<typeof autoModeEngineSchema>;
 
 // KodaX agent 形态:
 //   - 'ama' = Adaptive Multi-Agent (KodaX 默认；scout/planner/generator/evaluator 多角色协作)
+//   - 'amaw' = AMA with natural-language workflow activation
 //   - 'sa'  = Single Agent (单 agent loop，资源 / 并发受限时的 fallback)
 // SDK 默认是 'ama'；Space 显式持有该字段，让用户能在 UI 主动切换 / 降级。
-const agentModeSchema = z.enum(['ama', 'sa']);
+const agentModeSchema = z.enum(['ama', 'amaw', 'sa']);
 export type AgentMode = z.infer<typeof agentModeSchema>;
 
 // ---- Surface (F045 Partner 批次地基) ----
@@ -323,8 +324,8 @@ export const sessionSetAutoModeEngineChannel = {
 
 // ---- Invoke: session.setAgentMode ----
 //
-// 切 AMA ↔ SA。AMA = adaptive multi-agent（KodaX 默认协作模式），SA = single agent
-// （接口并发受限时降级）。切换不重启 session，下一条 prompt 应用新形态。
+// 切 AMA / AMAW / SA。AMAW = AMA with natural-language workflow activation。
+// 切换不重启 session，下一条 prompt 应用新形态。
 export const sessionSetAgentModeChannel = {
   name: 'session.setAgentMode',
   direction: 'invoke',
@@ -628,7 +629,7 @@ const managedLiveEventSchema = z.object({
 });
 
 const managedTaskStatusSchema = z.object({
-  agentMode: z.enum(['ama', 'sa']),
+  agentMode: agentModeSchema,
   harnessProfile: z.string().max(64),
   activeWorkerId: z.string().max(128).optional(),
   activeWorkerTitle: z.string().max(256).optional(),

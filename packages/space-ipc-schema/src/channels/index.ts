@@ -12,6 +12,13 @@
 //   - 显式两个 map 让类型 + 运行时 allowlist 同源派生，preload 拿来直接用
 
 import { versionChannel } from './version.js';
+import { repointelStatusChannel } from './repointel.js';
+import {
+  handoffAcceptChannel,
+  handoffChangedChannel,
+  handoffDismissChannel,
+  handoffListChannel,
+} from './handoff.js';
 import {
   sessionCreateChannel,
   sessionSendChannel,
@@ -112,6 +119,7 @@ import {
   terminalExitChannel,
 } from './terminal.js';
 import { clipboardSaveImageChannel, clipboardCleanupSessionChannel } from './clipboard.js';
+import { shellRevealPathChannel, shellOpenExternalChannel } from './shell.js';
 import {
   artifactCreateChannel,
   artifactListChannel,
@@ -119,6 +127,7 @@ import {
   artifactDeleteChannel,
   artifactExportChannel,
   artifactOpenWindowChannel,
+  artifactPreviewFileChannel,
   artifactChangedChannel,
 } from './artifact.js';
 import {
@@ -142,6 +151,10 @@ import {
 
 export const invokeChannels = {
   [versionChannel.name]: versionChannel,
+  [repointelStatusChannel.name]: repointelStatusChannel,
+  [handoffListChannel.name]: handoffListChannel,
+  [handoffAcceptChannel.name]: handoffAcceptChannel,
+  [handoffDismissChannel.name]: handoffDismissChannel,
   [sessionCreateChannel.name]: sessionCreateChannel,
   [sessionSendChannel.name]: sessionSendChannel,
   [sessionCancelChannel.name]: sessionCancelChannel,
@@ -216,12 +229,15 @@ export const invokeChannels = {
   [terminalKillChannel.name]: terminalKillChannel,
   [clipboardSaveImageChannel.name]: clipboardSaveImageChannel,
   [clipboardCleanupSessionChannel.name]: clipboardCleanupSessionChannel,
+  [shellRevealPathChannel.name]: shellRevealPathChannel,
+  [shellOpenExternalChannel.name]: shellOpenExternalChannel,
   [artifactCreateChannel.name]: artifactCreateChannel,
   [artifactListChannel.name]: artifactListChannel,
   [artifactReadChannel.name]: artifactReadChannel,
   [artifactDeleteChannel.name]: artifactDeleteChannel,
   [artifactExportChannel.name]: artifactExportChannel,
   [artifactOpenWindowChannel.name]: artifactOpenWindowChannel,
+  [artifactPreviewFileChannel.name]: artifactPreviewFileChannel,
   [workflowListChannel.name]: workflowListChannel,
   [workflowGetChannel.name]: workflowGetChannel,
   [workflowStopChannel.name]: workflowStopChannel,
@@ -253,6 +269,7 @@ export const pushChannels = {
   [terminalExitChannel.name]: terminalExitChannel,
   [workflowEventChannel.name]: workflowEventChannel,
   [workflowActivityChannel.name]: workflowActivityChannel,
+  [handoffChangedChannel.name]: handoffChangedChannel,
 } as const;
 
 export type InvokeChannels = typeof invokeChannels;

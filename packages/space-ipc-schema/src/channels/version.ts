@@ -7,6 +7,21 @@
 
 import { z } from 'zod';
 
+export const spaceCapabilityStatusSchema = z.enum([
+  'supported',
+  'partial',
+  'blocked',
+  'planned',
+]);
+
+export const spaceCapabilitySchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  status: spaceCapabilityStatusSchema,
+  detail: z.string().min(1),
+  since: z.string().min(1).optional(),
+});
+
 export const versionChannel = {
   name: 'space.version',
   direction: 'invoke',
@@ -19,7 +34,13 @@ export const versionChannel = {
     electronVersion: z.string().min(1),
     chromeVersion: z.string().min(1),
     platform: z.enum(['darwin', 'linux', 'win32']),
+    kodaxSdkVersion: z.string().min(1),
+    kodaxDependencySpec: z.string().min(1),
+    capabilityContract: z.string().min(1),
+    capabilities: z.array(spaceCapabilitySchema).min(1),
   }),
 } as const;
 
+export type SpaceCapabilityStatus = z.infer<typeof spaceCapabilityStatusSchema>;
+export type SpaceCapability = z.infer<typeof spaceCapabilitySchema>;
 export type SpaceVersionOutput = z.infer<typeof versionChannel.output>;

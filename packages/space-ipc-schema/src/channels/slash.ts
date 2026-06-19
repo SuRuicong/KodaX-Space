@@ -19,14 +19,21 @@ import { z } from 'zod';
 // description / argsHint 用于补全 popover 显示，类似 REPL 的 /help 输出。
 // source 区分内置 (builtin) vs 用户级 (user; ~/.kodax/commands/*.md)。
 const slashCommandSourceSchema = z.enum(['builtin', 'user']);
+const slashCommandTokenSchema = z.union([
+  z.string().regex(/^[a-z][a-z0-9-]*$/, {
+    message: 'command name must be kebab-case',
+  }),
+  z.literal('?'),
+]);
 
 const slashCommandMetaSchema = z.object({
   name: z.string().regex(/^[a-z][a-z0-9-]*$/, {
     message: 'command name must be kebab-case',
   }).min(1).max(64),
+  aliases: z.array(slashCommandTokenSchema).max(8).optional(),
   description: z.string().max(512),
   /** 参数提示文字，如 '<plan|accept-edits|auto>'。可空表示无参。*/
-  argsHint: z.string().max(128).optional(),
+  argsHint: z.string().max(2048).optional(),
   source: slashCommandSourceSchema,
 });
 
@@ -60,7 +67,7 @@ export const slashExecChannel = {
   direction: 'invoke',
   input: z.object({
     sessionId: z.string().min(1),
-    name: z.string().regex(/^[a-z][a-z0-9-]*$/).min(1).max(64),
+    name: slashCommandTokenSchema,
     args: z.array(z.string().max(2048)).max(20),
   }),
   output: z.object({

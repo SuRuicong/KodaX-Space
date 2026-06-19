@@ -21,7 +21,7 @@ import {
   listSlashCommands,
   registerSlash,
 } from '../slash/registry.js';
-import { BUILTIN_SLASH_COMMANDS } from '../slash/builtin.js';
+import { BUILTIN_SLASH_COMMANDS, clearSlashGoalForSession } from '../slash/builtin.js';
 
 let captured: Array<{ channel: string; payload: unknown }>;
 
@@ -64,7 +64,11 @@ test('listSlashCommands returns all builtin commands in alpha order', () => {
   // 持续随 KodaX SDK 暴露新命令而增长——做集合包含断言，而不锁死完整数量
   // 避免每次加新内置命令都得改这个测试
   const required = new Set([
-    'auto-engine', 'clear', 'help', 'mode', 'model', 'provider', 'reasoning', 'thinking',
+    'agent-mode', 'auto', 'auto-denials', 'auto-engine', 'clear', 'compact', 'copy', 'cost',
+    'delete', 'doctor', 'exit', 'extensions', 'fallback', 'fork', 'goal', 'help', 'history',
+    'load', 'mcp', 'memory', 'mode', 'model', 'new', 'paste', 'provider', 'reasoning',
+    'reload', 'repointel', 'review', 'rewind', 'save', 'sessions', 'skill', 'skills',
+    'stall-log', 'status', 'thinking', 'verifier-log', 'workflow',
   ]);
   const sorted = cmds.slice().sort();
   for (const r of required) {
@@ -90,7 +94,7 @@ test('/mode with no args returns usage', async () => {
     provider: 'mock',
   });
   const result = await runCmd('mode', sessionId);
-  assert.equal(result.ok, false);
+  assert.equal(result.ok, true);
   assert.ok(result.message?.includes('Usage:'));
 });
 
@@ -229,6 +233,43 @@ test('/help returns echo=true with command list', async () => {
   assert.ok(result.message?.includes('/auto-engine'));
 });
 
+test('/help supports command topics and aliases', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  const result = await runCmd('help', sessionId, ['model']);
+  assert.equal(result.ok, true);
+  assert.equal(result.echo, true);
+  assert.ok(result.message?.includes('/model'));
+  assert.ok(result.message?.includes('/m'));
+});
+
+test('KodaX-compatible aliases resolve to canonical handlers', () => {
+  const aliases: Array<[string, string]> = [
+    ['m', 'model'],
+    ['am', 'agent-mode'],
+    ['a', 'auto'],
+    ['reason', 'reasoning'],
+    ['think', 'thinking'],
+    ['t', 'thinking'],
+    ['h', 'help'],
+    ['?', 'help'],
+    ['ri', 'repointel'],
+    ['resume', 'load'],
+    ['ls', 'sessions'],
+    ['list', 'sessions'],
+    ['rm', 'delete'],
+    ['del', 'delete'],
+    ['ext', 'extensions'],
+    ['q', 'exit'],
+    ['bye', 'exit'],
+  ];
+  for (const [alias, canonical] of aliases) {
+    assert.equal(getSlashHandler(alias)?.name, canonical, `/${alias} should resolve to /${canonical}`);
+  }
+});
+
 test('/model sets model override on session (v0.7.42 SDK wired)', async () => {
   const { sessionId } = kodaxHost.createSession({
     projectRoot: 'C:\\tmp\\proj',
@@ -257,8 +298,59 @@ test('/model without arg returns usage', async () => {
     provider: 'mock',
   });
   const result = await runCmd('model', sessionId, []);
-  assert.equal(result.ok, false);
+  assert.equal(result.ok, true);
   assert.ok(result.message?.includes('Usage'));
+});
+
+test('/auto alias switches permission mode to auto', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  const result = await runCmd('a', sessionId);
+  assert.equal(result.ok, true);
+  assert.equal(kodaxHost.get(sessionId)?.permissionMode, 'auto');
+});
+
+test('/goal creates and reports an in-session goal', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  const created = await runCmd('goal', sessionId, ['ship', 'workflow', '--tokens', '100']);
+  assert.equal(created.ok, true);
+  assert.ok(created.message?.includes('ship workflow'));
+  assert.ok(created.message?.includes('100'));
+
+  const status = await runCmd('goal', sessionId, ['status']);
+  assert.equal(status.ok, true);
+  assert.ok(status.message?.includes('ship workflow'));
+});
+
+test('clearSlashGoalForSession drops per-session goal state', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  const created = await runCmd('goal', sessionId, ['ship', 'workflow']);
+  assert.equal(created.ok, true);
+
+  clearSlashGoalForSession(sessionId);
+  const status = await runCmd('goal', sessionId, ['status']);
+  assert.equal(status.ok, true);
+  assert.ok(status.message?.includes('No goal set'));
+});
+
+test('/load, /delete, /mcp return renderer actions where appropriate', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  assert.equal((await runCmd('load', sessionId)).message, '__action__:list-sessions');
+  assert.equal((await runCmd('load', sessionId, ['s_123'])).message, '__action__:load-session');
+  assert.equal((await runCmd('delete', sessionId, ['s_123'])).message, '__action__:delete-session');
+  assert.equal((await runCmd('mcp', sessionId, ['refresh'])).message, '__action__:show-mcp');
+  assert.equal((await runCmd('mcp', sessionId, ['wat'])).ok, false);
 });
 
 test('/thinking on sets thinking=true on session', async () => {
@@ -279,6 +371,78 @@ test('/thinking off sets thinking=false on session', async () => {
   const result = await runCmd('thinking', sessionId, ['off']);
   assert.equal(result.ok, true);
   assert.equal(kodaxHost.get(sessionId)?.thinking, false);
+});
+
+test('/agent-mode accepts amaw and alias', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  const result = await runCmd('agent-mode', sessionId, ['amaw']);
+  assert.equal(result.ok, true);
+  assert.equal(kodaxHost.get(sessionId)?.agentMode, 'amaw');
+
+  const alias = await runCmd('agent-mode', sessionId, ['ama-workflow']);
+  assert.equal(alias.ok, true);
+  assert.equal(kodaxHost.get(sessionId)?.agentMode, 'amaw');
+});
+
+test('/agent-mode toggle cycles AMA -> AMAW -> SA', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  assert.equal(kodaxHost.get(sessionId)?.agentMode, 'ama');
+  assert.equal((await runCmd('agent-mode', sessionId, ['toggle'])).ok, true);
+  assert.equal(kodaxHost.get(sessionId)?.agentMode, 'amaw');
+  assert.equal((await runCmd('agent-mode', sessionId, ['toggle'])).ok, true);
+  assert.equal(kodaxHost.get(sessionId)?.agentMode, 'sa');
+});
+
+test('/workflow runs works before workflow manager init', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  const result = await runCmd('workflow', sessionId, ['runs']);
+  assert.equal(result.ok, true);
+  assert.equal(result.echo, true);
+  assert.ok(result.message?.includes('No workflow runs'));
+});
+
+test('/workflow help lists full workflow subcommands', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  const result = await runCmd('workflow', sessionId, ['help']);
+  assert.equal(result.ok, true);
+  assert.ok(result.message?.includes('/workflow delete'));
+  assert.ok(result.message?.includes('/workflow prune'));
+  assert.ok(result.message?.includes('/workflow rerun'));
+  assert.ok(result.message?.includes('/workflow revise'));
+  assert.ok(result.message?.includes('/workflow create'));
+});
+
+test('/workflow prune --dry-run works before lifecycle init', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  const result = await runCmd('workflow', sessionId, ['prune', '--dry-run']);
+  assert.equal(result.ok, true);
+  assert.equal(result.echo, true);
+  assert.ok(result.message?.includes('Workflow prune preview'));
+});
+
+test('/workflow create without request returns usage', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  const result = await runCmd('workflow', sessionId, ['create']);
+  assert.equal(result.ok, false);
+  assert.ok(result.message?.includes('Usage: /workflow create'));
 });
 
 test('/model on unknown session returns session_not_found', async () => {

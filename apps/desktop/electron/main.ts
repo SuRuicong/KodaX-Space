@@ -9,6 +9,8 @@ import { app, BrowserWindow, Menu, shell, session, dialog } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { registerVersionChannel } from './ipc/version.js';
+import { registerRepointelChannels } from './ipc/repointel.js';
+import { registerHandoffChannels } from './ipc/handoff.js';
 import { registerSessionChannels } from './ipc/session.js';
 import { registerProjectChannels } from './ipc/project.js';
 import { registerPermissionChannels } from './ipc/permission.js';
@@ -35,6 +37,7 @@ import { registerUpdaterChannels, initAutoUpdater } from './ipc/updater.js';
 import { registerMcpbChannels, installMcpbFromOsHandoff } from './ipc/mcpb.js';
 import { registerTerminalChannels } from './ipc/terminal.js';
 import { registerClipboardChannels } from './ipc/clipboard.js';
+import { registerShellChannels } from './ipc/shell.js';
 import { registerArtifactChannels } from './ipc/artifact.js';
 import { registerWorkflowChannels } from './ipc/workflow.js';
 import { workflowController } from './kodax/workflow-controller.js';
@@ -372,6 +375,8 @@ app.whenReady().then(async () => {
 
   // IPC handlers 必须在窗口创建前注册——否则 renderer 启动后立刻调 invoke 会撞上 "No handler registered"
   registerVersionChannel();
+  registerRepointelChannels();
+  registerHandoffChannels();
   registerSessionChannels();
   registerProjectChannels();
   registerPermissionChannels();
@@ -409,6 +414,9 @@ app.whenReady().then(async () => {
   registerTerminalChannels();
   // OC-31 v0.1.9 clipboard image paste — renderer 把粘贴板图片落到 app temp dir
   registerClipboardChannels();
+  // 2026-06-18 shell 出口：shell.revealPath（文件管理器定位）+ shell.openExternal（系统浏览器开 URL）。
+  // 让 renderer 里到处的文件路径 / URL 死文本变成可点击（用户反馈）。
+  registerShellChannels();
   // Artifact 数据层（F057，LC-free）：create/list/read/delete/export + openWindow。
   // LC sandbox（路径 D）的 loopback server 已移除，待 LiveCanvas 稳定后作为独立 feature 重接。
   registerArtifactChannels();

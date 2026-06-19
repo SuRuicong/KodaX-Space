@@ -27,43 +27,52 @@ import {
 } from '../providers/keychain.js';
 import { testProvider } from '../providers/test-connection.js';
 import { validateBaseUrl } from '../providers/url-guard.js';
+import { validateApiKeyEnv } from '../providers/env-guard.js';
 import type { ProviderInfo } from '@kodax-space/space-ipc-schema';
 import type { CustomProviderProbe } from '../providers/test-connection.js';
 
 type KnownProvider = BuiltinProvider | CustomProvider | CustomProviderProbe;
+type ConfiguredSource = ProviderInfo['configuredSource'];
 
-// review H2-sec：apiKeyEnv 黑名单——这些 env var 名一旦被 setKey 写入会引发
-// 代码执行 / PATH 劫持。NODE_OPTIONS 是已知 Node 注入向量（--require / --loader）；
-// PATH 改了之后所有 subprocess（KodaX bash tool 等）都会被劫持。
-const RESERVED_ENV_VARS = new Set([
-  'PATH',
-  'NODE_OPTIONS',
-  'NODE_PATH',
-  'ELECTRON_RUN_AS_NODE',
-  'ELECTRON_NO_ASAR',
-  'NODE_EXTRA_CA_CERTS',
-  'LD_PRELOAD',
-  'LD_LIBRARY_PATH',
-  'DYLD_INSERT_LIBRARIES',
-  'DYLD_LIBRARY_PATH',
-  'PYTHONPATH',
-  'HOME',
-  'USERPROFILE',
-  'APPDATA',
-  'LOCALAPPDATA',
-  'TEMP',
-  'TMP',
-]);
+const injectedEnvOriginals = new Map<string, string | undefined>();
+let injectAllKeysToEnvQueue: Promise<void> = Promise.resolve();
 
-/** 校验 apiKeyEnv 命名安全：大写蛇形 + 黑名单。返回 null 表示合法。*/
-function validateApiKeyEnv(name: string): string | null {
-  if (!/^[A-Z_][A-Z0-9_]{0,127}$/.test(name)) {
-    return 'apiKeyEnv must match /^[A-Z_][A-Z0-9_]*$/ (uppercase snake)';
+function hasEnvKey(apiKeyEnv: string): boolean {
+  const v = process.env[apiKeyEnv];
+  return typeof v === 'string' && v.trim().length > 0;
+}
+
+function credentialSource(
+  providerId: string,
+  apiKeyEnv: string,
+  keychainAccounts: ReadonlySet<string>,
+): ConfiguredSource {
+  const hasKeychain = keychainAccounts.has(providerId);
+  const hasEnv = hasEnvKey(apiKeyEnv);
+  if (hasKeychain && hasEnv) return 'both';
+  if (hasKeychain) return 'keychain';
+  if (hasEnv) return 'env';
+  return 'none';
+}
+
+function setManagedEnv(apiKeyEnv: string, value: string): void {
+  const envErr = validateApiKeyEnv(apiKeyEnv);
+  if (envErr) {
+    console.warn(`[provider] refusing to inject unsafe apiKeyEnv "${apiKeyEnv}": ${envErr}`);
+    return;
   }
-  if (RESERVED_ENV_VARS.has(name)) {
-    return `apiKeyEnv "${name}" is reserved and cannot be used`;
+  if (!injectedEnvOriginals.has(apiKeyEnv)) {
+    injectedEnvOriginals.set(apiKeyEnv, process.env[apiKeyEnv]);
   }
-  return null;
+  process.env[apiKeyEnv] = value;
+}
+
+function restoreManagedEnvs(): void {
+  for (const [apiKeyEnv, original] of injectedEnvOriginals) {
+    if (original === undefined) delete process.env[apiKeyEnv];
+    else process.env[apiKeyEnv] = original;
+  }
+  injectedEnvOriginals.clear();
 }
 
 /** 校验 apiKey 不含会破坏 HTTP header 的字符（review C2-sec：CRLF injection）。*/
@@ -92,7 +101,13 @@ function validateApiKey(key: string): string | null {
  * review M4-sec：未知 account（旧版本残留、provider 被改名等）现在会 log warn
  * 而不是静默 drop——便于排查"我配了 key 但 SDK 看不见"
  */
-export async function injectAllKeysToEnv(): Promise<void> {
+export function injectAllKeysToEnv(): Promise<void> {
+  const next = injectAllKeysToEnvQueue.then(injectAllKeysToEnvUnlocked, injectAllKeysToEnvUnlocked);
+  injectAllKeysToEnvQueue = next.catch(() => undefined);
+  return next;
+}
+
+async function injectAllKeysToEnvUnlocked(): Promise<void> {
   await providerConfigStore.load();
   const accounts = await listAccounts();
   const defaultId = providerConfigStore.getDefaultProviderId();
@@ -102,14 +117,7 @@ export async function injectAllKeysToEnv(): Promise<void> {
   //    shell rc 里 export 的 key 是 KodaX/Claude Code 等工具的常用配置方式，删了之后
   //    Space provider.list 会显示"未配置"，与用户预期完全不符 (regression discovered
   //    via e2e 测试发现：zhipu-coding 在 shell 有 ZHIPU_API_KEY 但 list 显示未配置)。
-  const keychainManagedEnvs = new Set<string>();
-  for (const acct of accounts) {
-    const info = await resolveProviderInfo(acct);
-    if (info) keychainManagedEnvs.add(info.apiKeyEnv);
-  }
-  for (const envName of keychainManagedEnvs) {
-    delete process.env[envName];
-  }
+  restoreManagedEnvs();
 
   // 2) 按 account 重新注入；未知 account 自动清掉（旧 dev key / 测试残留）
   //    v0.1.6: 之前只 log warn 不删，导致用户启动每次报一遍"a/b/c/x skipping"。
@@ -123,7 +131,7 @@ export async function injectAllKeysToEnv(): Promise<void> {
       continue;
     }
     const value = await getKey(acct);
-    if (value) process.env[info.apiKeyEnv] = value;
+    if (value) setManagedEnv(info.apiKeyEnv, value);
   }
   if (orphanAccounts.length > 0) {
     console.info(
@@ -145,20 +153,9 @@ export async function injectAllKeysToEnv(): Promise<void> {
     const info = await resolveProviderInfo(defaultId);
     if (info) {
       const value = await getKey(defaultId);
-      if (value) process.env[info.apiKeyEnv] = value;
+      if (value) setManagedEnv(info.apiKeyEnv, value);
     }
   }
-}
-
-/** 注入单条 key 的辅助：setKey 之后实时调用让 env 同步。*/
-async function injectSingleKey(providerId: string): Promise<void> {
-  // 先 load —— setKey handler 不保证调过 load()，custom provider 的 customCache 可能还是 null，
-  // 那样 resolveProviderInfo 会 no-op 导致 env 不同步（重构后 SDK 纯靠 env 读 key）。
-  await providerConfigStore.load();
-  const info = await resolveProviderInfo(providerId);
-  if (!info) return;
-  const value = await getKey(providerId);
-  if (value) process.env[info.apiKeyEnv] = value;
 }
 
 async function resolveProviderInfo(
@@ -199,11 +196,6 @@ export function registerProviderChannels(): void {
     //   2) Space 启动前 shell 已经 export 了 apiKeyEnv (用户本地直接配 env，不走 Space 设置)
     // 之前只看 keychain，导致用户在 shell export 过 KIMI_API_KEY/ARK_API_KEY 等的 provider
     // 显示成 not configured，UI 让人困惑。
-    const hasEnvKey = (apiKeyEnv: string): boolean => {
-      const v = process.env[apiKeyEnv];
-      return typeof v === 'string' && v.length > 0;
-    };
-
     const list: ProviderInfo[] = [];
     const seenProviderIds = new Set<string>();
 
@@ -211,6 +203,7 @@ export function registerProviderChannels(): void {
     // BuiltinProvider 的 apiKeyEnv / defaultModel / models 就是 SDK 的真相，
     // 不再需要每次 provider.list 调用时二次 dynamic-import SDK 取值。
     for (const b of BUILTIN_PROVIDERS) {
+      const source = credentialSource(b.id, b.apiKeyEnv, keychainAccounts);
       seenProviderIds.add(b.id);
       list.push({
         id: b.id,
@@ -219,12 +212,14 @@ export function registerProviderChannels(): void {
         protocol: b.protocol,
         defaultModel: b.defaultModel,
         models: b.models ? [...b.models] : undefined,
-        configured: keychainAccounts.has(b.id) || hasEnvKey(b.apiKeyEnv),
+        configured: source !== 'none',
+        configuredSource: source,
         isDefault: defaultId === b.id,
         isCustom: false,
       });
     }
     for (const c of providerConfigStore.listCustom()) {
+      const source = credentialSource(c.id, c.apiKeyEnv, keychainAccounts);
       seenProviderIds.add(c.id);
       list.push({
         id: c.id,
@@ -233,7 +228,8 @@ export function registerProviderChannels(): void {
         protocol: c.protocol,
         defaultModel: c.defaultModel,
         models: c.models ? [...c.models] : undefined,
-        configured: keychainAccounts.has(c.id) || hasEnvKey(c.apiKeyEnv),
+        configured: source !== 'none',
+        configuredSource: source,
         isDefault: defaultId === c.id,
         isCustom: true,
         baseUrl: c.baseUrl,
@@ -241,6 +237,7 @@ export function registerProviderChannels(): void {
     }
     for (const c of await loadKodaxCustomProviders()) {
       if (seenProviderIds.has(c.id)) continue;
+      const source = credentialSource(c.id, c.apiKeyEnv, keychainAccounts);
       seenProviderIds.add(c.id);
       list.push({
         id: c.id,
@@ -249,15 +246,19 @@ export function registerProviderChannels(): void {
         protocol: c.protocol,
         defaultModel: c.defaultModel,
         models: c.models ? [...c.models] : undefined,
-        configured: keychainAccounts.has(c.id) || hasEnvKey(c.apiKeyEnv),
+        configured: source !== 'none',
+        configuredSource: source,
         isDefault: defaultId === c.id,
         isCustom: true,
         baseUrl: c.baseUrl,
       });
     }
 
+    const effectiveDefaultId =
+      defaultId && list.some((p) => p.id === defaultId && p.configured) ? defaultId : null;
+    const providers = list.map((p) => ({ ...p, isDefault: p.id === effectiveDefaultId }));
     const keychainBackend = await getBackendStatus();
-    return { providers: list, defaultProviderId: defaultId, keychainBackend };
+    return { providers, defaultProviderId: effectiveDefaultId, keychainBackend };
   });
 
   // provider.setKey — renderer 把 key 推给 main 后立即写 keychain + 注入 env
@@ -271,7 +272,7 @@ export function registerProviderChannels(): void {
     if (keyErr) throw new Error(keyErr);
 
     await setKey(input.providerId, input.apiKey);
-    await injectSingleKey(input.providerId);
+    await injectAllKeysToEnv();
     return { ok: true };
   });
 
@@ -294,7 +295,7 @@ export function registerProviderChannels(): void {
     // custom provider 的 apiKeyEnv 可能复用 builtin env 名（如自建 Anthropic 网关用
     // ANTHROPIC_API_KEY），预检会因别的 provider 设了同名 env 而误判通过 → 不预检，交给 SDK 的
     // verifyProviderCredential 按 provider 真实凭证返 'unconfigured'，更准确。
-    if (isBuiltinId(input.providerId) && !process.env[probe.apiKeyEnv]) {
+    if (isBuiltinId(input.providerId) && !hasEnvKey(probe.apiKeyEnv)) {
       return { ok: false, error: 'no API key configured' };
     }
     return testProvider(probe, { timeoutMs: 8000 });
@@ -302,8 +303,19 @@ export function registerProviderChannels(): void {
 
   // provider.setDefault
   registerChannel('provider.setDefault', async (input) => {
-    if (!(await resolveKnownProvider(input.providerId))) {
+    const provider = await resolveKnownProvider(input.providerId);
+    if (!provider) {
       throw new Error(`unknown providerId: ${input.providerId}`);
+    }
+    const source = credentialSource(
+      input.providerId,
+      provider.apiKeyEnv,
+      new Set(await listAccounts()),
+    );
+    if (source === 'none') {
+      throw new Error(
+        'provider is not configured; add an API key before setting it as default',
+      );
     }
     await providerConfigStore.setDefault(input.providerId);
     // 切默认 provider 时重新注入——共享 env 时让它胜出

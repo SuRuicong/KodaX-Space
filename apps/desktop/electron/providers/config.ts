@@ -138,6 +138,11 @@ export class ProviderConfigStore {
       });
       return next;
     });
+    if (removed) {
+      await this.mutateSpace((cfg) =>
+        cfg.defaultProviderId === id ? { ...cfg, defaultProviderId: null } : cfg,
+      );
+    }
     return removed;
   }
 
@@ -193,6 +198,7 @@ export class ProviderConfigStore {
     const next = this.writeLock.then(async () => {
       if (this.spaceCache === null) this.spaceCache = await this.readSpaceConfig();
       const updated = apply(this.spaceCache);
+      if (updated === this.spaceCache) return;
       this.spaceCache = updated;
       await persistAtomic(this.spaceDir, this.spaceFile, JSON.stringify(updated, null, 2));
     });

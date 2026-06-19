@@ -26,15 +26,30 @@ export interface SlashCommandDef extends SlashCommandMeta {
 }
 
 const builtins: SlashCommandDef[] = [];
+const aliases = new Map<string, string>();
+
+function normalizeSlashToken(name: string): string {
+  return name.trim().toLowerCase();
+}
 
 /**
  * 注册一个 builtin 命令。FEATURE_031 main 启动时调，把 handler 全部塞进 registry。
  * 同名重复注册会覆盖（后注册的赢）——给测试 / 热替换留口子。
  */
 export function registerSlash(def: SlashCommandDef): void {
-  const existingIdx = builtins.findIndex((c) => c.name === def.name);
+  const normalizedName = normalizeSlashToken(def.name);
+  const existingIdx = builtins.findIndex((c) => normalizeSlashToken(c.name) === normalizedName);
   if (existingIdx >= 0) builtins[existingIdx] = def;
   else builtins.push(def);
+
+  for (const [alias, owner] of [...aliases.entries()]) {
+    if (owner === normalizedName) aliases.delete(alias);
+  }
+  for (const alias of def.aliases ?? []) {
+    const normalizedAlias = normalizeSlashToken(alias);
+    if (!normalizedAlias || normalizedAlias === normalizedName) continue;
+    aliases.set(normalizedAlias, normalizedName);
+  }
 }
 
 /**
@@ -45,6 +60,7 @@ export function registerSlash(def: SlashCommandDef): void {
 export function _resetSlashRegistryForTesting(): void {
   if (process.env.NODE_ENV === 'production') return;
   builtins.length = 0;
+  aliases.clear();
 }
 
 /** 列出已注册命令（按 name 字典序）。*/
@@ -56,7 +72,9 @@ export function listSlashCommands(): readonly SlashCommandMeta[] {
 
 /** 取 handler；不存在返回 undefined。*/
 export function getSlashHandler(name: string): SlashCommandDef | undefined {
-  return builtins.find((c) => c.name === name);
+  const normalizedName = normalizeSlashToken(name);
+  const canonical = aliases.get(normalizedName) ?? normalizedName;
+  return builtins.find((c) => normalizeSlashToken(c.name) === canonical);
 }
 
 export type { SlashCommandSource };

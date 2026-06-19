@@ -8,10 +8,38 @@
 
 import { promises as fs } from 'node:fs';
 import { createRequire } from 'node:module';
+import type { ArtifactKindT } from '@kodax-space/space-ipc-schema';
 import { registerChannel } from './register.js';
 import { pushToRenderer } from './push.js';
 import { artifactStore } from '../artifact/store.js';
 import { extForKind, extForImageMime, parseDataUri, sanitizeFilename } from '../artifact/export-helpers.js';
+import { resolveInsideProject, readFileWithGuards } from './files-core.js';
+import { projectStore } from '../projects/store.js';
+
+/**
+ * 文件扩展名 → 可预览的 artifact kind。
+ *   - html/htm → html（sandbox iframe 渲染）
+ *   - svg      → svg
+ *   - md/markdown → markdown
+ *   - 其它一律 'code'（按文本代码渲染，带语法高亮）
+ * 返回的 kind 永远是"内容型"（content-backed），不会是 doc/image/react。
+ */
+export function previewKindForPath(p: string): ArtifactKindT {
+  const dot = p.lastIndexOf('.');
+  const ext = dot >= 0 ? p.slice(dot + 1).toLowerCase() : '';
+  switch (ext) {
+    case 'html':
+    case 'htm':
+      return 'html';
+    case 'svg':
+      return 'svg';
+    case 'md':
+    case 'markdown':
+      return 'markdown';
+    default:
+      return 'code';
+  }
+}
 
 // Lazy electron access (dialog/BrowserWindow) — avoids a top-level 'electron'
 // import so this module stays importable under the tsx/esm test loader.
@@ -31,6 +59,51 @@ export function registerArtifactChannels(): void {
       reason: res.created ? 'created' : 'version',
     });
     return { id: res.id, version: res.version };
+  });
+
+  // 一键预览：把一个已写盘的可预览文件提级为 Artifact（content 来自磁盘）。
+  registerChannel('artifact.previewFile', async (input) => {
+    await projectStore.assertAllowed(input.projectRoot);
+    const absPath = await resolveInsideProject(input.projectRoot, input.path);
+    let read;
+    try {
+      read = await readFileWithGuards(absPath);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'EISDIR') {
+        throw new Error('file not found or is a directory');
+      }
+      throw err;
+    }
+    if (read.isBinary) throw new Error('binary file cannot be previewed');
+    if (read.truncated) throw new Error('file too large to preview');
+
+    const kind = previewKindForPath(input.path);
+    // 标题=相对路径（信息量足、用于 (session,title) 去重）；过长退回 basename。
+    const slash = Math.max(input.path.lastIndexOf('/'), input.path.lastIndexOf('\\'));
+    const base = slash >= 0 ? input.path.slice(slash + 1) : input.path;
+    const title = input.path.length <= 256 ? input.path : base.slice(0, 256);
+
+    // 去重：同一 session 已有同 title+kind 的预览 artifact → 复用其 id 升版本，
+    // 避免反复点"预览"刷出一堆副本（store.upsert 对未知 id 会生成新 UUID，故必须先查到真 id）。
+    const existing = (await artifactStore.list({ sessionId: input.sessionId })).find(
+      (a) => a.kind === kind && a.title === title,
+    );
+
+    const res = await artifactStore.upsert({
+      sessionId: input.sessionId,
+      surface: input.surface,
+      kind,
+      title,
+      content: read.content,
+      ...(existing ? { id: existing.id } : {}),
+    });
+    pushToRenderer('artifact.changed', {
+      id: res.id,
+      sessionId: input.sessionId,
+      reason: res.created ? 'created' : 'version',
+    });
+    return { id: res.id, version: res.version, kind };
   });
 
   registerChannel('artifact.list', async (input) => {

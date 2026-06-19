@@ -14,6 +14,19 @@ import { PtyHost } from '../terminal/ptyHost.js';
 const SKIP = process.env.SKIP_PTY_TESTS === '1';
 const ifAvailable = SKIP ? test.skip.bind(test) : test;
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitUntil(predicate: () => boolean, timeoutMs = 3000): Promise<boolean> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (predicate()) return true;
+    await delay(50);
+  }
+  return predicate();
+}
+
 ifAvailable('PtyHost: create returns a unique uuid + non-zero pid', async () => {
   const host = new PtyHost();
   const a = host.create({ cwd: process.cwd(), cols: 80, rows: 24 });
@@ -89,9 +102,18 @@ ifAvailable('PtyHost: onOutput fires with terminalId + non-empty data', async ()
     onExit: () => {},
   });
   const created = host.create({ cwd: process.cwd(), cols: 80, rows: 24 });
-  // Wait for shell prompt — node-pty pushes initial PS1 within ~100-300ms
-  await new Promise<void>((resolve) => setTimeout(resolve, 800));
+  const marker = '__KODAX_PTY_TEST__';
+  // Do not rely on an initial shell prompt: cmd.exe can start quietly under
+  // concurrent node:test workers. Write a deterministic command instead.
+  host.write(
+    created.terminalId,
+    process.platform === 'win32'
+      ? `echo ${marker}\r`
+      : `printf '${marker}\\n'\n`,
+  );
+  const sawMarker = await waitUntil(() => receivedData.includes(marker));
   try {
+    assert.equal(sawMarker, true, 'test marker should be echoed by the shell');
     assert.equal(receivedId, created.terminalId, 'output is tagged with terminalId');
     assert.ok(receivedData.length > 0, 'shell emitted at least one byte of prompt');
   } finally {
@@ -113,7 +135,7 @@ ifAvailable('PtyHost: onExit fires after kill', async () => {
   const created = host.create({ cwd: process.cwd(), cols: 80, rows: 24 });
   host.kill(created.terminalId);
   // Give the kernel a moment to deliver the SIGTERM + node-pty to emit exit
-  await new Promise<void>((resolve) => setTimeout(resolve, 1500));
+  await delay(1500);
   assert.equal(exitCalled, true, 'onExit should fire after kill');
   assert.equal(exitId, created.terminalId, 'exit event carries the same id');
   assert.equal(host.has(created.terminalId), false, 'entry purged on exit');

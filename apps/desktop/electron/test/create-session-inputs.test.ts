@@ -1,0 +1,110 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import type { ProviderInfo } from '@kodax-space/space-ipc-schema';
+import { resolveSessionCreateInputs } from '../../renderer/src/shell/createSession.js';
+
+function provider(
+  id: string,
+  configured: boolean,
+  defaultModel: string,
+  models: readonly string[] = [defaultModel],
+): ProviderInfo {
+  return {
+    id,
+    displayName: id,
+    apiKeyEnv: `${id.toUpperCase().replace(/-/g, '_')}_API_KEY`,
+    protocol: 'openai',
+    defaultModel,
+    models: [...models],
+    configured,
+    configuredSource: configured ? 'env' : 'none',
+    isDefault: false,
+    isCustom: id.startsWith('custom_'),
+  };
+}
+
+test('resolveSessionCreateInputs prefers configured pending provider over defaults', () => {
+  const out = resolveSessionCreateInputs({
+    projectRoot: '/repo',
+    providers: [
+      provider('pending-provider', true, 'pending-default', [
+        'pending-default',
+        'pending-fast',
+      ]),
+      provider('space-default', true, 'space-default-model'),
+      provider('kodax-default', true, 'kodax-default-model'),
+    ],
+    defaultProviderId: 'space-default',
+    kodaxDefaults: {
+      provider: 'kodax-default',
+      model: 'kodax-default-model',
+      reasoningMode: 'deep',
+      permissionMode: 'plan',
+      customProvidersCount: 0,
+    },
+    pendingProviderId: 'pending-provider',
+    pendingReasoningMode: 'quick',
+    pendingPermissionMode: 'accept-edits',
+    pendingAgentMode: 'sa',
+    pendingModel: 'pending-fast',
+  });
+
+  assert.equal(out.provider, 'pending-provider');
+  assert.equal(out.model, 'pending-fast');
+  assert.equal(out.reasoningMode, 'quick');
+  assert.equal(out.permissionMode, 'accept-edits');
+  assert.equal(out.agentMode, 'sa');
+});
+
+test('resolveSessionCreateInputs skips unconfigured candidates and avoids mock fallback when possible', () => {
+  const out = resolveSessionCreateInputs({
+    projectRoot: '/repo',
+    providers: [
+      provider('mock', true, 'mock-model'),
+      provider('pending-provider', false, 'pending-default'),
+      provider('space-default', false, 'space-default-model'),
+      provider('kodax-default', false, 'kodax-default-model'),
+      provider('first-real-configured', true, 'real-default'),
+    ],
+    defaultProviderId: 'space-default',
+    kodaxDefaults: {
+      provider: 'kodax-default',
+      model: 'kodax-default-model',
+      customProvidersCount: 0,
+    },
+    pendingProviderId: 'pending-provider',
+    pendingReasoningMode: null,
+    pendingPermissionMode: null,
+    pendingAgentMode: null,
+    pendingModel: 'kodax-default-model',
+  });
+
+  assert.equal(out.provider, 'first-real-configured');
+  assert.equal(out.model, 'real-default');
+  assert.equal(out.reasoningMode, 'auto');
+  assert.equal(out.permissionMode, 'accept-edits');
+  assert.equal(out.agentMode, 'ama');
+});
+
+test('resolveSessionCreateInputs ignores stale pending model from another provider', () => {
+  const out = resolveSessionCreateInputs({
+    projectRoot: '/repo',
+    providers: [
+      provider('space-default', true, 'space-default-model', [
+        'space-default-model',
+        'space-large',
+      ]),
+      provider('other-provider', true, 'other-model', ['other-model']),
+    ],
+    defaultProviderId: 'space-default',
+    kodaxDefaults: null,
+    pendingProviderId: null,
+    pendingReasoningMode: null,
+    pendingPermissionMode: null,
+    pendingAgentMode: null,
+    pendingModel: 'other-model',
+  });
+
+  assert.equal(out.provider, 'space-default');
+  assert.equal(out.model, 'space-default-model');
+});

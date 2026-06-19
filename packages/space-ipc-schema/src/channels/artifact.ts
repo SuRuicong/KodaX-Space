@@ -199,6 +199,38 @@ export const artifactOpenWindowChannel = {
   output: z.object({ ok: z.boolean() }),
 } as const;
 
+// ---- Invoke: artifact.previewFile (2026-06-18 — "一键预览"已写盘的文件) ----
+//
+// 背景：AI 用 write 工具往项目里写了个 .html / .svg / .md，**不会**自动进 Artifact 面板
+// （write 工具与 ArtifactStore 无桥）。用户反馈"写完网页不在 Artifact 显示、联动不足"。
+// 这个 channel 让 renderer 把"一个已在磁盘上的可预览文件"一键灌进 Artifact 面板：
+//   main 端读盘（projectRoot 子树内、防穿越）→ 按扩展名定 kind（html/svg/markdown/code）
+//   → upsert 进 store（同一 (sessionId,title) 复用 id 升版本，重复预览不刷出一堆副本）
+//   → push artifact.changed → 面板渲染 sandbox iframe 预览。
+//
+// 与 create_artifact 的区别：create_artifact 是 AI 主动把"生成内容"作为 deliverable；
+// previewFile 是用户/UI 把"已落盘文件"提级为可预览产物，content 来自磁盘而非入参。
+//
+// 安全：path 走与 files.read 相同的 projectRoot 子树校验（resolveInsideProject）；
+// 二进制文件拒（isBinary→抛错，renderer 回退到"在文件管理器中显示"）；
+// 超 1MB 内容拒（artifactStore upsert 上限），renderer 回退同理。
+export const artifactPreviewFileChannel = {
+  name: 'artifact.previewFile',
+  direction: 'invoke',
+  input: z.object({
+    sessionId: z.string().min(1).max(128),
+    surface: artifactSurfaceSchema,
+    projectRoot: artifactPathSchema,
+    /** 相对 projectRoot 的 posix-style 路径（renderer 端已归一化）。 */
+    path: artifactPathSchema,
+  }),
+  output: z.object({
+    id: z.string().min(1),
+    version: z.number().int().positive(),
+    kind: artifactKindSchema,
+  }),
+} as const;
+
 // ---- Push: artifact.changed (store mutated → renderer refetches) ----
 export const artifactChangedChannel = {
   name: 'artifact.changed',

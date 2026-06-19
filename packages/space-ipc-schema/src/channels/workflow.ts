@@ -103,6 +103,8 @@ const workflowProcessTokenUsageSchema = z.object({
   total: z.number().nonnegative().optional(),
 });
 
+const workflowHostMetadataSchema = z.record(z.string().max(MSG));
+
 const workflowProcessArtifactSchema = z.object({
   name: z.string().min(1).max(SHORT),
   path: z.string().max(4096).optional(),
@@ -120,6 +122,7 @@ export const workflowProcessSnapshotSchema = z.object({
   elapsedMs: z.number().nonnegative().optional(),
   goal: z.string().max(MSG).optional(),
   source: workflowProcessSourceSchema.optional(),
+  hostMetadata: workflowHostMetadataSchema.optional(),
   savedWorkflowName: z.string().max(SHORT).optional(),
   sourceRunId: z.string().max(SHORT).optional(),
   sourceWorkflowName: z.string().max(SHORT).optional(),
@@ -263,8 +266,8 @@ export const workflowPruneChannel = {
       olderThanDays: z.number().nonnegative().max(36500).optional(),
       dryRun: z.boolean().optional(),
     })
-    .refine((o) => o.keep !== undefined || o.olderThanDays !== undefined, {
-      message: 'prune requires keep or olderThanDays',
+    .refine((o) => o.keep !== undefined || o.olderThanDays !== undefined || o.dryRun === true, {
+      message: 'prune requires keep, olderThanDays, or dryRun',
     }),
   output: z.object({
     deleted: z.number().int().nonnegative(),
@@ -290,6 +293,12 @@ const savedWorkflowLiteSchema = z.object({
   name: z.string().max(SHORT),
   path: z.string().max(4096),
   source: z.string().max(SHORT).optional(),
+  execution: z.string().max(SHORT).optional(),
+});
+const workflowPatternLiteSchema = z.object({
+  name: z.string().max(SHORT),
+  pattern: z.string().max(SHORT),
+  description: z.string().max(MSG),
 });
 
 // ---- Invoke: workflow.library（built-in + saved 发现） ----
@@ -299,6 +308,7 @@ export const workflowLibraryChannel = {
   input: z.object({ projectRoot: z.string().max(4096).optional() }).optional(),
   output: z.object({
     builtin: z.array(workflowMetaLiteSchema).max(256),
+    patterns: z.array(workflowPatternLiteSchema).max(256),
     saved: z.array(savedWorkflowLiteSchema).max(1000),
   }),
 } as const;

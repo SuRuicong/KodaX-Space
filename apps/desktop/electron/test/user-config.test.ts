@@ -145,6 +145,20 @@ test('loadKodaxCustomProviders exposes SDK config custom providers as Space summ
         apiKeyEnv: 'UNSAFE_API_KEY',
         model: 'gpt-5',
       },
+      {
+        name: 'node-options-injection',
+        protocol: 'openai',
+        baseUrl: 'https://llm.example.com/v1',
+        apiKeyEnv: 'NODE_OPTIONS',
+        model: 'gpt-5',
+      },
+      {
+        name: 'metadata-ssrf',
+        protocol: 'openai',
+        baseUrl: 'https://169.254.169.254/latest/meta-data',
+        apiKeyEnv: 'METADATA_API_KEY',
+        model: 'gpt-5',
+      },
     ],
   });
 
@@ -164,13 +178,42 @@ test('loadKodaxCustomProviders exposes SDK config custom providers as Space summ
 
 test('registerKodaxCustomProviders forwards customProviders array to SDK', async () => {
   const calls: Array<{ customProviders?: unknown[] }> = [];
-  mockUserConfig(
-    { customProviders: [{ name: 'p1', protocol: 'anthropic' }] },
-    { registerCalls: calls },
-  );
+  mockUserConfig({
+    customProviders: [
+      {
+        name: 'p1',
+        protocol: 'anthropic',
+        baseUrl: 'https://p1.example.com/v1/',
+        apiKeyEnv: 'P1_API_KEY',
+        model: 'claude-sonnet-4-6',
+      },
+      {
+        name: 'bad-env',
+        protocol: 'anthropic',
+        baseUrl: 'https://p2.example.com/v1',
+        apiKeyEnv: 'NODE_OPTIONS',
+        model: 'claude-sonnet-4-6',
+      },
+      {
+        name: 'bad-url',
+        protocol: 'anthropic',
+        baseUrl: 'http://169.254.169.254/latest/meta-data',
+        apiKeyEnv: 'P3_API_KEY',
+        model: 'claude-sonnet-4-6',
+      },
+    ],
+  }, { registerCalls: calls });
   await registerKodaxCustomProviders();
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].customProviders?.length, 1);
+  assert.deepEqual(calls[0].customProviders, [
+    {
+      name: 'p1',
+      protocol: 'anthropic',
+      baseUrl: 'https://p1.example.com/v1',
+      apiKeyEnv: 'P1_API_KEY',
+      model: 'claude-sonnet-4-6',
+    },
+  ]);
 });
 
 test('registerKodaxCustomProviders merges Space custom providers into SDK registry config', async () => {
@@ -194,10 +237,24 @@ test('registerKodaxCustomProviders merges Space custom providers into SDK regist
     {
       id: 'custom_0123456789abcdef',
       protocol: 'anthropic',
-      baseUrl: 'https://space.example.com/v1',
+      baseUrl: 'https://space.example.com/v1/',
       apiKeyEnv: 'SPACE_API_KEY',
       defaultModel: 'space-model',
       models: ['space-model', 'space-alt'],
+    },
+    {
+      id: 'custom_1111111111111111',
+      protocol: 'anthropic',
+      baseUrl: 'https://space.example.com/v1',
+      apiKeyEnv: 'NODE_OPTIONS',
+      defaultModel: 'space-model',
+    },
+    {
+      id: 'custom_2222222222222222',
+      protocol: 'anthropic',
+      baseUrl: 'https://127.0.0.1/v1',
+      apiKeyEnv: 'SPACE_LOCAL_API_KEY',
+      defaultModel: 'space-model',
     },
   ]);
 

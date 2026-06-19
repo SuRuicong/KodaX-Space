@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { WorkflowController } from '../kodax/workflow-controller.js';
+import { WorkflowController, _setCodingSdkForTesting } from '../kodax/workflow-controller.js';
 import type {
   WorkflowRunManagerLike,
   WorkflowLifecycleLike,
@@ -121,6 +121,32 @@ test('registerOrigin attributes subsequent events + list + get', async () => {
     const got = ctrl.get('r1');
     assert.equal(got?.sessionId, 's_abc');
     assert.equal(ctrl.get('nope'), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('hostMetadata attributes events + list + get without local origin registration', async () => {
+  const { dir, file } = freshFile();
+  try {
+    const pushed: Array<{ sessionId?: string; surface?: string; snapshot: { runId: string } }> = [];
+    const ctrl = new WorkflowController((p) => pushed.push(p as never), file);
+    const mgr = fakeManager();
+    await ctrl.init(mgr);
+
+    mgr._emit({
+      type: 'workflow_updated',
+      snapshot: sampleSnapshot('r_meta', {
+        hostMetadata: { sessionId: 's_meta', surface: 'partner' },
+      }),
+      message: 'phase 2',
+    });
+
+    assert.equal(pushed.length, 1);
+    assert.equal(pushed[0]?.sessionId, 's_meta');
+    assert.equal(pushed[0]?.surface, 'partner');
+    assert.equal(ctrl.get('r_meta')?.sessionId, 's_meta');
+    assert.equal(ctrl.list('s_meta')[0]?.runId, 'r_meta');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -356,6 +382,199 @@ const LAUNCH_SESSION = {
   projectRoot: process.cwd(),
 };
 
+function generatedWorkflow(name = 'generated-workflow') {
+  const manifest = { name, description: 'Generated workflow', patterns: ['investigate'] };
+  const source = 'export default {}';
+  return {
+    kind: 'generated' as const,
+    manifest,
+    source,
+    module: { meta: { name } },
+    scriptSnapshot: { manifest, source },
+  };
+}
+
+function generatedCapsule(name = 'generated-workflow') {
+  const manifest = { name, description: 'Generated workflow', patterns: ['investigate'] };
+  return { manifest, source: 'export default {}' };
+}
+
+test('generated workflow controller methods delegate to SDK and start/save successfully', async () => {
+  const { dir, file } = freshFile();
+  try {
+    const calls: string[] = [];
+    const sdk = {
+      async generateWorkflowFromOptions() {
+        calls.push('generate');
+        return generatedWorkflow('new-flow');
+      },
+      async loadGeneratedWorkflowFromRun() {
+        calls.push('load-run');
+        return { capsule: generatedCapsule('old-flow'), module: { meta: { name: 'old-flow' } } };
+      },
+      async preflightWorkflowCapsule() {
+        calls.push('preflight');
+        return { ok: true, issues: [] };
+      },
+      async saveGeneratedWorkflowFromRun(input: { name: string }) {
+        calls.push(`save-run:${input.name}`);
+        return { name: input.name, path: '/tmp/saved.workflow.ts' };
+      },
+      async renameSavedWorkflow(input: { newName: string }) {
+        calls.push(`rename-saved:${input.newName}`);
+        return { name: input.newName, path: '/tmp/renamed.workflow.ts' };
+      },
+      async deleteSavedWorkflow(input: { name: string }) {
+        calls.push(`delete-saved:${input.name}`);
+        return { name: input.name, path: '/tmp/deleted.workflow.ts' };
+      },
+    };
+    _setCodingSdkForTesting(sdk);
+
+    const ctrl = new WorkflowController(() => {}, file);
+    const mgr = fakeManager();
+    await ctrl.init(mgr);
+
+    const created = await ctrl.createGeneratedWorkflow('make a workflow', LAUNCH_SESSION);
+    assert.ok('runId' in created, JSON.stringify(created));
+    assert.equal(mgr.started.length, 1);
+    assert.equal((mgr.started[0]!.processMetadata as { source?: string }).source, 'command');
+
+    const rerun = await ctrl.rerunGeneratedWorkflow('run_1', { foo: true }, LAUNCH_SESSION);
+    assert.ok('runId' in rerun, JSON.stringify(rerun));
+    assert.equal(mgr.started.length, 2);
+
+    assert.deepEqual(await ctrl.saveGeneratedWorkflowFromRun('run_1', 'saved-name', process.cwd()), {
+      name: 'saved-name',
+      path: '/tmp/saved.workflow.ts',
+    });
+    assert.deepEqual(await ctrl.renameSavedWorkflow('saved-name', 'renamed', process.cwd()), {
+      name: 'renamed',
+      path: '/tmp/renamed.workflow.ts',
+    });
+    assert.deepEqual(await ctrl.deleteSavedWorkflow('renamed', process.cwd()), {
+      name: 'renamed',
+      path: '/tmp/deleted.workflow.ts',
+    });
+    assert.deepEqual(calls, [
+      'generate',
+      'load-run',
+      'preflight',
+      'save-run:saved-name',
+      'rename-saved:renamed',
+      'delete-saved:renamed',
+    ]);
+  } finally {
+    _setCodingSdkForTesting(null);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('reviseWorkflow handles discovery failure inside error contract', async () => {
+  const { dir, file } = freshFile();
+  try {
+    const savedNames: string[] = [];
+    _setCodingSdkForTesting({
+      async loadGeneratedWorkflowFromRun() {
+        return { capsule: generatedCapsule('base-flow'), module: {} };
+      },
+      async generateWorkflowFromOptions() {
+        return generatedWorkflow('base-flow');
+      },
+      async discoverSavedWorkflows() {
+        throw new Error('disk unavailable');
+      },
+      async saveGeneratedWorkflow(input: { name: string }) {
+        savedNames.push(input.name);
+        return { name: input.name, path: '/tmp/revision.workflow.ts' };
+      },
+    });
+
+    const ctrl = new WorkflowController(() => {}, file);
+    await ctrl.init(fakeManager());
+    const result = await ctrl.reviseWorkflow({
+      target: 'run_1',
+      request: 'tighten validation',
+      session: LAUNCH_SESSION,
+    });
+
+    assert.ok(!('error' in result), JSON.stringify(result));
+    assert.match(result.name, /^base-flow-revision-/);
+    assert.deepEqual(savedNames, [result.name]);
+  } finally {
+    _setCodingSdkForTesting(null);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('reviseWorkflow validates replace target before loading run artifacts', async () => {
+  const { dir, file } = freshFile();
+  try {
+    let loaded = false;
+    _setCodingSdkForTesting({
+      async loadGeneratedWorkflowFromRun() {
+        loaded = true;
+        return { capsule: generatedCapsule(), module: {} };
+      },
+      async generateWorkflowFromOptions() {
+        return generatedWorkflow();
+      },
+    });
+
+    const ctrl = new WorkflowController(() => {}, file);
+    await ctrl.init(fakeManager());
+    const result = await ctrl.reviseWorkflow({
+      target: 'run_1',
+      request: 'change it',
+      replace: true,
+      session: LAUNCH_SESSION,
+    });
+
+    assert.deepEqual(result, { error: 'revise --replace requires a saved workflow name target' });
+    assert.equal(loaded, false);
+  } finally {
+    _setCodingSdkForTesting(null);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('rerunGeneratedWorkflow logs direct preflight fallback before boxed retry', async () => {
+  const { dir, file } = freshFile();
+  const originalWarn = console.warn;
+  const warnings: unknown[][] = [];
+  try {
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args);
+    };
+    let preflightCalls = 0;
+    _setCodingSdkForTesting({
+      async loadGeneratedWorkflowFromRun() {
+        return { capsule: generatedCapsule('preflight-flow'), module: { meta: { name: 'preflight-flow' } } };
+      },
+      async preflightWorkflowCapsule(input: unknown) {
+        preflightCalls += 1;
+        if (!('capsule' in (input as Record<string, unknown>))) throw new Error('old signature');
+        return { ok: true, issues: [] };
+      },
+    });
+
+    const ctrl = new WorkflowController(() => {}, file);
+    await ctrl.init(fakeManager());
+    const result = await ctrl.rerunGeneratedWorkflow('run_1', {}, LAUNCH_SESSION);
+
+    assert.ok('runId' in result, JSON.stringify(result));
+    assert.equal(preflightCalls, 2);
+    assert.ok(
+      warnings.some((args) => String(args[0]).includes('preflightWorkflowCapsule direct call failed')),
+      JSON.stringify(warnings),
+    );
+  } finally {
+    console.warn = originalWarn;
+    _setCodingSdkForTesting(null);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('start: builtin workflow resolves via real SDK + startFromOptions + origin registered', async () => {
   const { dir, file } = freshFile();
   try {
@@ -374,6 +593,10 @@ test('start: builtin workflow resolves via real SDK + startFromOptions + origin 
       const call = mgr.started[0]!;
       assert.equal(call.runId, res.runId);
       assert.equal((call.options as { provider?: string }).provider, 'mock');
+      const metadata = call.processMetadata as { hostMetadata?: Record<string, string> };
+      assert.equal(metadata.hostMetadata?.sessionId, 's1');
+      assert.equal(metadata.hostMetadata?.surface, 'code');
+      assert.equal(metadata.hostMetadata?.host, 'kodax-space');
       assert.ok(call.module, 'real module passed');
       // 归属已登记
       mgr._seed(sampleSnapshot(res.runId));
@@ -405,6 +628,7 @@ test('listLibrary: real SDK returns parallel-investigation among built-ins', asy
     await ctrl.init(fakeManager());
     const lib = await ctrl.listLibrary(process.cwd());
     assert.ok(lib.builtin.some((w) => w.name === 'parallel-investigation'), JSON.stringify(lib.builtin));
+    assert.ok(Array.isArray(lib.patterns));
     assert.ok(Array.isArray(lib.saved));
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -423,6 +647,7 @@ test('forwarded payload + snapshot pass the IPC zod schema (no drift / field los
     const snap = sampleSnapshot('r1', {
       displayName: 'PR security review',
       source: 'amaw',
+      hostMetadata: { sessionId: 's1', surface: 'code' },
       tokens: { spent: 1234, total: 200000 },
       latestMessage: 'verifying findings',
       artifacts: [{ name: 'report', description: 'final' }],
@@ -438,6 +663,7 @@ test('forwarded payload + snapshot pass the IPC zod schema (no drift / field los
     );
     assert.ok(snapParsed.success);
     assert.equal(snapParsed.success && snapParsed.data.tokens?.spent, 1234);
+    assert.equal(snapParsed.success && snapParsed.data.hostMetadata?.sessionId, 's1');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

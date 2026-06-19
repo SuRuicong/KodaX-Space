@@ -17,6 +17,7 @@ import {
   sessionForkChannel,
   sessionRewindChannel,
   sessionAgentsMdChannel,
+  sessionSetAgentModeChannel,
 } from '../src/index.js';
 
 test('all 5 session invoke channels are registered', () => {
@@ -93,6 +94,34 @@ test('session.create input: rejects bogus reasoningMode', () => {
     reasoningMode: 'bogus',
   });
   assert.equal(result.success, false);
+});
+
+test('agentMode enum accepts AMA, AMAW, and SA only', () => {
+  for (const agentMode of ['ama', 'amaw', 'sa'] as const) {
+    assert.equal(
+      sessionCreateChannel.input.safeParse({ projectRoot: '/r', provider: 'mock', agentMode }).success,
+      true,
+      `session.create should accept ${agentMode}`,
+    );
+    assert.equal(
+      sessionSetAgentModeChannel.input.safeParse({ sessionId: 's_1', agentMode }).success,
+      true,
+      `session.setAgentMode should accept ${agentMode}`,
+    );
+    assert.equal(
+      sessionEventChannel.payload.safeParse({
+        kind: 'managed_task_status',
+        sessionId: 's_1',
+        status: { agentMode, harnessProfile: 'H2_PLAN_EXECUTE_EVAL' },
+      }).success,
+      true,
+      `managed_task_status should accept ${agentMode}`,
+    );
+  }
+  assert.equal(
+    sessionSetAgentModeChannel.input.safeParse({ sessionId: 's_1', agentMode: 'ama-workflow' }).success,
+    false,
+  );
 });
 
 test('session.create output: requires sessionId + createdAt', () => {

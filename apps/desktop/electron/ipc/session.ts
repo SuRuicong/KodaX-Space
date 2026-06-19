@@ -27,6 +27,7 @@ import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
 import { loadPersistedSession } from '../kodax/session-store.js';
 import { assertArtifactPathInClipboardSandbox } from './clipboard.js';
+import { clearSlashGoalForSession } from '../slash/builtin.js';
 import type { AgentsFileMeta, SessionHistoryItem, SessionMeta } from '@kodax-space/space-ipc-schema';
 
 // SDK lazy + cached import — 跟其他 SDK 接入点 (agent.ts, queue.ts, catalog.ts) 同模式。
@@ -281,6 +282,7 @@ export function registerSessionChannels(): void {
   // session.delete
   registerChannel('session.delete', async (input) => {
     const deleted = await kodaxHost.delete(input.sessionId);
+    if (deleted) clearSlashGoalForSession(input.sessionId);
     return { deleted };
   });
 
@@ -320,7 +322,7 @@ export function registerSessionChannels(): void {
     return { ok };
   });
 
-  // session.setAgentMode — 切 KodaX agent 形态 (AMA / SA)。
+  // session.setAgentMode — 切 KodaX agent 形态 (AMA / AMAW / SA)。
   // AMA = 多 agent 协作（KodaX 默认）；SA = 单 agent 降级路径，接口并发受限时使用。
   // 切换不重启 in-flight session，下一条 prompt 走新形态。
   registerChannel('session.setAgentMode', (input) => {
