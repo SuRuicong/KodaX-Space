@@ -1,14 +1,15 @@
 // AgentModeSelector — KodaX agent 形态切换
 //
-// KodaX 内核两种工作形态：
+// KodaX 内核三种工作形态：
 //   - AMA (默认) — Adaptive Multi-Agent: scout/planner/generator/evaluator 多角色协作，
 //     更聪明，对复杂任务效果好；token 消耗高，需要 provider 并发余量
+//   - AMAW — AMA + natural-language workflow activation.
 //   - SA — Single Agent: 单 agent loop，结构最简单，token + 并发都省。接口并发受限
 //     (rate limit / 多用户共享 quota / fallback to cheaper provider) 时显式降级
 //
 // UI 行为：
-//   - 紧贴 ModeSelector 旁的小 chip：显示 "AMA" / "SA"
-//   - 点开 popup 列两个选项 + 说明
+//   - 紧贴 ModeSelector 旁的小 chip：显示 "AMA" / "AMAW" / "SA"
+//   - 点开 popup 列三个选项 + 说明
 //   - 切换不重启 session — 下一条 prompt 走新形态
 //   - 无 session 时存进 pendingAgentMode；session.create 时入参传给 main
 //
@@ -20,18 +21,28 @@ import { useAppStore } from '../store/appStore.js';
 
 const LABELS: Record<AgentMode, string> = {
   ama: 'AMA',
+  amaw: 'AMAW',
   sa: 'SA',
 };
 
 const FULL_NAMES: Record<AgentMode, string> = {
   ama: 'Adaptive Multi-Agent',
+  amaw: 'Adaptive Multi-Agent Workflow',
   sa: 'Single Agent',
 };
 
 const DESCRIPTIONS: Record<AgentMode, string> = {
+  amaw: 'Multi-agent work with natural-language workflow activation.',
   ama: '多角色协作（scout / planner / generator / evaluator）— 复杂任务效果更好，但 token 消耗 + 并发更高',
   sa: '单 agent loop — 资源 / 并发受限时的 fallback；省 token、省请求并发',
 };
+
+const OPTIONS: readonly AgentMode[] = ['ama', 'amaw', 'sa'];
+
+function nextAgentMode(current: AgentMode): AgentMode {
+  const idx = OPTIONS.indexOf(current);
+  return OPTIONS[(idx + 1) % OPTIONS.length] ?? 'ama';
+}
 
 export function AgentModeSelector(): JSX.Element {
   const sessions = useAppStore((s) => s.sessions);
@@ -71,12 +82,12 @@ export function AgentModeSelector(): JSX.Element {
     }
   }
 
-  // P3: Alt+M 在 AMA / SA 间快速切换（对齐 KodaX TUI 的 Meta+M；Win 上 Meta 没标准键所以用 Alt）
+  // P3: Alt+M cycles AMA / AMAW / SA.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.altKey && !e.ctrlKey && !e.shiftKey && (e.key === 'm' || e.key === 'M')) {
         e.preventDefault();
-        void pick(current === 'ama' ? 'sa' : 'ama');
+        void pick(nextAgentMode(current));
       }
     };
     window.addEventListener('keydown', onKey);
@@ -109,7 +120,7 @@ export function AgentModeSelector(): JSX.Element {
           <div className="px-3 py-1 text-fg-muted text-[11px] uppercase tracking-wider">
             Agent mode
           </div>
-          {(['ama', 'sa'] as const).map((m) => (
+          {OPTIONS.map((m) => (
             <button
               key={m}
               type="button"
@@ -120,7 +131,7 @@ export function AgentModeSelector(): JSX.Element {
               title={DESCRIPTIONS[m]}
             >
               <div className="flex items-center gap-2">
-                <span className="font-mono w-9">{LABELS[m]}</span>
+                <span className="font-mono w-12">{LABELS[m]}</span>
                 <span className="flex-1 text-xs">{FULL_NAMES[m]}</span>
                 {current === m && (
                   <span className="text-ok" aria-hidden>
@@ -128,11 +139,11 @@ export function AgentModeSelector(): JSX.Element {
                   </span>
                 )}
               </div>
-              <div className="ml-9 text-[11px] text-fg-muted leading-tight">{DESCRIPTIONS[m]}</div>
+              <div className="ml-12 text-[11px] text-fg-muted leading-tight">{DESCRIPTIONS[m]}</div>
             </button>
           ))}
           <div className="border-t border-border-default mt-1 pt-1 px-3 py-1 text-[11px] text-fg-muted leading-tight">
-            默认 AMA；接口并发受限时切到 SA 降级
+            AMA uses explicit /workflow. AMAW can auto-start workflows from natural language.
           </div>
         </div>
       )}

@@ -31,6 +31,10 @@ import {
   readVisualQuality,
   applyVisualQualityToDocument,
 } from '../lib/visualQuality.js';
+import {
+  replaceSessionsInScope,
+  type SessionScope,
+} from '../lib/sessionScope.js';
 
 /**
  * Persistent inline notification (NotificationsSurface 渲染源)。
@@ -212,7 +216,7 @@ interface AppState {
   pendingProviderId: string | null;
   pendingReasoningMode: SessionMeta['reasoningMode'] | null;
   pendingPermissionMode: SessionMeta['permissionMode'] | null;
-  /** Pending agent mode (AMA / SA)。默认 'ama'；下次 session.create 时随入参传给 main。*/
+  /** Pending agent mode (AMA / AMAW / SA)。默认 'ama'；下次 session.create 时随入参传给 main。*/
   pendingAgentMode: SessionMeta['agentMode'] | null;
   /** Pending model — 用户在右下角 picker 选的 model 名 (provider.models 之一)。
    *  无 session 时存这里；session 创建后通过 /model slash 命令应用到 KodaX 运行时。
@@ -333,6 +337,7 @@ interface AppState {
   toggleProjectExpanded(projectPath: string, currentDefault: boolean): void;
   setCurrentProject(path: string | null): void;
   setSessions(sessions: readonly SessionMeta[]): void;
+  replaceSessionsForScope(sessions: readonly SessionMeta[], scope: SessionScope): void;
   setCurrentSession(sessionId: string | null): void;
   appendEvent(event: SessionEvent): void;
   /** main 推 'kodax.queueChanged' 时 / renderer 主动 kodax.queueGet 后调用,覆盖 snapshot。*/
@@ -475,7 +480,7 @@ const PENDING_MODEL_MAX_LEN = 256;
 // 持久化 pending* 模式时校验合法 enum 值，避免 LS 被改成非法值后崩 (typescript 编译期没法知道)
 const PERMISSION_MODE_VALUES = ['plan', 'accept-edits', 'auto'] as const;
 const REASONING_MODE_VALUES = ['off', 'auto', 'quick', 'balanced', 'deep'] as const;
-const AGENT_MODE_VALUES = ['ama', 'sa'] as const;
+const AGENT_MODE_VALUES = ['ama', 'amaw', 'sa'] as const;
 
 function readPersistedPermissionMode(): SessionMeta['permissionMode'] | null {
   const v = lsGet(LS_KEY_PENDING_PERMISSION);
@@ -711,6 +716,10 @@ export const useAppStore = create<AppState>((set) => ({
     set({ currentProjectPath: path });
   },
   setSessions: (sessions) => set({ sessions }),
+  replaceSessionsForScope: (sessions, scope) =>
+    set((state) => ({
+      sessions: replaceSessionsInScope(state.sessions, sessions, scope, IS_WIN_RENDERER),
+    })),
   setCurrentSession: (sessionId) =>
     set((state) => {
       // v0.1.9 fix: 切 session 时同步把 currentProjectPath 调到该 session 的 projectRoot。

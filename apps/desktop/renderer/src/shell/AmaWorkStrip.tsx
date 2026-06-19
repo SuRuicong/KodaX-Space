@@ -4,7 +4,7 @@
 // 数据来源：managed_task_status 事件（appStore.managedTaskStatusBySession）。
 //
 // 显示规则：
-//   - 仅 session.agentMode === 'ama' 时渲染
+//   - 仅 session.agentMode === 'ama' / 'amaw' 时渲染
 //   - 状态字段都缺时静默隐藏（避免空 strip 占位）
 //   - 部分字段缺时只显示已有的，无 placeholder dash
 //
@@ -21,7 +21,7 @@ export function AmaWorkStrip(): JSX.Element | null {
   );
 
   const session = sessions.find((x) => x.sessionId === currentSessionId);
-  if (!session || session.agentMode !== 'ama') return null;
+  if (!session || (session.agentMode !== 'ama' && session.agentMode !== 'amaw')) return null;
   if (!status) return null;
 
   const parts: string[] = [];
@@ -56,10 +56,10 @@ export function AmaWorkStrip(): JSX.Element | null {
     <div
       className="px-3 text-[11px] font-mono text-fg-muted flex items-center gap-1.5 select-none"
       role="status"
-      aria-label="AMA work status"
+      aria-label="agent work status"
     >
       <Sparkles className="w-3 h-3 text-thinking flex-shrink-0" strokeWidth={2} aria-hidden />
-      <span className="text-fg-muted">AMA</span>
+      <span className="text-fg-muted">{session.agentMode.toUpperCase()}</span>
       <span className="text-fg-faint">·</span>
       <span className="truncate">{parts.join(' · ')}</span>
     </div>

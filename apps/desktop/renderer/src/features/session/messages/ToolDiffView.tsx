@@ -9,7 +9,9 @@
 // 默认全部 collapsed 不烧资源。
 
 import { useMemo, useState, lazy, Suspense } from 'react';
+import { Eye, FolderOpen } from 'lucide-react';
 import { Caret } from '../../../components/Caret.js';
+import { openFileSmart, isPreviewablePath } from '../../../lib/openPath.js';
 
 // 仅在展开时才动态加载 Monaco（Suspense fallback 给出"loading diff"提示）。
 // MonacoDiffViewer 本身 import @monaco-editor/react + 完整 monaco-editor，
@@ -65,35 +67,57 @@ export function ToolDiffView(props: ToolDiffViewProps): JSX.Element {
     [props.before, props.after],
   );
   const name = basenameOf(props.path);
+  // 2026-06-18: header 右侧"打开"动作。html/svg/md → 在 Artifact 面板预览；代码 → App 内 diff
+  // popout；其它 → 文件管理器定位。解决"AI 写完网页文件无法一键预览 / 路径点不动"反馈。
+  const previewable = props.path !== '' && isPreviewablePath(props.path);
+  const hasPath = props.path !== '';
 
   return (
     <div className="rounded border border-border-default overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
+      <div
         className={[
-          'w-full px-2.5 py-1.5 flex items-center gap-2 text-left text-xs font-mono',
-          'dark:bg-surface-2/50 dark:hover:bg-hover-bg bg-surface hover:bg-hover-bg',
-          'text-fg-secondary',
+          'flex items-center text-xs font-mono',
+          'dark:bg-surface-2/50 bg-surface text-fg-secondary',
         ].join(' ')}
-        aria-expanded={expanded}
       >
-        <Caret open={expanded} />
-        <span className="truncate flex-1" title={props.path}>
-          {name}
-        </span>
-        {summary.plus > 0 && <span className="text-ok font-semibold">+{summary.plus}</span>}
-        {summary.minus > 0 && <span className="text-danger font-semibold">−{summary.minus}</span>}
-        {/* review C3-HIGH-2: 多集合 diff 算出 0/0 但 before !== after 是"行只是被
-            重排了" —— 说 "no change" 会误导用户（Monaco 展开后会显示真实 diff）。
-            用 ~reordered 跟"真没改"区分。 */}
-        {summary.plus === 0 && summary.minus === 0 && props.before !== props.after && (
-          <span className="text-fg-muted">~reordered</span>
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="min-w-0 flex-1 px-2.5 py-1.5 flex items-center gap-2 text-left hover:bg-hover-bg"
+          aria-expanded={expanded}
+        >
+          <Caret open={expanded} />
+          <span className="truncate flex-1" title={props.path}>
+            {name}
+          </span>
+          {summary.plus > 0 && <span className="text-ok font-semibold">+{summary.plus}</span>}
+          {summary.minus > 0 && <span className="text-danger font-semibold">−{summary.minus}</span>}
+          {/* review C3-HIGH-2: 多集合 diff 算出 0/0 但 before !== after 是"行只是被
+              重排了" —— 说 "no change" 会误导用户（Monaco 展开后会显示真实 diff）。
+              用 ~reordered 跟"真没改"区分。 */}
+          {summary.plus === 0 && summary.minus === 0 && props.before !== props.after && (
+            <span className="text-fg-muted">~reordered</span>
+          )}
+          {summary.plus === 0 && summary.minus === 0 && props.before === props.after && (
+            <span className="text-fg-muted">no change</span>
+          )}
+        </button>
+        {hasPath && (
+          <button
+            type="button"
+            onClick={() => void openFileSmart(props.path)}
+            title={previewable ? '在 Artifact 面板预览' : '打开文件'}
+            aria-label={previewable ? '在 Artifact 面板预览' : '打开文件'}
+            className="flex-shrink-0 px-2 py-1.5 inline-flex items-center justify-center text-fg-muted hover:text-fg-primary hover:bg-hover-bg border-l border-border-default/60"
+          >
+            {previewable ? (
+              <Eye className="w-3.5 h-3.5" strokeWidth={1.75} />
+            ) : (
+              <FolderOpen className="w-3.5 h-3.5" strokeWidth={1.75} />
+            )}
+          </button>
         )}
-        {summary.plus === 0 && summary.minus === 0 && props.before === props.after && (
-          <span className="text-fg-muted">no change</span>
-        )}
-      </button>
+      </div>
       {expanded && (
         // 固定 maxHeight，内部滚动；DiffEditor height=100% 撑满父容器
         // Monaco 内部 horizontal scroll 也自带，长行不会撑爆 layout

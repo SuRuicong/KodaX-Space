@@ -23,7 +23,8 @@
 //   - Permission modal / Settings overlay → 复用旧 App 的实现挂载点
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { PanelLeft, PanelRight } from 'lucide-react';
+import { Info, PanelLeft, PanelRight } from 'lucide-react';
+import type { SpaceCapabilityStatus, SpaceVersionOutput } from '@kodax-space/space-ipc-schema';
 import { LeftSidebar } from './LeftSidebar.js';
 import { ResizeHandle } from './ResizeHandle.js';
 import { useSmartPopoutDirector } from '../features/popout-director/useSmartPopoutDirector.js';
@@ -47,6 +48,11 @@ import { UpdateBanner } from '../features/updater/UpdateBanner.js';
 import { useAppStore, clampSidebarWidthPx } from '../store/appStore.js';
 import { useSurfaceStore } from '../store/surface.js';
 import { PartnerWorkspace } from '../features/partner/PartnerWorkspace.js';
+import { HandoffInbox } from './HandoffInbox.js';
+
+interface ShellProps {
+  readonly version?: SpaceVersionOutput | null;
+}
 
 // 模块级 set：哪些 session 已从 SDK 拉过 history 回填 store。
 // 之前用 useRef 在 Shell component 里——HMR 重挂 / Shell 卸载重挂都会丢，导致 fork/rewind
@@ -54,7 +60,7 @@ import { PartnerWorkspace } from '../features/partner/PartnerWorkspace.js';
 // store 复写 events 是真实成本）。挪到 module 级 process 级共享，跨 HMR 仍保留。
 const restoredSessionIds = new Set<string>();
 
-export function Shell(): JSX.Element {
+export function Shell({ version = null }: ShellProps): JSX.Element {
   // F045: surface 一等状态（替代旧 local mode）。Partner 自本版起有真实空壳。
   const currentSurface = useSurfaceStore((s) => s.currentSurface);
 
@@ -75,6 +81,7 @@ export function Shell(): JSX.Element {
   const setRightSidebarWidth = useAppStore((s) => s.setRightSidebarWidth);
   const [leftWidthDraft, setLeftWidthDraft] = useState<number | null>(null);
   const [rightWidthDraft, setRightWidthDraft] = useState<number | null>(null);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const leftWidth = leftWidthDraft ?? persistedLeftWidth;
   const rightWidth = rightWidthDraft ?? persistedRightWidth;
 
@@ -256,9 +263,23 @@ export function Shell(): JSX.Element {
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setDiagnosticsOpen((v) => !v)}
+            className="app-no-drag inline-flex h-7 items-center gap-1.5 rounded-md border border-border-default bg-surface-2 px-2 text-[11px] font-mono text-fg-muted hover:bg-hover-bg hover:text-fg-primary"
+            title="Runtime diagnostics"
+            aria-label="Runtime diagnostics"
+          >
+            <Info className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
+            <span>v{version?.spaceVersion ?? '?.?.?'}</span>
+          </button>
+          <HandoffInbox />
           <VisualQualityToggle />
           <ThemeToggle />
         </div>
+        {diagnosticsOpen && (
+          <RuntimeDiagnostics version={version} onClose={() => setDiagnosticsOpen(false)} />
+        )}
       </div>
 
       {/* F060: 面板区。Liquid Glass —— 立体感来自光影材质（光向描边 + 光标 specular + 分层柔影），
@@ -382,6 +403,90 @@ interface SidebarToggleButtonProps {
  * - icon: ◧ (left) / ◨ (right)，对应侧的紧凑指示
  * - open 时图标 text-fg-primary；close 时 text-fg-muted（让用户一眼看出当前状态）
  */
+interface RuntimeDiagnosticsProps {
+  readonly version: SpaceVersionOutput | null;
+  readonly onClose: () => void;
+}
+
+function statusClass(status: SpaceCapabilityStatus): string {
+  switch (status) {
+    case 'supported':
+      return 'border-ok/40 bg-ok/10 text-ok';
+    case 'partial':
+      return 'border-warn/40 bg-warn/10 text-warn';
+    case 'blocked':
+      return 'border-danger/40 bg-danger/10 text-danger';
+    case 'planned':
+      return 'border-border-default bg-surface-3 text-fg-muted';
+  }
+}
+
+function RuntimeDiagnostics({ version, onClose }: RuntimeDiagnosticsProps): JSX.Element {
+  return (
+    <div className="app-no-drag absolute right-3 top-8 z-50 w-[min(420px,calc(100vw-24px))] rounded-lg border border-border-default bg-surface/95 p-3 text-xs text-fg-secondary shadow-2xl backdrop-blur-xl">
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[11px] uppercase text-fg-faint">Runtime</div>
+          <div className="mt-0.5 font-mono text-fg-primary">
+            Space v{version?.spaceVersion ?? '?.?.?'} / KodaX SDK{' '}
+            {version?.kodaxSdkVersion ?? 'unknown'}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md px-1.5 py-0.5 text-[11px] text-fg-muted hover:bg-hover-bg hover:text-fg-primary"
+          aria-label="Close diagnostics"
+          title="Close"
+        >
+          Esc
+        </button>
+      </div>
+
+      <div className="mb-2 grid grid-cols-[96px_1fr] gap-x-2 gap-y-1 font-mono text-[11px]">
+        <span className="text-fg-faint">contract</span>
+        <span>{version?.capabilityContract ?? 'loading'}</span>
+        <span className="text-fg-faint">dependency</span>
+        <span>{version?.kodaxDependencySpec ?? 'unknown'}</span>
+        <span className="text-fg-faint">platform</span>
+        <span>
+          {version
+            ? `${version.platform} / electron ${version.electronVersion} / chromium ${version.chromeVersion}`
+            : 'loading'}
+        </span>
+      </div>
+
+      <div className="max-h-60 space-y-1 overflow-auto pr-1">
+        {(version?.capabilities ?? []).map((capability) => (
+          <div
+            key={capability.id}
+            className="rounded-md border border-border-default bg-surface-2 px-2 py-1.5"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="min-w-0 truncate font-medium text-fg-primary">
+                {capability.label}
+              </span>
+              <span
+                className={`flex-shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] ${statusClass(
+                  capability.status,
+                )}`}
+              >
+                {capability.status}
+              </span>
+            </div>
+            <div className="mt-1 text-[11px] leading-4 text-fg-muted">{capability.detail}</div>
+          </div>
+        ))}
+        {!version && (
+          <div className="rounded-md border border-border-default bg-surface-2 px-2 py-2 text-fg-muted">
+            Loading diagnostics...
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SidebarToggleButton({ side, open, onClick }: SidebarToggleButtonProps): JSX.Element {
   const Icon = side === 'left' ? PanelLeft : PanelRight;
   const label = `${open ? 'Hide' : 'Show'} ${side} sidebar`;

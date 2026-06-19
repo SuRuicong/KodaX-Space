@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { MapPin, Folder, GitBranch, Check, Settings } from 'lucide-react';
+import type { RepointelStatusOutput } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 import { SettingsModal } from '../features/settings/SettingsModal.js';
 
@@ -25,7 +26,7 @@ export function ChipBar(): JSX.Element | null {
       <LocalChip />
       <ProjectChip projectName={projectName} projectPath={projectPath} />
       <BranchChip />
-      <RepointelChip />
+      <RepointelChip projectPath={projectPath} />
     </div>
   );
 }
@@ -225,8 +226,10 @@ const REPOINTEL_MODE_LABEL: Record<string, string> = {
  * v0.1.2 暂不做 auto-warm —— SDK 还没暴露 standalone warm API，
  * runKodaX 第一次 send 会自动 warm 进 trace，这里被动展示就够。
  */
-function RepointelChip(): JSX.Element | null {
+function RepointelChip({ projectPath }: { readonly projectPath: string }): JSX.Element | null {
   const [open, setOpen] = useState(false);
+  const [status, setStatus] = useState<RepointelStatusOutput | null>(null);
+  const [statusErr, setStatusErr] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   // 订阅原始 events array，避免 selector 返回新数组引用造成 zustand re-render 风暴
@@ -254,6 +257,24 @@ function RepointelChip(): JSX.Element | null {
   }, [open]);
 
   // 无 session 不显示 — ChipBar 整体已经在没 projectPath 时不渲染，这里再细化"无 session"
+  useEffect(() => {
+    if (!open || !window.kodaxSpace) return;
+    let cancelled = false;
+    setStatus(null);
+    setStatusErr(null);
+    void window.kodaxSpace.invoke('repointel.status', { projectRoot: projectPath }).then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        setStatus(result.data);
+      } else {
+        setStatusErr(result.error?.message ?? 'status failed');
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, projectPath]);
+
   if (!currentSessionId) return null;
 
   const latest = latestTraces[0];
@@ -288,6 +309,23 @@ function RepointelChip(): JSX.Element | null {
           <div className="px-3 py-1 text-fg-muted text-[11px] uppercase tracking-wider flex justify-between">
             <span>Repointel · {modeLabel}</span>
             <span className="text-fg-faint normal-case tracking-normal">latest 3 traces</span>
+          </div>
+          <div className="border-t border-border-default/60 px-3 py-1.5 text-[11px] text-fg-muted">
+            {status ? (
+              <div className="space-y-0.5">
+                <div className="font-mono">
+                  git: {status.gitRoot ? 'detected' : 'not detected'} / warm:{' '}
+                  {status.warmSupported ? 'supported' : 'unsupported'}
+                </div>
+                <div className="truncate" title={status.warmReason}>
+                  {status.warmReason}
+                </div>
+              </div>
+            ) : statusErr ? (
+              <span className="text-danger">{statusErr}</span>
+            ) : (
+              <span>Loading status...</span>
+            )}
           </div>
           {latestTraces.length === 0 ? (
             <div className="px-3 py-1.5 text-[11px] text-fg-muted italic">

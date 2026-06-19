@@ -8,6 +8,7 @@ import { Markdown } from './Markdown.js';
 import { Caret } from '../../../components/Caret.js';
 import { Collapse } from '../../../components/Collapse.js';
 import { EASE_EXPO, usePrefersReducedMotion } from '../../../lib/motion.js';
+import { openFileSmart, looksLikeFilePath } from '../../../lib/openPath.js';
 // OC-21: side-effect import 让内置 tool renderers (write/edit/multi_edit) 注册到 registry
 import './toolRenderers.js';
 import { getToolInputRenderer, getToolResultRenderer } from './toolRegistry.js';
@@ -347,16 +348,40 @@ export function ToolCallCard({
 
   return (
     <div ref={cardRef} className={`tool-card-anim rounded border ${colorClass} text-xs font-mono`}>
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-hover-bg rounded"
-      >
-        <Caret open={expanded} className="text-fg-muted" />
-        <span className={`font-semibold ${toolNameColor}`}>{toolName}</span>
-        <span className="text-fg-muted truncate flex-1">{argSummary}</span>
-        <StatusBadge status={status} />
-      </button>
+      {/* 2026-06-18: header 拆成「折叠 toggle」+「文件路径打开」两个**并列** button（不再把可点
+          span 嵌进 button —— 嵌套 interactive 在部分浏览器键盘不可达）。input 含文件路径字段时
+          右侧渲染裸路径可点击按钮（argSummary 带 "path: " 前缀+空格，不能直接判路径）；否则
+          argSummary 文字并入 toggle 内。 */}
+      {(() => {
+        const pathArg = pathArgOf(input);
+        return (
+          <div className="w-full px-3 py-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              aria-expanded={expanded}
+              className={`flex items-center gap-2 text-left rounded hover:bg-hover-bg ${
+                pathArg ? 'flex-shrink-0' : 'min-w-0 flex-1'
+              }`}
+            >
+              <Caret open={expanded} className="text-fg-muted" />
+              <span className={`font-semibold ${toolNameColor}`}>{toolName}</span>
+              {!pathArg && <span className="text-fg-muted truncate flex-1">{argSummary}</span>}
+            </button>
+            {pathArg && (
+              <button
+                type="button"
+                onClick={() => void openFileSmart(pathArg)}
+                title={`打开 ${pathArg}`}
+                className="min-w-0 flex-1 text-left truncate text-info/80 hover:text-info underline decoration-info/40 underline-offset-2 cursor-pointer"
+              >
+                {pathArg}
+              </button>
+            )}
+            <StatusBadge status={status} />
+          </div>
+        );
+      })()}
 
       <Collapse open={expanded}>
         <div className="border-t border-border-default px-3 py-2 space-y-2">
@@ -411,6 +436,17 @@ function StatusBadge({ status }: { status: 'running' | 'done' }): JSX.Element {
       done
     </span>
   );
+}
+
+// 从 tool input 里取"可点击打开"的裸文件路径（write/edit 用 file_path，多数工具用 path/file）。
+// 与 summarizeInput 分开：后者返回带 "key: " 前缀的展示串（含空格），不能直接判路径/传 openFileSmart。
+function pathArgOf(input?: Record<string, unknown>): string | null {
+  if (!input) return null;
+  const key = ['file_path', 'path', 'file'].find((k) => k in input);
+  if (!key) return null;
+  const v = input[key];
+  if (typeof v !== 'string') return null;
+  return looksLikeFilePath(v) ? v : null;
 }
 
 function summarizeInput(input?: Record<string, unknown>): string {

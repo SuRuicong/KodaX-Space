@@ -25,11 +25,14 @@ import {
   CircleDot,
   CircleX,
   MinusCircle,
+  ExternalLink,
+  FolderOpen,
   type LucideIcon,
 } from 'lucide-react';
 import { useAppStore } from '../../store/appStore.js';
 import { pushToast } from '../../store/toastStore.js';
 import { Caret } from '../../components/Caret.js';
+import { openExternalUrl, revealPath } from '../../lib/openPath.js';
 
 const STATUS_COLOR: Record<McpRuntimeStatusT, string> = {
   idle: 'text-fg-muted',
@@ -389,10 +392,18 @@ export function McpPanel(): JSX.Element {
                     {m.command} {(m.args ?? []).join(' ')}
                   </div>
                 )}
-                {m && m.transport === 'http' && (
-                  <div className="mt-1 text-fg-muted font-mono text-[11px] truncate" title={m.url}>
-                    {m.url}
-                  </div>
+                {m && m.transport === 'http' && m.url && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (m.url) void openExternalUrl(m.url);
+                    }}
+                    title={`在浏览器打开 ${m.url}`}
+                    className="mt-1 max-w-full inline-flex items-center gap-1 text-info/80 hover:text-info font-mono text-[11px] underline decoration-info/40 underline-offset-2"
+                  >
+                    <span className="truncate">{m.url}</span>
+                    <ExternalLink className="w-3 h-3 flex-shrink-0" strokeWidth={1.75} aria-hidden />
+                  </button>
                 )}
                 {status?.lastError && (
                   <div className="mt-1 text-danger/80 text-[11px] font-mono break-words">
@@ -564,9 +575,16 @@ export function McpPanel(): JSX.Element {
             <ul className="space-y-1">
               {discoverErrors.map((e, idx) => (
                 <li key={`${e.path}:${idx}`} className="text-[11px] text-warn/70 font-mono">
-                  <div className="truncate" title={e.path}>
-                    {e.path}
-                  </div>
+                  {/* 2026-06-18: 配置出错时最该做的是"打开那个文件去修" → 路径可点击定位。 */}
+                  <button
+                    type="button"
+                    onClick={() => void revealPath(e.path, currentProjectPath)}
+                    title={`在文件管理器中显示 ${e.path}`}
+                    className="w-full text-left flex items-center gap-1 hover:text-warn"
+                  >
+                    <span className="truncate flex-1">{e.path}</span>
+                    <FolderOpen className="w-3 h-3 flex-shrink-0 opacity-70" strokeWidth={1.75} aria-hidden />
+                  </button>
                   <div className="text-warn/50 pl-2 truncate" title={e.error}>
                     {e.error}
                   </div>

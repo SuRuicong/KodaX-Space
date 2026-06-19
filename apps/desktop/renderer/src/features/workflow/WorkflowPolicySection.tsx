@@ -10,9 +10,9 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { WorkflowPolicyT } from '@kodax-space/space-ipc-schema';
 
 const AUTOSTART_OPTS: { value: WorkflowPolicyT['autoStart']; label: string; hint: string }[] = [
-  { value: 'off', label: '关', hint: '禁自然语言自启（仍可显式启动）' },
-  { value: 'confirm', label: '确认', hint: '自启前确认一次（推荐）' },
-  { value: 'on', label: '自动', hint: '透明自启，不确认' },
+  { value: 'off', label: 'Off', hint: 'Never start workflows from natural language.' },
+  { value: 'confirm', label: 'Confirm', hint: 'Ask once before starting a workflow.' },
+  { value: 'on', label: 'Auto', hint: 'Start matching workflows without confirmation.' },
 ];
 
 export function WorkflowPolicySection(): JSX.Element {
@@ -31,11 +31,11 @@ export function WorkflowPolicySection(): JSX.Element {
   }
 
   return (
-    <section className="pt-3 border-t border-border-default">
-      <label className="block text-[11px] text-fg-muted uppercase tracking-wider mb-1.5">
-        Workflow 自启
+    <section className="space-y-3">
+      <label className="block text-[11px] font-medium uppercase tracking-wide text-fg-muted">
+        Workflow autostart
       </label>
-      <div className="inline-flex rounded border border-border-default overflow-hidden">
+      <div className="inline-flex overflow-hidden rounded-lg border border-border-default bg-surface">
         {AUTOSTART_OPTS.map((o) => {
           const active = policy?.autoStart === o.value;
           return (
@@ -43,9 +43,10 @@ export function WorkflowPolicySection(): JSX.Element {
               key={o.value}
               type="button"
               title={o.hint}
+              aria-pressed={active}
               disabled={!policy}
               onClick={() => void patch({ autoStart: o.value })}
-              className={`px-3 py-1 text-xs ${
+              className={`px-3 py-1.5 text-xs ${
                 active ? 'bg-accent/20 text-accent' : 'text-fg-secondary hover:bg-surface-3'
               }`}
             >
@@ -54,41 +55,44 @@ export function WorkflowPolicySection(): JSX.Element {
           );
         })}
       </div>
-      <div className="text-[11px] text-fg-muted mt-1">
+      <div className="text-xs leading-5 text-fg-muted">
         {AUTOSTART_OPTS.find((o) => o.value === policy?.autoStart)?.hint ??
-          '自然语言触发多 agent 工作流的策略。'}
+          'Policy for natural-language workflow triggers.'}
       </div>
 
       <button
         type="button"
         onClick={() => setAdvanced((v) => !v)}
-        className="mt-2 inline-flex items-center gap-1 text-[11px] text-fg-muted hover:text-fg-primary"
+        aria-expanded={advanced}
+        className="inline-flex items-center gap-1 text-xs text-fg-muted hover:text-fg-primary"
       >
         {advanced ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        高级（运行上限）
+        Advanced limits
       </button>
       {advanced && policy && (
-        <div className="mt-1.5 space-y-1.5 pl-1">
+        <div className="space-y-2 rounded-lg border border-border-default bg-surface px-3 py-3">
           <CapInput
-            label="最大 agent 数"
+            label="Max agents"
             value={policy.maxAgents}
             max={64}
             onCommit={(v) => void patch({ maxAgents: v })}
           />
           <CapInput
-            label="最大并发"
+            label="Max concurrency"
             value={policy.maxConcurrency}
             max={16}
             onCommit={(v) => void patch({ maxConcurrency: v })}
           />
           <CapInput
-            label="token 预算"
+            label="Token budget"
             value={policy.tokenBudget}
             max={200000}
             step={10000}
             onCommit={(v) => void patch({ tokenBudget: v })}
           />
-          <div className="text-[10px] text-fg-faint">上限不可超过 KodaX 硬上限（64 / 16 / 200k）。</div>
+          <div className="text-[10px] text-fg-faint">
+            Limits cannot exceed KodaX runtime caps: 64 agents, 16 concurrent, 200k tokens.
+          </div>
         </div>
       )}
     </section>
@@ -116,22 +120,23 @@ function CapInput({
     else setDraft(String(value));
   }
   return (
-    <div className="flex items-center gap-2 text-xs">
-      <span className="text-fg-secondary w-24">{label}</span>
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <span className="w-32 text-fg-secondary">{label}</span>
       <input
         type="number"
         min={1}
         max={max}
         step={step ?? 1}
         value={draft}
+        aria-label={label}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
         }}
-        className="w-28 bg-surface border border-border-default rounded px-2 py-0.5 text-fg-primary font-mono focus:outline-none focus:border-border-strong"
+        className="h-8 w-32 rounded-lg border border-border-default bg-surface px-2 text-fg-primary font-mono focus:outline-none focus:border-border-strong"
       />
-      <span className="text-[10px] text-fg-faint">≤ {max}</span>
+      <span className="text-[10px] text-fg-faint">&lt;= {max}</span>
     </div>
   );
 }

@@ -111,6 +111,160 @@ function tokenizeArgs(rest: string): string[] {
   return result;
 }
 
+function scanArgSpans(rest: string): Array<{ value: string; end: number }> {
+  const result: Array<{ value: string; end: number }> = [];
+  const re = /"([^"]*)"|(\S+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(rest)) !== null) {
+    result.push({ value: m[1] ?? m[2] ?? '', end: re.lastIndex });
+  }
+  return result;
+}
+
+function tokenizeWorkflowArgs(rest: string): string[] {
+  const trimmed = rest.trim();
+  if (trimmed === '') return [];
+  const spans = scanArgSpans(trimmed);
+  const first = spans[0];
+  if (!first) return [];
+  const command = first.value.toLowerCase();
+  const tailAfter = (span: { end: number }): string => trimmed.slice(span.end).trim();
+  if (command === 'create') {
+    const request = tailAfter(first);
+    return request ? ['create', request] : ['create'];
+  }
+  if (command === 'revise') {
+    const args = ['revise'];
+    let targetIndex = 1;
+    if (spans[1]?.value === '--replace') {
+      args.push('--replace');
+      targetIndex = 2;
+    }
+    const target = spans[targetIndex];
+    if (!target) return args;
+    args.push(target.value);
+    const request = tailAfter(target);
+    if (request) args.push(request);
+    return args;
+  }
+  if (command === 'rename' || command === 'rerun') {
+    const target = spans[1];
+    if (!target) return [command];
+    const tail = tailAfter(target);
+    return tail ? [command, target.value, tail] : [command, target.value];
+  }
+  const subcommands = new Set([
+    'help', 'list', 'ls', 'runs', 'show', 'pause', 'resume', 'stop', 'delete', 'prune', 'save',
+  ]);
+  if (!subcommands.has(command)) {
+    const rawArgs = tailAfter(first);
+    return rawArgs ? [first.value, rawArgs] : [first.value];
+  }
+  return spans.slice(0, 20).map((span) => span.value);
+}
+
+const STATIC_SLASH_ARG_OPTIONS: Readonly<Record<string, readonly string[]>> = {
+  mode: ['plan', 'accept-edits', 'auto'],
+  'auto-engine': ['llm', 'rules'],
+  'agent-mode': ['ama', 'amaw', 'ama-workflow', 'sa', 'toggle'],
+  am: ['ama', 'amaw', 'ama-workflow', 'sa', 'toggle'],
+  reasoning: ['off', 'auto', 'quick', 'balanced', 'deep'],
+  reason: ['off', 'auto', 'quick', 'balanced', 'deep'],
+  thinking: ['on', 'off', 'auto', 'quick', 'balanced', 'deep'],
+  think: ['on', 'off', 'auto', 'quick', 'balanced', 'deep'],
+  t: ['on', 'off', 'auto', 'quick', 'balanced', 'deep'],
+  auto: ['auto'],
+  a: ['auto'],
+  fallback: ['status', 'off'],
+  'verifier-log': ['on', 'off'],
+  'stall-log': ['on', 'off'],
+  mcp: ['status', 'refresh'],
+  status: ['workspace', 'worktree', 'runtime', 'peers'],
+  info: ['workspace', 'worktree', 'runtime', 'peers'],
+  ctx: ['workspace', 'worktree', 'runtime', 'peers'],
+  paste: ['list', 'show', 'help'],
+};
+
+function shouldOpenStaticSlashArgCompletion(trimmedPrompt: string): boolean {
+  const match = trimmedPrompt.match(/^\/([^\s]+)\s+(\S*)$/);
+  if (!match) return false;
+  const command = match[1]?.toLowerCase() ?? '';
+  const arg = match[2]?.toLowerCase() ?? '';
+  const options = STATIC_SLASH_ARG_OPTIONS[command];
+  if (!options) return false;
+  return arg.length > 0 && !options.includes(arg);
+}
+
+function shouldOpenWorkflowSlashCompletion(trimmedPrompt: string): boolean {
+  const match = trimmedPrompt.match(/^\/workflow(?:\s+(.*))?$/i);
+  if (!match) return false;
+  const rest = match[1] ?? '';
+  if (rest === '') return true;
+
+  const spans = scanArgSpans(rest);
+  const endsWithSpace = /\s$/.test(trimmedPrompt);
+  const first = spans[0]?.value.toLowerCase();
+  if (!first) return true;
+
+  // While editing the first workflow token, keep subcommand / workflow-name completion.
+  if (spans.length === 1 && !endsWithSpace) return true;
+
+  // These subcommands take free-form text after the subcommand/target. Once the
+  // user reaches that free-form position, Enter should execute, not autocomplete.
+  if (first === 'create' || first === 'help' || first === 'list' || first === 'ls') return false;
+
+  if (first === 'revise') {
+    const targetIndex = spans[1]?.value === '--replace' ? 2 : 1;
+    const target = spans[targetIndex];
+    if (!target) return true;
+    return !endsWithSpace && spans.length === targetIndex + 1;
+  }
+
+  if (first === 'rename' || first === 'rerun') {
+    const target = spans[1];
+    if (!target) return true;
+    return !endsWithSpace && spans.length === 2;
+  }
+
+  if (first === 'save') {
+    const runId = spans[1];
+    if (!runId) return true;
+    return !endsWithSpace && spans.length === 2;
+  }
+
+  if (first === 'runs' && spans.at(-2)?.value === '--limit') return false;
+  if (first === 'prune' && ['--keep', '--older-than'].includes(spans.at(-2)?.value ?? '')) return false;
+
+  const completionSubcommands = new Set([
+    'runs', 'show', 'pause', 'resume', 'stop', 'delete', 'prune',
+  ]);
+  return completionSubcommands.has(first);
+}
+
+function slashEchoText(name: string, args: readonly string[]): string {
+  return `/${name} ${args.join(' ')}`.trim();
+}
+
+function workflowPendingMessage(name: string, args: readonly string[]): string | null {
+  if (name.toLowerCase() !== 'workflow') return null;
+  const first = args[0]?.toLowerCase();
+  if (!first) return null;
+  if (first === 'create' && (args[1]?.trim().length ?? 0) > 0) {
+    return 'generating workflow...';
+  }
+  if (first === 'revise') {
+    const request = args[1] === '--replace' ? args[3] : args[2];
+    return request?.trim() ? 'revising workflow...' : null;
+  }
+  if (first === 'rerun' && args[1]?.trim()) return 'starting workflow...';
+
+  const nonStartingSubcommands = new Set([
+    'help', 'list', 'ls', 'runs', 'show', 'pause', 'resume', 'stop',
+    'delete', 'prune', 'save', 'rename',
+  ]);
+  return nonStartingSubcommands.has(first) ? null : 'starting workflow...';
+}
+
 export function BottomBar(): JSX.Element {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
@@ -325,11 +479,17 @@ export function BottomBar(): JSX.Element {
     setPendingProviderId(null);
     // 刷新权威列表（让 LeftSidebar Recents 立即看到新条目）。F045: 按当前 surface 拉，
     // 与 LeftSidebar 的分面列表一致（否则新建后刷新会把另一面的 session 也灌进来）。
-    const listResult = await window.kodaxSpace.invoke('session.list', {
+    void window.kodaxSpace.invoke('session.list', {
       projectRoot: currentProjectPath,
       surface: currentSurface,
-    });
-    if (listResult.ok) useAppStore.getState().setSessions(listResult.data.sessions);
+    }).then((listResult) => {
+      if (listResult.ok) {
+        useAppStore.getState().replaceSessionsForScope(listResult.data.sessions, {
+          projectRoot: currentProjectPath,
+          surface: currentSurface,
+        });
+      }
+    }).catch(() => {});
     return stub.sessionId;
   }
 
@@ -411,9 +571,15 @@ export function BottomBar(): JSX.Element {
    * slash 模式：trim 后以 '/' 起头、且不含空白（仍在敲命令名）。
    * 用 trimmed 而非 raw 是为了让 ` /help`（前导空格、粘贴常见）也能弹补全；
    * 用 \s 而非空格能同时识别 \n \t（多行/粘贴）。
-   */
+  */
   const trimmedPrompt = prompt.trimStart();
-  const slashMode = trimmedPrompt.startsWith('/') && !/\s/.test(trimmedPrompt);
+  const isWorkflowSlashPrompt = shouldOpenWorkflowSlashCompletion(trimmedPrompt);
+  const slashArgTrailingMode = /^\/[^\s]+\s$/i.test(trimmedPrompt);
+  const slashMode = trimmedPrompt.startsWith('/')
+    && (!/\s/.test(trimmedPrompt)
+      || isWorkflowSlashPrompt
+      || slashArgTrailingMode
+      || shouldOpenStaticSlashArgCompletion(trimmedPrompt));
 
   /**
    * Slash 命令分两步：
@@ -425,9 +591,20 @@ export function BottomBar(): JSX.Element {
    * setCurrentSession 在下次 render 才生效，闭包里还是 stale null。
    */
   async function execSlashOrSkill(sessionId: string, name: string, args: string[]): Promise<void> {
-    if (!window.kodaxSpace) return;
+    if (!window.kodaxSpace) {
+      setErr('IPC unavailable');
+      appendUserMessage(sessionId, '[slash] IPC unavailable');
+      return;
+    }
+    const pendingWorkflowMessage = workflowPendingMessage(name, args);
+    const optimisticWorkflow = pendingWorkflowMessage !== null;
+    const commandEcho = slashEchoText(name, args);
     setBusy(true);
     setErr(null);
+    if (optimisticWorkflow) {
+      appendUserMessage(sessionId, commandEcho);
+      appendUserMessage(sessionId, `[workflow] ${pendingWorkflowMessage}`);
+    }
     try {
       const result = await window.kodaxSpace.invoke('slash.exec', {
         sessionId,
@@ -435,6 +612,12 @@ export function BottomBar(): JSX.Element {
         args,
       });
       if (!result.ok) {
+        if (optimisticWorkflow) {
+          appendUserMessage(
+            sessionId,
+            `[workflow] IPC failed: ${result.error?.message ?? 'unknown error'}`,
+          );
+        }
         setErr(
           `${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`,
         );
@@ -454,14 +637,16 @@ export function BottomBar(): JSX.Element {
         return;
       }
       if (echo && message) {
-        // F031: /help /clear 等命令把 message 当 system_notice 显示
-        appendUserMessage(sessionId, `/${name} ${args.join(' ')}`.trim());
+        // F031: show the command and the handler feedback in the conversation stream.
+        if (!optimisticWorkflow) appendUserMessage(sessionId, commandEcho);
+        if (!clearStream) appendUserMessage(sessionId, message);
       }
       if (clearStream) {
         // F031: 由 handler 显式请求清空消息流（不再 hardcode name === 'clear'）。
         resetSessionMessages(sessionId);
       }
       if (!ok && message) {
+        if (optimisticWorkflow) appendUserMessage(sessionId, `[workflow] ${message}`);
         setErr(message);
       } else if (ok && message && !echo) {
         // 静默成功命令（mode/provider）给一个一闪即逝的反馈
@@ -617,7 +802,40 @@ export function BottomBar(): JSX.Element {
       return;
     }
 
-    if (action === 'show-repointel') {
+    if (action === 'show-repointel-status') {
+      if (!window.kodaxSpace) {
+        appendUserMessage(sessionId, '[repointel] IPC unavailable');
+        return;
+      }
+      const traces = events.filter((ev) => ev.kind === 'repointel_trace');
+      const result = await window.kodaxSpace.invoke('repointel.status', {
+        projectRoot: state.currentProjectPath ?? undefined,
+      });
+      if (!result.ok) {
+        appendUserMessage(
+          sessionId,
+          `[repointel] status failed: ${result.error?.message ?? 'unknown'}`,
+        );
+        return;
+      }
+      const status = result.data;
+      const lines = [
+        '[repointel] status:',
+        `  project: ${status.projectRoot ?? '(none)'}`,
+        `  project exists: ${status.projectExists ? 'yes' : 'no'}`,
+        `  git root: ${status.gitRoot ?? '(not detected)'}`,
+        `  trace source: ${status.traceSource}`,
+        `  recent session traces: ${traces.length}`,
+        `  warm: ${status.warmSupported ? 'supported' : 'unsupported'}`,
+        `  warm reason: ${status.warmReason}`,
+        '  diagnostics:',
+        ...status.diagnostics.map((d) => `    - [${d.status}] ${d.id}: ${d.detail}`),
+      ];
+      appendUserMessage(sessionId, lines.join('\n'));
+      return;
+    }
+
+    if (action === 'show-repointel-trace' || action === 'show-repointel') {
       // events buffer 倒序找最近 8 条 repointel_trace
       const traces: Array<{
         kind: string;
@@ -805,6 +1023,279 @@ export function BottomBar(): JSX.Element {
       return;
     }
 
+    if (action === 'exit-app') {
+      pushToast('Closing KodaX Space', 'info', 1200);
+      window.close();
+      return;
+    }
+
+    if (action === 'reload-context') {
+      if (!window.kodaxSpace) {
+        appendUserMessage(sessionId, '[reload] IPC unavailable');
+        return;
+      }
+      const lines = ['[reload] refreshed:'];
+      if (currentProjectPath) {
+        const skills = await window.kodaxSpace.invoke('skill.discover', {
+          projectRoot: currentProjectPath,
+          forceReload: true,
+        });
+        lines.push(
+          skills.ok
+            ? `  skills: ${skills.data.skills.length}`
+            : `  skills: failed (${skills.error?.message ?? 'unknown'})`,
+        );
+      } else {
+        lines.push('  skills: skipped (no project)');
+      }
+      const mcp = await window.kodaxSpace.invoke('mcp.reload', undefined);
+      lines.push(
+        mcp.ok
+          ? `  mcp: ${mcp.data.ok ? 'ok' : 'not reloaded'} (${mcp.data.serverCount} server(s))`
+          : `  mcp: failed (${mcp.error?.message ?? 'unknown'})`,
+      );
+      appendUserMessage(sessionId, lines.join('\n'));
+      return;
+    }
+
+    if (action === 'show-extensions') {
+      if (!window.kodaxSpace || !currentProjectPath) {
+        appendUserMessage(sessionId, '[extensions] no project / IPC unavailable');
+        return;
+      }
+      const r = await window.kodaxSpace.invoke('mcp.discover', { projectRoot: currentProjectPath });
+      if (!r.ok) {
+        appendUserMessage(sessionId, `[extensions] discover failed: ${r.error?.message ?? 'unknown'}`);
+        return;
+      }
+      const lines = [`[extensions] ${r.data.servers.length} MCP extension/server(s):`];
+      if (r.data.servers.length === 0) lines.push('  none configured');
+      for (const server of r.data.servers.slice(0, 30)) {
+        const target = server.transport === 'http'
+          ? (server.url ?? '(no url)')
+          : [server.command, ...(server.args ?? [])].filter(Boolean).join(' ');
+        lines.push(`  ${server.name}  ${server.source}  ${server.transport}  ${target}`);
+      }
+      if (r.data.servers.length > 30) lines.push(`  ... ${r.data.servers.length - 30} more`);
+      if (r.data.errors.length > 0) {
+        lines.push('Errors:');
+        lines.push(...r.data.errors.slice(0, 8).map((e) => `  ${e.path}: ${e.error}`));
+      }
+      appendUserMessage(sessionId, lines.join('\n'));
+      return;
+    }
+
+    if (action === 'show-mcp') {
+      if (!window.kodaxSpace) {
+        appendUserMessage(sessionId, '[mcp] IPC unavailable');
+        return;
+      }
+      if (args[0]?.toLowerCase() === 'refresh') {
+        const reload = await window.kodaxSpace.invoke('mcp.reload', undefined);
+        if (!reload.ok) {
+          appendUserMessage(sessionId, `[mcp] reload failed: ${reload.error?.message ?? 'unknown'}`);
+          return;
+        }
+      }
+      const r = await window.kodaxSpace.invoke('mcp.servers', undefined);
+      if (!r.ok) {
+        appendUserMessage(sessionId, `[mcp] servers failed: ${r.error?.message ?? 'unknown'}`);
+        return;
+      }
+      const prefix = args[0]?.toLowerCase() === 'refresh' ? '[mcp] reloaded; ' : '[mcp] ';
+      const lines = [`${prefix}${r.data.servers.length} server(s):`];
+      if (r.data.servers.length === 0) lines.push('  none configured');
+      for (const server of r.data.servers) {
+        const dirty = server.dirty ? ' dirty' : '';
+        const cached = server.cachedAt ? ` cached=${server.cachedAt}` : '';
+        const err = server.lastError ? ` error=${server.lastError}` : '';
+        lines.push(
+          `  ${server.serverId}  ${server.status}/${server.connect}  tools=${server.tools} resources=${server.resources} prompts=${server.prompts}${dirty}${cached}${err}`,
+        );
+      }
+      appendUserMessage(sessionId, lines.join('\n'));
+      return;
+    }
+
+    if (action === 'list-sessions') {
+      if (!window.kodaxSpace) {
+        appendUserMessage(sessionId, '[sessions] IPC unavailable');
+        return;
+      }
+      const r = await window.kodaxSpace.invoke('session.list', {
+        ...(currentProjectPath ? { projectRoot: currentProjectPath } : {}),
+        surface: currentSurface,
+      });
+      if (!r.ok) {
+        appendUserMessage(sessionId, `[sessions] list failed: ${r.error?.message ?? 'unknown'}`);
+        return;
+      }
+      state.replaceSessionsForScope(r.data.sessions, {
+        ...(currentProjectPath ? { projectRoot: currentProjectPath } : {}),
+        surface: currentSurface,
+      });
+      const lines = [`[sessions] ${r.data.sessions.length} session(s):`];
+      for (const s of r.data.sessions.slice(0, 40)) {
+        const title = s.title ? `  ${s.title}` : '';
+        const count = s.msgCount !== undefined ? `  ${s.msgCount} msg(s)` : '';
+        lines.push(`  ${s.sessionId}${title}${count}  ${new Date(s.lastActivityAt).toLocaleString()}`);
+      }
+      if (r.data.sessions.length > 40) lines.push(`  ... ${r.data.sessions.length - 40} more`);
+      appendUserMessage(sessionId, lines.join('\n'));
+      return;
+    }
+
+    if (action === 'load-session') {
+      if (!window.kodaxSpace) {
+        appendUserMessage(sessionId, '[load] IPC unavailable');
+        return;
+      }
+      const target = args[0];
+      if (!target) {
+        appendUserMessage(sessionId, '[load] Usage: /load <session-id>');
+        return;
+      }
+      const r = await window.kodaxSpace.invoke('session.list', undefined);
+      if (!r.ok) {
+        appendUserMessage(sessionId, `[load] list failed: ${r.error?.message ?? 'unknown'}`);
+        return;
+      }
+      const found = r.data.sessions.find((s) => s.sessionId === target || s.sessionId.startsWith(target));
+      if (!found) {
+        appendUserMessage(sessionId, `[load] session not found: ${target}`);
+        return;
+      }
+      state.upsertSession(found);
+      state.setCurrentSession(found.sessionId);
+      appendUserMessage(sessionId, `[load] switched to ${found.sessionId}${found.title ? ` (${found.title})` : ''}`);
+      return;
+    }
+
+    if (action === 'delete-session') {
+      if (!window.kodaxSpace) {
+        appendUserMessage(sessionId, '[delete] IPC unavailable');
+        return;
+      }
+      const target = args[0];
+      if (!target) {
+        appendUserMessage(sessionId, '[delete] Usage: /delete <session-id>');
+        return;
+      }
+      const r = await window.kodaxSpace.invoke('session.delete', { sessionId: target });
+      if (!r.ok) {
+        appendUserMessage(sessionId, `[delete] failed: ${r.error?.message ?? 'unknown'}`);
+        return;
+      }
+      if (!r.data.deleted) {
+        appendUserMessage(sessionId, `[delete] session not found: ${target}`);
+        return;
+      }
+      state.removeSession(target);
+      if (target === sessionId) state.setCurrentSession(null);
+      appendUserMessage(sessionId, `[delete] deleted session ${target}`);
+      return;
+    }
+
+    if (action === 'fork-session') {
+      if (!window.kodaxSpace) {
+        appendUserMessage(sessionId, '[fork] IPC unavailable');
+        return;
+      }
+      const session = state.sessions.find((s) => s.sessionId === sessionId);
+      if (!session) {
+        appendUserMessage(sessionId, '[fork] current session is not in the renderer list');
+        return;
+      }
+      if (args[0] && !/^\d+$/.test(args[0])) {
+        appendUserMessage(sessionId, '[fork] entry-id/label selection is not exposed in Space yet; forking current branch.');
+      }
+      const userMsgs = state.userMessagesBySession[sessionId] ?? [];
+      const requestedIdx = args[0] && /^\d+$/.test(args[0]) ? Number(args[0]) : undefined;
+      const forkPointTurnIdx = Math.max(
+        0,
+        Math.min(requestedIdx ?? userMsgs.length - 1, Math.max(0, userMsgs.length - 1)),
+      );
+      const r = await window.kodaxSpace.invoke('session.fork', { sessionId, forkPointTurnIdx });
+      if (!r.ok) {
+        appendUserMessage(sessionId, `[fork] failed: ${r.error?.message ?? 'unknown'}`);
+        return;
+      }
+      const childTitle = session.title !== undefined
+        ? `${session.title.replace(/( \(fork\))+$/, '')} (fork)`
+        : undefined;
+      state.upsertSession({
+        ...session,
+        sessionId: r.data.newSessionId,
+        title: childTitle,
+        createdAt: r.data.createdAt,
+        lastActivityAt: r.data.createdAt,
+        parentSessionId: sessionId,
+        forkPointTurnIdx,
+      });
+      state.forkSessionBuffers(sessionId, r.data.newSessionId, forkPointTurnIdx);
+      state.setCurrentSession(r.data.newSessionId);
+      appendUserMessage(sessionId, `[fork] created ${r.data.newSessionId} from turn ${forkPointTurnIdx}`);
+      return;
+    }
+
+    if (action === 'rewind-session') {
+      if (!window.kodaxSpace) {
+        appendUserMessage(sessionId, '[rewind] IPC unavailable');
+        return;
+      }
+      const userMsgs = state.userMessagesBySession[sessionId] ?? [];
+      if (userMsgs.length === 0) {
+        appendUserMessage(sessionId, '[rewind] nothing to rewind; no turns yet');
+        return;
+      }
+      if (args[0] && !/^\d+$/.test(args[0])) {
+        appendUserMessage(sessionId, '[rewind] entry-id/label selection is not exposed in Space yet; rewinding one turn.');
+      }
+      const onlyOneTurn = userMsgs.length === 1;
+      const requestedIdx = args[0] && /^\d+$/.test(args[0]) ? Number(args[0]) : undefined;
+      const rewindPastTurnIdx = Math.max(
+        0,
+        Math.min(requestedIdx ?? (onlyOneTurn ? 0 : userMsgs.length - 2), Math.max(0, userMsgs.length - 1)),
+      );
+      const r = await window.kodaxSpace.invoke('session.rewind', { sessionId, rewindPastTurnIdx });
+      if (!r.ok) {
+        appendUserMessage(sessionId, `[rewind] failed: ${r.error?.message ?? 'unknown'}`);
+        return;
+      }
+      if (!r.data.ok) {
+        appendUserMessage(sessionId, `[rewind] rejected: ${r.data.reason ?? 'unknown'}`);
+        return;
+      }
+      if (onlyOneTurn && requestedIdx === undefined) state.resetSessionMessages(sessionId);
+      else state.rewindSessionBuffers(sessionId, rewindPastTurnIdx);
+      appendUserMessage(sessionId, `[rewind] rewound to turn ${rewindPastTurnIdx}`);
+      return;
+    }
+
+    if (action === 'list-skills') {
+      if (!window.kodaxSpace || !currentProjectPath) {
+        appendUserMessage(sessionId, '[skills] no project / IPC unavailable');
+        return;
+      }
+      const r = await window.kodaxSpace.invoke('skill.discover', {
+        projectRoot: currentProjectPath,
+        forceReload: true,
+      });
+      if (!r.ok) {
+        appendUserMessage(sessionId, `[skills] discover failed: ${r.error?.message ?? 'unknown'}`);
+        return;
+      }
+      const lines = [`[skills] ${r.data.skills.length} skill(s):`];
+      if (r.data.skills.length === 0) lines.push('  none found');
+      for (const skill of r.data.skills.slice(0, 40)) {
+        const hint = skill.argumentHint ? ` ${skill.argumentHint}` : '';
+        lines.push(`  /skill:${skill.name}${hint}  ${skill.description}`);
+      }
+      if (r.data.skills.length > 40) lines.push(`  ... ${r.data.skills.length - 40} more`);
+      appendUserMessage(sessionId, lines.join('\n'));
+      return;
+    }
+
     // 未知 action — 兜底显示原 message
     appendUserMessage(sessionId, `[unknown action: ${action}]`);
   }
@@ -868,7 +1359,11 @@ export function BottomBar(): JSX.Element {
       const spaceIdx = head.search(/\s/);
       const token = (spaceIdx === -1 ? head : head.slice(0, spaceIdx)).trim();
       const rest = spaceIdx === -1 ? '' : head.slice(spaceIdx + 1).trim();
-      const args = rest === '' ? [] : tokenizeArgs(rest);
+      const args = rest === ''
+        ? []
+        : token.toLowerCase() === 'workflow'
+          ? tokenizeWorkflowArgs(rest)
+          : tokenizeArgs(rest);
       // v0.1.10 fix: 解析 `/skill:<name>` namespace, 跟 KodaX REPL 对齐。
       // 命中时直接走 invokeSkill 不走 slash.exec → unknownCommand → fallback 二跳。
       const skillNamespaceMatch = token.match(/^skill:(.+)$/);
@@ -983,7 +1478,13 @@ export function BottomBar(): JSX.Element {
     // 现在统一把 `/<cmd> ` 或 `/skill:<name> ` 插进输入框，让用户补 args / 复核后再按 Enter 发送。
     // 尾空格使 slashMode 关闭 → 补全弹窗收起；handleSend 认 `/skill:` 前缀走 invokeSkill。
     const insertText =
-      item.kind === 'skill' ? `/skill:${item.meta.name} ` : `/${item.meta.name} `;
+      item.kind === 'workflow'
+        ? item.insertText
+        : item.kind === 'slash-arg'
+          ? item.insertText
+        : item.kind === 'skill'
+          ? `/skill:${item.meta.name} `
+          : `/${item.meta.name} `;
     setPrompt(insertText);
     // 焦点拉回输入框，光标在末尾，用户可直接续打。
     requestAnimationFrame(() => {
@@ -1077,6 +1578,13 @@ export function BottomBar(): JSX.Element {
     !isStreaming &&
     !!currentProjectPath &&
     (prompt.trim().length > 0 || pendingImages.length > 0);
+  const sendButtonTitle = canSend
+    ? 'Send (Enter)'
+    : !currentProjectPath
+      ? 'Open a folder first'
+      : busy
+        ? 'Command is running'
+        : 'Type a message first';
 
   return (
     // Claude Desktop 同款"贴底浮起卡片"。ActivitySpinner / err 仍在外层（瞬态指示，
@@ -1287,7 +1795,7 @@ export function BottomBar(): JSX.Element {
                 'ml-1 w-8 h-8 rounded-lg flex items-center justify-center disabled:cursor-not-allowed',
                 canSend ? 'btn-accent' : 'bg-surface-3 text-fg-muted',
               ].join(' ')}
-              title={canSend ? 'Send (Enter)' : 'Type a message first'}
+              title={sendButtonTitle}
               aria-label="Send message"
             >
               <ArrowUp className="w-4 h-4" strokeWidth={2.25} />

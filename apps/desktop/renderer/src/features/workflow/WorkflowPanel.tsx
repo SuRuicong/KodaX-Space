@@ -87,7 +87,7 @@ const EMPTY_ACTIVITY: readonly WorkflowActivityPayload[] = [];
 
 /**
  * fire-and-forget 控制调用：吞掉 IPC 拒绝（启动期无 handler / 通道未放行）避免 unhandled rejection；
- * 对带 failMsg 的破坏性操作（delete）在 ok=false / 抛错时弹 toast。状态变化仍由 workflow.event 回流。
+ * 控制动作在 ok=false / 抛错时弹 toast。状态变化仍由 workflow.event 回流。
  */
 function fireControl(p: Promise<unknown> | undefined, failMsg?: string): void {
   if (!p) return;
@@ -178,17 +178,17 @@ function WorkflowControls({
   return (
     <div className={`flex items-center gap-0.5 flex-shrink-0 ${hasPhaseCounter ? 'ml-1.5' : 'ml-auto'}`}>
       {run.status === 'running' && (
-        <CtlBtn label="暂停" onClick={() => fireControl(window.kodaxSpace?.invoke('workflow.pause', { runId }))}>
+        <CtlBtn label="暂停" onClick={() => fireControl(window.kodaxSpace?.invoke('workflow.pause', { runId }), '暂停失败')}>
           <Pause size={12} />
         </CtlBtn>
       )}
       {run.status === 'paused' && (
-        <CtlBtn label="恢复" onClick={() => fireControl(window.kodaxSpace?.invoke('workflow.resume', { runId }))}>
+        <CtlBtn label="恢复" onClick={() => fireControl(window.kodaxSpace?.invoke('workflow.resume', { runId }), '恢复失败')}>
           <Play size={12} />
         </CtlBtn>
       )}
       {active && (
-        <CtlBtn label="停止" danger onClick={() => fireControl(window.kodaxSpace?.invoke('workflow.stop', { runId }))}>
+        <CtlBtn label="停止" danger onClick={() => fireControl(window.kodaxSpace?.invoke('workflow.stop', { runId }), '停止失败')}>
           <Square size={12} />
         </CtlBtn>
       )}
@@ -276,7 +276,10 @@ function WorkflowRunCard({
     const next = draft.trim();
     setRenaming(false);
     if (next && next !== name) {
-      void window.kodaxSpace?.invoke('workflow.rename', { runId: run.runId, displayName: next }).catch(() => {});
+      fireControl(
+        window.kodaxSpace?.invoke('workflow.rename', { runId: run.runId, displayName: next }),
+        '重命名失败',
+      );
     }
   }
 

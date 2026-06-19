@@ -14,10 +14,11 @@
 // CSP 兼容：rehype-highlight 通过 <span class="hljs-..."> 注入 class，不需要 inline style。
 // 配套的 highlight.js CSS 主题在 styles.css 全局引入。
 
-import { memo, useState, type ReactNode } from 'react';
+import { memo, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
+import { openFileSmart, openExternalUrl, looksLikeFilePath } from '../../../lib/openPath.js';
 
 interface MarkdownProps {
   readonly content: string;
@@ -89,12 +90,9 @@ function CopyCodeButton({ getText }: { getText: () => string }): JSX.Element {
       type="button"
       onClick={() => void onCopy()}
       className={[
-        'absolute top-1.5 right-1.5 px-2 py-0.5 text-xs rounded flex items-center gap-1 leading-none',
-        'opacity-60 hover:opacity-100 focus:opacity-100 group-hover/codeblock:opacity-100 transition-opacity',
-        // dark: zinc-700 衬 zinc-950 pre，对比够；border 给轮廓
-        'dark:bg-surface-3/80 dark:hover:bg-hover-bg dark:text-fg-primary dark:border dark:border-border-strong',
-        // light: zinc-200 衬白底 pre
-        'bg-surface-3 hover:bg-hover-bg text-fg-secondary border border-border-strong',
+        'content-copy-button absolute top-1.5 right-1.5 px-2 py-0.5 text-xs rounded flex items-center gap-1 leading-none',
+        'opacity-60 hover:opacity-100 focus:opacity-100 group-hover/codeblock:opacity-100 transition-[opacity,background-color,color,border-color]',
+        // Material chip stays readable on both light and dark content layers.
       ].join(' ')}
       title={copied ? 'Copied' : 'Copy code'}
       aria-label={copied ? 'Code copied to clipboard' : 'Copy code to clipboard'}
@@ -165,7 +163,7 @@ function MarkdownInner({ content }: MarkdownProps): JSX.Element {
           // ---- 代码 ----
           // group/codeblock 让 CopyCodeButton 的 hover 作用域限定到本 pre 而非整个消息
           pre: ({ children }) => (
-            <pre className="group/codeblock relative bg-surface border border-border-default rounded-md p-3 my-2.5 overflow-x-auto text-xs leading-relaxed">
+            <pre className="content-code group/codeblock relative border rounded-md p-3 my-2.5 overflow-x-auto text-xs leading-relaxed">
               <CopyCodeButton getText={() => extractTextFromNode(children)} />
               {children}
             </pre>
@@ -179,6 +177,23 @@ function MarkdownInner({ content }: MarkdownProps): JSX.Element {
                 </code>
               );
             }
+            // 2026-06-18: inline code 若"长得像文件路径"（src/index.html、app.tsx…）→ 渲染成
+            // 可点击按钮，点 → openFileSmart（html/svg/md 进 Artifact 预览、代码进 diff、其它定位）。
+            // 解决用户反馈"AI 回复里的文件路径只是纯文字点不动"。looksLikeFilePath 宁缺毋滥
+            // （需以已知扩展名结尾），避免把 `a.b` / `e.g` 误判成路径。
+            const inlineText = extractTextFromNode(children);
+            if (looksLikeFilePath(inlineText)) {
+              return (
+                <button
+                  type="button"
+                  onClick={() => void openFileSmart(inlineText)}
+                  title={`打开 ${inlineText}`}
+                  className="bg-info/12 text-info hover:bg-info/20 px-1.5 py-0.5 rounded text-[12px] font-mono underline decoration-info/40 underline-offset-2 cursor-pointer"
+                >
+                  {children}
+                </button>
+              );
+            }
             // Inline code —— Claude Desktop 风格 rose pill：浅色背景 + 中浓饱和文字。
             // 双主题：dark = rose-300 字 + rose-950/40 衬底；light = rose-700 字 + rose-50 衬底。
             return (
@@ -189,17 +204,30 @@ function MarkdownInner({ content }: MarkdownProps): JSX.Element {
           },
 
           // ---- 链接 ----
-          a: ({ children, href, ...props }) => (
-            <a
-              {...props}
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-info/80 hover:text-info underline decoration-info/40 underline-offset-2"
-            >
-              {children}
-            </a>
-          ),
+          // http(s) 链接经 shell.openExternal 走系统浏览器（http 也放行，不止 https）；
+          // 非 http 链接（锚点 / 相对）保持默认 <a> 行为。
+          a: ({ children, href, ...props }) => {
+            const isHttp = typeof href === 'string' && /^https?:\/\//i.test(href);
+            return (
+              <a
+                {...props}
+                href={href}
+                {...(isHttp
+                  ? {
+                      onClick: (e: ReactMouseEvent) => {
+                        e.preventDefault();
+                        void openExternalUrl(href as string);
+                      },
+                    }
+                  : {})}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-info/80 hover:text-info underline decoration-info/40 underline-offset-2"
+              >
+                {children}
+              </a>
+            );
+          },
 
           // ---- 段落 + 排版 ----
           // my-2 让段落之间有"呼吸"，单段也不会太紧贴边。
@@ -262,18 +290,16 @@ function MarkdownInner({ content }: MarkdownProps): JSX.Element {
           // ---- GFM Table ----
           // remark-gfm 把 | a | b | 解析成 table;这里给 cell border + zebra stripe 让数据可读
           table: ({ children }) => (
-            <div className="my-3 overflow-x-auto rounded-md border border-border-default">
+            <div className="content-table my-3 overflow-x-auto rounded-md border">
               <table className="w-full text-xs">{children}</table>
             </div>
           ),
           thead: ({ children }) => (
-            <thead className="bg-surface-2 text-fg-secondary text-xs uppercase tracking-wider">
+            <thead className="content-table-head text-fg-secondary text-xs uppercase tracking-wider">
               {children}
             </thead>
           ),
-          tbody: ({ children }) => (
-            <tbody className="divide-y divide-border-default">{children}</tbody>
-          ),
+          tbody: ({ children }) => <tbody className="content-table-body divide-y">{children}</tbody>,
           tr: ({ children }) => <tr>{children}</tr>,
           th: ({ children }) => (
             <th className="px-2.5 py-1.5 text-left font-semibold">{children}</th>

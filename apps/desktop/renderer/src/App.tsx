@@ -293,7 +293,7 @@ export default function App(): JSX.Element {
   if (USE_NEW_SHELL) {
     return (
       <>
-        <Shell />
+        <Shell version={version} />
         {showSettings && (
           <SettingsModal initialTab="providers" onClose={() => setShowSettings(false)} />
         )}

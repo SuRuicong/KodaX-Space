@@ -4,8 +4,11 @@
 // 切换 popout 时如果有未读 lastDiffPath，自动用之；否则等用户输入路径。
 
 import { useEffect, useState } from 'react';
+import { Copy, FolderOpen } from 'lucide-react';
 import { useAppStore } from '../../store/appStore.js';
 import { MonacoDiffViewer } from '../../features/code/MonacoDiffViewer.js';
+import { revealPath } from '../../lib/openPath.js';
+import { pushToast } from '../../store/toastStore.js';
 
 // F044 (v0.1.10): diff 数据来源标记。
 //   - tool-call: AI write/edit 那一瞬的 before/after (现有 cache 路径,实时 session)
@@ -121,11 +124,37 @@ export function DiffPanel(): JSX.Element {
   })();
   return (
     <div className="h-full flex flex-col">
-      <div className="px-3 py-1 border-b border-border-default text-xs text-fg-muted font-mono truncate flex-shrink-0 flex items-center gap-2">
-        <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${sourcePill.cls}`}>
+      <div className="px-3 py-1 border-b border-border-default text-xs text-fg-muted font-mono flex-shrink-0 flex items-center gap-2">
+        <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium flex-shrink-0 ${sourcePill.cls}`}>
           {sourcePill.text}
         </span>
-        <span className="truncate">{path}</span>
+        <span className="truncate flex-1" title={path}>
+          {path}
+        </span>
+        {/* 2026-06-18: 路径不再是死文本 —— 复制 + 在文件管理器中定位。 */}
+        <button
+          type="button"
+          onClick={() => {
+            void navigator.clipboard
+              .writeText(path)
+              .then(() => pushToast('已复制路径', 'success'))
+              .catch(() => pushToast('复制失败', 'error'));
+          }}
+          title="复制路径"
+          aria-label="复制文件路径"
+          className="flex-shrink-0 w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
+        >
+          <Copy className="w-3.5 h-3.5" strokeWidth={1.75} />
+        </button>
+        <button
+          type="button"
+          onClick={() => void revealPath(path, projectRoot)}
+          title="在文件管理器中显示"
+          aria-label="在文件管理器中显示"
+          className="flex-shrink-0 w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
+        >
+          <FolderOpen className="w-3.5 h-3.5" strokeWidth={1.75} />
+        </button>
       </div>
       <div className="flex-1 min-h-0">
         <MonacoDiffViewer path={path} before={diff.before} after={diff.after} />

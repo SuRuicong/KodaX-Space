@@ -1,23 +1,6 @@
-// Quick Ask popover — F018 (v0.1.2)
-//
-// Cmd/Ctrl+K 召出居中浮层，问个小问题不离开当前 session。
-// 流程：
-//   1. 用户敲 Cmd+K → modal 打开，自动 focus textarea
-//   2. 输入 prompt + Enter → 创建一个 ephemeral session (plan mode 不写文件)，
-//      调 session.send 流式拿 reply
-//   3. text_delta 累计进 reply state，session_complete / session_error 停
-//   4. Esc 关闭 → cancel + delete 临时 session 不留痕
-//
-// 设计取舍 (v1)：
-//   - 用真 session.send 而不是 SDK sideQuery API —— 现有 IPC 完全够用，
-//     新接 sideQuery 需要 provider/model/messages 转换 + 独立 timeout，> 1 天工作
-//   - permissionMode='plan' —— Quick Ask 不应该写文件 / 跑 bash；plan mode 让
-//     SDK 自己 deny mutating tools。但仍能 read / grep / glob 检索代码回答问题
-//   - 临时 session 在 Esc 时 cancel + delete；用户主动关掉浏览器/进程时仍会
-//     残留一条 session 在 Recents（acceptable for v1 — 后续 v2 改用真 sideQuery）
-
 import { useEffect, useRef, useState } from 'react';
 import { Zap } from 'lucide-react';
+import type { SessionEvent, SessionMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
 import { resolveSessionCreateInputs } from '../../shell/createSession.js';
 import { Markdown } from '../session/messages/Markdown.js';
@@ -25,21 +8,35 @@ import { Markdown } from '../session/messages/Markdown.js';
 type AskState =
   | { kind: 'idle' }
   | { kind: 'creating-session' }
-  | { kind: 'streaming'; sessionId: string; reply: string }
-  | { kind: 'done'; sessionId: string; reply: string }
-  | { kind: 'error'; message: string };
+  | {
+      kind: 'streaming';
+      sessionId: string;
+      prompt: string;
+      reply: string;
+      session: SessionMeta;
+      events: readonly SessionEvent[];
+    }
+  | {
+      kind: 'done';
+      sessionId: string;
+      prompt: string;
+      reply: string;
+      session: SessionMeta;
+      events: readonly SessionEvent[];
+    }
+  | { kind: 'error'; message: string; sessionId?: string };
 
 interface QuickAskPopoverProps {
-  open: boolean;
-  onClose: () => void;
+  readonly open: boolean;
+  readonly onClose: () => void;
 }
 
 export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.Element | null {
   const [prompt, setPrompt] = useState('');
   const [state, setState] = useState<AskState>({ kind: 'idle' });
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const runSeqRef = useRef(0);
 
-  // Store fields needed for resolveSessionCreateInputs
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const providers = useAppStore((s) => s.providers);
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
@@ -47,21 +44,17 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
   const pendingProviderId = useAppStore((s) => s.pendingProviderId);
   const pendingModel = useAppStore((s) => s.pendingModel);
   const pendingReasoningMode = useAppStore((s) => s.pendingReasoningMode);
-  // 不读 pendingPermissionMode —— Quick Ask 强制 plan 不让用户的 accept-edits / auto 默认
-  // 让 SDK 写文件 / 跑 bash
   const pendingAgentMode = useAppStore((s) => s.pendingAgentMode);
+  const upsertSession = useAppStore((s) => s.upsertSession);
+  const setCurrentSession = useAppStore((s) => s.setCurrentSession);
 
-  // Reset state when modal opens
   useEffect(() => {
-    if (open) {
-      setPrompt('');
-      setState({ kind: 'idle' });
-      // 下一帧 focus textarea
-      requestAnimationFrame(() => textareaRef.current?.focus());
-    }
+    if (!open) return;
+    setPrompt('');
+    setState({ kind: 'idle' });
+    requestAnimationFrame(() => textareaRef.current?.focus());
   }, [open]);
 
-  // Esc 全局关闭 + 清理临时 session
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent): void => {
@@ -72,18 +65,22 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+    // closeAndCleanup intentionally reads the latest local state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, state.kind]);
+  }, [open, state]);
 
   async function closeAndCleanup(): Promise<void> {
-    // 关掉临时 session（cancel in-flight + delete from store / disk）
-    if ((state.kind === 'streaming' || state.kind === 'done') && window.kodaxSpace) {
-      const sid = state.sessionId;
+    runSeqRef.current += 1;
+    if (
+      (state.kind === 'streaming' || state.kind === 'done' || state.kind === 'error') &&
+      state.sessionId &&
+      window.kodaxSpace
+    ) {
       try {
-        await window.kodaxSpace.invoke('session.cancel', { sessionId: sid });
-        await window.kodaxSpace.invoke('session.delete', { sessionId: sid });
+        await window.kodaxSpace.invoke('session.cancel', { sessionId: state.sessionId });
+        await window.kodaxSpace.invoke('session.delete', { sessionId: state.sessionId });
       } catch {
-        // best-effort 清理；失败也 close popup
+        // Best-effort cleanup; closing the popover should not get stuck.
       }
     }
     onClose();
@@ -96,10 +93,17 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
       setState({ kind: 'error', message: 'Open a project first to use Quick Ask.' });
       return;
     }
-    setState({ kind: 'creating-session' });
-    setPrompt('');
 
-    // 创建临时 session —— plan mode 让 SDK deny mutating tools
+    setPrompt('');
+    const runSeq = runSeqRef.current + 1;
+    runSeqRef.current = runSeq;
+    const isActiveRun = (): boolean => runSeqRef.current === runSeq;
+    const setActiveState = (next: AskState): void => {
+      if (isActiveRun()) setState(next);
+    };
+
+    setActiveState({ kind: 'creating-session' });
+
     const resolved = resolveSessionCreateInputs({
       projectRoot: currentProjectPath,
       providers,
@@ -107,72 +111,124 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
       kodaxDefaults,
       pendingProviderId,
       pendingReasoningMode,
-      pendingPermissionMode: 'plan', // 强制 plan，不让 Quick Ask 改文件 / 跑 shell
+      pendingPermissionMode: 'plan',
       pendingAgentMode,
       pendingModel,
     });
-    const createR = await window.kodaxSpace.invoke('session.create', {
+
+    const createResult = await window.kodaxSpace.invoke('session.create', {
       projectRoot: currentProjectPath,
       provider: resolved.provider,
       ...(resolved.model ? { model: resolved.model } : {}),
       reasoningMode: resolved.reasoningMode,
       permissionMode: resolved.permissionMode,
       agentMode: resolved.agentMode,
+      surface: 'code',
     });
-    if (!createR.ok) {
-      setState({ kind: 'error', message: createR.error?.message ?? 'create failed' });
+    if (!createResult.ok) {
+      setActiveState({ kind: 'error', message: createResult.error?.message ?? 'create failed' });
       return;
     }
-    const sid = createR.data.sessionId;
 
-    // 订阅 events for THIS sid 一直到 complete / error
-    // —— 走 store 而不是直接 IPC subscribe；store 已经全局监听 session.event push channel
+    const sessionId = createResult.data.sessionId;
+    if (!isActiveRun()) {
+      try {
+        await window.kodaxSpace.invoke('session.delete', { sessionId });
+      } catch {
+        // Best-effort cleanup for a session created after the popover was closed.
+      }
+      return;
+    }
+
+    const session: SessionMeta = {
+      sessionId,
+      projectRoot: currentProjectPath,
+      provider: resolved.provider,
+      ...(resolved.model ? { model: resolved.model } : {}),
+      reasoningMode: resolved.reasoningMode,
+      permissionMode: resolved.permissionMode,
+      autoModeEngine: 'llm',
+      agentMode: resolved.agentMode,
+      surface: 'code',
+      title: 'Quick Ask',
+      createdAt: createResult.data.createdAt,
+      lastActivityAt: createResult.data.createdAt,
+    };
+
+    const capturedEvents: SessionEvent[] = [];
+    const unsubscribe = window.kodaxSpace.on('session.event', (event) => {
+      if (event.sessionId === sessionId) capturedEvents.push(event);
+    });
+
     let reply = '';
-    setState({ kind: 'streaming', sessionId: sid, reply });
+    setActiveState({ kind: 'streaming', sessionId, prompt: trimmed, reply, session, events: [] });
 
-    // Poll store 直到看到 terminal event；轮询比 store 订阅 cleanup 简单
-    const startTime = Date.now();
-    const POLL_INTERVAL_MS = 80;
-    const TIMEOUT_MS = 60_000;
-
-    const sendR = await window.kodaxSpace.invoke('session.send', {
-      sessionId: sid,
+    const sendResult = await window.kodaxSpace.invoke('session.send', {
+      sessionId,
       prompt: trimmed,
     });
-    if (!sendR.ok) {
-      setState({ kind: 'error', message: sendR.error?.message ?? 'send failed' });
+    if (!sendResult.ok) {
+      unsubscribe();
+      setActiveState({
+        kind: 'error',
+        sessionId,
+        message: sendResult.error?.message ?? 'send failed',
+      });
       return;
     }
 
-    while (Date.now() - startTime < TIMEOUT_MS) {
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-      const events = useAppStore.getState().eventsBySession[sid] ?? [];
-      reply = '';
-      let terminated: 'complete' | 'error' | null = null;
-      let errMsg = '';
-      for (const ev of events) {
-        if (ev.kind === 'text_delta') {
-          reply += ev.text;
-        } else if (ev.kind === 'session_complete') {
-          terminated = 'complete';
-        } else if (ev.kind === 'session_error') {
-          terminated = 'error';
-          errMsg = ev.error;
+    const startTime = Date.now();
+    const pollIntervalMs = 80;
+    const timeoutMs = 60_000;
+
+    try {
+      while (Date.now() - startTime < timeoutMs) {
+        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+        reply = '';
+        let terminal: 'complete' | 'error' | null = null;
+        let errorMessage = '';
+
+        for (const event of capturedEvents) {
+          if (event.kind === 'text_delta') reply += event.text;
+          else if (event.kind === 'session_complete') terminal = 'complete';
+          else if (event.kind === 'session_error') {
+            terminal = 'error';
+            errorMessage = event.error;
+          }
+        }
+
+        const events = capturedEvents.slice();
+        setActiveState({ kind: 'streaming', sessionId, prompt: trimmed, reply, session, events });
+
+        if (terminal === 'complete') {
+          setActiveState({ kind: 'done', sessionId, prompt: trimmed, reply, session, events });
+          return;
+        }
+        if (terminal === 'error') {
+          setActiveState({ kind: 'error', sessionId, message: errorMessage });
+          return;
         }
       }
-      // Live 更新 streaming reply
-      setState({ kind: 'streaming', sessionId: sid, reply });
-      if (terminated === 'complete') {
-        setState({ kind: 'done', sessionId: sid, reply });
-        return;
-      }
-      if (terminated === 'error') {
-        setState({ kind: 'error', message: errMsg });
-        return;
-      }
+
+      setActiveState({
+        kind: 'done',
+        sessionId,
+        prompt: trimmed,
+        reply: reply || '(timed out)',
+        session,
+        events: capturedEvents.slice(),
+      });
+    } finally {
+      unsubscribe();
     }
-    // Timeout — leave state at last streaming snapshot but tag done so user sees what they got
-    setState({ kind: 'done', sessionId: sid, reply: reply || '(timed out)' });
+  }
+
+  function continueInCoder(): void {
+    if (state.kind !== 'done') return;
+    const title = state.prompt.replace(/\s+/g, ' ').slice(0, 80) || 'Quick Ask';
+    upsertSession({ ...state.session, title, lastActivityAt: Date.now() });
+    setCurrentSession(state.sessionId);
+    onClose();
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
@@ -193,7 +249,6 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
       aria-modal="true"
       aria-labelledby="quick-ask-title"
       onClick={(e) => {
-        // 点击 backdrop 关闭（textarea 上的点击不冒泡到这里因为 stopPropagation 在子层）
         if (e.target === e.currentTarget) void closeAndCleanup();
       }}
     >
@@ -206,7 +261,7 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
           <h2 id="quick-ask-title" className="text-sm font-semibold text-fg-primary">
             Quick Ask
           </h2>
-          <span className="text-[11px] text-fg-muted font-mono">plan mode · ephemeral</span>
+          <span className="text-[11px] text-fg-muted font-mono">plan mode / temporary</span>
           <button
             type="button"
             onClick={() => void closeAndCleanup()}
@@ -228,40 +283,52 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
             rows={2}
             placeholder={
               currentProjectPath
-                ? 'Ask anything about this project (no file edits)…'
+                ? 'Ask anything about this project (no file edits)'
                 : 'Open a project first to use Quick Ask'
             }
             className="w-full resize-none bg-transparent text-fg-primary placeholder-fg-muted text-sm focus:outline-none disabled:opacity-50"
           />
+
           {(state.kind === 'streaming' || state.kind === 'done') && state.reply.length > 0 && (
             <div className="mt-3 pt-3 border-t border-border-default">
               <Markdown content={state.reply} />
               {state.kind === 'streaming' && (
-                <span className="text-[11px] text-fg-muted font-mono">●●● streaming…</span>
+                <span className="text-[11px] text-fg-muted font-mono">streaming...</span>
               )}
             </div>
           )}
+
           {state.kind === 'error' && (
             <div className="mt-3 pt-3 border-t dark:border-danger/60 border-danger text-xs text-danger">
               {state.message}
             </div>
           )}
+
           {state.kind === 'creating-session' && (
             <div className="mt-3 pt-3 border-t border-border-default text-[11px] text-fg-muted font-mono">
-              creating session…
+              creating session...
             </div>
           )}
         </div>
 
-        <div className="px-4 py-2 border-t border-border-default flex items-center justify-between text-[11px] text-fg-muted font-mono flex-shrink-0">
-          <span>Enter to send · Shift+Enter newline · Esc close</span>
+        <div className="px-4 py-2 border-t border-border-default flex items-center justify-between gap-2 text-[11px] text-fg-muted font-mono flex-shrink-0">
+          <span>Enter to send / Shift+Enter newline / Esc close</span>
+          {state.kind === 'done' && (
+            <button
+              type="button"
+              onClick={continueInCoder}
+              className="ml-auto px-2 py-0.5 rounded bg-info/15 text-info border border-info/50 hover:bg-info/25"
+            >
+              Continue in Coder
+            </button>
+          )}
           <button
             type="button"
             disabled={isAsking || !prompt.trim() || !currentProjectPath}
             onClick={() => void handleSend()}
             className="px-2 py-0.5 rounded bg-ok/15 text-ok border border-ok/50 hover:bg-ok/25 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isAsking ? 'Asking…' : 'Ask'}
+            {isAsking ? 'Asking...' : 'Ask'}
           </button>
         </div>
       </div>

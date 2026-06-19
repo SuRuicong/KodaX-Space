@@ -17,9 +17,10 @@
 // Diff / Preview / Terminal / Agents / MCP 保留。
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronRight, Folder } from 'lucide-react';
+import { Check, ChevronRight, Eye, Folder, FolderOpen } from 'lucide-react';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
+import { openFileSmart, isPreviewablePath, revealPath } from '../lib/openPath.js';
 import { Caret } from '../components/Caret.js';
 import { buildWorkerTree } from './popouts/worker-tree.js';
 import { ArtifactsView } from '../features/artifact/ArtifactsView.js';
@@ -67,6 +68,7 @@ export function RightSidebar({ width }: RightSidebarProps = {}): JSX.Element {
 
   return (
     <aside
+      data-testid="right-sidebar"
       style={width !== undefined ? { width: `${width}px` } : undefined}
       className="glass lift ix-zone border border-border-default rounded-xl overflow-hidden bg-surface flex flex-col flex-shrink-0 text-[13px]"
     >
@@ -714,7 +716,20 @@ function WorkingFolderSection(): JSX.Element {
               {projectName}
             </span>
           </div>
-          <div className="text-fg-muted text-[11px] font-mono break-all">{projectPath}</div>
+          {/* 2026-06-18: 工作目录路径可点击 → 在文件管理器中定位（同"路径不再是死文本"主旨）。 */}
+          <button
+            type="button"
+            onClick={() => void revealPath(projectPath)}
+            title="在文件管理器中显示"
+            className="group/wf w-full text-left flex items-start gap-1 text-fg-muted text-[11px] font-mono break-all hover:text-fg-secondary"
+          >
+            <span className="break-all">{projectPath}</span>
+            <FolderOpen
+              className="w-3 h-3 mt-0.5 flex-shrink-0 text-fg-faint opacity-0 group-hover/wf:opacity-100"
+              strokeWidth={1.75}
+              aria-hidden
+            />
+          </button>
         </div>
       ) : (
         <div className="text-xs text-fg-muted">No project open.</div>
@@ -768,13 +783,36 @@ function ContextSection(): JSX.Element {
             Files referenced
           </div>
           <ul className="space-y-0.5 text-xs font-mono">
-            {refs.files.slice(0, 20).map((f) => (
-              <li key={f} className="truncate text-fg-secondary" title={f}>
-                {f}
-              </li>
-            ))}
+            {refs.files.slice(0, 20).map((f) => {
+              const previewable = isPreviewablePath(f);
+              return (
+                <li key={f}>
+                  <button
+                    type="button"
+                    onClick={() => void openFileSmart(f)}
+                    className="group/ctxfile w-full text-left flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-hover-bg text-fg-secondary hover:text-fg-primary"
+                    title={previewable ? `预览 ${f}` : `在文件管理器中显示 ${f}`}
+                  >
+                    <span className="truncate flex-1">{f}</span>
+                    {previewable ? (
+                      <Eye
+                        className="w-3 h-3 flex-shrink-0 text-fg-faint opacity-0 group-hover/ctxfile:opacity-100"
+                        strokeWidth={1.75}
+                        aria-hidden
+                      />
+                    ) : (
+                      <FolderOpen
+                        className="w-3 h-3 flex-shrink-0 text-fg-faint opacity-0 group-hover/ctxfile:opacity-100"
+                        strokeWidth={1.75}
+                        aria-hidden
+                      />
+                    )}
+                  </button>
+                </li>
+              );
+            })}
             {refs.files.length > 20 && (
-              <li className="text-fg-muted">+{refs.files.length - 20} more</li>
+              <li className="text-fg-muted px-1">+{refs.files.length - 20} more</li>
             )}
           </ul>
         </div>

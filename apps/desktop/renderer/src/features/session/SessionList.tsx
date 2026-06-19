@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../../store/appStore.js';
 import { resolveActiveModel } from '../../shell/resolveActiveModel.js';
 import { useSurfaceStore } from '../../store/surface.js';
+import { sessionMatchesScope } from '../../lib/sessionScope.js';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 
 // 'mock' 永远保留——FEATURE_003 Mock adapter 的入口，未配 key 时也能跑通整个流程。
@@ -21,13 +22,14 @@ export function SessionList(): JSX.Element {
   const currentSurface = useSurfaceStore((s) => s.currentSurface);
   const sessions = useAppStore((s) => s.sessions);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
-  const setSessions = useAppStore((s) => s.setSessions);
+  const replaceSessionsForScope = useAppStore((s) => s.replaceSessionsForScope);
   const setCurrentSession = useAppStore((s) => s.setCurrentSession);
   const upsertSession = useAppStore((s) => s.upsertSession);
   const removeSession = useAppStore((s) => s.removeSession);
   const providers = useAppStore((s) => s.providers);
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
   const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
+  const pendingAgentMode = useAppStore((s) => s.pendingAgentMode);
   const [creating, setCreating] = useState<boolean>(false);
 
   // 下拉选项：Mock 永远第一项；之后按"已配 key 的 provider 在前，未配 key 的在后"
@@ -77,14 +79,18 @@ export function SessionList(): JSX.Element {
   // 用 inline 输入而不是 window.prompt——后者在 Electron sandbox=true 下被禁用，会静默失败。
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState<string>('');
+  const visibleSessions = useMemo(
+    () =>
+      currentProjectPath
+        ? sessions.filter((s) => sessionMatchesScope(s, { projectRoot: currentProjectPath, surface: currentSurface }))
+        : [],
+    [currentProjectPath, currentSurface, sessions],
+  );
 
   useEffect(() => {
-    if (!currentProjectPath) {
-      setSessions([]);
-      return;
-    }
-    void refreshSessions(currentProjectPath, setSessions, currentSurface);
-  }, [currentProjectPath, setSessions, currentSurface]);
+    if (!currentProjectPath) return;
+    void refreshSessions(currentProjectPath, replaceSessionsForScope, currentSurface);
+  }, [currentProjectPath, replaceSessionsForScope, currentSurface]);
 
   async function handleCreate(): Promise<void> {
     if (!currentProjectPath) return;
@@ -94,6 +100,7 @@ export function SessionList(): JSX.Element {
     // v0.1.6 cleanup: session 初值跟随 ~/.kodax/config.json（KodaX CLI 设过的话）
     const reasoningMode = kodaxDefaults?.reasoningMode ?? 'auto';
     const permissionMode = kodaxDefaults?.permissionMode ?? 'accept-edits';
+    const agentMode = pendingAgentMode ?? 'ama';
     // 生效 model（与 picker 同源）：显式带上让 SDK 应用 per-model 能力（正确 contextWindow → 压缩窗口）。
     const activeProvider = providers.find((p) => p.id === provider);
     const resolvedModel = resolveActiveModel({
@@ -112,6 +119,7 @@ export function SessionList(): JSX.Element {
         ...(model ? { model } : {}),
         reasoningMode,
         permissionMode,
+        agentMode,
         // F045: 新 session 归当前工作面；main 落盘成 SDK session tag。
         surface: currentSurface,
       });
@@ -129,7 +137,7 @@ export function SessionList(): JSX.Element {
         reasoningMode,
         permissionMode,
         autoModeEngine: 'llm',
-        agentMode: 'ama', // 与 sessionMetaSchema.default 一致；session.list 刷新会拿权威值
+        agentMode,
         surface: currentSurface,
         title: undefined,
         createdAt: result.data.createdAt,
@@ -138,7 +146,7 @@ export function SessionList(): JSX.Element {
       upsertSession(stub);
       setCurrentSession(stub.sessionId);
       // await refresh——确保 main 端权威列表已应用，避免后续操作看到 stub 残影
-      await refreshSessions(currentProjectPath, setSessions, currentSurface);
+      await refreshSessions(currentProjectPath, replaceSessionsForScope, currentSurface);
     } finally {
       setCreating(false);
     }
@@ -175,7 +183,7 @@ export function SessionList(): JSX.Element {
     const result = await bridge.invoke('session.setTitle', { sessionId: renaming, title: trimmed });
     setRenaming(null);
     if (result.ok && currentProjectPath) {
-      await refreshSessions(currentProjectPath, setSessions, currentSurface);
+      await refreshSessions(currentProjectPath, replaceSessionsForScope, currentSurface);
     }
   }
 
@@ -220,12 +228,12 @@ export function SessionList(): JSX.Element {
             Pick a project above to see its sessions.
           </div>
         )}
-        {currentProjectPath && sessions.length === 0 && (
+        {currentProjectPath && visibleSessions.length === 0 && (
           <div className="text-xs text-fg-faint italic px-1">
             No sessions yet. Click + to create one.
           </div>
         )}
-        {sessions.map((s) => {
+        {visibleSessions.map((s) => {
           const isActive = s.sessionId === currentSessionId;
           return (
             <div
@@ -307,7 +315,10 @@ export function SessionList(): JSX.Element {
 
 async function refreshSessions(
   projectRoot: string,
-  setSessions: (s: readonly SessionMeta[]) => void,
+  replaceSessionsForScope: (
+    sessions: readonly SessionMeta[],
+    scope: { readonly projectRoot: string; readonly surface?: SessionMeta['surface'] },
+  ) => void,
   surface?: SessionMeta['surface'],
 ): Promise<void> {
   const bridge = window.kodaxSpace;
@@ -315,7 +326,7 @@ async function refreshSessions(
   // F045: 按当前工作面拉，与分面列表一致（不传 surface 则回退全量，向后兼容）。
   const result = await bridge.invoke('session.list', { projectRoot, surface });
   if (result.ok) {
-    setSessions(result.data.sessions);
+    replaceSessionsForScope(result.data.sessions, surface === undefined ? { projectRoot } : { projectRoot, surface });
   }
 }
 

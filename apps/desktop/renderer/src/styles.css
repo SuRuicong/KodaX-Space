@@ -72,6 +72,11 @@
 
     /* —— 代码 / diff / 语法 (atom-one-light) —— */
     --code-bg: 246 246 248;
+    --content-material-bg: rgba(255, 255, 255, 0.62);
+    --content-material-bg-strong: rgba(247, 247, 248, 0.78);
+    --content-material-border: rgba(17, 17, 20, 0.08);
+    --content-material-highlight: rgba(245, 166, 35, 0.065);
+    --content-code-bg: rgba(246, 246, 248, 0.72);
     --diff-bg: 251 251 252;
     --add-bg: rgba(31, 157, 82, 0.1);
     --add-fg: 21 127 59;
@@ -131,6 +136,11 @@
     --danger: 248 113 113;
 
     --code-bg: 14 14 16;
+    --content-material-bg: rgba(21, 21, 24, 0.56);
+    --content-material-bg-strong: rgba(29, 29, 33, 0.66);
+    --content-material-border: rgba(255, 255, 255, 0.08);
+    --content-material-highlight: rgba(245, 181, 68, 0.055);
+    --content-code-bg: rgba(14, 14, 16, 0.7);
     --diff-bg: 14 14 16;
     --add-bg: rgba(74, 222, 128, 0.07);
     --add-fg: 134 239 172;
@@ -265,10 +275,137 @@ html:not(.dark) .hljs-link {
 .app-titlebar {
   -webkit-app-region: drag;
 }
+.app-titlebar.glass {
+  background:
+    linear-gradient(
+      180deg,
+      rgb(var(--surface-2) / calc(0.82 * var(--glass-alpha) + 0.12)),
+      rgb(var(--surface-2) / calc(0.52 * var(--glass-alpha) + 0.08)) 62%,
+      rgb(var(--surface) / 0.3)
+    ),
+    linear-gradient(90deg, rgb(var(--accent) / 0.055), transparent 28%);
+}
+html:not(.dark) .app-titlebar.glass {
+  background:
+    linear-gradient(
+      180deg,
+      rgb(var(--surface-2) / calc(0.9 * var(--glass-alpha) + 0.08)),
+      rgb(var(--surface-2) / calc(0.62 * var(--glass-alpha) + 0.08)) 62%,
+      rgb(var(--surface) / 0.42)
+    ),
+    linear-gradient(90deg, rgb(var(--accent) / 0.06), transparent 30%);
+}
+.app-titlebar.glass::before,
+.app-titlebar.glass::after {
+  display: none;
+}
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
 .app-titlebar button,
 .app-titlebar input,
 .app-titlebar a {
   -webkit-app-region: no-drag;
+}
+/* Lightweight material for markdown content inside the scroll stream.
+   Keep this blur-free: these blocks move while scrolling, unlike static chrome glass. */
+.content-material {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 46%),
+    linear-gradient(90deg, var(--content-material-highlight), transparent 42%),
+    var(--content-material-bg);
+  border-color: var(--content-material-border);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 1px 2px rgba(0, 0, 0, 0.08);
+}
+html:not(.dark) .content-material {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.68), rgba(255, 255, 255, 0) 50%),
+    linear-gradient(90deg, var(--content-material-highlight), transparent 42%),
+    var(--content-material-bg);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 1px 2px rgba(17, 17, 20, 0.055);
+}
+.content-code {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0) 46%),
+    linear-gradient(90deg, var(--content-material-highlight), transparent 36%),
+    var(--content-code-bg);
+  border-color: var(--content-material-border);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+}
+html:not(.dark) .content-code {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0) 52%),
+    linear-gradient(90deg, var(--content-material-highlight), transparent 36%),
+    var(--content-code-bg);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    inset 0 -1px 0 rgba(17, 17, 20, 0.045);
+}
+.content-table {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0) 48%),
+    linear-gradient(90deg, var(--content-material-highlight), transparent 40%),
+    var(--content-material-bg);
+  border-color: var(--content-material-border);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 1px 2px rgba(0, 0, 0, 0.07);
+}
+html:not(.dark) .content-table {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 50%),
+    linear-gradient(90deg, var(--content-material-highlight), transparent 40%),
+    var(--content-material-bg);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 1px 2px rgba(17, 17, 20, 0.045);
+}
+.content-table-head {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0)),
+    var(--content-material-bg-strong);
+}
+html:not(.dark) .content-table-head {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.12)),
+    var(--content-material-bg-strong);
+}
+.content-table tbody > tr + tr {
+  border-top-color: var(--content-material-border);
+}
+.content-table-body > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--content-material-border);
+}
+.content-copy-button {
+  color: rgb(var(--fg-secondary));
+  background: var(--content-material-bg-strong);
+  border: 1px solid var(--content-material-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+.content-copy-button:hover,
+.content-copy-button:focus-visible {
+  color: rgb(var(--fg-primary));
+  background: rgb(var(--hover-bg) / 0.72);
+}
+html:not(.dark) .content-copy-button {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+html.q-minimal .content-material,
+html.q-minimal .content-code,
+html.q-minimal .content-table {
+  background: rgb(var(--surface-2));
+  box-shadow: none;
+}
+html.q-minimal .content-table-head,
+html.q-minimal .content-copy-button {
+  background: rgb(var(--surface-3));
+  box-shadow: none;
 }
 /* macOS: traffic lights 占左上 ~78px (hiddenInset)；给 brand 让位 */
 .platform-darwin .titlebar-brand {

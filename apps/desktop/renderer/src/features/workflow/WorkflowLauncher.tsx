@@ -62,19 +62,24 @@ export function WorkflowLauncher(): JSX.Element {
       // saved 先预检；有问题则确认后再启动（built-in 视为可信，跳过）。
       if (source === 'saved' && savedPath) {
         const pf = await window.kodaxSpace?.invoke('workflow.preflight', { path: savedPath, sessionId });
-        if (pf?.ok && !pf.data.ok && pf.data.issues.length > 0) {
+        if (!pf?.ok) {
+          pushToast(pf?.error?.message ? `预检失败：${pf.error.message}` : '预检失败', 'warning');
+          return;
+        }
+        if (!pf.data.ok && pf.data.issues.length > 0) {
           const msg = pf.data.issues.map((i) => `• ${i.message}`).join('\n');
           if (!window.confirm(`预检发现问题：\n${msg}\n\n仍然启动？`)) return;
         }
       }
       const r = await window.kodaxSpace?.invoke('workflow.start', { target, source, sessionId });
       if (!r?.ok || !r.data.runId) {
-        pushToast(r?.ok ? (r.data.error ?? '启动失败') : '启动失败', 'warning');
+        pushToast(r?.ok ? (r.data.error ?? '启动失败') : (r?.error?.message ?? '启动失败'), 'warning');
         return;
       }
+      pushToast(`工作流已启动：${target} (${r.data.runId})`, 'success');
       setExpanded(false);
-    } catch {
-      pushToast('启动失败', 'warning');
+    } catch (err) {
+      pushToast(err instanceof Error ? `启动失败：${err.message}` : '启动失败', 'warning');
     } finally {
       setBusyTarget(null);
     }

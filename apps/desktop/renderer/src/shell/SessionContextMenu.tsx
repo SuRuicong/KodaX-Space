@@ -122,7 +122,12 @@ export function SessionContextMenu({
       projectRoot: session.projectRoot,
       surface: session.surface,
     });
-    if (listR.ok) useAppStore.getState().setSessions(listR.data.sessions);
+    if (listR.ok) {
+      useAppStore.getState().replaceSessionsForScope(listR.data.sessions, {
+        projectRoot: session.projectRoot,
+        surface: session.surface,
+      });
+    }
   }
 
   async function onDelete(): Promise<void> {

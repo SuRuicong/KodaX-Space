@@ -67,6 +67,10 @@ export function LeftSidebar({ width }: LeftSidebarProps): JSX.Element {
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   // F045: 当前工作面（Coder / Partner）。session 列表按 surface 分面——切 surface 重新拉。
   const currentSurface = useSurfaceStore((s) => s.currentSurface);
+  const visibleSessions = useMemo(
+    () => sessions.filter((s) => (s.surface ?? 'code') === currentSurface),
+    [sessions, currentSurface],
+  );
 
   // F040: 不再按 currentProjectPath 过滤拉 session —— 多项目 sidebar 需要全量。
   // 启动期拉一次；切项目 / 增删 session 触发的"补拉"未来要走显式 refresh 路径。
@@ -76,7 +80,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): JSX.Element {
     const bridge = window.kodaxSpace;
     if (!bridge) return;
     void bridge.invoke('session.list', { surface: currentSurface }).then((r) => {
-      if (r.ok) useAppStore.getState().setSessions(r.data.sessions);
+      if (r.ok) useAppStore.getState().replaceSessionsForScope(r.data.sessions, { surface: currentSurface });
     });
   }, [currentProjectPath, currentSurface]);
 
@@ -99,6 +103,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): JSX.Element {
 
   return (
     <aside
+      data-testid="left-sidebar"
       style={width !== undefined ? { width: `${width}px` } : undefined}
       className="glass lift ix-zone flex flex-col border border-border-default rounded-xl overflow-hidden bg-surface flex-shrink-0 text-[13px]"
     >
@@ -130,15 +135,15 @@ export function LeftSidebar({ width }: LeftSidebarProps): JSX.Element {
       <RecentsHeader />
 
       <div className="flex-1 overflow-y-auto px-1.5 pb-2">
-        {sessions.length === 0 && (
+        {visibleSessions.length === 0 && (
           <div className="text-xs text-fg-muted px-2 py-3">
             {currentProjectPath ? 'No sessions yet.' : 'Open a folder to start.'}
           </div>
         )}
         {/* F040: 多项目可折叠树。currentProjectPath 默认展开 + 高亮；
             其它项目折叠。状态点驱动来自 useSessionStatusMap。 */}
-        <ProjectTree
-          sessions={sessions}
+          <ProjectTree
+          sessions={visibleSessions}
           currentSessionId={currentSessionId}
           onSelect={setCurrentSession}
         />

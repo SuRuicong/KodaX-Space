@@ -31,7 +31,7 @@ const GROUPS: readonly ShortcutGroup[] = [
       { keys: ['Shift', 'Tab'], label: 'Cycle permission mode (Plan / Edits / Auto)' },
       { keys: ['Mod', 'M'], label: 'Open permission mode picker' },
       { keys: ['Mod', 'T'], label: 'Cycle reasoning depth' },
-      { keys: ['Alt', 'M'], label: 'Toggle agent mode (AMA / SA)' },
+      { keys: ['Alt', 'M'], label: 'Toggle agent mode (AMA / AMAW / SA)' },
     ],
   },
   {
@@ -46,7 +46,7 @@ const GROUPS: readonly ShortcutGroup[] = [
   {
     title: 'UI',
     items: [
-      { keys: ['Mod', 'K'], label: 'Quick Ask (one-shot question, no session)' },
+      { keys: ['Mod', 'K'], label: 'Quick Ask (temporary question)' },
       {
         keys: ['Mod', 'Shift', 'P'],
         label: 'Command palette (actions / sessions / files / slash)',
