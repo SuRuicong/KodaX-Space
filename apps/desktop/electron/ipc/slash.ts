@@ -6,6 +6,8 @@
 import { registerChannel } from './register.js';
 import { getSlashHandler, listSlashCommands, registerSlash } from '../slash/registry.js';
 import { BUILTIN_SLASH_COMMANDS } from '../slash/builtin.js';
+import { kodaxHost } from '../kodax/host.js';
+import type { ChannelInput, ChannelOutput } from '@kodax-space/space-ipc-schema';
 
 /**
  * 启动 main 时调一次：把所有 builtin 命令塞进 registry。
@@ -17,6 +19,33 @@ export function registerBuiltinSlashCommands(): void {
   }
 }
 
+type SlashExecInput = ChannelInput<'slash.exec'>;
+type SlashExecOutput = ChannelOutput<'slash.exec'>;
+
+async function ensureSessionAvailableForSlash(sessionId: string): Promise<void> {
+  if (kodaxHost.get(sessionId)) return;
+  try {
+    await kodaxHost.tryResume(sessionId);
+  } catch (err) {
+    console.warn('[slash.exec] lazy resume failed:', err instanceof Error ? err.message : err);
+  }
+}
+
+export async function executeSlashCommand(input: SlashExecInput): Promise<SlashExecOutput> {
+  const handler = getSlashHandler(input.name);
+  if (!handler) {
+    return {
+      ok: false,
+      message: `unknown command: /${input.name}`,
+      unknownCommand: true,
+    };
+  }
+  await ensureSessionAvailableForSlash(input.sessionId);
+  return handler.handler({
+    sessionId: input.sessionId,
+    args: input.args,
+  });
+}
 export function registerSlashChannels(): void {
   // slash.discover — renderer 取最新命令列表 (builtin + 未来 user/.kodax/commands)
   registerChannel('slash.discover', () => {
@@ -29,20 +58,5 @@ export function registerSlashChannels(): void {
   // 不在这里加 try/catch：handler 异常会冒泡到 registerChannel 的统一捕获，
   // 走 IpcResult fail('HANDLER_ERROR', ...)（见 ipc/register.ts:44）。重复包一层
   // 既绕过统一 sanitisation，又会把内部错误对象的 message 字段直送 renderer。
-  registerChannel('slash.exec', async (input) => {
-    const handler = getSlashHandler(input.name);
-    if (!handler) {
-      // F035 reviewer HIGH-3: 加 unknownCommand:true 让 renderer 用结构字段 routing
-      // (而不是 message.includes('unknown command') 这种 i18n-脆弱 的字符串匹配)。
-      return {
-        ok: false,
-        message: `unknown command: /${input.name}`,
-        unknownCommand: true,
-      };
-    }
-    return handler.handler({
-      sessionId: input.sessionId,
-      args: input.args,
-    });
-  });
+  registerChannel('slash.exec', executeSlashCommand);
 }
