@@ -515,6 +515,7 @@ export function SystemNotice({
   action,
   retryAvailableAt,
 }: Extract<ConversationMessage, { kind: 'system_notice' }>): JSX.Element {
+  const isWorkflow = variant === 'workflow';
   const color =
     variant === 'error'
       ? 'text-danger border-danger/40 bg-danger/5'
@@ -526,11 +527,19 @@ export function SystemNotice({
 
   return (
     <div
-      className={`notice-in text-[11px] font-mono text-center py-1 border-y ${color} flex items-center justify-center gap-2 flex-wrap`}
+      className={[
+        'notice-in text-[11px] font-mono border-y',
+        color,
+        isWorkflow
+          ? 'px-3 py-2 text-left flex items-start justify-start gap-2'
+          : 'py-1 text-center flex items-center justify-center gap-2 flex-wrap',
+      ].join(' ')}
       data-testid="system-notice"
       data-notice-variant={variant}
     >
-      <span>{text}</span>
+      <span className={isWorkflow ? 'min-w-0 flex-1 whitespace-pre-wrap break-words' : undefined}>
+        {text}
+      </span>
       {actionDef && (
         <button
           type="button"

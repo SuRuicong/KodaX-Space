@@ -19,11 +19,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Folder, Settings } from 'lucide-react';
-import type {
-  SpaceVersionOutput,
-  WorkflowActivityPayload,
-  WorkflowEventPayload,
-} from '@kodax-space/space-ipc-schema';
+import type { SpaceVersionOutput } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from './store/appStore.js';
 import { ProjectPicker } from './features/project/ProjectPicker.js';
 import { SessionList } from './features/session/SessionList.js';
@@ -35,6 +31,10 @@ import { QuickAskPopover } from './features/quick-ask/QuickAskPopover.js';
 import { useSessionCompleteNotification } from './features/notifications/useSessionCompleteNotification.js';
 import { FilePanel } from './features/code/FilePanel.js';
 import { Shell } from './shell/Shell.js';
+import {
+  formatWorkflowActivityNotice,
+  formatWorkflowEventNotices,
+} from './features/workflow/workflowNotices.js';
 
 // alpha.1: Claude Desktop 风 shell 已成为默认 UI。
 // 修复了 React #185 无限渲染循环（ConversationStreamV2 / ContextWindowIndicator / SessionMenu 里
@@ -43,33 +43,17 @@ import { Shell } from './shell/Shell.js';
 // 注：init useEffect 在两种 shell 下都需要跑（拉 version / providers / 订阅事件流），所以保持在 App 顶层。
 const USE_NEW_SHELL = import.meta.env.VITE_USE_NEW_SHELL !== '0';
 
-function compactWorkflowText(value: string | undefined, max = 220): string {
-  if (!value) return '';
-  const oneLine = value.replace(/\s+/g, ' ').trim();
-  if (oneLine.length <= max) return oneLine;
-  return `${oneLine.slice(0, Math.max(0, max - 1))}…`;
-}
+const WORKFLOW_NOTICE_DEDUPE_LIMIT = 2000;
+const seenWorkflowNoticeKeys = new Set<string>();
 
-function formatWorkflowFinishedNotice(payload: WorkflowEventPayload): string | null {
-  if (payload.type !== 'workflow_finished') return null;
-  const name = payload.snapshot.displayName ?? payload.snapshot.workflowName;
-  const status = payload.snapshot.status;
-  const detail = compactWorkflowText(
-    payload.snapshot.resultSummary ?? payload.snapshot.error ?? payload.message,
-  );
-  return `[workflow] ${status}: ${name}${detail ? ` — ${detail}` : ''}`;
-}
-
-function formatWorkflowActivityNotice(payload: WorkflowActivityPayload): string | null {
-  const child = payload.childAgentName ?? payload.childAgentId ?? 'child agent';
-  switch (payload.kind) {
-    case 'tool_use':
-      return `[workflow] ${child}: using ${payload.toolName ?? 'tool'}`;
-    case 'tool_result':
-      return `[workflow] ${child}: ${payload.toolName ?? 'tool'} finished`;
-    case 'end':
-      return `[workflow] ${child}: completed`;
+function rememberWorkflowNoticeKey(key: string): boolean {
+  if (seenWorkflowNoticeKeys.has(key)) return false;
+  seenWorkflowNoticeKeys.add(key);
+  if (seenWorkflowNoticeKeys.size > WORKFLOW_NOTICE_DEDUPE_LIMIT) {
+    const oldest = seenWorkflowNoticeKeys.values().next().value;
+    if (oldest !== undefined) seenWorkflowNoticeKeys.delete(oldest);
   }
+  return true;
 }
 
 export default function App(): JSX.Element {
@@ -215,8 +199,11 @@ export default function App(): JSX.Element {
       bridge.on('workflow.event', (payload) => {
         upsertWorkflowRun(payload);
         if (payload.sessionId !== undefined && payload.surface !== 'partner') {
-          const notice = formatWorkflowFinishedNotice(payload);
-          if (notice) appendWorkflowNotice(payload.sessionId, notice);
+          for (const notice of formatWorkflowEventNotices(payload)) {
+            if (rememberWorkflowNoticeKey(notice.key)) {
+              appendWorkflowNotice(payload.sessionId, notice.text);
+            }
+          }
         }
         if (
           payload.type === 'workflow_started' &&
