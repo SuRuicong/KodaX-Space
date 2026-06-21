@@ -1,4 +1,5 @@
 import { Loader2, PauseCircle } from 'lucide-react';
+import type { WorkflowRunT } from '@kodax-space/space-ipc-schema';
 import { useSessionWorkflowRuns } from '../features/workflow/WorkflowPanel.js';
 
 export function WorkflowWorkStrip(): JSX.Element | null {
@@ -7,14 +8,27 @@ export function WorkflowWorkStrip(): JSX.Element | null {
   if (!run) return null;
 
   const name = run.displayName ?? run.workflowName;
-  const phase =
-    run.phaseCount !== undefined && run.phaseCount > 0
-      ? `phase ${(run.activePhaseIndex ?? 0) + 1}/${run.phaseCount}`
-      : run.activePhaseId;
-  const progress = `${run.progress.finishedAgents}/${run.progress.spawnedAgents}`;
-  const active = run.progress.activeAgents > 0 ? `${run.progress.activeAgents} active` : undefined;
+  const phase = workflowPhaseLabel(run);
+  const plannedTotal = Math.max(
+    run.progress.plannedItems ?? 0,
+    run.progress.spawnedAgents,
+    run.progress.finishedAgents,
+  );
+  const active =
+    run.progress.activeAgents > 0
+      ? `${run.progress.activeAgents}/${plannedTotal || run.progress.activeAgents} active`
+      : run.progress.spawnedAgents === 0
+        ? 'waiting for agents'
+        : undefined;
+  const finished =
+    plannedTotal > 0 ? `${run.progress.finishedAgents}/${plannedTotal} done` : undefined;
+  const failed = run.progress.failedAgents > 0 ? `${run.progress.failedAgents} failed` : undefined;
+  const stopped =
+    run.progress.stoppedAgents > 0 ? `${run.progress.stoppedAgents} stopped` : undefined;
+  const tokens = workflowTokenLabel(run);
+  const elapsed = workflowElapsedLabel(run.elapsedMs);
   const message = run.latestMessage ?? (run.status === 'paused' ? 'paused' : 'running');
-  const parts = [name, phase, `${progress} agents`, active, message].filter(Boolean);
+  const parts = compact([name, phase, active, finished, failed, stopped, tokens, elapsed, message]);
   const Icon = run.status === 'paused' ? PauseCircle : Loader2;
 
   return (
@@ -23,6 +37,7 @@ export function WorkflowWorkStrip(): JSX.Element | null {
       role="status"
       aria-label="workflow live status"
       data-testid="workflow-live-strip"
+      title={parts.join(' - ')}
     >
       <Icon
         className={`w-3 h-3 text-warn flex-shrink-0 ${run.status === 'running' ? 'animate-spin' : ''}`}
@@ -34,4 +49,47 @@ export function WorkflowWorkStrip(): JSX.Element | null {
       <span className="truncate">{parts.join(' - ')}</span>
     </div>
   );
+}
+
+function workflowPhaseLabel(run: WorkflowRunT): string | undefined {
+  const activePhase = run.activePhaseId
+    ? run.items.find((item) => item.id === run.activePhaseId)
+    : undefined;
+  const title = activePhase?.title ?? run.activePhaseId;
+  if (run.phaseCount !== undefined && run.phaseCount > 0) {
+    const displayIndex = (run.activePhaseIndex ?? 0) + 1;
+    return title
+      ? `phase ${displayIndex}/${run.phaseCount}: ${title}`
+      : `phase ${displayIndex}/${run.phaseCount}`;
+  }
+  return title;
+}
+
+function workflowTokenLabel(run: WorkflowRunT): string | undefined {
+  if (!run.tokens) return undefined;
+  if (run.tokens.total !== undefined && run.tokens.total > 0) {
+    return `${formatCompactNumber(run.tokens.spent)}/${formatCompactNumber(run.tokens.total)} tok`;
+  }
+  return `${formatCompactNumber(run.tokens.spent)} tok`;
+}
+
+function workflowElapsedLabel(elapsedMs: number | undefined): string | undefined {
+  if (elapsedMs === undefined || elapsedMs < 1000) return undefined;
+  const totalSeconds = Math.floor(elapsedMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes <= 0) return `${seconds}s`;
+  if (minutes < 60) return `${minutes}m${seconds.toString().padStart(2, '0')}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h${(minutes % 60).toString().padStart(2, '0')}m`;
+}
+
+function formatCompactNumber(n: number): string {
+  if (n < 1000) return String(Math.round(n));
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
+function compact<T>(items: readonly (T | undefined | null | false)[]): T[] {
+  return items.filter(Boolean) as T[];
 }

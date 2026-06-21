@@ -138,17 +138,28 @@ export function WorkflowPanel({ runs, variant = 'compact' }: WorkflowPanelProps)
   if (runs.length === 0) {
     return <div className="text-xs text-fg-muted px-1 py-2">无工作流运行。</div>;
   }
+  const visibleRuns = variant === 'compact' ? runs.slice(0, 3) : runs;
+  const overflow = runs.length - visibleRuns.length;
   return (
     <div className="space-y-2">
-      {runs.map((run) => (
+      {visibleRuns.map((run) => (
         <WorkflowRunCard key={run.runId} run={run} variant={variant} />
       ))}
+      {overflow > 0 && (
+        <div className="text-[11px] text-fg-faint px-1 font-mono">
+          +{overflow} more in full panel
+        </div>
+      )}
     </div>
   );
 }
 
 /** Popout 连接版：顶部启动器（F063）+ 当前 session 的 runs。 */
-export function WorkflowPanelConnected({ variant = 'full' }: { variant?: 'compact' | 'full' }): JSX.Element {
+export function WorkflowPanelConnected({
+  variant = 'full',
+}: {
+  variant?: 'compact' | 'full';
+}): JSX.Element {
   const runs = useSessionWorkflowRuns();
   return (
     <div>
@@ -176,19 +187,37 @@ function WorkflowControls({
   const runId = run.runId;
   const active = run.status === 'running' || run.status === 'paused';
   return (
-    <div className={`flex items-center gap-0.5 flex-shrink-0 ${hasPhaseCounter ? 'ml-1.5' : 'ml-auto'}`}>
+    <div
+      className={`flex items-center gap-0.5 flex-shrink-0 ${hasPhaseCounter ? 'ml-1.5' : 'ml-auto'}`}
+    >
       {run.status === 'running' && (
-        <CtlBtn label="暂停" onClick={() => fireControl(window.kodaxSpace?.invoke('workflow.pause', { runId }), '暂停失败')}>
+        <CtlBtn
+          label="暂停"
+          onClick={() =>
+            fireControl(window.kodaxSpace?.invoke('workflow.pause', { runId }), '暂停失败')
+          }
+        >
           <Pause size={12} />
         </CtlBtn>
       )}
       {run.status === 'paused' && (
-        <CtlBtn label="恢复" onClick={() => fireControl(window.kodaxSpace?.invoke('workflow.resume', { runId }), '恢复失败')}>
+        <CtlBtn
+          label="恢复"
+          onClick={() =>
+            fireControl(window.kodaxSpace?.invoke('workflow.resume', { runId }), '恢复失败')
+          }
+        >
           <Play size={12} />
         </CtlBtn>
       )}
       {active && (
-        <CtlBtn label="停止" danger onClick={() => fireControl(window.kodaxSpace?.invoke('workflow.stop', { runId }), '停止失败')}>
+        <CtlBtn
+          label="停止"
+          danger
+          onClick={() =>
+            fireControl(window.kodaxSpace?.invoke('workflow.stop', { runId }), '停止失败')
+          }
+        >
           <Square size={12} />
         </CtlBtn>
       )}
@@ -331,7 +360,9 @@ function WorkflowRunCard({
         <span className="inline-flex items-center gap-1" title="agents：完成/已生成（活跃）">
           <Bot size={10} aria-hidden />
           {run.progress.finishedAgents}/{run.progress.spawnedAgents}
-          {run.progress.activeAgents > 0 && <span className="text-warn">·{run.progress.activeAgents}</span>}
+          {run.progress.activeAgents > 0 && (
+            <span className="text-warn">·{run.progress.activeAgents}</span>
+          )}
         </span>
         {run.tokens && (
           <span className="inline-flex items-center gap-1" title="token：已花/预算">
@@ -423,7 +454,11 @@ function WorkflowResultView({ runId }: { runId: string }): JSX.Element {
               </pre>
               <button
                 type="button"
-                onClick={() => void navigator.clipboard?.writeText(result).then(() => pushToast('已复制结果', 'success'))}
+                onClick={() =>
+                  void navigator.clipboard
+                    ?.writeText(result)
+                    .then(() => pushToast('已复制结果', 'success'))
+                }
                 title="复制"
                 aria-label="复制结果"
                 className="absolute top-1 right-1 w-5 h-5 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-2"
@@ -463,7 +498,9 @@ function WorkflowActivityStrip({ runId }: { runId: string }): JSX.Element | null
         >
           <span className="text-fg-faint flex-shrink-0">{ACTIVITY_ICON[a.kind]}</span>
           {a.childAgentName && (
-            <span className="text-fg-faint flex-shrink-0 max-w-[90px] truncate">{a.childAgentName}</span>
+            <span className="text-fg-faint flex-shrink-0 max-w-[90px] truncate">
+              {a.childAgentName}
+            </span>
           )}
           <span className="truncate">{a.kind === 'end' ? '完成' : (a.toolName ?? a.kind)}</span>
         </div>
@@ -478,7 +515,10 @@ function WorkflowItemRow({ node, depth }: { node: WorkflowTreeNode; depth: numbe
   const indentPx = Math.min(depth, MAX_INDENT_DEPTH) * 12;
   return (
     <li>
-      <div className="flex items-center gap-1.5 text-[11px] min-w-0" style={{ paddingLeft: `${indentPx}px` }}>
+      <div
+        className="flex items-center gap-1.5 text-[11px] min-w-0"
+        style={{ paddingLeft: `${indentPx}px` }}
+      >
         <Icon
           size={11}
           className={`flex-shrink-0 ${ITEM_COLOR[item.status]} ${SPIN.has(item.status) ? 'animate-spin' : ''}`}

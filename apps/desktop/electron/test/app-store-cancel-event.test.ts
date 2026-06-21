@@ -1,6 +1,6 @@
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { SessionMeta } from '@kodax-space/space-ipc-schema';
+import type { SessionMeta, WorkflowEventPayload } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../renderer/src/store/appStore.js';
 
 const SID = 's_cancel_dedupe';
@@ -25,6 +25,7 @@ beforeEach(() => {
     eventsBySession: {},
     pendingSendBySession: { [SID]: true },
     notifications: [],
+    workflowRuns: {},
   });
 });
 
@@ -59,11 +60,10 @@ test('appendEvent accepts a later cancelled event after a new session_start', ()
   store.appendEvent({ kind: 'session_error', sessionId: SID, error: 'cancelled' });
 
   const events = useAppStore.getState().eventsBySession[SID] ?? [];
-  assert.deepEqual(events.map((event) => event.kind), [
-    'session_error',
-    'session_start',
-    'session_error',
-  ]);
+  assert.deepEqual(
+    events.map((event) => event.kind),
+    ['session_error', 'session_start', 'session_error'],
+  );
 });
 test('appendEvent turns todo drift warnings into session notifications', () => {
   const store = useAppStore.getState();
@@ -91,4 +91,38 @@ test('appendEvent turns todo drift warnings into session notifications', () => {
   assert.equal(state.notifications[0]?.sessionId, SID);
   assert.match(state.notifications[0]?.text ?? '', /Todo list drift detected/);
   assert.match(state.notifications[0]?.text ?? '', /Update tests/);
+});
+
+test('upsertWorkflowRun exposes workflow event message as latest live message', () => {
+  const store = useAppStore.getState();
+  const payload: WorkflowEventPayload = {
+    type: 'workflow_updated',
+    sessionId: SID,
+    surface: 'code',
+    message: 'agent spawned: impact reviewer',
+    snapshot: {
+      runId: 'wf_live',
+      workflowName: 'review',
+      status: 'running',
+      startedAt: '2026-06-21T00:00:00.000Z',
+      updatedAt: '2026-06-21T00:00:05.000Z',
+      items: [],
+      counts: { pending: 0, running: 0, completed: 0, failed: 0, cancelled: 0, skipped: 0 },
+      progress: {
+        spawnedAgents: 1,
+        finishedAgents: 0,
+        activeAgents: 1,
+        failedAgents: 0,
+        stoppedAgents: 0,
+      },
+      latestMessage: 'stale snapshot message',
+    },
+  };
+
+  store.upsertWorkflowRun(payload);
+
+  const run = useAppStore.getState().workflowRuns.wf_live;
+  assert.equal(run?.sessionId, SID);
+  assert.equal(run?.surface, 'code');
+  assert.equal(run?.latestMessage, 'agent spawned: impact reviewer');
 });

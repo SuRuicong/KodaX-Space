@@ -935,8 +935,10 @@ export const useAppStore = create<AppState>((set) => ({
   upsertWorkflowRun: (payload) =>
     set((state) => {
       const { snapshot, sessionId, surface } = payload;
+      const eventMessage = payload.message?.trim();
       const run: WorkflowRunT = {
         ...snapshot,
+        ...(eventMessage ? { latestMessage: eventMessage } : {}),
         ...(sessionId !== undefined ? { sessionId } : {}),
         ...(surface !== undefined ? { surface } : {}),
       };

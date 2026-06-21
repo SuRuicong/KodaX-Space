@@ -17,7 +17,7 @@
 // Diff / Preview / Terminal / Agents / MCP 保留。
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronRight, Eye, Folder, FolderOpen } from 'lucide-react';
+import { Check, ChevronRight, Eye, Folder, FolderOpen, Minus, X } from 'lucide-react';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 import { openFileSmart, isPreviewablePath, revealPath } from '../lib/openPath.js';
@@ -26,6 +26,11 @@ import { buildWorkerTree } from './popouts/worker-tree.js';
 import { ArtifactsView } from '../features/artifact/ArtifactsView.js';
 import { useArtifacts, useArtifactCreated } from '../features/artifact/useArtifacts.js';
 import { WorkflowPanel, useSessionWorkflowRuns } from '../features/workflow/WorkflowPanel.js';
+import {
+  buildSidebarPlanView,
+  type SidebarPlanRow,
+  type SidebarTodoStatus,
+} from './sidebarPlanView.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 
@@ -265,48 +270,106 @@ function PlanSection(): JSX.Element | null {
 
   if (!todos || todos.length === 0) return null;
 
-  const done = todos.filter((t) => t.status === 'completed').length;
-  const total = todos.length;
-  const running = todos.find((t) => t.status === 'in_progress');
+  const plan = buildSidebarPlanView(todos);
 
   return (
-    <Section title={`Plan (${done}/${total})`} popoutKind="plan">
-      {running?.activeForm && (
-        <div className="text-xs text-fg-muted mb-2 truncate" title={running.activeForm}>
-          → {running.activeForm}
+    <Section title={`Plan (${plan.completed}/${plan.total})`} popoutKind="plan">
+      {plan.running?.activeForm && (
+        <div className="text-xs text-fg-muted mb-2 truncate" title={plan.running.activeForm}>
+          → {plan.running.activeForm}
         </div>
       )}
-      <ol className="space-y-1 text-xs">
-        {todos.map((t, idx) => (
-          <li key={t.id} className="flex items-start gap-2">
-            <span className="flex-shrink-0 text-fg-muted font-mono text-[11px] w-5 text-right mt-0.5 tabular-nums">
-              {idx + 1}.
-            </span>
-            <span className="flex-shrink-0 mt-0.5" aria-hidden>
-              {t.status === 'completed' ? (
-                <CircleDone tiny />
-              ) : t.status === 'in_progress' ? (
-                <CircleActive tiny />
-              ) : (
-                <CircleEmpty tiny />
-              )}
-            </span>
-            <span
-              className={
-                t.status === 'completed'
-                  ? 'text-fg-muted line-through'
-                  : t.status === 'in_progress'
-                    ? 'text-fg-primary'
-                    : 'text-fg-secondary'
-              }
-            >
-              {t.content}
-            </span>
-          </li>
+      <ul className="space-y-1 text-xs">
+        {plan.rows.map((row) => (
+          <PlanRow key={planRowKey(row)} row={row} />
         ))}
-      </ol>
+      </ul>
     </Section>
   );
+}
+
+function planRowKey(row: SidebarPlanRow): string {
+  if (row.kind === 'item') return row.item.id;
+  return `${row.kind}:${row.count}`;
+}
+
+function PlanRow({ row }: { row: SidebarPlanRow }): JSX.Element {
+  if (row.kind === 'done-summary') {
+    return (
+      <li className="flex items-center gap-2 px-1.5 py-0.5 text-[11px] font-mono text-fg-faint">
+        <span className="w-3 text-center text-ok" aria-hidden>
+          ✓
+        </span>
+        <span>{row.count} done</span>
+      </li>
+    );
+  }
+
+  if (row.kind === 'more-summary') {
+    return (
+      <li className="flex items-center gap-2 px-1.5 py-0.5 text-[11px] font-mono text-fg-faint">
+        <span className="w-3 text-center" aria-hidden>
+          +
+        </span>
+        <span>{row.count} more</span>
+      </li>
+    );
+  }
+
+  const { item } = row;
+  return (
+    <li
+      className={`flex items-start gap-2 rounded px-1.5 py-1 ${
+        item.status === 'in_progress' ? 'bg-run/25' : ''
+      }`}
+    >
+      <span
+        className="flex-shrink-0 mt-0.5"
+        title={item.status}
+        aria-label={`status: ${item.status}`}
+      >
+        <PlanStatusIcon status={item.status} />
+      </span>
+      <span
+        className={`min-w-0 flex-1 leading-snug break-words ${planTodoTextClass(item.status)}`}
+        title={item.content}
+      >
+        {item.content}
+      </span>
+    </li>
+  );
+}
+
+function PlanStatusIcon({ status }: { status: SidebarTodoStatus }): JSX.Element {
+  switch (status) {
+    case 'completed':
+      return <CircleDone tiny />;
+    case 'in_progress':
+      return <CircleActive tiny />;
+    case 'failed':
+      return <CircleFailed tiny />;
+    case 'skipped':
+    case 'cancelled':
+      return <CircleMuted tiny />;
+    case 'pending':
+      return <CircleEmpty tiny />;
+  }
+}
+
+function planTodoTextClass(status: SidebarTodoStatus): string {
+  switch (status) {
+    case 'completed':
+      return 'text-fg-muted';
+    case 'in_progress':
+      return 'text-fg-primary font-medium';
+    case 'failed':
+      return 'text-danger font-medium';
+    case 'skipped':
+    case 'cancelled':
+      return 'text-fg-muted line-through';
+    case 'pending':
+      return 'text-fg-secondary';
+  }
 }
 
 // ---- Workers section（active worker 摘要） ----
@@ -879,4 +942,28 @@ function CircleActive({ tiny = true }: { tiny?: boolean } = {}): JSX.Element {
 function CircleEmpty({ tiny = true }: { tiny?: boolean } = {}): JSX.Element {
   const size = tiny ? 'w-3 h-3' : 'w-4 h-4';
   return <span className={`${size} rounded-full border border-border-default`} aria-hidden />;
+}
+
+function CircleFailed({ tiny = true }: { tiny?: boolean } = {}): JSX.Element {
+  const size = tiny ? 'w-3 h-3' : 'w-4 h-4';
+  return (
+    <span
+      className={`${size} rounded-full bg-danger text-white flex items-center justify-center`}
+      aria-hidden
+    >
+      <X className={tiny ? 'w-2 h-2' : 'w-2.5 h-2.5'} strokeWidth={3.25} />
+    </span>
+  );
+}
+
+function CircleMuted({ tiny = true }: { tiny?: boolean } = {}): JSX.Element {
+  const size = tiny ? 'w-3 h-3' : 'w-4 h-4';
+  return (
+    <span
+      className={`${size} rounded-full border border-border-strong text-fg-faint flex items-center justify-center`}
+      aria-hidden
+    >
+      <Minus className={tiny ? 'w-2 h-2' : 'w-2.5 h-2.5'} strokeWidth={2.5} />
+    </span>
+  );
 }
