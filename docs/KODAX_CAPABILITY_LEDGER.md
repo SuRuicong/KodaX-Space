@@ -1,6 +1,6 @@
 # KodaX Capability Ledger
 
-Last reviewed: 2026-06-18
+Last reviewed: 2026-06-19
 
 This file is the Space-side source of truth for capabilities that depend on the upstream KodaX SDK. It exists to keep desktop feature planning honest: a feature is either supported by the current SDK contract, partially implemented through an available event/API, planned on the Space side, or blocked until KodaX exposes a contract.
 
@@ -12,7 +12,7 @@ This file is the Space-side source of truth for capabilities that depend on the 
 | Desktop package | 0.1.19 | `@kodax-space/desktop`. |
 | IPC schema package | 0.1.19 | Aligned from stale 0.1.9 during F081. |
 | UI kit package | 0.1.19 | Aligned from stale 0.1.9 during F081. |
-| KodaX SDK | 0.7.52 installed, `^0.7.52` root and desktop specs | Keep this row aligned with `package.json`, `apps/desktop/package.json`, and `package-lock.json`. |
+| KodaX SDK | 0.7.53 installed, `^0.7.53` root and desktop specs | Keep this row aligned with `package.json`, `apps/desktop/package.json`, and `package-lock.json`. |
 
 ## Capability Contract
 
@@ -36,6 +36,10 @@ Runtime IPC contract: `space-v0.1.20`
 | `quickAsk.tempSession` | supported | Quick Ask uses a temporary plan-mode session, captures events locally, cleans up on close, and can promote the persisted session into Coder. |
 | `quickAsk.sideQuery` | blocked | Current SDK does not expose a true side-query API. Do not claim isolated side-query behavior until KodaX ships it. |
 | `handoff.receive` | supported | Space reads, watches, accepts, and dismisses `~/.kodax/handoffs/*.json` files; CLI-side emit remains a separate SDK/CLI integration gate. |
+| `sidecar.message` | supported | KodaX 0.7.53 exposes `KodaXEvents.onSidecarMessage`; Space maps revise/blocked verifier messages into `sidecar_message` session events and renders them as system notices. |
+| `todoDrift.warning` | supported | KodaX 0.7.53 exposes `KodaXEvents.onTodoDriftWarning`; Space maps it into `todo_drift_warning` session events and raises a session-scoped notification. |
+| `sessions.dedupe` | not-needed | KodaX 0.7.53 adds the `kodax sessions dedupe` maintenance CLI. Space should not add a desktop button until session hygiene/doctor UX needs it. |
+| `extension.resumeState` | planned | KodaX 0.7.53 preserves interactive extension/MCP state on host-owned resume. Space does not own that state yet; keep visibility planned under F090. |
 
 ## Review Rules
 

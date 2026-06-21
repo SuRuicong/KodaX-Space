@@ -12,6 +12,22 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 > v0.1.7 内容 (F011/F023/F024/F026/F038) 跟 v0.1.8 一起发。GitHub Releases 顶部仍是 v0.1.5，
 > 0.1.7 这条 section 留作历史记录、git log 引用入口。
 
+## [0.1.20] - Unreleased
+
+### Changed
+
+- **`@kodax-ai/kodax` 0.7.52 -> 0.7.53** - Space now consumes the 0.7.53 SDK baseline from both root and desktop workspace package specs.
+
+### Added
+
+- **Sidecar verifier visibility** - `onSidecarMessage` now flows through typed session IPC as `sidecar_message` and renders revise/blocked verifier output as a system notice.
+- **Todo drift warning bridge** - `onTodoDriftWarning` now flows through `todo_drift_warning` and raises a session-scoped notification when work starts while no todo is marked in progress.
+
+### Planning
+
+- `kodax sessions dedupe` remains CLI-only for now; desktop exposure is deferred until session hygiene/doctor UX.
+- 0.7.53 extension/MCP resume-state preservation is tracked under F090 rather than expanded into v0.1.20 scope.
+
 ## [0.1.19] - 2026-06-18
 
 ### Theme
