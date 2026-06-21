@@ -149,10 +149,19 @@ interface WorkflowPanelProps {
   readonly runs: readonly WorkflowRunT[];
   /** compact = RightSidebar 紧凑摘要（终态 run 折叠 tree）；full = popout 全展开。 */
   readonly variant?: 'compact' | 'full';
+  /** 管理详情页已有自己的 run 标题/控制区时，隐藏卡片内重复头部。 */
+  readonly hideRunHeader?: boolean;
+  /** full 视图默认展开子树；详情页可改为默认折叠，让流程图/历史先露出。 */
+  readonly defaultDetailsOpen?: boolean;
 }
 
 /** 纯展示面板：渲染传入的 runs。空 runs 显示空态（popout 路径可达）。 */
-export function WorkflowPanel({ runs, variant = 'compact' }: WorkflowPanelProps): JSX.Element {
+export function WorkflowPanel({
+  runs,
+  variant = 'compact',
+  hideRunHeader = false,
+  defaultDetailsOpen,
+}: WorkflowPanelProps): JSX.Element {
   if (runs.length === 0) {
     return <div className="text-xs text-fg-muted px-1 py-2">无工作流运行。</div>;
   }
@@ -161,7 +170,13 @@ export function WorkflowPanel({ runs, variant = 'compact' }: WorkflowPanelProps)
   return (
     <div className="space-y-2">
       {visibleRuns.map((run) => (
-        <WorkflowRunCard key={run.runId} run={run} variant={variant} />
+        <WorkflowRunCard
+          key={run.runId}
+          run={run}
+          variant={variant}
+          hideHeader={hideRunHeader}
+          defaultDetailsOpen={defaultDetailsOpen}
+        />
       ))}
       {overflow > 0 && (
         <div className="text-[11px] text-fg-faint px-1 font-mono">
@@ -290,15 +305,19 @@ function CtlBtn({
 function WorkflowRunCard({
   run,
   variant,
+  hideHeader,
+  defaultDetailsOpen,
 }: {
   run: WorkflowRunT;
   variant: 'compact' | 'full';
+  hideHeader: boolean;
+  defaultDetailsOpen: boolean | undefined;
 }): JSX.Element {
   const RunIcon = RUN_ICON[run.status];
   const tree = useMemo(() => buildItemTree(run.items), [run.items]);
   const isTerminal = TERMINAL.has(run.status);
-  const [detailsOpen, setDetailsOpen] = useState(variant === 'full');
-  const showTree = variant === 'full' || detailsOpen;
+  const [detailsOpen, setDetailsOpen] = useState(defaultDetailsOpen ?? variant === 'full');
+  const showTree = detailsOpen;
   const tokenPct =
     run.tokens?.total && run.tokens.total > 0
       ? Math.min(100, (run.tokens.spent / run.tokens.total) * 100)
@@ -332,48 +351,52 @@ function WorkflowRunCard({
   return (
     <div className="rounded-lg border border-border-default/70 bg-surface-2 p-2">
       {/* 头部：状态图标 + 名称（可改名）+ phase 进度 + 控制 */}
-      <div className="flex items-center gap-1.5 min-w-0">
-        <RunIcon
-          size={13}
-          className={`flex-shrink-0 ${RUN_COLOR[run.status]} ${SPIN.has(run.status) ? 'animate-spin' : ''}`}
-          aria-hidden
-        />
-        {renaming ? (
-          <input
-            autoFocus
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commitRename}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commitRename();
-              else if (e.key === 'Escape') setRenaming(false);
-            }}
-            className="flex-1 min-w-0 text-[12px] bg-surface-3 border border-border-default rounded px-1 py-0.5 text-fg-primary"
-            aria-label="重命名工作流"
+      {!hideHeader && (
+        <div className="flex items-center gap-1.5 min-w-0">
+          <RunIcon
+            size={13}
+            className={`flex-shrink-0 ${RUN_COLOR[run.status]} ${SPIN.has(run.status) ? 'animate-spin' : ''}`}
+            aria-hidden
           />
-        ) : (
-          <span className="text-[12px] font-medium text-fg-primary truncate" title={name}>
-            {name}
-          </span>
-        )}
-        {phaseCounter !== undefined && !renaming && (
-          <span className="ml-auto flex-shrink-0 text-[10px] font-mono text-fg-muted">
-            {phaseCounter}
-          </span>
-        )}
-        {!renaming && (
-          <WorkflowControls
-            run={run}
-            variant={variant}
-            isTerminal={isTerminal}
-            hasPhaseCounter={phaseCounter !== undefined}
-            onRename={startRename}
-          />
-        )}
-      </div>
+          {renaming ? (
+            <input
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename();
+                else if (e.key === 'Escape') setRenaming(false);
+              }}
+              className="flex-1 min-w-0 text-[12px] bg-surface-3 border border-border-default rounded px-1 py-0.5 text-fg-primary"
+              aria-label="重命名工作流"
+            />
+          ) : (
+            <span className="text-[12px] font-medium text-fg-primary truncate" title={name}>
+              {name}
+            </span>
+          )}
+          {phaseCounter !== undefined && !renaming && (
+            <span className="ml-auto flex-shrink-0 text-[10px] font-mono text-fg-muted">
+              {phaseCounter}
+            </span>
+          )}
+          {!renaming && (
+            <WorkflowControls
+              run={run}
+              variant={variant}
+              isTerminal={isTerminal}
+              hasPhaseCounter={phaseCounter !== undefined}
+              onRename={startRename}
+            />
+          )}
+        </div>
+      )}
 
       {/* 进度计量行：agents + token */}
-      <div className="mt-1 flex items-center gap-2 text-[10px] font-mono text-fg-muted">
+      <div
+        className={`${hideHeader ? '' : 'mt-1'} flex items-center gap-2 text-[10px] font-mono text-fg-muted`}
+      >
         <span className="inline-flex items-center gap-1" title="agents：完成/已生成（活跃）">
           <Bot size={10} aria-hidden />
           {workflowAgentProgressLabel(run)}
@@ -405,7 +428,7 @@ function WorkflowRunCard({
 
       <WorkflowRunGraph run={run} variant={variant} />
 
-      {variant === 'compact' && (tree.length > 0 || !isTerminal) && (
+      {(tree.length > 0 || !isTerminal) && (
         <button
           type="button"
           onClick={() => setDetailsOpen((v) => !v)}

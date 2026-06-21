@@ -346,7 +346,7 @@ function RunDetail({
       >
         <RunActions run={run} />
       </DetailHeader>
-      <WorkflowPanel runs={[run]} variant="full" />
+      <WorkflowPanel runs={[run]} variant="full" hideRunHeader defaultDetailsOpen={false} />
       <HistoryBlock runs={relatedRuns} selectedRunId={run.runId} onSelectRun={onSelectRun} />
     </div>
   );

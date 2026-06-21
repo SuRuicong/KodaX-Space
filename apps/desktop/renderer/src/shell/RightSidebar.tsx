@@ -417,10 +417,12 @@ function planTodoTextClass(status: SidebarTodoStatus): string {
 // ---- Workers section（active worker 摘要） ----
 
 // F061 Workflow 进度 Section（Coder-only —— RightSidebar 本就只挂 code surface）。
-// 无归属当前 session 的工作流 run 时整段隐藏（同 Plan/Workers 的"无内容隐藏"策略）。
+// 无归属当前 session 的工作流 run 时整段隐藏；有历史 run 时保留最近一次终态，
+// 避免 workflow 刚完成右栏突然消失，用户无法回看流程图 / 子 agent 状态。
 function WorkflowSection(): JSX.Element | null {
   const runs = useSessionWorkflowRuns();
-  const currentRun = runs.find((run) => run.status === 'running' || run.status === 'paused');
+  const currentRun =
+    runs.find((run) => run.status === 'running' || run.status === 'paused') ?? runs[0];
   if (!currentRun) return null;
   return (
     <Section title="Workflow" popoutKind="workflow">
