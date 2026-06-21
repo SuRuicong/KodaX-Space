@@ -19,7 +19,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Folder, Settings } from 'lucide-react';
-import type { SpaceVersionOutput } from '@kodax-space/space-ipc-schema';
+import type {
+  SpaceVersionOutput,
+  WorkflowActivityPayload,
+  WorkflowEventPayload,
+} from '@kodax-space/space-ipc-schema';
 import { useAppStore } from './store/appStore.js';
 import { ProjectPicker } from './features/project/ProjectPicker.js';
 import { SessionList } from './features/session/SessionList.js';
@@ -39,6 +43,35 @@ import { Shell } from './shell/Shell.js';
 // 注：init useEffect 在两种 shell 下都需要跑（拉 version / providers / 订阅事件流），所以保持在 App 顶层。
 const USE_NEW_SHELL = import.meta.env.VITE_USE_NEW_SHELL !== '0';
 
+function compactWorkflowText(value: string | undefined, max = 220): string {
+  if (!value) return '';
+  const oneLine = value.replace(/\s+/g, ' ').trim();
+  if (oneLine.length <= max) return oneLine;
+  return `${oneLine.slice(0, Math.max(0, max - 1))}…`;
+}
+
+function formatWorkflowFinishedNotice(payload: WorkflowEventPayload): string | null {
+  if (payload.type !== 'workflow_finished') return null;
+  const name = payload.snapshot.displayName ?? payload.snapshot.workflowName;
+  const status = payload.snapshot.status;
+  const detail = compactWorkflowText(
+    payload.snapshot.resultSummary ?? payload.snapshot.error ?? payload.message,
+  );
+  return `[workflow] ${status}: ${name}${detail ? ` — ${detail}` : ''}`;
+}
+
+function formatWorkflowActivityNotice(payload: WorkflowActivityPayload): string | null {
+  const child = payload.childAgentName ?? payload.childAgentId ?? 'child agent';
+  switch (payload.kind) {
+    case 'tool_use':
+      return `[workflow] ${child}: using ${payload.toolName ?? 'tool'}`;
+    case 'tool_result':
+      return `[workflow] ${child}: ${payload.toolName ?? 'tool'} finished`;
+    case 'end':
+      return `[workflow] ${child}: completed`;
+  }
+}
+
 export default function App(): JSX.Element {
   const [version, setVersion] = useState<SpaceVersionOutput | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -56,6 +89,7 @@ export default function App(): JSX.Element {
   const upsertWorkflowRun = useAppStore((s) => s.upsertWorkflowRun);
   const seedWorkflowRuns = useAppStore((s) => s.seedWorkflowRuns);
   const appendWorkflowActivity = useAppStore((s) => s.appendWorkflowActivity);
+  const appendWorkflowNotice = useAppStore((s) => s.appendWorkflowNotice);
   const setRightSidebarOpen = useAppStore((s) => s.setRightSidebarOpen);
   const providers = useAppStore((s) => s.providers);
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
@@ -180,6 +214,10 @@ export default function App(): JSX.Element {
     unsubsRef.current.push(
       bridge.on('workflow.event', (payload) => {
         upsertWorkflowRun(payload);
+        if (payload.sessionId !== undefined && payload.surface !== 'partner') {
+          const notice = formatWorkflowFinishedNotice(payload);
+          if (notice) appendWorkflowNotice(payload.sessionId, notice);
+        }
         if (
           payload.type === 'workflow_started' &&
           payload.sessionId !== undefined &&
@@ -194,6 +232,11 @@ export default function App(): JSX.Element {
     unsubsRef.current.push(
       bridge.on('workflow.activity', (payload) => {
         appendWorkflowActivity(payload);
+        const run = useAppStore.getState().workflowRuns[payload.runId];
+        if (run?.sessionId !== undefined && run.surface !== 'partner') {
+          const notice = formatWorkflowActivityNotice(payload);
+          if (notice) appendWorkflowNotice(run.sessionId, notice);
+        }
       }),
     );
 
@@ -213,6 +256,7 @@ export default function App(): JSX.Element {
     upsertWorkflowRun,
     seedWorkflowRuns,
     appendWorkflowActivity,
+    appendWorkflowNotice,
     setRightSidebarOpen,
   ]);
 

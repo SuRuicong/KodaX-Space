@@ -34,6 +34,7 @@ import { ProjectContextMenu } from './ProjectContextMenu.js';
 import { ProjectSessionPicker } from './ProjectSessionPicker.js';
 import { RecentsFilterMenu } from './RecentsFilterMenu.js';
 import { SettingsModal } from '../features/settings/SettingsModal.js';
+import { WorkflowNavPanel } from '../features/workflow/WorkflowNavPanel.js';
 import { useSessionStatusMap, type SessionStatus } from '../features/session/useSessionStatus.js';
 import { pushToast } from '../store/toastStore.js';
 import type { Project } from '@kodax-space/space-ipc-schema';
@@ -80,7 +81,10 @@ export function LeftSidebar({ width }: LeftSidebarProps): JSX.Element {
     const bridge = window.kodaxSpace;
     if (!bridge) return;
     void bridge.invoke('session.list', { surface: currentSurface }).then((r) => {
-      if (r.ok) useAppStore.getState().replaceSessionsForScope(r.data.sessions, { surface: currentSurface });
+      if (r.ok)
+        useAppStore
+          .getState()
+          .replaceSessionsForScope(r.data.sessions, { surface: currentSurface });
     });
   }, [currentProjectPath, currentSurface]);
 
@@ -111,7 +115,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): JSX.Element {
       <SurfaceTabs />
 
       {/* New session + menus */}
-      <div className="p-2 space-y-0.5">
+      <div className="p-2 space-y-1">
         <button
           type="button"
           onClick={handleNewSession}
@@ -122,6 +126,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): JSX.Element {
           <Plus className="w-4 h-4 flex-shrink-0" strokeWidth={1.75} aria-hidden />
           New session
         </button>
+        <WorkflowNavPanel />
         <DisabledMenuItem Icon={Clock} label="Scheduled" hint="v0.1.x" />
         <DisabledMenuItem Icon={Briefcase} label="Customize" hint="v0.1.x" />
         <DisabledMenuItem Icon={ChevronDown} label="More" hint="" />
@@ -142,7 +147,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): JSX.Element {
         )}
         {/* F040: 多项目可折叠树。currentProjectPath 默认展开 + 高亮；
             其它项目折叠。状态点驱动来自 useSessionStatusMap。 */}
-          <ProjectTree
+        <ProjectTree
           sessions={visibleSessions}
           currentSessionId={currentSessionId}
           onSelect={setCurrentSession}

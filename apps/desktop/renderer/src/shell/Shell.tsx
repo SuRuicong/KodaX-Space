@@ -218,7 +218,17 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
       setRequestedPopout(null);
       return;
     }
-    const known = ['preview', 'diff', 'terminal', 'tasks', 'plan', 'agents', 'mcp', 'artifact'] as const;
+    const known = [
+      'preview',
+      'diff',
+      'terminal',
+      'tasks',
+      'plan',
+      'agents',
+      'mcp',
+      'artifact',
+      'workflow',
+    ] as const;
     if ((known as readonly string[]).includes(requestedPopout)) {
       setActivePopout(requestedPopout as PopoutKind);
     }

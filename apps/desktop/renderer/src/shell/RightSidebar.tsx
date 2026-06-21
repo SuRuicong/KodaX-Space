@@ -17,9 +17,19 @@
 // Diff / Preview / Terminal / Agents / MCP 保留。
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronRight, Eye, Folder, FolderOpen, Minus, X } from 'lucide-react';
+import {
+  Check,
+  ChevronRight,
+  Eye,
+  Folder,
+  FolderOpen,
+  Maximize2,
+  Minimize2,
+  Minus,
+  X,
+} from 'lucide-react';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
-import { useAppStore } from '../store/appStore.js';
+import { clampSidebarWidthPx, useAppStore } from '../store/appStore.js';
 import { openFileSmart, isPreviewablePath, revealPath } from '../lib/openPath.js';
 import { Caret } from '../components/Caret.js';
 import { buildWorkerTree } from './popouts/worker-tree.js';
@@ -33,6 +43,8 @@ import {
 } from './sidebarPlanView.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
+const RIGHT_SIDEBAR_DEFAULT_WIDTH = 320;
+const RIGHT_SIDEBAR_WIDE_WIDTH = 720;
 
 interface RightSidebarProps {
   /** 2026-06: 动态宽度（px）。 */
@@ -79,6 +91,7 @@ export function RightSidebar({ width }: RightSidebarProps = {}): JSX.Element {
     >
       {/* F059c 动态右侧栏：有产物时顶部出 [概览 | Artifact] 切换；Artifact 占满整栏满高，
           不再挤在底部的 280px 小框。⤢ 展开到中间大图（full-cover，像 diff）。 */}
+      <RightSidebarWidthToolbar />
       {hasArtifacts && (
         <div className="flex items-stretch border-b border-border-default flex-shrink-0">
           <SidebarTab active={!showArtifact} onClick={() => setTab('overview')}>
@@ -130,6 +143,35 @@ export function RightSidebar({ width }: RightSidebarProps = {}): JSX.Element {
         </div>
       )}
     </aside>
+  );
+}
+
+function RightSidebarWidthToolbar(): JSX.Element {
+  const setRightSidebarWidth = useAppStore((s) => s.setRightSidebarWidth);
+  return (
+    <div className="flex items-center justify-between gap-2 border-b border-border-default/60 px-2 py-1.5 flex-shrink-0">
+      <span className="text-[10px] uppercase tracking-wider text-fg-faint">Panel</span>
+      <div className="flex items-center gap-0.5">
+        <button
+          type="button"
+          onClick={() => setRightSidebarWidth(RIGHT_SIDEBAR_DEFAULT_WIDTH)}
+          className="w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
+          title="Default width"
+          aria-label="Set right panel to default width"
+        >
+          <Minimize2 size={13} strokeWidth={1.8} aria-hidden />
+        </button>
+        <button
+          type="button"
+          onClick={() => setRightSidebarWidth(clampSidebarWidthPx(RIGHT_SIDEBAR_WIDE_WIDTH))}
+          className="w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
+          title="Wide width"
+          aria-label="Set right panel to wide width"
+        >
+          <Maximize2 size={13} strokeWidth={1.8} aria-hidden />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -378,10 +420,11 @@ function planTodoTextClass(status: SidebarTodoStatus): string {
 // 无归属当前 session 的工作流 run 时整段隐藏（同 Plan/Workers 的"无内容隐藏"策略）。
 function WorkflowSection(): JSX.Element | null {
   const runs = useSessionWorkflowRuns();
-  if (runs.length === 0) return null;
+  const currentRun = runs.find((run) => run.status === 'running' || run.status === 'paused');
+  if (!currentRun) return null;
   return (
     <Section title="Workflow" popoutKind="workflow">
-      <WorkflowPanel runs={runs} variant="compact" />
+      <WorkflowPanel runs={[currentRun]} variant="compact" />
     </Section>
   );
 }
@@ -404,7 +447,7 @@ function WorkersSection(): JSX.Element | null {
   const active = workers.filter((w) => w.isActive);
 
   return (
-    <Section title={`Workers (${workers.length})`} popoutKind="tasks">
+    <Section title={`Workers (${workers.length})`} defaultOpen={false} popoutKind="tasks">
       {budget && (
         <div className="mb-2 text-[11px]">
           <div className="text-fg-secondary font-mono">

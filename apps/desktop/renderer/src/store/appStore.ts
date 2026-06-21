@@ -205,7 +205,7 @@ interface AppState {
   seedWorkflowRuns: (runs: readonly WorkflowRunT[]) => void;
   /**
    * F065：子 agent 活动遥测，按 runId 存有界活动流（每 run 最近 N 条 discrete 事件）。
-   * 来自 push workflow.activity；不进主 transcript（不淹）。
+   * 来自 push workflow.activity；右侧栏按 runId 显示，App 顶层另把关键活动写入中间历史流。
    */
   workflowActivityByRun: Readonly<Record<string, readonly WorkflowActivityPayload[]>>;
   /** F065：追加一条子 agent 活动（按 runId 有界）。*/

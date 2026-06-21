@@ -1,6 +1,7 @@
 import { Loader2, PauseCircle } from 'lucide-react';
 import type { WorkflowRunT } from '@kodax-space/space-ipc-schema';
 import { useSessionWorkflowRuns } from '../features/workflow/WorkflowPanel.js';
+import { workflowPhaseLabel } from '../features/workflow/workflowPhaseDisplay.js';
 
 export function WorkflowWorkStrip(): JSX.Element | null {
   const runs = useSessionWorkflowRuns();
@@ -49,20 +50,6 @@ export function WorkflowWorkStrip(): JSX.Element | null {
       <span className="truncate">{parts.join(' - ')}</span>
     </div>
   );
-}
-
-function workflowPhaseLabel(run: WorkflowRunT): string | undefined {
-  const activePhase = run.activePhaseId
-    ? run.items.find((item) => item.id === run.activePhaseId)
-    : undefined;
-  const title = activePhase?.title ?? run.activePhaseId;
-  if (run.phaseCount !== undefined && run.phaseCount > 0) {
-    const displayIndex = (run.activePhaseIndex ?? 0) + 1;
-    return title
-      ? `phase ${displayIndex}/${run.phaseCount}: ${title}`
-      : `phase ${displayIndex}/${run.phaseCount}`;
-  }
-  return title;
 }
 
 function workflowTokenLabel(run: WorkflowRunT): string | undefined {

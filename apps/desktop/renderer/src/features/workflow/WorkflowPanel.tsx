@@ -45,6 +45,7 @@ import { useAppStore } from '../../store/appStore.js';
 import { pushToast } from '../../store/toastStore.js';
 import { buildItemTree, type WorkflowTreeNode } from './buildItemTree.js';
 import { WorkflowLauncher } from './WorkflowLauncher.js';
+import { workflowPhaseCounter } from './workflowPhaseDisplay.js';
 
 // ---- run / item 状态 → 图标 + 颜色 ----
 const RUN_ICON: Record<WorkflowProcessStatusT, LucideIcon> = {
@@ -278,15 +279,14 @@ function WorkflowRunCard({
 }): JSX.Element {
   const RunIcon = RUN_ICON[run.status];
   const tree = useMemo(() => buildItemTree(run.items), [run.items]);
-  // compact 下终态 run 默认折叠 tree（只留头部摘要）；活跃 / full 展开。
   const isTerminal = TERMINAL.has(run.status);
-  const showTree = variant === 'full' || !isTerminal;
+  const [detailsOpen, setDetailsOpen] = useState(variant === 'full');
+  const showTree = variant === 'full' || detailsOpen;
   const tokenPct =
     run.tokens?.total && run.tokens.total > 0
       ? Math.min(100, (run.tokens.spent / run.tokens.total) * 100)
       : null;
-  // phase 计数：activePhaseIndex 0-based；活跃时 +1 显示"当前第 N"，终态不 +1（避免 6/5）。
-  const displayPhaseNumber = (run.activePhaseIndex ?? 0) + (isTerminal ? 0 : 1);
+  const phaseCounter = workflowPhaseCounter(run);
 
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState('');
@@ -339,9 +339,9 @@ function WorkflowRunCard({
             {name}
           </span>
         )}
-        {run.phaseCount !== undefined && run.phaseCount > 0 && !renaming && (
+        {phaseCounter !== undefined && !renaming && (
           <span className="ml-auto flex-shrink-0 text-[10px] font-mono text-fg-muted">
-            {displayPhaseNumber}/{run.phaseCount}
+            {phaseCounter}
           </span>
         )}
         {!renaming && (
@@ -349,7 +349,7 @@ function WorkflowRunCard({
             run={run}
             variant={variant}
             isTerminal={isTerminal}
-            hasPhaseCounter={run.phaseCount !== undefined && run.phaseCount > 0}
+            hasPhaseCounter={phaseCounter !== undefined}
             onRename={startRename}
           />
         )}
@@ -387,6 +387,18 @@ function WorkflowRunCard({
         <div className="mt-1 text-[11px] text-fg-secondary truncate" title={run.latestMessage}>
           {run.latestMessage}
         </div>
+      )}
+
+      {variant === 'compact' && (tree.length > 0 || !isTerminal) && (
+        <button
+          type="button"
+          onClick={() => setDetailsOpen((v) => !v)}
+          className="mt-1 inline-flex items-center gap-1 text-[10px] text-fg-muted hover:text-fg-primary"
+          aria-expanded={detailsOpen}
+        >
+          {detailsOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+          Subagents
+        </button>
       )}
 
       {/* 结果 / 错误（终态） */}
