@@ -30,6 +30,7 @@ function run(over: Partial<WorkflowRunT>): WorkflowRunT {
 test('workflow graph keeps phase order and branch counts', () => {
   const model = buildWorkflowGraphModel(
     run({
+      patterns: ['fan-out-and-synthesize'],
       phaseCount: 2,
       items: [
         item({ id: 'p1', title: 'Collect', kind: 'phase', status: 'completed' }),
@@ -42,6 +43,8 @@ test('workflow graph keeps phase order and branch counts', () => {
   );
 
   assert.equal(model.phases.length, 2);
+  assert.equal(model.patterns[0]?.id, 'fan-out-and-synthesize');
+  assert.equal(model.patterns[0]?.tone, 'parallel');
   assert.deepEqual(
     model.phases.map((phase) => phase.title),
     ['Collect', 'Review'],
@@ -49,6 +52,24 @@ test('workflow graph keeps phase order and branch counts', () => {
   assert.equal(model.phases[0]?.counts.completed, 2);
   assert.equal(model.phases[0]?.nodes[0]?.descendantCount, 1);
   assert.equal(model.phases[1]?.activeLabel, 'risk');
+});
+
+test('workflow graph reads pattern metadata from host metadata fallback', () => {
+  const model = buildWorkflowGraphModel(
+    run({
+      hostMetadata: { workflowPatterns: '["classify-and-act","loop-until-done"]' },
+      items: [item({ id: 'p1', title: 'Route', kind: 'phase', status: 'running' })],
+    }),
+  );
+
+  assert.deepEqual(
+    model.patterns.map((pattern) => pattern.id),
+    ['classify-and-act', 'loop-until-done'],
+  );
+  assert.deepEqual(
+    model.patterns.map((pattern) => pattern.tone),
+    ['route', 'loop'],
+  );
 });
 
 test('workflow graph exposes failed child as phase active label', () => {

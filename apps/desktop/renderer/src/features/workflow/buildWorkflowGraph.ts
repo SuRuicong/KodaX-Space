@@ -37,6 +37,16 @@ export interface WorkflowGraphCounts {
 
 export interface WorkflowGraphModel {
   readonly phases: readonly WorkflowGraphPhase[];
+  readonly patterns: readonly WorkflowGraphPattern[];
+}
+
+export type WorkflowPatternTone = 'route' | 'parallel' | 'verify' | 'filter' | 'contest' | 'loop';
+
+export interface WorkflowGraphPattern {
+  readonly id: string;
+  readonly label: string;
+  readonly tone: WorkflowPatternTone;
+  readonly description: string;
 }
 
 export function buildWorkflowGraphModel(run: WorkflowRunT): WorkflowGraphModel {
@@ -53,7 +63,82 @@ export function buildWorkflowGraphModel(run: WorkflowRunT): WorkflowGraphModel {
     phases.push(syntheticRunPhase(run, looseRoots, phases.length + 1, Math.max(total, 1)));
   }
 
-  return { phases };
+  return { phases, patterns: workflowPatternsForRun(run) };
+}
+
+const PATTERN_DEFS: Record<string, WorkflowGraphPattern> = {
+  'classify-and-act': {
+    id: 'classify-and-act',
+    label: 'classify',
+    tone: 'route',
+    description: 'Classifier routes work to the right behavior.',
+  },
+  'fan-out-and-synthesize': {
+    id: 'fan-out-and-synthesize',
+    label: 'fan-out',
+    tone: 'parallel',
+    description: 'Parallel workers converge at a synthesis barrier.',
+  },
+  'adversarial-verification': {
+    id: 'adversarial-verification',
+    label: 'verify',
+    tone: 'verify',
+    description: 'Independent verifier attacks candidate output.',
+  },
+  'generate-and-filter': {
+    id: 'generate-and-filter',
+    label: 'filter',
+    tone: 'filter',
+    description: 'Generators create candidates, then a filter ranks them.',
+  },
+  tournament: {
+    id: 'tournament',
+    label: 'tournament',
+    tone: 'contest',
+    description: 'Competing approaches are judged to pick a winner.',
+  },
+  'loop-until-done': {
+    id: 'loop-until-done',
+    label: 'loop',
+    tone: 'loop',
+    description: 'Rounds repeat until a stop condition is reached.',
+  },
+};
+
+export function workflowPatternsForRun(run: WorkflowRunT): readonly WorkflowGraphPattern[] {
+  const rawPatterns = Array.isArray(run.patterns)
+    ? run.patterns
+    : parseHostMetadataPatterns(run.hostMetadata);
+  const patterns: WorkflowGraphPattern[] = [];
+  for (const raw of rawPatterns ?? []) {
+    const id = raw.trim();
+    if (!id || patterns.some((pattern) => pattern.id === id)) continue;
+    patterns.push(
+      PATTERN_DEFS[id] ?? {
+        id,
+        label: id,
+        tone: 'parallel',
+        description: 'Custom workflow pattern.',
+      },
+    );
+  }
+  return patterns;
+}
+
+function parseHostMetadataPatterns(
+  hostMetadata: WorkflowRunT['hostMetadata'],
+): string[] | undefined {
+  const raw = hostMetadata?.workflowPatterns ?? hostMetadata?.patterns;
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((item): item is string => typeof item === 'string');
+    }
+  } catch {
+    // Fallback for comma-separated debug metadata.
+  }
+  return raw.split(',').map((item) => item.trim()).filter(Boolean);
 }
 
 function phaseFromTreeNode(

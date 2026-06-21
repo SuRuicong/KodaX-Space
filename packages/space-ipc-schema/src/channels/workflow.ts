@@ -123,6 +123,7 @@ export const workflowProcessSnapshotSchema = z.object({
   goal: z.string().max(MSG).optional(),
   source: workflowProcessSourceSchema.optional(),
   hostMetadata: workflowHostMetadataSchema.optional(),
+  patterns: z.array(z.string().max(SHORT)).max(16).optional(),
   savedWorkflowName: z.string().max(SHORT).optional(),
   sourceRunId: z.string().max(SHORT).optional(),
   sourceWorkflowName: z.string().max(SHORT).optional(),

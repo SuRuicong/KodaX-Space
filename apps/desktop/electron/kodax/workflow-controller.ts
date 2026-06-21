@@ -12,7 +12,7 @@
 // 自持久化的 runId→{sessionId,surface} 映射(F063/F064 启动时 registerOrigin)。落
 // ~/.kodax/space/workflow-origins.json,进程重启仍可归属。SDK 补 origin 字段后此映射可下线。
 
-import { promises as fs } from 'node:fs';
+import { promises as fs, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -135,6 +135,8 @@ const IPC_MSG_MAX = 8192;
 const IPC_PATH_MAX = 4096;
 const IPC_MAX_ITEMS = 4096;
 const IPC_MAX_ARTIFACTS = 512;
+const IPC_MAX_PATTERNS = 16;
+const HOST_METADATA_PATTERNS_KEY = 'workflowPatterns';
 
 const SNAPSHOT_SHORT_FIELDS = [
   'workflowName',
@@ -189,6 +191,33 @@ function clampStringRecord(value: unknown): Record<string, string> | undefined {
   return out;
 }
 
+function normalizeWorkflowPatterns(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: string[] = [];
+  for (const item of value) {
+    const pattern = clampPlainText(item, IPC_SHORT_MAX)?.trim();
+    if (!pattern || out.includes(pattern)) continue;
+    out.push(pattern);
+    if (out.length >= IPC_MAX_PATTERNS) break;
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+function parseWorkflowPatternsFromHostMetadata(
+  hostMetadata: Record<string, string> | undefined,
+): string[] | undefined {
+  const raw = hostMetadata?.[HOST_METADATA_PATTERNS_KEY] ?? hostMetadata?.patterns;
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    const patterns = normalizeWorkflowPatterns(parsed);
+    if (patterns) return patterns;
+  } catch {
+    // Older/debug snapshots may store a comma-separated list.
+  }
+  return normalizeWorkflowPatterns(raw.split(',').map((p) => p.trim()));
+}
+
 function normalizeWorkflowItem(item: unknown): unknown {
   if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
   const raw = item as Record<string, unknown>;
@@ -217,7 +246,10 @@ function normalizeWorkflowArtifact(artifact: unknown): unknown {
   return next;
 }
 
-function normalizeWorkflowSnapshot(snapshot: SdkProcessSnapshot): WorkflowRunT {
+function normalizeWorkflowSnapshot(
+  snapshot: SdkProcessSnapshot,
+  extraPatterns?: readonly string[],
+): WorkflowRunT {
   const raw = snapshot as Record<string, unknown>;
   const next: Record<string, unknown> = { ...raw };
   for (const key of SNAPSHOT_SHORT_FIELDS) {
@@ -230,6 +262,11 @@ function normalizeWorkflowSnapshot(snapshot: SdkProcessSnapshot): WorkflowRunT {
   }
   const hostMetadata = clampStringRecord(raw.hostMetadata);
   if (hostMetadata !== undefined) next.hostMetadata = hostMetadata;
+  const patterns =
+    normalizeWorkflowPatterns(raw.patterns) ??
+    normalizeWorkflowPatterns(extraPatterns) ??
+    parseWorkflowPatternsFromHostMetadata(hostMetadata);
+  if (patterns !== undefined) next.patterns = patterns;
   if (Array.isArray(raw.items)) {
     next.items = raw.items.slice(0, IPC_MAX_ITEMS).map(normalizeWorkflowItem);
   }
@@ -237,6 +274,38 @@ function normalizeWorkflowSnapshot(snapshot: SdkProcessSnapshot): WorkflowRunT {
     next.artifacts = raw.artifacts.slice(0, IPC_MAX_ARTIFACTS).map(normalizeWorkflowArtifact);
   }
   return next as unknown as WorkflowRunT;
+}
+
+function readWorkflowManifestPatterns(
+  manifestPath: unknown,
+  runId: string,
+  runBaseDir: string,
+): string[] | undefined {
+  const candidates: string[] = [];
+  if (
+    typeof manifestPath === 'string' &&
+    manifestPath.length > 0 &&
+    manifestPath.length <= IPC_PATH_MAX
+  ) {
+    candidates.push(manifestPath);
+  }
+  const runDir = generatedRunDir(runBaseDir, runId);
+  if (runDir !== null) candidates.push(path.join(runDir, 'manifest.json'));
+
+  const base = path.resolve(runBaseDir);
+  for (const candidate of candidates) {
+    const resolved = path.resolve(candidate);
+    const relative = path.relative(base, resolved);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) continue;
+    try {
+      const parsed = JSON.parse(readFileSync(resolved, 'utf8')) as { patterns?: unknown };
+      const patterns = normalizeWorkflowPatterns(parsed.patterns);
+      if (patterns) return patterns;
+    } catch {
+      // Missing or invalid manifest should not break progress rendering.
+    }
+  }
+  return undefined;
 }
 
 interface OriginsFile {
@@ -337,15 +406,18 @@ export class WorkflowController {
     const items = Array.isArray(raw.items)
       ? raw.items.map((item) => this.toSettledWorkflowItem(item, now))
       : [];
-    return normalizeWorkflowSnapshot({
-      ...(snapshot as unknown as WorkflowEventPayload['snapshot']),
-      status: 'cancelled',
-      updatedAt: now,
-      items: items as WorkflowEventPayload['snapshot']['items'],
-      counts: this.countWorkflowItems(items, raw.counts),
-      progress: this.cancelledProgress(raw.progress),
-      ...(reason ? { latestMessage: reason } : {}),
-    } as unknown as SdkProcessSnapshot);
+    return normalizeWorkflowSnapshot(
+      {
+        ...(snapshot as unknown as WorkflowEventPayload['snapshot']),
+        status: 'cancelled',
+        updatedAt: now,
+        items: items as WorkflowEventPayload['snapshot']['items'],
+        counts: this.countWorkflowItems(items, raw.counts),
+        progress: this.cancelledProgress(raw.progress),
+        ...(reason ? { latestMessage: reason } : {}),
+      } as unknown as SdkProcessSnapshot,
+      this.patternsForSnapshot(snapshot),
+    );
   }
 
   private toSettledWorkflowItem(item: unknown, endedAt: string): unknown {
@@ -577,7 +649,7 @@ export class WorkflowController {
         processMetadata: {
           displayName: meta?.name,
           source: 'sdk',
-          hostMetadata: this.hostMetadata(s),
+          hostMetadata: this.hostMetadata(s, patternsFromWorkflowModule(module)),
         },
       });
     } catch (err) {
@@ -614,6 +686,7 @@ export class WorkflowController {
       session,
       source: 'command',
       scriptSnapshot: generated.scriptSnapshot,
+      patterns: generated.manifest.patterns,
       processMetadata: {
         displayName: generated.manifest.name,
         goal: request,
@@ -647,6 +720,7 @@ export class WorkflowController {
       session,
       source: 'command',
       ...(scriptSnapshot ? { scriptSnapshot } : {}),
+      ...(scriptSnapshot?.manifest.patterns ? { patterns: scriptSnapshot.manifest.patterns } : {}),
       processMetadata: {
         displayName: workflowNameFromModule(loaded.module),
         sourceRunId: runId,
@@ -891,11 +965,15 @@ export class WorkflowController {
     };
   }
 
-  private hostMetadata(s: LaunchSession): Record<string, string> {
+  private hostMetadata(s: LaunchSession, patterns?: readonly string[]): Record<string, string> {
+    const normalizedPatterns = normalizeWorkflowPatterns(patterns);
     return {
       host: 'kodax-space',
       sessionId: s.sessionId,
       surface: s.surface,
+      ...(normalizedPatterns
+        ? { [HOST_METADATA_PATTERNS_KEY]: JSON.stringify(normalizedPatterns) }
+        : {}),
     };
   }
 
@@ -905,6 +983,7 @@ export class WorkflowController {
     readonly session: LaunchSession;
     readonly source: string;
     readonly scriptSnapshot?: WorkflowScriptSnapshotLite;
+    readonly patterns?: readonly string[];
     readonly processMetadata?: Record<string, unknown>;
   }): Promise<WorkflowStartResult> {
     if (!this.manager) return { error: 'workflow runtime unavailable' };
@@ -923,7 +1002,7 @@ export class WorkflowController {
           displayName,
           ...input.processMetadata,
           source: input.source,
-          hostMetadata: this.hostMetadata(input.session),
+          hostMetadata: this.hostMetadata(input.session, input.patterns),
         },
       });
     } catch (err) {
@@ -938,7 +1017,7 @@ export class WorkflowController {
 
   private onEvent(event: SdkProcessEvent): void {
     const origin = this.originFromSnapshot(event.snapshot);
-    const snapshot = normalizeWorkflowSnapshot(event.snapshot);
+    const snapshot = this.normalizeSnapshot(event.snapshot);
     const message = clampHumanText(event.message, IPC_MSG_MAX);
     // SDK snapshot 可能带完整长报告；IPC 进度快照只传有界预览，完整内容走 result/artifact 读取。
     this.push({
@@ -1010,12 +1089,21 @@ export class WorkflowController {
 
   private attribute(snapshot: SdkProcessSnapshot): WorkflowRunT {
     const origin = this.originFromSnapshot(snapshot);
-    const run = normalizeWorkflowSnapshot(snapshot);
+    const run = this.normalizeSnapshot(snapshot);
     return {
       ...run,
       ...(origin.sessionId !== undefined ? { sessionId: origin.sessionId } : {}),
       ...(origin.surface !== undefined ? { surface: origin.surface } : {}),
     };
+  }
+
+  private normalizeSnapshot(snapshot: SdkProcessSnapshot): WorkflowRunT {
+    return normalizeWorkflowSnapshot(snapshot, this.patternsForSnapshot(snapshot));
+  }
+
+  private patternsForSnapshot(snapshot: SdkProcessSnapshot): string[] | undefined {
+    const raw = snapshot as Record<string, unknown>;
+    return readWorkflowManifestPatterns(raw.manifestSnapshotPath, snapshot.runId, this.runBaseDir);
   }
 
   private originFromSnapshot(snapshot: SdkProcessSnapshot): WorkflowOrigin {
@@ -1269,6 +1357,17 @@ function workflowNameFromModule(module: unknown): string | undefined {
       ? (module as { meta?: { name?: unknown } }).meta
       : undefined;
   return typeof meta?.name === 'string' ? meta.name : undefined;
+}
+
+function patternsFromWorkflowModule(module: unknown): string[] | undefined {
+  const meta =
+    module && typeof module === 'object'
+      ? (module as { meta?: { patterns?: unknown; pattern?: unknown } }).meta
+      : undefined;
+  return (
+    normalizeWorkflowPatterns(meta?.patterns) ??
+    (typeof meta?.pattern === 'string' ? normalizeWorkflowPatterns([meta.pattern]) : undefined)
+  );
 }
 
 function generatedRunDir(baseDir: string, runId: string): string | null {

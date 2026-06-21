@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WorkflowController, _setCodingSdkForTesting } from '../kodax/workflow-controller.js';
@@ -157,6 +157,43 @@ test('hostMetadata attributes events + list + get without local origin registrat
     assert.equal(pushed[0]?.surface, 'partner');
     assert.equal(ctrl.get('r_meta')?.sessionId, 's_meta');
     assert.equal(ctrl.list('s_meta')[0]?.runId, 'r_meta');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('manifest patterns are surfaced on workflow snapshots', async () => {
+  const { dir, file } = freshFile();
+  const runBaseDir = join(dir, 'workflow-runs');
+  try {
+    const pushed: unknown[] = [];
+    const ctrl = new WorkflowController((p) => pushed.push(p), file, runBaseDir);
+    const mgr = fakeManager();
+    await ctrl.init(mgr);
+
+    const runDir = join(runBaseDir, 'wf_pattern');
+    mkdirSync(runDir, { recursive: true });
+    const manifestPath = join(runDir, 'manifest.json');
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({ patterns: ['fan-out-and-synthesize', 'adversarial-verification'] }),
+    );
+
+    mgr._emit({
+      type: 'workflow_updated',
+      snapshot: sampleSnapshot('wf_pattern', { manifestSnapshotPath: manifestPath }),
+    });
+
+    const parsed = workflowEventChannel.payload.safeParse(pushed[0]);
+    assert.ok(parsed.success, parsed.success ? '' : JSON.stringify(parsed.error.issues));
+    assert.deepEqual(parsed.success && parsed.data.snapshot.patterns, [
+      'fan-out-and-synthesize',
+      'adversarial-verification',
+    ]);
+    assert.deepEqual(ctrl.get('wf_pattern')?.patterns, [
+      'fan-out-and-synthesize',
+      'adversarial-verification',
+    ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

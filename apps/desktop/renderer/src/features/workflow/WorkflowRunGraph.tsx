@@ -2,9 +2,15 @@ import {
   CheckCircle2,
   Circle,
   CircleSlash,
+  Filter,
+  GitBranch,
   Loader2,
   MinusCircle,
   PauseCircle,
+  Repeat2,
+  Route,
+  ShieldCheck,
+  Trophy,
   XCircle,
   type LucideIcon,
 } from 'lucide-react';
@@ -13,6 +19,8 @@ import {
   buildWorkflowGraphModel,
   type WorkflowGraphNode,
   type WorkflowGraphPhase,
+  type WorkflowGraphPattern,
+  type WorkflowPatternTone,
   type WorkflowGraphStatus,
 } from './buildWorkflowGraph.js';
 
@@ -56,6 +64,24 @@ const CHIP_CLASS: Record<WorkflowGraphStatus, string> = {
   skipped: 'border-border-default/50 text-fg-faint bg-surface/20',
 };
 
+const PATTERN_ICON: Record<WorkflowPatternTone, LucideIcon> = {
+  route: Route,
+  parallel: GitBranch,
+  verify: ShieldCheck,
+  filter: Filter,
+  contest: Trophy,
+  loop: Repeat2,
+};
+
+const PATTERN_CLASS: Record<WorkflowPatternTone, string> = {
+  route: 'border-info/45 bg-info/10 text-info',
+  parallel: 'border-run/45 bg-run/10 text-run',
+  verify: 'border-ok/45 bg-ok/10 text-ok',
+  filter: 'border-warn/45 bg-warn/10 text-warn',
+  contest: 'border-accent/45 bg-accent/10 text-accent-ink',
+  loop: 'border-thinking/45 bg-thinking/10 text-thinking',
+};
+
 export function WorkflowRunGraph({
   run,
   variant,
@@ -75,6 +101,13 @@ export function WorkflowRunGraph({
           {phaseDone}/{model.phases.length}
         </span>
       </div>
+      {model.patterns.length > 0 && (
+        <div className="mb-1.5 flex flex-wrap gap-1">
+          {model.patterns.map((pattern) => (
+            <WorkflowPatternChip key={pattern.id} pattern={pattern} />
+          ))}
+        </div>
+      )}
       <div className="space-y-0.5">
         {model.phases.map((phase, index) => (
           <WorkflowPhaseRow
@@ -86,6 +119,19 @@ export function WorkflowRunGraph({
         ))}
       </div>
     </div>
+  );
+}
+
+function WorkflowPatternChip({ pattern }: { readonly pattern: WorkflowGraphPattern }): JSX.Element {
+  const Icon = PATTERN_ICON[pattern.tone];
+  return (
+    <span
+      className={`inline-flex min-w-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-mono ${PATTERN_CLASS[pattern.tone]}`}
+      title={`${pattern.id}: ${pattern.description}`}
+    >
+      <Icon size={9} strokeWidth={2.4} className="flex-shrink-0" aria-hidden />
+      <span className="truncate">{pattern.label}</span>
+    </span>
   );
 }
 
