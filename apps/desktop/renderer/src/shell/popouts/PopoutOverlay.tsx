@@ -18,6 +18,7 @@ const FULL_COVER_KINDS = new Set<string>(['diff', 'artifact']);
 const POPOUT_WIDTH: Record<string, string> = {
   preview: 'w-[880px]',
   terminal: 'w-[800px]',
+  workflow: 'w-[900px]',
 };
 const DEFAULT_POPOUT_WIDTH = 'w-[480px]';
 
@@ -39,7 +40,7 @@ import { PlanPanel } from './PlanPanel.js';
 import { AgentsMdPanel } from './AgentsMdPanel.js';
 import { McpPanel } from './McpPanel.js';
 import { ArtifactsView } from '../../features/artifact/ArtifactsView.js';
-import { WorkflowPanelConnected } from '../../features/workflow/WorkflowPanel.js';
+import { WorkflowManagementPanel } from '../../features/workflow/WorkflowManagementPanel.js';
 
 interface PopoutOverlayProps {
   kind: PopoutKind;
@@ -87,8 +88,8 @@ export function PopoutOverlay({ kind, onClose }: PopoutOverlayProps): JSX.Elemen
           {kind === 'mcp' && <McpPanel />}
           {kind === 'artifact' && <ArtifactsView />}
           {kind === 'workflow' && (
-            <div className="h-full overflow-y-auto p-2">
-              <WorkflowPanelConnected variant="full" />
+            <div className="h-full min-h-0 overflow-hidden">
+              <WorkflowManagementPanel />
             </div>
           )}
         </div>
