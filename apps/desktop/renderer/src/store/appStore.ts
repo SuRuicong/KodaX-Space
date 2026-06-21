@@ -774,7 +774,8 @@ export const useAppStore = create<AppState>((set) => ({
 
   appendWorkflowNotice: (sessionId, content, sentAt) =>
     set((state) => {
-      if (!state.sessions.some((s) => s.sessionId === sessionId)) return state;
+      const knownSession = state.sessions.some((s) => s.sessionId === sessionId);
+      if (!knownSession && state.currentSessionId !== sessionId) return state;
       const bucket = state.workflowNoticesBySession[sessionId] ?? [];
       const id = `wf_${sessionId}_${++workflowNoticeCounter}`;
       const msg: WorkflowNoticeMessage = { id, content, sentAt: sentAt ?? Date.now() };

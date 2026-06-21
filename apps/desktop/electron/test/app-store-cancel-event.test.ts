@@ -26,6 +26,7 @@ beforeEach(() => {
     pendingSendBySession: { [SID]: true },
     notifications: [],
     workflowRuns: {},
+    workflowNoticesBySession: {},
   });
 });
 
@@ -125,4 +126,18 @@ test('upsertWorkflowRun exposes workflow event message as latest live message', 
   assert.equal(run?.sessionId, SID);
   assert.equal(run?.surface, 'code');
   assert.equal(run?.latestMessage, 'agent spawned: impact reviewer');
+});
+
+test('appendWorkflowNotice keeps notices for current session before session list catches up', () => {
+  useAppStore.setState({
+    sessions: [],
+    currentSessionId: SID,
+    workflowNoticesBySession: {},
+  });
+
+  useAppStore.getState().appendWorkflowNotice(SID, '[workflow] agent spawned: reviewer');
+
+  const notices = useAppStore.getState().workflowNoticesBySession[SID] ?? [];
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0]?.content, '[workflow] agent spawned: reviewer');
 });

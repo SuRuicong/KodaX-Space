@@ -12,6 +12,7 @@ export interface WorkflowNoticeCandidate {
 const FINAL_REPORT_MAX = 1400;
 const AGENT_SUMMARY_MAX = 900;
 const ACTIVITY_MAX = 180;
+const PROGRESS_MAX = 260;
 
 export function compactWorkflowText(value: string | undefined, max = ACTIVITY_MAX): string {
   if (!value) return '';
@@ -22,7 +23,10 @@ export function compactWorkflowText(value: string | undefined, max = ACTIVITY_MA
 
 function workflowBlockText(value: string | undefined, max: number): string {
   if (!value) return '';
-  const text = value.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  const text = value
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
   if (text.length <= max) return text;
   return `${text.slice(0, Math.max(0, max - 4)).trimEnd()}\n...`;
 }
@@ -44,6 +48,9 @@ export function formatWorkflowEventNotices(
 ): WorkflowNoticeCandidate[] {
   const notices: WorkflowNoticeCandidate[] = [];
 
+  const progressNotice = formatWorkflowProgressNotice(payload);
+  if (progressNotice) notices.push(progressNotice);
+
   if (payload.type === 'workflow_updated' || payload.type === 'workflow_finished') {
     for (const item of payload.snapshot.items) {
       const summaryNotice = formatItemSummaryNotice(payload.snapshot.runId, item);
@@ -57,6 +64,33 @@ export function formatWorkflowEventNotices(
   }
 
   return notices;
+}
+
+function formatWorkflowProgressNotice(
+  payload: WorkflowEventPayload,
+): WorkflowNoticeCandidate | null {
+  if (payload.type !== 'workflow_updated') return null;
+  const message = compactWorkflowText(payload.message, PROGRESS_MAX);
+  if (!message || !isTranscriptProgressMessage(message)) return null;
+  return {
+    key: `progress:${payload.snapshot.runId}:${fingerprintText(message)}`,
+    text: `[workflow] ${message}`,
+  };
+}
+
+function isTranscriptProgressMessage(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.startsWith('agent spawned:') ||
+    lower.startsWith('agent completed:') ||
+    lower.startsWith('agent failed:') ||
+    lower.startsWith('agent summary updated:') ||
+    lower.startsWith('artifact written:') ||
+    lower.startsWith('phase started:') ||
+    lower.startsWith('phase completed:') ||
+    lower.startsWith('workflow paused') ||
+    lower.startsWith('workflow resumed')
+  );
 }
 
 function formatWorkflowFinishedNotice(

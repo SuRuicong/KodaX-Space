@@ -164,3 +164,21 @@ test('workflow graph creates a synthetic run phase when SDK sends no phase items
   assert.equal(model.phases[0]?.nodes[0]?.title, 'reviewer');
   assert.equal(model.phases[0]?.activeLabel, 'reviewer');
 });
+
+test('workflow graph clears stale running states when the run is completed', () => {
+  const model = buildWorkflowGraphModel(
+    run({
+      status: 'completed',
+      items: [
+        item({ id: 'p1', title: 'Collect', kind: 'phase', status: 'completed' }),
+        item({ id: 'p2', title: 'Review', kind: 'phase', status: 'running' }),
+        item({ id: 'a1', title: 'stale worker', kind: 'agent', phaseId: 'p2', status: 'running' }),
+      ],
+    }),
+  );
+
+  assert.equal(model.phases[1]?.status, 'completed');
+  assert.equal(model.phases[1]?.nodes[0]?.status, 'completed');
+  assert.equal(model.phases[1]?.counts.running, 0);
+  assert.equal(model.phases[1]?.activeLabel, undefined);
+});

@@ -81,6 +81,28 @@ test('workflow finished notice preserves readable markdown instead of one-line c
   );
 });
 
+test('workflow event notices surface meaningful progress messages', () => {
+  const notices = formatWorkflowEventNotices(
+    event({
+      message: 'agent spawned: Collect changes',
+    }),
+  );
+
+  assert.equal(notices.length, 1);
+  assert.match(notices[0]?.key ?? '', /^progress:wf-notice:/);
+  assert.equal(notices[0]?.text, '[workflow] agent spawned: Collect changes');
+});
+
+test('workflow event notices ignore generic live refresh messages', () => {
+  const notices = formatWorkflowEventNotices(
+    event({
+      message: 'running',
+    }),
+  );
+
+  assert.equal(notices.length, 0);
+});
+
 test('workflow activity notices remain compact progress lines', () => {
   assert.equal(
     formatWorkflowActivityNotice({

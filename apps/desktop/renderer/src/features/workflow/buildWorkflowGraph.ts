@@ -62,7 +62,7 @@ export function buildWorkflowGraphModel(run: WorkflowRunT): WorkflowGraphModel {
     phaseRoots.length > 0 ? renderedPhaseCount : Math.max(run.phaseCount ?? 0, renderedPhaseCount);
 
   const phases: WorkflowGraphPhase[] = phaseRoots.map((node, index) =>
-    phaseFromTreeNode(node, index + 1, total || phaseRoots.length),
+    phaseFromTreeNode(node, index + 1, total || phaseRoots.length, run.status),
   );
 
   if (looseRoots.length > 0 || phases.length === 0) {
@@ -144,20 +144,24 @@ function parseHostMetadataPatterns(
   } catch {
     // Fallback for comma-separated debug metadata.
   }
-  return raw.split(',').map((item) => item.trim()).filter(Boolean);
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function phaseFromTreeNode(
   node: WorkflowTreeNode,
   index: number,
   total: number,
+  runStatus: WorkflowRunT['status'],
 ): WorkflowGraphPhase {
-  const nodes = node.children.map(graphNodeFromTreeNode);
+  const nodes = node.children.map((child) => graphNodeFromTreeNode(child, runStatus));
   const counts = countNodes(nodes);
   return {
     id: node.item.id,
     title: node.item.title || node.item.id,
-    status: derivePhaseStatus(node.item.status, counts),
+    status: normalizeTerminalGraphStatus(runStatus, derivePhaseStatus(node.item.status, counts)),
     index,
     total,
     nodes,
@@ -250,7 +254,7 @@ function findActivePhaseByIndex(
 }
 
 function phaseStatusFromNode(node: WorkflowTreeNode): WorkflowGraphStatus {
-  const counts = countNodes(node.children.map(graphNodeFromTreeNode));
+  const counts = countNodes(node.children.map((child) => graphNodeFromTreeNode(child, 'running')));
   return derivePhaseStatus(node.item.status, counts);
 }
 
@@ -272,12 +276,12 @@ function syntheticRunPhase(
   index: number,
   total: number,
 ): WorkflowGraphPhase {
-  const nodes = roots.map(graphNodeFromTreeNode);
+  const nodes = roots.map((node) => graphNodeFromTreeNode(node, run.status));
   const counts = countNodes(nodes);
   return {
     id: `${run.runId}:run`,
     title: run.displayName ?? run.workflowName,
-    status: runStatusToGraphStatus(run.status),
+    status: normalizeTerminalGraphStatus(run.status, runStatusToGraphStatus(run.status)),
     index,
     total,
     nodes,
@@ -286,16 +290,37 @@ function syntheticRunPhase(
   };
 }
 
-function graphNodeFromTreeNode(node: WorkflowTreeNode): WorkflowGraphNode {
-  const children = node.children.map(graphNodeFromTreeNode);
+function graphNodeFromTreeNode(
+  node: WorkflowTreeNode,
+  runStatus: WorkflowRunT['status'],
+): WorkflowGraphNode {
+  const children = node.children.map((child) => graphNodeFromTreeNode(child, runStatus));
   return {
     id: node.item.id,
     title: node.item.title || node.item.id,
     kind: node.item.kind,
-    status: node.item.status,
+    status: normalizeTerminalGraphStatus(runStatus, node.item.status),
     children,
     descendantCount: children.reduce((sum, child) => sum + 1 + child.descendantCount, 0),
   };
+}
+
+function normalizeTerminalGraphStatus(
+  runStatus: WorkflowRunT['status'],
+  status: WorkflowGraphStatus,
+): WorkflowGraphStatus {
+  if (runStatus === 'running' || runStatus === 'paused') return status;
+  if (
+    status === 'completed' ||
+    status === 'failed' ||
+    status === 'cancelled' ||
+    status === 'skipped'
+  ) {
+    return status;
+  }
+  if (runStatus === 'completed') return 'completed';
+  if (status === 'pending') return 'skipped';
+  return runStatus;
 }
 
 function countNodes(nodes: readonly WorkflowGraphNode[]): WorkflowGraphCounts {
