@@ -33,6 +33,7 @@ import {
   relatedRunsForSavedWorkflow,
   savedWorkflowKey,
   sortWorkflowRunsForManagement,
+  workflowRunBelongsToProject,
   workflowRunTitle,
   type SavedWorkflowRef,
   type WorkflowLibrary,
@@ -61,10 +62,12 @@ export function WorkflowManagementPanel(): JSX.Element {
   const sessions = useAppStore((s) => s.sessions);
   const workflowRuns = useAppStore((s) => s.workflowRuns);
   const setCurrentSession = useAppStore((s) => s.setCurrentSession);
+  const seedWorkflowRuns = useAppStore((s) => s.seedWorkflowRuns);
   const currentSurface = useSurfaceStore((s) => s.currentSurface);
 
   const [library, setLibrary] = useState<WorkflowLibrary | null>(null);
   const [loadingLibrary, setLoadingLibrary] = useState(false);
+  const [loadingRuns, setLoadingRuns] = useState(false);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [selection, setSelection] = useState<WorkflowManagementSelection | null>(null);
 
@@ -81,11 +84,17 @@ export function WorkflowManagementPanel(): JSX.Element {
   const runs = useMemo(
     () =>
       sortWorkflowRunsForManagement(
-        Object.values(workflowRuns).filter(
-          (run) => run.sessionId !== undefined && projectSessionIds.has(run.sessionId),
+        Object.values(workflowRuns).filter((run) =>
+          workflowRunBelongsToProject({
+            run,
+            currentProjectPath,
+            currentSessionId,
+            currentSurface,
+            projectSessionIds,
+          }),
         ),
       ),
-    [projectSessionIds, workflowRuns],
+    [currentProjectPath, currentSessionId, currentSurface, projectSessionIds, workflowRuns],
   );
   const saved = library?.saved ?? [];
   const activeRuns = runs.filter((run) => run.status === 'running' || run.status === 'paused');
@@ -119,6 +128,24 @@ export function WorkflowManagementPanel(): JSX.Element {
       cancelled = true;
     };
   }, [currentProjectPath, refreshNonce]);
+
+  useEffect(() => {
+    if (!currentProjectPath) return;
+    let cancelled = false;
+    setLoadingRuns(true);
+    void window.kodaxSpace
+      ?.invoke('workflow.list', undefined)
+      .then((result) => {
+        if (!cancelled && result.ok) seedWorkflowRuns(result.data.runs);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoadingRuns(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentProjectPath, refreshNonce, seedWorkflowRuns]);
 
   useEffect(() => {
     setSelection((current) =>
@@ -158,7 +185,9 @@ export function WorkflowManagementPanel(): JSX.Element {
           title="Refresh workflow library"
           aria-label="Refresh workflow library"
         >
-          <RefreshCw className={`h-3.5 w-3.5 ${loadingLibrary ? 'animate-spin' : ''}`} />
+          <RefreshCw
+            className={`h-3.5 w-3.5 ${loadingLibrary || loadingRuns ? 'animate-spin' : ''}`}
+          />
         </button>
       </div>
 
@@ -167,7 +196,9 @@ export function WorkflowManagementPanel(): JSX.Element {
           <WorkflowLauncher />
           <ManagementSection title="Runs" count={runs.length}>
             {runs.length === 0 ? (
-              <EmptyLine>No workflow runs.</EmptyLine>
+              <EmptyLine>
+                {loadingRuns ? 'Loading workflow runs...' : 'No workflow runs.'}
+              </EmptyLine>
             ) : (
               <ul className="space-y-1">
                 {runs.map((run) => (
@@ -184,7 +215,9 @@ export function WorkflowManagementPanel(): JSX.Element {
 
           <ManagementSection title="Saved" count={saved.length}>
             {saved.length === 0 ? (
-              <EmptyLine>{loadingLibrary ? 'Loading workflows...' : 'No saved workflows.'}</EmptyLine>
+              <EmptyLine>
+                {loadingLibrary ? 'Loading workflows...' : 'No saved workflows.'}
+              </EmptyLine>
             ) : (
               <ul className="space-y-1">
                 {saved.map((item) => {
@@ -609,7 +642,10 @@ function EmptyState(): JSX.Element {
 }
 
 async function pauseWorkflow(runId: string): Promise<void> {
-  await invokeWorkflowControl(window.kodaxSpace?.invoke('workflow.pause', { runId }), 'Pause failed');
+  await invokeWorkflowControl(
+    window.kodaxSpace?.invoke('workflow.pause', { runId }),
+    'Pause failed',
+  );
 }
 
 async function resumeWorkflow(runId: string): Promise<void> {

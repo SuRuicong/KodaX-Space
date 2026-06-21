@@ -935,13 +935,14 @@ export const useAppStore = create<AppState>((set) => ({
   // F060 Workflow Harness：push workflow.event → 覆盖式 upsert（每事件带全量 snapshot）。
   upsertWorkflowRun: (payload) =>
     set((state) => {
-      const { snapshot, sessionId, surface } = payload;
+      const { snapshot, sessionId, surface, projectRoot } = payload;
       const eventMessage = payload.message?.trim();
       const run: WorkflowRunT = {
         ...snapshot,
         ...(eventMessage ? { latestMessage: eventMessage } : {}),
         ...(sessionId !== undefined ? { sessionId } : {}),
         ...(surface !== undefined ? { surface } : {}),
+        ...(projectRoot !== undefined ? { projectRoot } : {}),
       };
       return { workflowRuns: capWorkflowRuns({ ...state.workflowRuns, [run.runId]: run }) };
     }),

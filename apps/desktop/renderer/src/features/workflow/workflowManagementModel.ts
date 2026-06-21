@@ -1,4 +1,8 @@
-import type { ChannelOutput, WorkflowProcessStatusT, WorkflowRunT } from '@kodax-space/space-ipc-schema';
+import type {
+  ChannelOutput,
+  WorkflowProcessStatusT,
+  WorkflowRunT,
+} from '@kodax-space/space-ipc-schema';
 
 export type WorkflowLibrary = ChannelOutput<'workflow.library'>;
 export type SavedWorkflowRef = WorkflowLibrary['saved'][number];
@@ -21,6 +25,34 @@ export function savedWorkflowKey(saved: SavedWorkflowRef): string {
 
 export function workflowRunTitle(run: WorkflowRunT): string {
   return run.displayName ?? run.workflowName ?? run.runId;
+}
+
+export function workflowRunProjectRoot(run: WorkflowRunT): string | undefined {
+  const hostProjectRoot = run.hostMetadata?.projectRoot;
+  return run.projectRoot ?? (hostProjectRoot ? hostProjectRoot : undefined);
+}
+
+export function workflowRunBelongsToProject(input: {
+  readonly run: WorkflowRunT;
+  readonly currentProjectPath: string | null;
+  readonly currentSessionId: string | null;
+  readonly currentSurface: WorkflowRunT['surface'];
+  readonly projectSessionIds: ReadonlySet<string>;
+}): boolean {
+  const { run, currentProjectPath, currentSessionId, currentSurface, projectSessionIds } = input;
+  if (run.surface !== undefined && run.surface !== currentSurface) return false;
+  if (
+    run.sessionId !== undefined &&
+    (projectSessionIds.has(run.sessionId) || run.sessionId === currentSessionId)
+  ) {
+    return true;
+  }
+  const runProjectRoot = workflowRunProjectRoot(run);
+  return (
+    runProjectRoot !== undefined &&
+    currentProjectPath !== null &&
+    normalizeProjectPath(runProjectRoot) === normalizeProjectPath(currentProjectPath)
+  );
 }
 
 export function sortWorkflowRunsForManagement(
@@ -53,7 +85,9 @@ export function chooseWorkflowManagementSelection(input: {
   const currentSessionActive =
     input.currentSessionId === null
       ? undefined
-      : input.runs.find((run) => isActiveWorkflowRun(run) && run.sessionId === input.currentSessionId);
+      : input.runs.find(
+          (run) => isActiveWorkflowRun(run) && run.sessionId === input.currentSessionId,
+        );
   const active = currentSessionActive ?? input.runs.find(isActiveWorkflowRun);
   const latest = active ?? input.runs[0];
   if (latest) return { kind: 'run', id: latest.runId };
@@ -98,4 +132,13 @@ function normalizeWorkflowName(value: string | undefined): string {
   return base
     .replace(/\.workflow\.(mjs|cjs|js|ts|tsx)$/i, '')
     .replace(/\.(mjs|cjs|js|ts|tsx)$/i, '');
+}
+
+function normalizeProjectPath(value: string): string {
+  const normalized = value.replace(/\\/g, '/').replace(/\/+$/, '');
+  return looksLikeWindowsPath(value) ? normalized.toLowerCase() : normalized;
+}
+
+function looksLikeWindowsPath(value: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith('\\\\') || value.startsWith('//');
 }

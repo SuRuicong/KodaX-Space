@@ -12,7 +12,7 @@
 // 自持久化的 runId→{sessionId,surface} 映射(F063/F064 启动时 registerOrigin)。落
 // ~/.kodax/space/workflow-origins.json,进程重启仍可归属。SDK 补 origin 字段后此映射可下线。
 
-import { promises as fs, readFileSync } from 'node:fs';
+import { promises as fs, readFileSync, readdirSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -123,6 +123,7 @@ export interface WorkflowLifecycleLike {
 export interface WorkflowOrigin {
   readonly sessionId?: string;
   readonly surface?: 'code' | 'partner';
+  readonly projectRoot?: string;
 }
 
 type PushFn = (payload: WorkflowEventPayload) => void;
@@ -308,6 +309,230 @@ function readWorkflowManifestPatterns(
   return undefined;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function readJsonObject(filePath: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(readFileSync(filePath, 'utf8'));
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isoTimestamp(value: unknown, fallback?: string): string {
+  if (typeof value === 'string' && value.length > 0) {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : value.slice(0, IPC_SHORT_MAX);
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return new Date(value).toISOString();
+  }
+  return fallback ?? new Date(0).toISOString();
+}
+
+function workflowStatus(value: unknown): WorkflowRunT['status'] {
+  return value === 'running' ||
+    value === 'paused' ||
+    value === 'completed' ||
+    value === 'failed' ||
+    value === 'cancelled'
+    ? value
+    : 'completed';
+}
+
+function durableWorkflowName(raw: Record<string, unknown>, runId: string): string {
+  return (
+    clampPlainText(raw.workflowName, IPC_SHORT_MAX) ??
+    clampPlainText(raw.workflow, IPC_SHORT_MAX) ??
+    clampPlainText(raw.displayName, IPC_SHORT_MAX) ??
+    runId
+  );
+}
+
+function durableGoal(raw: Record<string, unknown>): string | undefined {
+  const direct = clampHumanText(raw.goal, IPC_MSG_MAX);
+  if (direct !== undefined) return direct;
+  const args = raw.args;
+  if (!isRecord(args)) return undefined;
+  return clampHumanText(args.request, IPC_MSG_MAX);
+}
+
+function durableArtifacts(value: unknown): unknown[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, IPC_MAX_ARTIFACTS).flatMap((item) => {
+    if (typeof item === 'string') return [{ name: item }];
+    if (isRecord(item)) return [item];
+    return [];
+  });
+}
+
+function countDurableItems(items: readonly unknown[]): WorkflowRunT['counts'] {
+  const counts: WorkflowRunT['counts'] = {
+    pending: 0,
+    running: 0,
+    completed: 0,
+    failed: 0,
+    cancelled: 0,
+    skipped: 0,
+  };
+  for (const item of items) {
+    if (!isRecord(item)) continue;
+    const status = item.status;
+    if (
+      status === 'pending' ||
+      status === 'running' ||
+      status === 'completed' ||
+      status === 'failed' ||
+      status === 'cancelled' ||
+      status === 'skipped'
+    ) {
+      counts[status] += 1;
+    }
+  }
+  return counts;
+}
+
+function durableCounts(
+  raw: Record<string, unknown>,
+  items: readonly unknown[],
+): WorkflowRunT['counts'] {
+  const counts = raw.counts;
+  if (!isRecord(counts)) return countDurableItems(items);
+  return {
+    pending: nonnegativeInt(counts.pending),
+    running: nonnegativeInt(counts.running),
+    completed: nonnegativeInt(counts.completed),
+    failed: nonnegativeInt(counts.failed),
+    cancelled: nonnegativeInt(counts.cancelled),
+    skipped: nonnegativeInt(counts.skipped),
+  };
+}
+
+function durableProgress(
+  raw: Record<string, unknown>,
+  status: WorkflowRunT['status'],
+  items: readonly unknown[],
+): WorkflowRunT['progress'] {
+  if (isRecord(raw.progress)) {
+    return {
+      spawnedAgents: nonnegativeInt(raw.progress.spawnedAgents),
+      finishedAgents: nonnegativeInt(raw.progress.finishedAgents),
+      activeAgents: nonnegativeInt(raw.progress.activeAgents),
+      failedAgents: nonnegativeInt(raw.progress.failedAgents),
+      stoppedAgents: nonnegativeInt(raw.progress.stoppedAgents),
+      ...(typeof raw.progress.agentCap === 'number'
+        ? { agentCap: nonnegativeInt(raw.progress.agentCap) }
+        : {}),
+      ...(typeof raw.progress.plannedItems === 'number'
+        ? { plannedItems: nonnegativeInt(raw.progress.plannedItems) }
+        : {}),
+    };
+  }
+  const totalSpawned =
+    nonnegativeInt(raw.totalSpawned) ||
+    items.filter((item) => isRecord(item) && item.kind === 'agent').length;
+  const failedAgents = items.filter((item) => isRecord(item) && item.status === 'failed').length;
+  const stoppedAgents = items.filter(
+    (item) => isRecord(item) && item.status === 'cancelled',
+  ).length;
+  const activeAgents =
+    status === 'running'
+      ? items.filter((item) => isRecord(item) && item.status === 'running').length
+      : 0;
+  const finishedAgents = Math.max(0, totalSpawned - activeAgents - failedAgents - stoppedAgents);
+  return {
+    spawnedAgents: totalSpawned,
+    finishedAgents,
+    activeAgents,
+    failedAgents,
+    stoppedAgents,
+    ...(totalSpawned > 0 ? { plannedItems: totalSpawned } : {}),
+  };
+}
+
+function durableSnapshotFromRunJson(
+  raw: Record<string, unknown>,
+  runId: string,
+  runDir: string,
+): SdkProcessSnapshot | null {
+  const id = clampPlainText(raw.runId, IPC_SHORT_MAX) ?? runId;
+  if (id !== runId) return null;
+  const status = workflowStatus(raw.status);
+  const startedAt = isoTimestamp(raw.startedAt);
+  const updatedAt = isoTimestamp(raw.updatedAt ?? raw.endedAt, startedAt);
+  const items = Array.isArray(raw.items) ? raw.items : [];
+  const workflowName = durableWorkflowName(raw, runId);
+  const goal = durableGoal(raw);
+  return {
+    ...raw,
+    runId,
+    workflowName,
+    displayName: clampPlainText(raw.displayName, IPC_SHORT_MAX) ?? workflowName,
+    status,
+    startedAt,
+    updatedAt,
+    items,
+    counts: durableCounts(raw, items),
+    progress: durableProgress(raw, status, items),
+    artifacts: durableArtifacts(raw.artifacts),
+    ...(goal !== undefined ? { goal } : {}),
+    manifestSnapshotPath:
+      clampPlainText(raw.manifestSnapshotPath, IPC_PATH_MAX) ?? path.join(runDir, 'manifest.json'),
+    scriptSnapshotPath:
+      clampPlainText(raw.scriptSnapshotPath, IPC_PATH_MAX) ?? path.join(runDir, 'script.js'),
+  };
+}
+
+function readDurableWorkflowSnapshot(
+  runBaseDir: string,
+  runId: string,
+): SdkProcessSnapshot | undefined {
+  const runDir = generatedRunDir(runBaseDir, runId);
+  if (runDir === null) return undefined;
+  const raw = readJsonObject(path.join(runDir, 'run.json'));
+  return raw ? (durableSnapshotFromRunJson(raw, runId, runDir) ?? undefined) : undefined;
+}
+
+function listDurableWorkflowSnapshots(
+  runBaseDir: string,
+  limit: number,
+): readonly SdkProcessSnapshot[] {
+  let entries: string[];
+  try {
+    entries = readdirSync(runBaseDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && GENERATED_RUN_ID_RE.test(entry.name))
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+
+  return entries
+    .map((runId) => {
+      const runDir = path.join(runBaseDir, runId);
+      const runJson = path.join(runDir, 'run.json');
+      let mtime = 0;
+      try {
+        mtime = statSync(runJson).mtimeMs;
+      } catch {
+        try {
+          mtime = statSync(runDir).mtimeMs;
+        } catch {
+          mtime = 0;
+        }
+      }
+      return { runId, mtime };
+    })
+    .sort((a, b) => b.mtime - a.mtime)
+    .slice(0, limit)
+    .flatMap(({ runId }) => {
+      const snapshot = readDurableWorkflowSnapshot(runBaseDir, runId);
+      return snapshot ? [snapshot] : [];
+    });
+}
+
 interface OriginsFile {
   readonly version: 1;
   readonly origins: Record<string, WorkflowOrigin>;
@@ -334,7 +559,7 @@ export class WorkflowController {
     private readonly push: PushFn = defaultPush,
     private readonly originsFile: string = path.join(getSpaceDataDir(), 'workflow-origins.json'),
     /** Space 自有 run base dir——F063 启动 run 与 F062 durable 控制(delete/prune)共用。 */
-    private readonly runBaseDir: string = path.join(getSpaceDataDir(), 'workflow-runs'),
+    private readonly runBaseDir: string = path.join(path.dirname(originsFile), 'workflow-runs'),
   ) {}
 
   /**
@@ -393,6 +618,7 @@ export class WorkflowController {
       message: reason ?? 'workflow stopped',
       ...(origin.sessionId !== undefined ? { sessionId: origin.sessionId } : {}),
       ...(origin.surface !== undefined ? { surface: origin.surface } : {}),
+      ...(origin.projectRoot !== undefined ? { projectRoot: origin.projectRoot } : {}),
     });
     return true;
   }
@@ -655,7 +881,11 @@ export class WorkflowController {
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
     }
-    this.registerOrigin(runId, { sessionId: s.sessionId, surface: s.surface });
+    this.registerOrigin(runId, {
+      sessionId: s.sessionId,
+      surface: s.surface,
+      projectRoot: s.projectRoot,
+    });
     return { runId };
   }
 
@@ -923,19 +1153,27 @@ export class WorkflowController {
 
   /** 切 session 时播种:列出已知 run(可按 sessionId 过滤),带归属。*/
   list(sessionId?: string): WorkflowRunT[] {
-    if (!this.manager) return [];
-    // 传 limit 上限——SDK 默认返回进程内全部 snapshot,无界 list 会撑大 IPC payload。
-    // 与 MAX_ORIGINS / renderer 侧 MAX_WORKFLOW_RUNS 对齐。
-    const snapshots = this.manager.listWorkflowProcessSnapshots({ limit: MAX_ORIGINS });
-    const runs = snapshots.map((s) => this.attribute(s));
+    const snapshotsByRunId = new Map<string, SdkProcessSnapshot>();
+    for (const snapshot of listDurableWorkflowSnapshots(this.runBaseDir, MAX_ORIGINS)) {
+      snapshotsByRunId.set(snapshot.runId, snapshot);
+    }
+    for (const snapshot of this.manager?.listWorkflowProcessSnapshots({ limit: MAX_ORIGINS }) ??
+      []) {
+      snapshotsByRunId.set(snapshot.runId, snapshot);
+    }
+    const runs = [...snapshotsByRunId.values()]
+      .map((s) => this.attribute(s))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .slice(0, MAX_ORIGINS);
     if (sessionId === undefined) return runs;
     return runs.filter((r) => r.sessionId === sessionId);
   }
 
   /** 按 runId 取单个 snapshot(带归属);不存在返回 null。*/
   get(runId: string): WorkflowRunT | null {
-    if (!this.manager) return null;
-    const snap = this.manager.getWorkflowProcessSnapshot(runId);
+    const snap =
+      this.manager?.getWorkflowProcessSnapshot(runId) ??
+      readDurableWorkflowSnapshot(this.runBaseDir, runId);
     return snap ? this.attribute(snap) : null;
   }
 
@@ -971,6 +1209,7 @@ export class WorkflowController {
       host: 'kodax-space',
       sessionId: s.sessionId,
       surface: s.surface,
+      projectRoot: s.projectRoot,
       ...(normalizedPatterns
         ? { [HOST_METADATA_PATTERNS_KEY]: JSON.stringify(normalizedPatterns) }
         : {}),
@@ -1011,6 +1250,7 @@ export class WorkflowController {
     this.registerOrigin(runId, {
       sessionId: input.session.sessionId,
       surface: input.session.surface,
+      projectRoot: input.session.projectRoot,
     });
     return { runId };
   }
@@ -1026,6 +1266,7 @@ export class WorkflowController {
       ...(message !== undefined ? { message } : {}),
       ...(origin.sessionId !== undefined ? { sessionId: origin.sessionId } : {}),
       ...(origin.surface !== undefined ? { surface: origin.surface } : {}),
+      ...(origin.projectRoot !== undefined ? { projectRoot: origin.projectRoot } : {}),
     });
     // F066:run 终态时把产出的 artifact 桥进 Space artifact 层（方案 A）。fire-and-forget + 顶层 catch。
     if (event.type === 'workflow_finished') {
@@ -1094,6 +1335,7 @@ export class WorkflowController {
       ...run,
       ...(origin.sessionId !== undefined ? { sessionId: origin.sessionId } : {}),
       ...(origin.surface !== undefined ? { surface: origin.surface } : {}),
+      ...(origin.projectRoot !== undefined ? { projectRoot: origin.projectRoot } : {}),
     };
   }
 
@@ -1112,10 +1354,15 @@ export class WorkflowController {
       typeof meta?.sessionId === 'string' && meta.sessionId.length > 0 ? meta.sessionId : undefined;
     const surface =
       meta?.surface === 'code' || meta?.surface === 'partner' ? meta.surface : undefined;
-    if (sessionId !== undefined || surface !== undefined) {
+    const projectRoot =
+      typeof meta?.projectRoot === 'string' && meta.projectRoot.length > 0
+        ? meta.projectRoot
+        : undefined;
+    if (sessionId !== undefined || surface !== undefined || projectRoot !== undefined) {
       return {
         ...(sessionId !== undefined ? { sessionId } : {}),
         ...(surface !== undefined ? { surface } : {}),
+        ...(projectRoot !== undefined ? { projectRoot } : {}),
       };
     }
     return this.origins.get(snapshot.runId) ?? {};
@@ -1136,6 +1383,9 @@ export class WorkflowController {
               (o as { sessionId?: string }).sessionId = so.sessionId;
             if (so.surface === 'code' || so.surface === 'partner') {
               (o as { surface?: 'code' | 'partner' }).surface = so.surface;
+            }
+            if (typeof so.projectRoot === 'string') {
+              (o as { projectRoot?: string }).projectRoot = so.projectRoot;
             }
             this.origins.set(runId, o);
           }

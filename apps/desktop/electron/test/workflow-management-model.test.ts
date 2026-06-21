@@ -6,6 +6,7 @@ import {
   relatedRunsForSavedWorkflow,
   savedWorkflowKey,
   sortWorkflowRunsForManagement,
+  workflowRunBelongsToProject,
 } from '../../renderer/src/features/workflow/workflowManagementModel.js';
 
 function run(over: Partial<WorkflowRunT> & { runId: string }): WorkflowRunT {
@@ -89,5 +90,40 @@ test('workflow management matches saved workflow to historical runs', () => {
   assert.deepEqual(
     relatedRunsForSavedWorkflow(saved, runs).map((item) => item.runId),
     ['wf-1', 'wf-3'],
+  );
+});
+
+test('workflow management includes persisted project runs without a known session', () => {
+  const projectSessionIds = new Set<string>();
+  assert.equal(
+    workflowRunBelongsToProject({
+      run: run({
+        runId: 'wf-project',
+        surface: 'code',
+        projectRoot: 'C:\\Works\\Repo',
+      }),
+      currentProjectPath: 'c:/works/repo/',
+      currentSessionId: 's-current',
+      currentSurface: 'code',
+      projectSessionIds,
+    }),
+    true,
+  );
+});
+
+test('workflow management rejects persisted project runs from another surface', () => {
+  assert.equal(
+    workflowRunBelongsToProject({
+      run: run({
+        runId: 'wf-partner',
+        surface: 'partner',
+        hostMetadata: { projectRoot: 'C:\\Works\\Repo' },
+      }),
+      currentProjectPath: 'C:\\Works\\Repo',
+      currentSessionId: null,
+      currentSurface: 'code',
+      projectSessionIds: new Set(),
+    }),
+    false,
   );
 });

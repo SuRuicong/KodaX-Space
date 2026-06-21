@@ -59,6 +59,7 @@ interface WorkflowEventForTest {
   message?: string;
   sessionId: string;
   surface: 'code';
+  projectRoot?: string;
 }
 
 interface SessionListEnvelope {
@@ -129,6 +130,41 @@ async function emitWorkflowEvent(
     if (!win) throw new Error('No BrowserWindow available');
     win.webContents.send('workflow.event', eventPayload);
   }, payload);
+}
+
+async function writePersistedWorkflowRun(
+  space: SpaceInstance,
+  projectDir: string,
+): Promise<string> {
+  const runId = 'wf_persisted_e2e';
+  const runDir = path.join(space.testDataDir, 'space', 'workflow-runs', runId);
+  await fs.mkdir(runDir, { recursive: true });
+  await fs.writeFile(
+    path.join(runDir, 'manifest.json'),
+    JSON.stringify({ patterns: ['fan-out-and-synthesize'] }),
+  );
+  await fs.writeFile(
+    path.join(runDir, 'run.json'),
+    JSON.stringify({
+      runId,
+      workflow: 'Persisted Workflow Review',
+      displayName: 'Persisted Workflow Review',
+      status: 'completed',
+      startedAt: '2026-06-21T01:00:00.000Z',
+      endedAt: '2026-06-21T01:01:00.000Z',
+      totalSpawned: 1,
+      args: { request: 'Restore completed workflow history' },
+      items: [{ id: 'a1', title: 'Reviewer', kind: 'agent', status: 'completed' }],
+      artifacts: ['final-report'],
+      resultSummary: '# Persisted final report\n\nRecovered from disk.',
+      hostMetadata: {
+        sessionId: 'persisted-session',
+        surface: 'code',
+        projectRoot: projectDir,
+      },
+    }),
+  );
+  return runId;
 }
 
 test('workflow push events update the sidebar and transcript through completion', async () => {
@@ -282,6 +318,27 @@ test('workflow push events update the sidebar and transcript through completion'
       }),
     ).toBeVisible({ timeout: 5_000 });
     await expect(stream).toContainText('# Final workflow report');
+  } finally {
+    await space.close();
+    await fs.rm(projectDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test('workflow manager restores completed runs persisted on disk', async () => {
+  const testId = `workflow-history-${Date.now()}`;
+  const { space, projectDir } = await launchSeededSpace(testId);
+  try {
+    await writePersistedWorkflowRun(space, projectDir);
+
+    await space.page.getByRole('button', { name: 'Open workflow panel' }).click();
+    const panel = space.page.getByTestId('workflow-management-panel');
+    await expect(panel).toBeVisible({ timeout: 5_000 });
+    await expect(panel).toContainText('Persisted Workflow Review', { timeout: 5_000 });
+    await expect(panel).toContainText('completed');
+    await expect(panel.getByTestId('workflow-management-detail')).toContainText(
+      'Recovered from disk.',
+    );
+    await expect(panel.getByLabel('Workflow flow graph')).toContainText('fan-out');
   } finally {
     await space.close();
     await fs.rm(projectDir, { recursive: true, force: true }).catch(() => {});

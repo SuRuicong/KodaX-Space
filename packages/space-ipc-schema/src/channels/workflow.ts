@@ -148,6 +148,7 @@ export type WorkflowProcessSnapshotT = z.infer<typeof workflowProcessSnapshotSch
 export const workflowRunSchema = workflowProcessSnapshotSchema.extend({
   sessionId: z.string().min(1).max(128).optional(),
   surface: workflowSurfaceSchema.optional(),
+  projectRoot: z.string().max(4096).optional(),
 });
 export type WorkflowRunT = z.infer<typeof workflowRunSchema>;
 
@@ -166,6 +167,7 @@ export const workflowEventChannel = {
     /** Host 归属:发起该 run 的 session;外部发起的 run 无此字段。*/
     sessionId: z.string().min(1).max(128).optional(),
     surface: workflowSurfaceSchema.optional(),
+    projectRoot: z.string().max(4096).optional(),
   }),
 } as const;
 export type WorkflowEventPayload = z.infer<typeof workflowEventChannel.payload>;

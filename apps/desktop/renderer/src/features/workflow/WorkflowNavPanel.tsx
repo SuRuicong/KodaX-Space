@@ -26,6 +26,7 @@ import type {
 import { useSurfaceStore } from '../../store/surface.js';
 import { useAppStore } from '../../store/appStore.js';
 import { pushToast } from '../../store/toastStore.js';
+import { workflowRunBelongsToProject } from './workflowManagementModel.js';
 
 type WorkflowLibrary = ChannelOutput<'workflow.library'>;
 type SavedWorkflow = WorkflowLibrary['saved'][number];
@@ -58,6 +59,7 @@ export function WorkflowNavPanel(): JSX.Element | null {
   const sessions = useAppStore((s) => s.sessions);
   const workflowRuns = useAppStore((s) => s.workflowRuns);
   const setCurrentSession = useAppStore((s) => s.setCurrentSession);
+  const seedWorkflowRuns = useAppStore((s) => s.seedWorkflowRuns);
   const requestPopout = useAppStore((s) => s.requestPopout);
   const currentSurface = useSurfaceStore((s) => s.currentSurface);
   const [open, setOpen] = useState(true);
@@ -77,9 +79,17 @@ export function WorkflowNavPanel(): JSX.Element | null {
 
   const runs = useMemo(() => {
     return Object.values(workflowRuns)
-      .filter((run) => run.sessionId !== undefined && projectSessionIds.has(run.sessionId))
+      .filter((run) =>
+        workflowRunBelongsToProject({
+          run,
+          currentProjectPath,
+          currentSessionId,
+          currentSurface,
+          projectSessionIds,
+        }),
+      )
       .sort(sortWorkflowRuns);
-  }, [projectSessionIds, workflowRuns]);
+  }, [currentProjectPath, currentSessionId, currentSurface, projectSessionIds, workflowRuns]);
 
   useEffect(() => {
     if (!open || !currentProjectPath) {
@@ -104,6 +114,21 @@ export function WorkflowNavPanel(): JSX.Element | null {
       cancelled = true;
     };
   }, [currentProjectPath, open, refreshNonce]);
+
+  const refreshWorkflowRuns = useCallback(() => {
+    if (!currentProjectPath) return;
+    void window.kodaxSpace
+      ?.invoke('workflow.list', undefined)
+      .then((result) => {
+        if (result.ok) seedWorkflowRuns(result.data.runs);
+      })
+      .catch(() => {});
+  }, [currentProjectPath, seedWorkflowRuns]);
+
+  useEffect(() => {
+    if (!open) return;
+    refreshWorkflowRuns();
+  }, [open, refreshNonce, refreshWorkflowRuns]);
 
   const refreshLibrary = useCallback(() => {
     setRefreshNonce((value) => value + 1);

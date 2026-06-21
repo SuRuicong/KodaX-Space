@@ -112,24 +112,33 @@ test('subscribe forwards process events to renderer (no attribution when origin 
 test('registerOrigin attributes subsequent events + list + get', async () => {
   const { dir, file } = freshFile();
   try {
-    const pushed: Array<{ sessionId?: string; surface?: string; snapshot: { runId: string } }> = [];
+    const pushed: Array<{
+      sessionId?: string;
+      surface?: string;
+      projectRoot?: string;
+      snapshot: { runId: string };
+    }> = [];
     const ctrl = new WorkflowController((p) => pushed.push(p as never), file);
     const mgr = fakeManager();
     await ctrl.init(mgr);
 
-    ctrl.registerOrigin('r1', { sessionId: 's_abc', surface: 'code' });
+    const projectRoot = join(dir, 'project');
+    ctrl.registerOrigin('r1', { sessionId: 's_abc', surface: 'code', projectRoot });
     mgr._emit({ type: 'workflow_updated', snapshot: sampleSnapshot('r1'), message: 'phase 2' });
 
     assert.equal(pushed.length, 1);
     assert.equal(pushed[0]?.sessionId, 's_abc');
     assert.equal(pushed[0]?.surface, 'code');
+    assert.equal(pushed[0]?.projectRoot, projectRoot);
 
     // list + get 也带归属
     const list = ctrl.list();
     assert.equal(list.length, 1);
     assert.equal(list[0]?.sessionId, 's_abc');
+    assert.equal(list[0]?.projectRoot, projectRoot);
     const got = ctrl.get('r1');
     assert.equal(got?.sessionId, 's_abc');
+    assert.equal(got?.projectRoot, projectRoot);
     assert.equal(ctrl.get('nope'), null);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -139,15 +148,21 @@ test('registerOrigin attributes subsequent events + list + get', async () => {
 test('hostMetadata attributes events + list + get without local origin registration', async () => {
   const { dir, file } = freshFile();
   try {
-    const pushed: Array<{ sessionId?: string; surface?: string; snapshot: { runId: string } }> = [];
+    const pushed: Array<{
+      sessionId?: string;
+      surface?: string;
+      projectRoot?: string;
+      snapshot: { runId: string };
+    }> = [];
     const ctrl = new WorkflowController((p) => pushed.push(p as never), file);
     const mgr = fakeManager();
     await ctrl.init(mgr);
+    const projectRoot = join(dir, 'project');
 
     mgr._emit({
       type: 'workflow_updated',
       snapshot: sampleSnapshot('r_meta', {
-        hostMetadata: { sessionId: 's_meta', surface: 'partner' },
+        hostMetadata: { sessionId: 's_meta', surface: 'partner', projectRoot },
       }),
       message: 'phase 2',
     });
@@ -155,8 +170,63 @@ test('hostMetadata attributes events + list + get without local origin registrat
     assert.equal(pushed.length, 1);
     assert.equal(pushed[0]?.sessionId, 's_meta');
     assert.equal(pushed[0]?.surface, 'partner');
+    assert.equal(pushed[0]?.projectRoot, projectRoot);
     assert.equal(ctrl.get('r_meta')?.sessionId, 's_meta');
+    assert.equal(ctrl.get('r_meta')?.projectRoot, projectRoot);
     assert.equal(ctrl.list('s_meta')[0]?.runId, 'r_meta');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('list and get restore completed workflow runs from durable run.json', async () => {
+  const { dir, file } = freshFile();
+  const runBaseDir = join(dir, 'workflow-runs');
+  const runId = 'wf_persisted_history';
+  const runDir = join(runBaseDir, runId);
+  const projectRoot = join(dir, 'project');
+  try {
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(
+      join(runDir, 'manifest.json'),
+      JSON.stringify({ patterns: ['fan-out-and-synthesize'] }),
+    );
+    writeFileSync(
+      join(runDir, 'run.json'),
+      JSON.stringify({
+        runId,
+        workflow: 'Persisted Review',
+        status: 'completed',
+        startedAt: 1781654400000,
+        endedAt: 1781654460000,
+        totalSpawned: 1,
+        args: { request: 'Review all current changes' },
+        items: [{ id: 'a1', title: 'reviewer', kind: 'agent', status: 'completed' }],
+        artifacts: ['final-report'],
+        resultSummary: '# Persisted final report\n\nRecovered from disk.',
+        hostMetadata: { sessionId: 's_hist', surface: 'code', projectRoot },
+      }),
+    );
+
+    const ctrl = new WorkflowController(() => {}, file, runBaseDir);
+    await ctrl.init(fakeManager());
+
+    const runs = ctrl.list();
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0]?.runId, runId);
+    assert.equal(runs[0]?.workflowName, 'Persisted Review');
+    assert.equal(runs[0]?.status, 'completed');
+    assert.equal(runs[0]?.sessionId, 's_hist');
+    assert.equal(runs[0]?.surface, 'code');
+    assert.equal(runs[0]?.projectRoot, projectRoot);
+    assert.deepEqual(runs[0]?.patterns, ['fan-out-and-synthesize']);
+    assert.equal(runs[0]?.artifacts?.[0]?.name, 'final-report');
+    assert.equal(runs[0]?.goal, 'Review all current changes');
+
+    const got = ctrl.get(runId);
+    assert.equal(got?.runId, runId);
+    assert.equal(got?.resultSummary, '# Persisted final report\n\nRecovered from disk.');
+    assert.equal(ctrl.list('s_hist')[0]?.runId, runId);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
