@@ -12,7 +12,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
-import { useAppStore, type UserMessage } from '../store/appStore.js';
+import { useAppStore, type UserMessage, type WorkflowNoticeMessage } from '../store/appStore.js';
 import { composeMessages, type ConversationMessage } from '../features/session/composeMessages.js';
 
 // **稳定空数组**：useAppStore selector 里返回 `?? []` literal 会每次 render 创建新引用，
@@ -20,6 +20,7 @@ import { composeMessages, type ConversationMessage } from '../features/session/c
 // (React error #185)。module-level const 让"空"case 复用同一引用。
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 const EMPTY_USER_MESSAGES: readonly UserMessage[] = [];
+const EMPTY_WORKFLOW_NOTICES: readonly WorkflowNoticeMessage[] = [];
 import {
   AssistantBubble,
   SystemNotice,
@@ -221,6 +222,11 @@ export function ConversationStreamV2(): JSX.Element {
       ? (s.userMessagesBySession[currentSessionId] ?? EMPTY_USER_MESSAGES)
       : EMPTY_USER_MESSAGES,
   );
+  const workflowNotices = useAppStore((s) =>
+    currentSessionId
+      ? (s.workflowNoticesBySession[currentSessionId] ?? EMPTY_WORKFLOW_NOTICES)
+      : EMPTY_WORKFLOW_NOTICES,
+  );
   // 用来判断 "is this session loading history?" — persisted session 在 SDK summary
   // 有 msgCount > 0,而 in-memory buffer 还是空的 → history.IPC 在 flight,显示骨架更友好
   const currentSessionMsgCount = useAppStore((s) => {
@@ -240,7 +246,10 @@ export function ConversationStreamV2(): JSX.Element {
   //   summary  = 只看结论：thinking / 工具组全部隐藏，只留 user / assistant 正文
   const transcriptView = useAppStore((s) => s.transcriptView);
 
-  const messages = useMemo(() => composeMessages({ events, userMessages }), [events, userMessages]);
+  const messages = useMemo(
+    () => composeMessages({ events, userMessages, workflowNotices }),
+    [events, userMessages, workflowNotices],
+  );
   const viewMessages = useMemo(
     () => groupTools(messages, transcriptView),
     [messages, transcriptView],

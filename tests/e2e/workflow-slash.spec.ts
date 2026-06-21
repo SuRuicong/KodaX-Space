@@ -24,10 +24,21 @@ test('workflow slash create sends on Enter and shows immediate progress', async 
     await textarea.fill(command);
     await textarea.press('Enter');
 
-    await expect(stream.getByText(command).first()).toBeVisible({ timeout: 2_000 });
-    await expect(stream.getByText('[workflow] generating workflow...').first()).toBeVisible({
+    await expect(
+      stream.getByTestId('user-message-bubble').filter({ hasText: command }),
+    ).toBeVisible({
       timeout: 2_000,
     });
+    await expect(
+      stream.locator('[data-testid="system-notice"][data-notice-variant="workflow"]', {
+        hasText: '[workflow] generating workflow...',
+      }),
+    ).toBeVisible({ timeout: 2_000 });
+    await expect(
+      stream
+        .getByTestId('user-message-bubble')
+        .filter({ hasText: '[workflow] generating workflow...' }),
+    ).toHaveCount(0);
   } finally {
     await space.close();
     await fs.rm(projectDir, { recursive: true, force: true }).catch(() => {});
@@ -46,10 +57,21 @@ test('workflow slash create send button shows immediate progress', async () => {
     await textarea.fill(command);
     await space.page.getByLabel('Send message').click();
 
-    await expect(stream.getByText(command).first()).toBeVisible({ timeout: 2_000 });
-    await expect(stream.getByText('[workflow] generating workflow...').first()).toBeVisible({
+    await expect(
+      stream.getByTestId('user-message-bubble').filter({ hasText: command }),
+    ).toBeVisible({
       timeout: 2_000,
     });
+    await expect(
+      stream.locator('[data-testid="system-notice"][data-notice-variant="workflow"]', {
+        hasText: '[workflow] generating workflow...',
+      }),
+    ).toBeVisible({ timeout: 2_000 });
+    await expect(
+      stream
+        .getByTestId('user-message-bubble')
+        .filter({ hasText: '[workflow] generating workflow...' }),
+    ).toHaveCount(0);
   } finally {
     await space.close();
     await fs.rm(projectDir, { recursive: true, force: true }).catch(() => {});

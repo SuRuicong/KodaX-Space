@@ -44,7 +44,7 @@
     "smoke:boot": "node e2e/boot-smoke-packaged.mjs"
   },
   "dependencies": {
-    "@kodax-ai/kodax": "^0.7.52"
+    "@kodax-ai/kodax": "^0.7.53"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

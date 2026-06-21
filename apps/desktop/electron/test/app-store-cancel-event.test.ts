@@ -24,6 +24,7 @@ beforeEach(() => {
     currentSessionId: SID,
     eventsBySession: {},
     pendingSendBySession: { [SID]: true },
+    notifications: [],
   });
 });
 
@@ -63,4 +64,31 @@ test('appendEvent accepts a later cancelled event after a new session_start', ()
     'session_start',
     'session_error',
   ]);
+});
+test('appendEvent turns todo drift warnings into session notifications', () => {
+  const store = useAppStore.getState();
+  store.appendEvent({
+    kind: 'todo_drift_warning',
+    sessionId: SID,
+    warning: {
+      kind: 'work_started_without_claimed_todo',
+      toolName: 'write',
+      toolCallId: 'tool_1',
+      count: 1,
+      pendingCount: 2,
+      openCount: 2,
+      firstPendingTodoId: 'todo_1',
+      firstPendingTodoSubject: 'Update tests',
+    },
+  });
+
+  const state = useAppStore.getState();
+  const events = state.eventsBySession[SID] ?? [];
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.kind, 'todo_drift_warning');
+  assert.equal(state.notifications.length, 1);
+  assert.equal(state.notifications[0]?.severity, 'info');
+  assert.equal(state.notifications[0]?.sessionId, SID);
+  assert.match(state.notifications[0]?.text ?? '', /Todo list drift detected/);
+  assert.match(state.notifications[0]?.text ?? '', /Update tests/);
 });

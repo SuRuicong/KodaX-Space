@@ -10,13 +10,18 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
-import { useAppStore, type UserMessage } from '../../../store/appStore.js';
+import {
+  useAppStore,
+  type UserMessage,
+  type WorkflowNoticeMessage,
+} from '../../../store/appStore.js';
 import { composeMessages } from '../composeMessages.js';
 import { AssistantBubble, SystemNotice, ToolCallCard, UserBubble } from './bubbles.js';
 
 // 稳定空数组，防 selector `?? []` literal 每次新引用触发 zustand re-render loop (React #185)。
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 const EMPTY_USER_MESSAGES: readonly UserMessage[] = [];
+const EMPTY_WORKFLOW_NOTICES: readonly WorkflowNoticeMessage[] = [];
 
 interface ConversationStreamProps {
   readonly sessionId: string;
@@ -28,7 +33,13 @@ export function ConversationStream({ sessionId }: ConversationStreamProps): JSX.
     (s) => s.userMessagesBySession[sessionId] ?? EMPTY_USER_MESSAGES,
   );
 
-  const messages = useMemo(() => composeMessages({ events, userMessages }), [events, userMessages]);
+  const workflowNotices = useAppStore(
+    (s) => s.workflowNoticesBySession[sessionId] ?? EMPTY_WORKFLOW_NOTICES,
+  );
+  const messages = useMemo(
+    () => composeMessages({ events, userMessages, workflowNotices }),
+    [events, userMessages, workflowNotices],
+  );
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const wasAtBottomRef = useRef<boolean>(true);

@@ -56,6 +56,7 @@ export default function App(): JSX.Element {
   const upsertWorkflowRun = useAppStore((s) => s.upsertWorkflowRun);
   const seedWorkflowRuns = useAppStore((s) => s.seedWorkflowRuns);
   const appendWorkflowActivity = useAppStore((s) => s.appendWorkflowActivity);
+  const setRightSidebarOpen = useAppStore((s) => s.setRightSidebarOpen);
   const providers = useAppStore((s) => s.providers);
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
   const unsubsRef = useRef<Array<() => void>>([]);
@@ -179,6 +180,14 @@ export default function App(): JSX.Element {
     unsubsRef.current.push(
       bridge.on('workflow.event', (payload) => {
         upsertWorkflowRun(payload);
+        if (
+          payload.type === 'workflow_started' &&
+          payload.sessionId !== undefined &&
+          payload.surface !== 'partner' &&
+          useAppStore.getState().currentSessionId === payload.sessionId
+        ) {
+          setRightSidebarOpen(true);
+        }
       }),
     );
     // F065 子 agent 活动遥测——归到 run 的有界活动桶（不进主 transcript）。
@@ -204,6 +213,7 @@ export default function App(): JSX.Element {
     upsertWorkflowRun,
     seedWorkflowRuns,
     appendWorkflowActivity,
+    setRightSidebarOpen,
   ]);
 
   // (Esc 关 settings 面板已下放到 SettingsModal 自己 own —— 见 features/settings/SettingsModal.tsx)

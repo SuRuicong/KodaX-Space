@@ -31,10 +31,7 @@ import {
   readVisualQuality,
   applyVisualQualityToDocument,
 } from '../lib/visualQuality.js';
-import {
-  replaceSessionsInScope,
-  type SessionScope,
-} from '../lib/sessionScope.js';
+import { replaceSessionsInScope, type SessionScope } from '../lib/sessionScope.js';
 
 /**
  * Persistent inline notification (NotificationsSurface 渲染源)。
@@ -86,6 +83,12 @@ export interface UserMessage {
   readonly sentAt: number;
 }
 
+export interface WorkflowNoticeMessage {
+  readonly id: string;
+  readonly content: string;
+  readonly sentAt: number;
+}
+
 interface AppState {
   // ----- 数据 -----
   projects: readonly Project[];
@@ -102,6 +105,8 @@ interface AppState {
   eventsBySession: Readonly<Record<string, readonly SessionEvent[]>>;
   /** 每个 sessionId 一桶用户消息（renderer 本地跟踪）。*/
   userMessagesBySession: Readonly<Record<string, readonly UserMessage[]>>;
+  /** Renderer-local workflow notices. These are not user turns and should not affect history/fork indices. */
+  workflowNoticesBySession: Readonly<Record<string, readonly WorkflowNoticeMessage[]>>;
   /**
    * 待用户决策的 permission 请求队列（FIFO）。
    * 一次只显示一个弹窗——多 session 并发时按到达顺序处理，已决策的弹下一个。
@@ -148,7 +153,9 @@ interface AppState {
    *
    * 未出现在表里的 session：从未点开 (eventsBuffer 空) → 走 dashboard 那边 msgCount × 1500 估算路径。
    */
-  tokensBySession: Readonly<Record<string, { tokens: number; source: 'iteration_end' | 'estimate' } | undefined>>;
+  tokensBySession: Readonly<
+    Record<string, { tokens: number; source: 'iteration_end' | 'estimate' } | undefined>
+  >;
   /** F008: 每个 session 的当前 harness profile（H0/H1/H2）+ round。
    *  alpha.1：也从 managed_task_status.harnessProfile/currentRound 派生（profile 名映射）。
    */
@@ -183,11 +190,7 @@ interface AppState {
    * idleWaiting / childFanoutCount / events[] 等。
    */
   managedTaskStatusBySession: Readonly<
-    Record<
-      string,
-      | Extract<SessionEvent, { kind: 'managed_task_status' }>['status']
-      | undefined
-    >
+    Record<string, Extract<SessionEvent, { kind: 'managed_task_status' }>['status'] | undefined>
   >;
   /**
    * Workflow Harness（F060）：已知 / 进行中的工作流 run，按 runId 扁平存（带 host 归属的 snapshot）。
@@ -230,7 +233,9 @@ interface AppState {
    *   - unread：sidebar 标题旁加 ● 圆点（用户标记，非自动）
    * v0.1.x SDK 出持久化字段后迁移到 SessionMeta。
    */
-  sessionFlags: Readonly<Record<string, { pinned?: boolean; archived?: boolean; unread?: boolean } | undefined>>;
+  sessionFlags: Readonly<
+    Record<string, { pinned?: boolean; archived?: boolean; unread?: boolean } | undefined>
+  >;
   /** UI 主题。dark = 当前默认；light = zinc-100 系；'system' = 跟 OS prefers-color-scheme。
    *  持久化到 localStorage 让重启后保持。*/
   theme: 'dark' | 'light' | 'system';
@@ -367,6 +372,7 @@ interface AppState {
   ): void;
   /** sentAt 可选——缺省 Date.now()；history restore 时传 session.createdAt 让旧消息显示真实时间。 */
   appendUserMessage(sessionId: string, content: string, sentAt?: number): void;
+  appendWorkflowNotice(sessionId: string, content: string, sentAt?: number): void;
   /**
    * v0.1.4 B3: BottomBar optimistic appendUserMessage 后若 IPC session.send 失败
    * （session disposed / 主进程错 / 等非 queue 路径），调本 action 把刚 push 的
@@ -454,7 +460,7 @@ interface AppState {
 
 // 单调 counter 用于生成 stable id——sessionId 内多条 user message 顺序唯一。
 let userMessageCounter = 0;
-
+let workflowNoticeCounter = 0;
 /**
  * 持久化 currentProjectPath 到 localStorage —— Vite HMR full reload / Electron renderer
  * 重载时，避免 zustand store 重置为 null 让 App.tsx 启动 effect 误把 currentProjectPath
@@ -593,8 +599,7 @@ function lsSet(key: string, value: string | null): void {
 // v0.1.9 Step 7 — 模块加载时一次性算 IS_WIN, 跟 LeftSidebar `IS_WIN` 同源 (review
 // MEDIUM-2)。reorderProjects 之前在 action 闭包里读 navigator.userAgent,跟 LeftSidebar
 // 的 IS_WIN module-const 双实现,逻辑上一致但脆弱;统一拉模块级常量。
-const IS_WIN_RENDERER =
-  typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent);
+const IS_WIN_RENDERER = typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent);
 
 // 2026-06: sidebar 宽度下限——拖到很窄时还能识别 icon + 一两个字符。
 const SIDEBAR_WIDTH_MIN = 180;
@@ -639,6 +644,7 @@ export const useAppStore = create<AppState>((set) => ({
   currentSessionId: null,
   eventsBySession: {},
   userMessagesBySession: {},
+  workflowNoticesBySession: {},
   permissionQueue: [],
   askUserQueue: [],
   providers: [],
@@ -669,7 +675,10 @@ export const useAppStore = create<AppState>((set) => ({
   pendingModel: readPersistedModel(),
   sessionFlags: {},
   recentsFilter: DEFAULT_RECENTS_FILTER,
-  theme: (typeof window !== 'undefined' && (localStorage.getItem('kodax-space.theme') as 'dark' | 'light' | 'system' | null)) || 'dark',
+  theme:
+    (typeof window !== 'undefined' &&
+      (localStorage.getItem('kodax-space.theme') as 'dark' | 'light' | 'system' | null)) ||
+    'dark',
   visualQuality: typeof window !== 'undefined' ? readVisualQuality() : 'balanced',
   transcriptView: 'normal',
   transcriptFontSize: 'base',
@@ -678,8 +687,14 @@ export const useAppStore = create<AppState>((set) => ({
   rightSidebarOpen: lsGet('kodax-space.rightSidebarOpen') === '1',
   leftSidebarOpen: lsGet('kodax-space.leftSidebarOpen') !== '0', // 默认开，"0" 表示用户主动关过
   // 2026-06: 默认对齐 Codex 桌面端 — 左 260, 右 320。坏值（NaN / <100 / >800）退回默认。
-  leftSidebarWidth: clampSidebarWidth(parseInt(lsGet('kodax-space.leftSidebarWidth') ?? '', 10), 260),
-  rightSidebarWidth: clampSidebarWidth(parseInt(lsGet('kodax-space.rightSidebarWidth') ?? '', 10), 320),
+  leftSidebarWidth: clampSidebarWidth(
+    parseInt(lsGet('kodax-space.leftSidebarWidth') ?? '', 10),
+    260,
+  ),
+  rightSidebarWidth: clampSidebarWidth(
+    parseInt(lsGet('kodax-space.rightSidebarWidth') ?? '', 10),
+    320,
+  ),
   // v0.1.9 fix: Shell activePopout 镜像 (临时 UI state,不持久化)
   activePopoutKind: null,
   // KX-I-02: smart director 默认 on。"0" 表示用户主动关过。
@@ -752,6 +767,20 @@ export const useAppStore = create<AppState>((set) => ({
       return {
         userMessagesBySession: {
           ...state.userMessagesBySession,
+          [sessionId]: [...bucket, msg],
+        },
+      };
+    }),
+
+  appendWorkflowNotice: (sessionId, content, sentAt) =>
+    set((state) => {
+      if (!state.sessions.some((s) => s.sessionId === sessionId)) return state;
+      const bucket = state.workflowNoticesBySession[sessionId] ?? [];
+      const id = `wf_${sessionId}_${++workflowNoticeCounter}`;
+      const msg: WorkflowNoticeMessage = { id, content, sentAt: sentAt ?? Date.now() };
+      return {
+        workflowNoticesBySession: {
+          ...state.workflowNoticesBySession,
           [sessionId]: [...bucket, msg],
         },
       };
@@ -847,18 +876,24 @@ export const useAppStore = create<AppState>((set) => ({
       const currentMsgs = state.userMessagesBySession[sessionId] ?? [];
       const currentEvents = state.eventsBySession[sessionId] ?? [];
       // v0.1.9 fix: 历史 events 已经发生过,director 不应该再"自动展开"那些信号触发的
-       // popout (用户点已有 session 不该弹 worker/diff/plan popout)。 扫一遍 histEvents,
-       // 提前 mark 该 session 已经"促发"过的 SmartPopoutKind,让 director 视为 already
-       // promoted = 不触发。逻辑跟 popout-director/rules.ts decideAutoPromote 同构,
-       // 但避免跨模块循环 import (store 不能 import rules.ts,rules.ts 已 import 不了 store)。
+      // popout (用户点已有 session 不该弹 worker/diff/plan popout)。 扫一遍 histEvents,
+      // 提前 mark 该 session 已经"促发"过的 SmartPopoutKind,让 director 视为 already
+      // promoted = 不触发。逻辑跟 popout-director/rules.ts decideAutoPromote 同构,
+      // 但避免跨模块循环 import (store 不能 import rules.ts,rules.ts 已 import 不了 store)。
       const FILE_MUTATION_TOOLS = new Set([
-        'write', 'edit', 'multi_edit', 'str_replace', 'insert_after_anchor',
+        'write',
+        'edit',
+        'multi_edit',
+        'str_replace',
+        'insert_after_anchor',
       ]);
       const histPromoted = new Set<string>(state.promotedPopoutsBySession[sessionId] ?? []);
       for (const ev of histEvents) {
-        if (ev.kind === 'tool_start' && FILE_MUTATION_TOOLS.has(ev.toolName)) histPromoted.add('diff');
+        if (ev.kind === 'tool_start' && FILE_MUTATION_TOOLS.has(ev.toolName))
+          histPromoted.add('diff');
         else if (ev.kind === 'todo_update' && ev.items.length > 0) histPromoted.add('plan');
-        else if (ev.kind === 'managed_task_status' && ev.status.activeWorkerId) histPromoted.add('tasks');
+        else if (ev.kind === 'managed_task_status' && ev.status.activeWorkerId)
+          histPromoted.add('tasks');
       }
       return {
         userMessagesBySession: {
@@ -1048,6 +1083,20 @@ export const useAppStore = create<AppState>((set) => ({
             [event.sessionId]: { profile, round: ws.currentRound },
           };
         }
+      } else if (event.kind === 'todo_drift_warning') {
+        const subject = event.warning.firstPendingTodoSubject
+          ? ` Pending item: "${event.warning.firstPendingTodoSubject.slice(0, 120)}".`
+          : '';
+        next.notifications = pushNotificationLocal(next.notifications ?? state.notifications, {
+          id: `todo-drift:${event.sessionId}:${event.warning.count}:${event.warning.toolCallId ?? event.warning.toolName}`,
+          severity: 'info',
+          text:
+            `Todo list drift detected while running ${event.warning.toolName}: ` +
+            `${event.warning.pendingCount} pending item(s), none marked in progress.` +
+            `${subject} KodaX nudged the agent to update todos.`,
+          sessionId: event.sessionId,
+          createdAt: Date.now(),
+        });
       } else if (event.kind === 'auto_engine_change') {
         // FEATURE_029: auto-mode engine 切换（user manual / denial threshold / circuit breaker
         // / bootstrap_failed）。更新 session.autoModeEngine 让 ModeSelector 立即反映；
@@ -1062,12 +1111,11 @@ export const useAppStore = create<AppState>((set) => ({
           // denial_threshold / circuit_breaker 沿用 reason→label 模板。
           let text: string;
           if (event.reason === 'bootstrap_failed') {
-            text = event.details
-              ?? `Auto-mode bootstrap failed; engine fell back to ${event.engine}.`;
+            text =
+              event.details ?? `Auto-mode bootstrap failed; engine fell back to ${event.engine}.`;
           } else {
-            const reasonLabel = event.reason === 'denial_threshold'
-              ? 'denial threshold'
-              : 'circuit breaker';
+            const reasonLabel =
+              event.reason === 'denial_threshold' ? 'denial threshold' : 'circuit breaker';
             text = `Auto-mode engine fell back to ${event.engine} (${reasonLabel}).`;
           }
           // 用 next.notifications ?? state.notifications 作输入: 防止未来其他分支也写
@@ -1122,6 +1170,7 @@ export const useAppStore = create<AppState>((set) => ({
       // 同时清掉对应事件 buffer 和 user message buffer——session 不在了，留着就是泄漏
       const { [sessionId]: _evt, ...restEvents } = state.eventsBySession;
       const { [sessionId]: _msg, ...restMsgs } = state.userMessagesBySession;
+      const { [sessionId]: _wfn, ...restWorkflowNotices } = state.workflowNoticesBySession;
       const { [sessionId]: _bud, ...restBudgets } = state.workBudgetBySession;
       const { [sessionId]: _prof, ...restProfiles } = state.harnessProfileBySession;
       const { [sessionId]: _todo, ...restTodos } = state.todoListBySession;
@@ -1141,6 +1190,7 @@ export const useAppStore = create<AppState>((set) => ({
         sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
         eventsBySession: restEvents,
         userMessagesBySession: restMsgs,
+        workflowNoticesBySession: restWorkflowNotices,
         workBudgetBySession: restBudgets,
         harnessProfileBySession: restProfiles,
         todoListBySession: restTodos,
@@ -1154,8 +1204,7 @@ export const useAppStore = create<AppState>((set) => ({
         askUserQueue: state.askUserQueue.filter((p) => p.sessionId !== sessionId),
         currentSessionId: state.currentSessionId === sessionId ? null : state.currentSessionId,
         // F009: 删 session 不能让 pending tool path / lastDiffPath 留指着已删 session
-        lastDiffPath:
-          state.currentSessionId === sessionId ? null : state.lastDiffPath,
+        lastDiffPath: state.currentSessionId === sessionId ? null : state.lastDiffPath,
       };
     }),
 
@@ -1312,13 +1361,21 @@ export const useAppStore = create<AppState>((set) => ({
   setRecentsFilter: (filter) => set({ recentsFilter: filter }),
   setTheme: (theme) => {
     if (typeof window !== 'undefined') {
-      try { localStorage.setItem('kodax-space.theme', theme); } catch { /* SSR / private mode */ }
+      try {
+        localStorage.setItem('kodax-space.theme', theme);
+      } catch {
+        /* SSR / private mode */
+      }
     }
     set({ theme });
   },
   setVisualQuality: (q) => {
     if (typeof window !== 'undefined') {
-      try { localStorage.setItem(VISUAL_QUALITY_KEY, q); } catch { /* private mode */ }
+      try {
+        localStorage.setItem(VISUAL_QUALITY_KEY, q);
+      } catch {
+        /* private mode */
+      }
       applyVisualQualityToDocument(q);
     }
     set({ visualQuality: q });
@@ -1346,6 +1403,7 @@ export const useAppStore = create<AppState>((set) => ({
       currentSessionId: null,
       eventsBySession: {},
       userMessagesBySession: {},
+      workflowNoticesBySession: {},
       permissionQueue: [],
       askUserQueue: [],
       workBudgetBySession: {},
@@ -1375,6 +1433,7 @@ export const useAppStore = create<AppState>((set) => ({
       return {
         eventsBySession: { ...state.eventsBySession, [sessionId]: [] },
         userMessagesBySession: { ...state.userMessagesBySession, [sessionId]: [] },
+        workflowNoticesBySession: { ...state.workflowNoticesBySession, [sessionId]: [] },
         pendingToolPaths: nextPending,
       };
     }),
@@ -1392,12 +1451,17 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => {
       const srcEvents = state.eventsBySession[srcSessionId] ?? [];
       const srcMsgs = state.userMessagesBySession[srcSessionId] ?? [];
+      const srcNotices = state.workflowNoticesBySession[srcSessionId] ?? [];
       // events 里的 sessionId 字段是 source 的——为新 session 重建 events 时需要改 sessionId，
       // 否则 ConversationStreamV2 按 sessionId 过滤会读不到。这里直接做映射。
-      const remapped = srcEvents.map((e) => ({ ...e, sessionId: newSessionId } as SessionEvent));
+      const remapped = srcEvents.map((e) => ({ ...e, sessionId: newSessionId }) as SessionEvent);
       return {
         eventsBySession: { ...state.eventsBySession, [newSessionId]: remapped },
         userMessagesBySession: { ...state.userMessagesBySession, [newSessionId]: srcMsgs.slice() },
+        workflowNoticesBySession: {
+          ...state.workflowNoticesBySession,
+          [newSessionId]: srcNotices.slice(),
+        },
       };
     }),
 
@@ -1414,10 +1478,13 @@ export const useAppStore = create<AppState>((set) => ({
   rewindSessionBuffers: (sessionId, rewindPastTurnIdx) =>
     set((state) => {
       const msgs = state.userMessagesBySession[sessionId] ?? [];
+      const notices = state.workflowNoticesBySession[sessionId] ?? [];
       const events = state.eventsBySession[sessionId] ?? [];
       // idx 越界 → 啥都不做
       if (rewindPastTurnIdx < 0 || rewindPastTurnIdx >= msgs.length) return state;
       const newMsgs = msgs.slice(0, rewindPastTurnIdx + 1);
+      const latestKeptSentAt = newMsgs[newMsgs.length - 1]?.sentAt ?? 0;
+      const newNotices = notices.filter((notice) => notice.sentAt <= latestKeptSentAt);
       // events 按 session_complete/session_error 分段，保留前 (rewindPastTurnIdx + 1) 段。
       //
       // 命名说明：`completedTurnsBefore` 表示"在当前位置之前已经完成的 turn 数"——
@@ -1444,6 +1511,10 @@ export const useAppStore = create<AppState>((set) => ({
       const { [sessionId]: _tok, ...restTokens } = state.tokensBySession;
       return {
         userMessagesBySession: { ...state.userMessagesBySession, [sessionId]: newMsgs },
+        workflowNoticesBySession: {
+          ...state.workflowNoticesBySession,
+          [sessionId]: newNotices,
+        },
         eventsBySession: { ...state.eventsBySession, [sessionId]: events.slice(0, sliceEnd) },
         todoListBySession: restTodos,
         workBudgetBySession: restBudgets,

@@ -648,6 +648,26 @@ const managedTaskStatusSchema = z.object({
   idleWaiting: z.boolean().optional(),
   idleWaitingPendingCount: z.number().int().nonnegative().max(100).optional(),
 });
+const sidecarMessageSchema = z.object({
+  source: z.literal('sidecar-verifier'),
+  verdict: z.enum(['revise', 'blocked']),
+  recipient: z.enum(['main-agent', 'user']),
+  delivery: z.enum(['synthetic-user-message', 'budget-exhausted', 'terminal-block']),
+  content: z.string().max(MAX_TEXT_CHUNK),
+  suggestedFix: z.string().max(MAX_TEXT_CHUNK).optional(),
+  trace: z.string().max(MAX_TEXT_CHUNK).optional(),
+});
+
+const todoDriftWarningSchema = z.object({
+  kind: z.literal('work_started_without_claimed_todo'),
+  toolName: z.string().min(1).max(128),
+  toolCallId: z.string().min(1).max(128).optional(),
+  count: z.number().int().nonnegative().max(10_000),
+  pendingCount: z.number().int().nonnegative().max(10_000),
+  openCount: z.number().int().nonnegative().max(10_000),
+  firstPendingTodoId: z.string().min(1).max(128).optional(),
+  firstPendingTodoSubject: z.string().max(2048).optional(),
+});
 
 export const sessionEventChannel = {
   name: 'session.event',
@@ -808,6 +828,17 @@ export const sessionEventChannel = {
       kind: z.literal('todo_update'),
       sessionId: z.string().min(1),
       items: z.array(todoItemSchema).max(200),
+    }),
+    // ---- SDK 0.7.53 Sidecar / todo hygiene observability ----
+    z.object({
+      kind: z.literal('sidecar_message'),
+      sessionId: z.string().min(1),
+      message: sidecarMessageSchema,
+    }),
+    z.object({
+      kind: z.literal('todo_drift_warning'),
+      sessionId: z.string().min(1),
+      warning: todoDriftWarningSchema,
     }),
     // ---- Managed Task / Subagent status (Tasks popout) ----
     z.object({

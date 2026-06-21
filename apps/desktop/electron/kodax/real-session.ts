@@ -125,6 +125,12 @@ function pushChildActivity(
   if (payload) pushToRenderer('workflow.activity', payload);
 }
 
+function clampSessionEventText(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  if (value.length <= 262_144) return value;
+  return `${value.slice(0, 262_120)}\n\n[truncated]`;
+}
+
 // Plan-mode 工具拦截：v0.7.42 切到 SDK `isToolPlanModeAllowed`，基于工具注册时的
 // `sideEffect` / `planModeAllowed` 元数据自动判定——SDK 新增 'mutates-fs' 工具
 // 自动流过，Space 不再硬编码 Set。fail-closed：未知 tool 一律 block。
@@ -680,6 +686,45 @@ export class RealKodaXSession implements ManagedSession {
         });
       },
 
+      onSidecarMessage: (message) => {
+        emitLive({
+          kind: 'sidecar_message',
+          sessionId: sid,
+          message: {
+            source: message.source,
+            verdict: message.verdict,
+            recipient: message.recipient,
+            delivery: message.delivery,
+            content: clampSessionEventText(message.content) ?? '',
+            ...(message.suggestedFix !== undefined
+              ? { suggestedFix: clampSessionEventText(message.suggestedFix)! }
+              : {}),
+            ...(message.trace !== undefined
+              ? { trace: clampSessionEventText(message.trace)! }
+              : {}),
+          },
+        });
+      },
+      onTodoDriftWarning: (warning) => {
+        emitLive({
+          kind: 'todo_drift_warning',
+          sessionId: sid,
+          warning: {
+            kind: warning.kind,
+            toolName: warning.toolName,
+            count: warning.count,
+            pendingCount: warning.pendingCount,
+            openCount: warning.openCount,
+            ...(warning.toolCallId !== undefined ? { toolCallId: warning.toolCallId } : {}),
+            ...(warning.firstPendingTodoId !== undefined
+              ? { firstPendingTodoId: warning.firstPendingTodoId }
+              : {}),
+            ...(warning.firstPendingTodoSubject !== undefined
+              ? { firstPendingTodoSubject: warning.firstPendingTodoSubject }
+              : {}),
+          },
+        });
+      },
       // ---- Managed task / Subagent status ----
       onManagedTaskStatus: (status) => {
         emitLive({

@@ -17,7 +17,7 @@
 // 设计原则：纯函数。给定相同输入产相同输出，便于 useMemo + 单元测试。
 
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
-import type { UserMessage } from '../../store/appStore.js';
+import type { UserMessage, WorkflowNoticeMessage } from '../../store/appStore.js';
 
 export type ConversationMessage =
   | { kind: 'user'; id: string; content: string; sentAt: number }
@@ -48,8 +48,8 @@ export type ConversationMessage =
   | {
       kind: 'system_notice';
       id: string;
-      variant: 'iteration' | 'error';
-      /** iteration: "iter 1/30 · 1280 tokens"; error: 错误文本。
+      variant: 'iteration' | 'error' | 'sidecar' | 'workflow';
+      /** iteration: "iter 1/30 · 1280 tokens"; error: 错误文本；sidecar: verifier 可读消息。
        *  v0.1.x: 'complete' variant 已废弃——assistant bubble footer 自带 "Xd ago"，
        *  原来的横条 "✓ complete" 视觉太重、对每轮都打断阅读节奏。 */
       text: string;
@@ -66,9 +66,14 @@ export type ConversationMessage =
 interface ComposeInput {
   readonly events: readonly SessionEvent[];
   readonly userMessages: readonly UserMessage[];
+  readonly workflowNotices?: readonly WorkflowNoticeMessage[];
 }
 
-export function composeMessages({ events, userMessages }: ComposeInput): ConversationMessage[] {
+export function composeMessages({
+  events,
+  userMessages,
+  workflowNotices = [],
+}: ComposeInput): ConversationMessage[] {
   const result: ConversationMessage[] = [];
 
   // 把 userMessages 转成"带时间戳的虚拟事件"——便于和 events 按时序穿插。
@@ -90,8 +95,33 @@ export function composeMessages({ events, userMessages }: ComposeInput): Convers
   // 所以"按 session_complete/error 切段"是稳定的边界。
 
   let cursor = 0;
-  for (let i = 0; i < userMessages.length; i++) {
-    const userMsg = userMessages[i];
+  const localMessages = [
+    ...userMessages.map((userMsg, order) => ({
+      kind: 'user' as const,
+      sentAt: userMsg.sentAt,
+      order,
+      userMsg,
+    })),
+    ...workflowNotices.map((notice, order) => ({
+      kind: 'workflow_notice' as const,
+      sentAt: notice.sentAt,
+      order: userMessages.length + order,
+      notice,
+    })),
+  ].sort((a, b) => a.sentAt - b.sentAt || a.order - b.order);
+
+  for (const local of localMessages) {
+    if (local.kind === 'workflow_notice') {
+      result.push({
+        kind: 'system_notice',
+        id: local.notice.id,
+        variant: 'workflow',
+        text: local.notice.content,
+      });
+      continue;
+    }
+
+    const userMsg = local.userMsg;
     result.push({
       kind: 'user',
       id: userMsg.id,
@@ -106,9 +136,6 @@ export function composeMessages({ events, userMessages }: ComposeInput): Convers
     cursor = segmentEnd;
     composeAssistantSegment(segment, result, userMsg.sentAt);
   }
-
-  // 如果还有 events 没消化（比如用户还没发任何 prompt，但收到了启动期的事件——
-  // 当前流程不会这样，但兜底处理），全部追加为一段。
   if (cursor < events.length) {
     composeAssistantSegment(events.slice(cursor), result);
   }
@@ -146,9 +173,13 @@ function composeAssistantSegment(
   out: ConversationMessage[],
   parentSentAt?: number,
 ): void {
-  let currentText:
-    | { kind: 'assistant_text'; id: string; text: string; thinking?: string; sentAt?: number }
-    | null = null;
+  let currentText: {
+    kind: 'assistant_text';
+    id: string;
+    text: string;
+    thinking?: string;
+    sentAt?: number;
+  } | null = null;
   // tool_call 卡片按 toolId 查找——同一个 toolId 的 start/progress/result 合并到一张卡
   const toolCardsByToolId = new Map<string, Extract<ConversationMessage, { kind: 'tool_call' }>>();
 
@@ -228,6 +259,25 @@ function composeAssistantSegment(
         // v0.1.x: 不再 push '✓ complete' 横条；assistant bubble footer 显示 "Xd ago"
         // + copy 按钮替代，视觉更轻。consume 但不 emit。
         flushTextBubble();
+        break;
+      }
+      case 'sidecar_message': {
+        flushTextBubble();
+        const title =
+          evt.message.delivery === 'budget-exhausted'
+            ? 'Sidecar budget exhausted'
+            : evt.message.verdict === 'revise'
+              ? 'Sidecar verifier requested revision'
+              : 'Sidecar verifier blocked completion';
+        const suggestedFix = evt.message.suggestedFix
+          ? ` Suggested fix: ${evt.message.suggestedFix}`
+          : '';
+        out.push({
+          kind: 'system_notice',
+          id: `${segmentTag}_sidecar${noticeCounter++}`,
+          variant: 'sidecar',
+          text: `${title}: ${evt.message.content}${suggestedFix}`,
+        });
         break;
       }
       case 'session_error': {

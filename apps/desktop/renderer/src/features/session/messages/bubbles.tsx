@@ -197,7 +197,7 @@ export function UserBubble({ content, sentAt }: { content: string; sentAt?: numb
   // 同列，浅蓝窄底色、收宽到 max-w-[80%]、width 跟内容走 (inline-block) 不撑满。
   // 这样比之前 80% 右对齐蓝 bubble 视觉更克制，整体读起来像一段文档流。
   return (
-    <div className="group flex flex-col items-start">
+    <div className="group flex flex-col items-start" data-testid="user-message-bubble">
       <div
         className={[
           'inline-block max-w-[80%] rounded-2xl px-3 py-1.5 text-[13px] whitespace-pre-wrap border',
@@ -516,7 +516,9 @@ export function SystemNotice({
   retryAvailableAt,
 }: Extract<ConversationMessage, { kind: 'system_notice' }>): JSX.Element {
   const color =
-    variant === 'iteration' ? 'text-warn border-warn/40' : 'text-danger border-danger/40';
+    variant === 'error'
+      ? 'text-danger border-danger/40 bg-danger/5'
+      : 'text-warn border-warn/40 bg-warn/5';
 
   const actionDef = action ? ACTION_BUTTONS[action] : undefined;
   const secondsLeft = useRetryCountdown(retryAvailableAt);
@@ -525,6 +527,8 @@ export function SystemNotice({
   return (
     <div
       className={`notice-in text-[11px] font-mono text-center py-1 border-y ${color} flex items-center justify-center gap-2 flex-wrap`}
+      data-testid="system-notice"
+      data-notice-variant={variant}
     >
       <span>{text}</span>
       {actionDef && (

@@ -10,7 +10,7 @@ import {
   composeMessages,
   type ConversationMessage,
 } from '../../renderer/src/features/session/composeMessages.js';
-import type { UserMessage } from '../../renderer/src/store/appStore.js';
+import type { UserMessage, WorkflowNoticeMessage } from '../../renderer/src/store/appStore.js';
 
 const sid = 's_1';
 
@@ -18,6 +18,9 @@ function userMsg(id: string, content: string, sentAt = 1000): UserMessage {
   return { id, content, sentAt };
 }
 
+function workflowNotice(id: string, content: string, sentAt = 1001): WorkflowNoticeMessage {
+  return { id, content, sentAt };
+}
 function kindsOf(msgs: ConversationMessage[]): string[] {
   return msgs.map((m) => m.kind);
 }
@@ -50,6 +53,20 @@ test('user + consecutive text_deltas → user bubble + single merged assistant b
   if (text.kind === 'assistant_text') assert.equal(text.text, 'Hello world!');
 });
 
+test('workflow notices render as workflow system notices, not user bubbles', () => {
+  const out = composeMessages({
+    events: [],
+    userMessages: [userMsg('u1', '/workflow create review')],
+    workflowNotices: [workflowNotice('wf1', '[workflow] generating workflow...')],
+  });
+  assert.deepEqual(kindsOf(out), ['user', 'system_notice']);
+  const notice = out[1];
+  assert.equal(notice.kind, 'system_notice');
+  if (notice.kind === 'system_notice') {
+    assert.equal(notice.variant, 'workflow');
+    assert.equal(notice.text, '[workflow] generating workflow...');
+  }
+});
 test('thinking_delta attaches to current assistant bubble', () => {
   const events: SessionEvent[] = [
     { kind: 'thinking_delta', sessionId: sid, text: 'pondering...' },
@@ -153,7 +170,11 @@ test('iteration_end no longer pushes system_notice (data goes to BottomBar spinn
   assert.equal(iterNotice, undefined, 'iteration variant must not appear in conversation');
   // v0.1.x: 'complete' variant 退役（assistant bubble footer 显示 "Xd ago" 替代）
   const anySystemNotice = out.find((m) => m.kind === 'system_notice');
-  assert.equal(anySystemNotice, undefined, 'no system_notice should be emitted on session_complete');
+  assert.equal(
+    anySystemNotice,
+    undefined,
+    'no system_notice should be emitted on session_complete',
+  );
 });
 
 test('session_error emits system_notice variant=error with the error text', () => {
@@ -185,12 +206,7 @@ test('two user messages with separate event segments: events route to correct us
     userMessages: [userMsg('u1', 'q1', 1000), userMsg('u2', 'q2', 2000)],
   });
   // v0.1.x: 'complete' system_notice 退役
-  assert.deepEqual(kindsOf(out), [
-    'user',
-    'assistant_text',
-    'user',
-    'assistant_text',
-  ]);
+  assert.deepEqual(kindsOf(out), ['user', 'assistant_text', 'user', 'assistant_text']);
   // 内容对位
   if (out[1].kind === 'assistant_text') assert.equal(out[1].text, 'reply1');
   if (out[3].kind === 'assistant_text') assert.equal(out[3].text, 'reply2');
@@ -304,4 +320,31 @@ test('all messages have unique ids (no React key collisions)', () => {
   const ids = out.map((m) => m.id);
   const uniqueIds = new Set(ids);
   assert.equal(uniqueIds.size, ids.length, `duplicate ids: ${JSON.stringify(ids)}`);
+});
+test('sidecar_message renders as a sidecar system notice without ending the turn', () => {
+  const events: SessionEvent[] = [
+    {
+      kind: 'sidecar_message',
+      sessionId: sid,
+      message: {
+        source: 'sidecar-verifier',
+        verdict: 'revise',
+        recipient: 'main-agent',
+        delivery: 'synthetic-user-message',
+        content: 'Please inspect the changed file.',
+        suggestedFix: 'Run npm test.',
+      },
+    },
+    { kind: 'text_delta', sessionId: sid, text: 'I checked it.' },
+    { kind: 'session_complete', sessionId: sid },
+  ];
+  const out = composeMessages({ events, userMessages: [userMsg('u1', 'q')] });
+  assert.deepEqual(kindsOf(out), ['user', 'system_notice', 'assistant_text']);
+  const notice = out[1];
+  assert.equal(notice.kind, 'system_notice');
+  if (notice.kind === 'system_notice') {
+    assert.equal(notice.variant, 'sidecar');
+    assert.match(notice.text, /Sidecar verifier requested revision/);
+    assert.match(notice.text, /Run npm test/);
+  }
 });

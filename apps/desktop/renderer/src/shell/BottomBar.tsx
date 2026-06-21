@@ -27,6 +27,7 @@ import { useIsStreaming } from './ActivitySpinner.js';
 import { AgentModeSelector } from './AgentModeSelector.js';
 import { AmaWorkStrip } from './AmaWorkStrip.js';
 import { BackgroundTaskBar } from './BackgroundTaskBar.js';
+import { WorkflowWorkStrip } from './WorkflowWorkStrip.js';
 // F041 v0.1.4 retire：StashNotice 横幅退役，其职责由 RightSidebar.ChangesSection 文件列表上位替代
 import { RetryBanner } from './RetryBanner.js';
 import { NotificationsSurface } from './NotificationsSurface.js';
@@ -154,7 +155,17 @@ function tokenizeWorkflowArgs(rest: string): string[] {
     return tail ? [command, target.value, tail] : [command, target.value];
   }
   const subcommands = new Set([
-    'help', 'list', 'ls', 'runs', 'show', 'pause', 'resume', 'stop', 'delete', 'prune', 'save',
+    'help',
+    'list',
+    'ls',
+    'runs',
+    'show',
+    'pause',
+    'resume',
+    'stop',
+    'delete',
+    'prune',
+    'save',
   ]);
   if (!subcommands.has(command)) {
     const rawArgs = tailAfter(first);
@@ -233,10 +244,17 @@ function shouldOpenWorkflowSlashCompletion(trimmedPrompt: string): boolean {
   }
 
   if (first === 'runs' && spans.at(-2)?.value === '--limit') return false;
-  if (first === 'prune' && ['--keep', '--older-than'].includes(spans.at(-2)?.value ?? '')) return false;
+  if (first === 'prune' && ['--keep', '--older-than'].includes(spans.at(-2)?.value ?? ''))
+    return false;
 
   const completionSubcommands = new Set([
-    'runs', 'show', 'pause', 'resume', 'stop', 'delete', 'prune',
+    'runs',
+    'show',
+    'pause',
+    'resume',
+    'stop',
+    'delete',
+    'prune',
   ]);
   return completionSubcommands.has(first);
 }
@@ -259,8 +277,18 @@ function workflowPendingMessage(name: string, args: readonly string[]): string |
   if (first === 'rerun' && args[1]?.trim()) return 'starting workflow...';
 
   const nonStartingSubcommands = new Set([
-    'help', 'list', 'ls', 'runs', 'show', 'pause', 'resume', 'stop',
-    'delete', 'prune', 'save', 'rename',
+    'help',
+    'list',
+    'ls',
+    'runs',
+    'show',
+    'pause',
+    'resume',
+    'stop',
+    'delete',
+    'prune',
+    'save',
+    'rename',
   ]);
   return nonStartingSubcommands.has(first) ? null : 'starting workflow...';
 }
@@ -280,6 +308,7 @@ export function BottomBar(): JSX.Element {
   const pendingAgentMode = useAppStore((s) => s.pendingAgentMode);
   const setPendingProviderId = useAppStore((s) => s.setPendingProviderId);
   const appendUserMessage = useAppStore((s) => s.appendUserMessage);
+  const appendWorkflowNotice = useAppStore((s) => s.appendWorkflowNotice);
   const appendEvent = useAppStore((s) => s.appendEvent);
   const rollbackLastUserMessage = useAppStore((s) => s.rollbackLastUserMessage);
   const resetSessionMessages = useAppStore((s) => s.resetSessionMessages);
@@ -432,17 +461,18 @@ export function BottomBar(): JSX.Element {
       setErr('Open a folder first — Ctrl+O.');
       return null;
     }
-    const { provider, reasoningMode, permissionMode, agentMode, model } = resolveSessionCreateInputs({
-      projectRoot: currentProjectPath,
-      providers,
-      defaultProviderId,
-      kodaxDefaults,
-      pendingProviderId,
-      pendingReasoningMode,
-      pendingPermissionMode,
-      pendingAgentMode,
-      pendingModel,
-    });
+    const { provider, reasoningMode, permissionMode, agentMode, model } =
+      resolveSessionCreateInputs({
+        projectRoot: currentProjectPath,
+        providers,
+        defaultProviderId,
+        kodaxDefaults,
+        pendingProviderId,
+        pendingReasoningMode,
+        pendingPermissionMode,
+        pendingAgentMode,
+        pendingModel,
+      });
     const result = await window.kodaxSpace.invoke('session.create', {
       projectRoot: currentProjectPath,
       provider,
@@ -479,17 +509,20 @@ export function BottomBar(): JSX.Element {
     setPendingProviderId(null);
     // 刷新权威列表（让 LeftSidebar Recents 立即看到新条目）。F045: 按当前 surface 拉，
     // 与 LeftSidebar 的分面列表一致（否则新建后刷新会把另一面的 session 也灌进来）。
-    void window.kodaxSpace.invoke('session.list', {
-      projectRoot: currentProjectPath,
-      surface: currentSurface,
-    }).then((listResult) => {
-      if (listResult.ok) {
-        useAppStore.getState().replaceSessionsForScope(listResult.data.sessions, {
-          projectRoot: currentProjectPath,
-          surface: currentSurface,
-        });
-      }
-    }).catch(() => {});
+    void window.kodaxSpace
+      .invoke('session.list', {
+        projectRoot: currentProjectPath,
+        surface: currentSurface,
+      })
+      .then((listResult) => {
+        if (listResult.ok) {
+          useAppStore.getState().replaceSessionsForScope(listResult.data.sessions, {
+            projectRoot: currentProjectPath,
+            surface: currentSurface,
+          });
+        }
+      })
+      .catch(() => {});
     return stub.sessionId;
   }
 
@@ -571,15 +604,16 @@ export function BottomBar(): JSX.Element {
    * slash 模式：trim 后以 '/' 起头、且不含空白（仍在敲命令名）。
    * 用 trimmed 而非 raw 是为了让 ` /help`（前导空格、粘贴常见）也能弹补全；
    * 用 \s 而非空格能同时识别 \n \t（多行/粘贴）。
-  */
+   */
   const trimmedPrompt = prompt.trimStart();
   const isWorkflowSlashPrompt = shouldOpenWorkflowSlashCompletion(trimmedPrompt);
   const slashArgTrailingMode = /^\/[^\s]+\s$/i.test(trimmedPrompt);
-  const slashMode = trimmedPrompt.startsWith('/')
-    && (!/\s/.test(trimmedPrompt)
-      || isWorkflowSlashPrompt
-      || slashArgTrailingMode
-      || shouldOpenStaticSlashArgCompletion(trimmedPrompt));
+  const slashMode =
+    trimmedPrompt.startsWith('/') &&
+    (!/\s/.test(trimmedPrompt) ||
+      isWorkflowSlashPrompt ||
+      slashArgTrailingMode ||
+      shouldOpenStaticSlashArgCompletion(trimmedPrompt));
 
   /**
    * Slash 命令分两步：
@@ -603,7 +637,7 @@ export function BottomBar(): JSX.Element {
     setErr(null);
     if (optimisticWorkflow) {
       appendUserMessage(sessionId, commandEcho);
-      appendUserMessage(sessionId, `[workflow] ${pendingWorkflowMessage}`);
+      appendWorkflowNotice(sessionId, `[workflow] ${pendingWorkflowMessage}`);
     }
     try {
       const result = await window.kodaxSpace.invoke('slash.exec', {
@@ -613,7 +647,7 @@ export function BottomBar(): JSX.Element {
       });
       if (!result.ok) {
         if (optimisticWorkflow) {
-          appendUserMessage(
+          appendWorkflowNotice(
             sessionId,
             `[workflow] IPC failed: ${result.error?.message ?? 'unknown error'}`,
           );
@@ -639,16 +673,20 @@ export function BottomBar(): JSX.Element {
       if (echo && message) {
         // F031: show the command and the handler feedback in the conversation stream.
         if (!optimisticWorkflow) appendUserMessage(sessionId, commandEcho);
-        if (!clearStream) appendUserMessage(sessionId, message);
+        if (!clearStream) {
+          if (optimisticWorkflow) appendWorkflowNotice(sessionId, message);
+          else appendUserMessage(sessionId, message);
+        }
       }
       if (clearStream) {
         // F031: 由 handler 显式请求清空消息流（不再 hardcode name === 'clear'）。
         resetSessionMessages(sessionId);
       }
       if (!ok && message) {
-        if (optimisticWorkflow) appendUserMessage(sessionId, `[workflow] ${message}`);
+        if (optimisticWorkflow) appendWorkflowNotice(sessionId, `[workflow] ${message}`);
         setErr(message);
       } else if (ok && message && !echo) {
+        if (optimisticWorkflow) appendWorkflowNotice(sessionId, message);
         // 静默成功命令（mode/provider）给一个一闪即逝的反馈
         setErr(null);
       }
@@ -880,7 +918,10 @@ export function BottomBar(): JSX.Element {
       // F046 review HIGH-2: Partner 面 Shell 不挂 PopoutOverlay（仅 Coder 分支挂），
       // 直接 requestPopout('agents') 会静默无反应。surface-gate + 明确告知，避免"按了没反应"。
       if (currentSurface === 'partner') {
-        appendUserMessage(sessionId, '/memory 在 Coder 面使用（Partner 面暂无 AGENTS.md popout）。');
+        appendUserMessage(
+          sessionId,
+          '/memory 在 Coder 面使用（Partner 面暂无 AGENTS.md popout）。',
+        );
         return;
       }
       // v0.1.x: 直接打开 Agents popout (REPL /memory 同款 — 打开 inline editor)。
@@ -1065,15 +1106,19 @@ export function BottomBar(): JSX.Element {
       }
       const r = await window.kodaxSpace.invoke('mcp.discover', { projectRoot: currentProjectPath });
       if (!r.ok) {
-        appendUserMessage(sessionId, `[extensions] discover failed: ${r.error?.message ?? 'unknown'}`);
+        appendUserMessage(
+          sessionId,
+          `[extensions] discover failed: ${r.error?.message ?? 'unknown'}`,
+        );
         return;
       }
       const lines = [`[extensions] ${r.data.servers.length} MCP extension/server(s):`];
       if (r.data.servers.length === 0) lines.push('  none configured');
       for (const server of r.data.servers.slice(0, 30)) {
-        const target = server.transport === 'http'
-          ? (server.url ?? '(no url)')
-          : [server.command, ...(server.args ?? [])].filter(Boolean).join(' ');
+        const target =
+          server.transport === 'http'
+            ? (server.url ?? '(no url)')
+            : [server.command, ...(server.args ?? [])].filter(Boolean).join(' ');
         lines.push(`  ${server.name}  ${server.source}  ${server.transport}  ${target}`);
       }
       if (r.data.servers.length > 30) lines.push(`  ... ${r.data.servers.length - 30} more`);
@@ -1093,7 +1138,10 @@ export function BottomBar(): JSX.Element {
       if (args[0]?.toLowerCase() === 'refresh') {
         const reload = await window.kodaxSpace.invoke('mcp.reload', undefined);
         if (!reload.ok) {
-          appendUserMessage(sessionId, `[mcp] reload failed: ${reload.error?.message ?? 'unknown'}`);
+          appendUserMessage(
+            sessionId,
+            `[mcp] reload failed: ${reload.error?.message ?? 'unknown'}`,
+          );
           return;
         }
       }
@@ -1138,7 +1186,9 @@ export function BottomBar(): JSX.Element {
       for (const s of r.data.sessions.slice(0, 40)) {
         const title = s.title ? `  ${s.title}` : '';
         const count = s.msgCount !== undefined ? `  ${s.msgCount} msg(s)` : '';
-        lines.push(`  ${s.sessionId}${title}${count}  ${new Date(s.lastActivityAt).toLocaleString()}`);
+        lines.push(
+          `  ${s.sessionId}${title}${count}  ${new Date(s.lastActivityAt).toLocaleString()}`,
+        );
       }
       if (r.data.sessions.length > 40) lines.push(`  ... ${r.data.sessions.length - 40} more`);
       appendUserMessage(sessionId, lines.join('\n'));
@@ -1160,14 +1210,19 @@ export function BottomBar(): JSX.Element {
         appendUserMessage(sessionId, `[load] list failed: ${r.error?.message ?? 'unknown'}`);
         return;
       }
-      const found = r.data.sessions.find((s) => s.sessionId === target || s.sessionId.startsWith(target));
+      const found = r.data.sessions.find(
+        (s) => s.sessionId === target || s.sessionId.startsWith(target),
+      );
       if (!found) {
         appendUserMessage(sessionId, `[load] session not found: ${target}`);
         return;
       }
       state.upsertSession(found);
       state.setCurrentSession(found.sessionId);
-      appendUserMessage(sessionId, `[load] switched to ${found.sessionId}${found.title ? ` (${found.title})` : ''}`);
+      appendUserMessage(
+        sessionId,
+        `[load] switched to ${found.sessionId}${found.title ? ` (${found.title})` : ''}`,
+      );
       return;
     }
 
@@ -1207,7 +1262,10 @@ export function BottomBar(): JSX.Element {
         return;
       }
       if (args[0] && !/^\d+$/.test(args[0])) {
-        appendUserMessage(sessionId, '[fork] entry-id/label selection is not exposed in Space yet; forking current branch.');
+        appendUserMessage(
+          sessionId,
+          '[fork] entry-id/label selection is not exposed in Space yet; forking current branch.',
+        );
       }
       const userMsgs = state.userMessagesBySession[sessionId] ?? [];
       const requestedIdx = args[0] && /^\d+$/.test(args[0]) ? Number(args[0]) : undefined;
@@ -1220,9 +1278,10 @@ export function BottomBar(): JSX.Element {
         appendUserMessage(sessionId, `[fork] failed: ${r.error?.message ?? 'unknown'}`);
         return;
       }
-      const childTitle = session.title !== undefined
-        ? `${session.title.replace(/( \(fork\))+$/, '')} (fork)`
-        : undefined;
+      const childTitle =
+        session.title !== undefined
+          ? `${session.title.replace(/( \(fork\))+$/, '')} (fork)`
+          : undefined;
       state.upsertSession({
         ...session,
         sessionId: r.data.newSessionId,
@@ -1234,7 +1293,10 @@ export function BottomBar(): JSX.Element {
       });
       state.forkSessionBuffers(sessionId, r.data.newSessionId, forkPointTurnIdx);
       state.setCurrentSession(r.data.newSessionId);
-      appendUserMessage(sessionId, `[fork] created ${r.data.newSessionId} from turn ${forkPointTurnIdx}`);
+      appendUserMessage(
+        sessionId,
+        `[fork] created ${r.data.newSessionId} from turn ${forkPointTurnIdx}`,
+      );
       return;
     }
 
@@ -1249,13 +1311,19 @@ export function BottomBar(): JSX.Element {
         return;
       }
       if (args[0] && !/^\d+$/.test(args[0])) {
-        appendUserMessage(sessionId, '[rewind] entry-id/label selection is not exposed in Space yet; rewinding one turn.');
+        appendUserMessage(
+          sessionId,
+          '[rewind] entry-id/label selection is not exposed in Space yet; rewinding one turn.',
+        );
       }
       const onlyOneTurn = userMsgs.length === 1;
       const requestedIdx = args[0] && /^\d+$/.test(args[0]) ? Number(args[0]) : undefined;
       const rewindPastTurnIdx = Math.max(
         0,
-        Math.min(requestedIdx ?? (onlyOneTurn ? 0 : userMsgs.length - 2), Math.max(0, userMsgs.length - 1)),
+        Math.min(
+          requestedIdx ?? (onlyOneTurn ? 0 : userMsgs.length - 2),
+          Math.max(0, userMsgs.length - 1),
+        ),
       );
       const r = await window.kodaxSpace.invoke('session.rewind', { sessionId, rewindPastTurnIdx });
       if (!r.ok) {
@@ -1359,11 +1427,12 @@ export function BottomBar(): JSX.Element {
       const spaceIdx = head.search(/\s/);
       const token = (spaceIdx === -1 ? head : head.slice(0, spaceIdx)).trim();
       const rest = spaceIdx === -1 ? '' : head.slice(spaceIdx + 1).trim();
-      const args = rest === ''
-        ? []
-        : token.toLowerCase() === 'workflow'
-          ? tokenizeWorkflowArgs(rest)
-          : tokenizeArgs(rest);
+      const args =
+        rest === ''
+          ? []
+          : token.toLowerCase() === 'workflow'
+            ? tokenizeWorkflowArgs(rest)
+            : tokenizeArgs(rest);
       // v0.1.10 fix: 解析 `/skill:<name>` namespace, 跟 KodaX REPL 对齐。
       // 命中时直接走 invokeSkill 不走 slash.exec → unknownCommand → fallback 二跳。
       const skillNamespaceMatch = token.match(/^skill:(.+)$/);
@@ -1482,9 +1551,9 @@ export function BottomBar(): JSX.Element {
         ? item.insertText
         : item.kind === 'slash-arg'
           ? item.insertText
-        : item.kind === 'skill'
-          ? `/skill:${item.meta.name} `
-          : `/${item.meta.name} `;
+          : item.kind === 'skill'
+            ? `/skill:${item.meta.name} `
+            : `/${item.meta.name} `;
     setPrompt(insertText);
     // 焦点拉回输入框，光标在末尾，用户可直接续打。
     requestAnimationFrame(() => {
@@ -1604,6 +1673,7 @@ export function BottomBar(): JSX.Element {
 
       {/* P5: AMA agent 形态时展示 worker / harness / 子任务计数。
           F046: Partner 面隐藏——AMA/harness 是编码形态概念，Partner（doc-workspace）不展示。 */}
+      {currentSurface !== 'partner' && <WorkflowWorkStrip />}
       {currentSurface !== 'partner' && <AmaWorkStrip />}
 
       {/* REPL BackgroundTaskBar 等价: 多 subagent 并发时按 workerId 聚合显示 chip 条。
