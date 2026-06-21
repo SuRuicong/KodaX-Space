@@ -90,6 +90,63 @@ test('workflow graph exposes failed child as phase active label', () => {
   assert.equal(model.phases[0]?.activeLabel, 'quality');
 });
 
+test('workflow graph folds orphan agent roots back into matching phase', () => {
+  const model = buildWorkflowGraphModel(
+    run({
+      phaseCount: 4,
+      progress: {
+        spawnedAgents: 1,
+        finishedAgents: 0,
+        activeAgents: 1,
+        failedAgents: 0,
+        stoppedAgents: 0,
+        plannedItems: 4,
+      },
+      items: [
+        item({ id: 'phase-1', title: 'Collect changes', kind: 'phase', status: 'pending' }),
+        item({ id: 'phase-2', title: 'Review', kind: 'phase', status: 'pending' }),
+        item({ id: 'phase-3', title: 'Synthesize', kind: 'phase', status: 'pending' }),
+        item({ id: 'agent-1', title: 'Collect changes', kind: 'agent', status: 'running' }),
+      ],
+    }),
+  );
+
+  assert.equal(model.phases.length, 3);
+  assert.deepEqual(
+    model.phases.map((phase) => `${phase.index}/${phase.total}`),
+    ['1/3', '2/3', '3/3'],
+  );
+  assert.equal(model.phases[0]?.status, 'running');
+  assert.equal(model.phases[0]?.nodes[0]?.title, 'Collect changes');
+  assert.equal(model.phases[0]?.activeLabel, 'Collect changes');
+  assert.equal(model.phases[2]?.status, 'pending');
+});
+
+test('workflow graph assigns running loose agents to the current pending phase', () => {
+  const model = buildWorkflowGraphModel(
+    run({
+      phaseCount: 3,
+      items: [
+        item({ id: 'phase-1', title: 'Collect changes', kind: 'phase', status: 'pending' }),
+        item({ id: 'phase-2', title: 'Review everything', kind: 'phase', status: 'pending' }),
+        item({ id: 'phase-3', title: 'Synthesize', kind: 'phase', status: 'pending' }),
+        item({ id: 'agent-1', title: 'Collect changes', kind: 'agent', status: 'completed' }),
+        item({ id: 'agent-2', title: 'Quality review', kind: 'agent', status: 'running' }),
+        item({ id: 'agent-3', title: 'Security review', kind: 'agent', status: 'running' }),
+      ],
+    }),
+  );
+
+  assert.equal(model.phases.length, 3);
+  assert.equal(model.phases[0]?.status, 'completed');
+  assert.equal(model.phases[1]?.status, 'running');
+  assert.deepEqual(
+    model.phases[1]?.nodes.map((node) => node.title),
+    ['Quality review', 'Security review'],
+  );
+  assert.equal(model.phases[2]?.status, 'pending');
+});
+
 test('workflow graph creates a synthetic run phase when SDK sends no phase items', () => {
   const model = buildWorkflowGraphModel(
     run({

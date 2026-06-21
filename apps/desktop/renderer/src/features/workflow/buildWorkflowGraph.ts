@@ -52,8 +52,14 @@ export interface WorkflowGraphPattern {
 export function buildWorkflowGraphModel(run: WorkflowRunT): WorkflowGraphModel {
   const roots = buildItemTree(run.items);
   const phaseRoots = roots.filter((node) => node.item.kind === 'phase');
-  const looseRoots = roots.filter((node) => node.item.kind !== 'phase');
-  const total = Math.max(run.phaseCount ?? 0, phaseRoots.length + (looseRoots.length > 0 ? 1 : 0));
+  const looseRoots = attachLooseRootsToPhases(
+    phaseRoots,
+    roots.filter((node) => node.item.kind !== 'phase'),
+    run,
+  );
+  const renderedPhaseCount = phaseRoots.length + (looseRoots.length > 0 ? 1 : 0);
+  const total =
+    phaseRoots.length > 0 ? renderedPhaseCount : Math.max(run.phaseCount ?? 0, renderedPhaseCount);
 
   const phases: WorkflowGraphPhase[] = phaseRoots.map((node, index) =>
     phaseFromTreeNode(node, index + 1, total || phaseRoots.length),
@@ -151,13 +157,113 @@ function phaseFromTreeNode(
   return {
     id: node.item.id,
     title: node.item.title || node.item.id,
-    status: node.item.status,
+    status: derivePhaseStatus(node.item.status, counts),
     index,
     total,
     nodes,
     counts,
     activeLabel: findActiveLabel(nodes),
   };
+}
+
+function attachLooseRootsToPhases(
+  phaseRoots: readonly WorkflowTreeNode[],
+  looseRoots: readonly WorkflowTreeNode[],
+  run: WorkflowRunT,
+): WorkflowTreeNode[] {
+  const unassigned: WorkflowTreeNode[] = [];
+  for (const node of looseRoots) {
+    const phase = findMatchingPhase(phaseRoots, node);
+    if (phase) phase.children.push(node);
+    else unassigned.push(node);
+  }
+  if (phaseRoots.length === 0) return unassigned;
+
+  const stillUnassigned: WorkflowTreeNode[] = [];
+  for (const node of unassigned) {
+    const phase = findFallbackPhase(phaseRoots, node, run);
+    if (phase) phase.children.push(node);
+    else stillUnassigned.push(node);
+  }
+  return stillUnassigned;
+}
+
+function findMatchingPhase(
+  phaseRoots: readonly WorkflowTreeNode[],
+  node: WorkflowTreeNode,
+): WorkflowTreeNode | undefined {
+  const phaseRef = normalizePhaseRef(node.item.phaseId);
+  const titleRef = normalizePhaseRef(node.item.title);
+  return phaseRoots.find((phase) => {
+    const id = normalizePhaseRef(phase.item.id);
+    const title = normalizePhaseRef(phase.item.title);
+    return (
+      (phaseRef.length > 0 && (phaseRef === id || phaseRef === title)) ||
+      (titleRef.length > 0 && titleRef === title)
+    );
+  });
+}
+
+function normalizePhaseRef(value: string | undefined): string {
+  return (value ?? '').trim().toLowerCase();
+}
+
+function findFallbackPhase(
+  phaseRoots: readonly WorkflowTreeNode[],
+  node: WorkflowTreeNode,
+  run: WorkflowRunT,
+): WorkflowTreeNode | undefined {
+  const activeById = findActivePhaseById(phaseRoots, run.activePhaseId);
+  if (activeById) return activeById;
+
+  if (node.item.status === 'running') {
+    const activeByIndex = findActivePhaseByIndex(phaseRoots, run.activePhaseIndex);
+    if (activeByIndex) return activeByIndex;
+    const running = phaseRoots.find((phase) => phaseStatusFromNode(phase) === 'running');
+    if (running) return running;
+    return phaseRoots.find((phase) => phaseStatusFromNode(phase) === 'pending');
+  }
+
+  return undefined;
+}
+
+function findActivePhaseById(
+  phaseRoots: readonly WorkflowTreeNode[],
+  activePhaseId: string | undefined,
+): WorkflowTreeNode | undefined {
+  const ref = normalizePhaseRef(activePhaseId);
+  if (!ref) return undefined;
+  return phaseRoots.find((phase) => {
+    const id = normalizePhaseRef(phase.item.id);
+    const title = normalizePhaseRef(phase.item.title);
+    return ref === id || ref === title;
+  });
+}
+
+function findActivePhaseByIndex(
+  phaseRoots: readonly WorkflowTreeNode[],
+  activePhaseIndex: number | undefined,
+): WorkflowTreeNode | undefined {
+  if (activePhaseIndex === undefined || !Number.isFinite(activePhaseIndex)) return undefined;
+  const index = Math.floor(activePhaseIndex);
+  return phaseRoots[index] ?? (index > 0 ? phaseRoots[index - 1] : undefined);
+}
+
+function phaseStatusFromNode(node: WorkflowTreeNode): WorkflowGraphStatus {
+  const counts = countNodes(node.children.map(graphNodeFromTreeNode));
+  return derivePhaseStatus(node.item.status, counts);
+}
+
+function derivePhaseStatus(
+  declaredStatus: WorkflowProcessItemStatusT,
+  counts: WorkflowGraphCounts,
+): WorkflowGraphStatus {
+  if (declaredStatus !== 'pending') return declaredStatus;
+  if (counts.failed > 0) return 'failed';
+  if (counts.running > 0) return 'running';
+  if (counts.cancelled > 0) return 'cancelled';
+  if (counts.total > 0 && counts.completed === counts.total) return 'completed';
+  return declaredStatus;
 }
 
 function syntheticRunPhase(

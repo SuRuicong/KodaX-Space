@@ -111,6 +111,22 @@ function fmtTokens(n: number): string {
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
+function workflowAgentProgressLabel(run: WorkflowRunT): string {
+  const total = Math.max(
+    run.progress.plannedItems ?? 0,
+    run.progress.spawnedAgents,
+    run.progress.finishedAgents +
+      run.progress.activeAgents +
+      run.progress.failedAgents +
+      run.progress.stoppedAgents,
+  );
+  const parts = [`${run.progress.finishedAgents}/${total || run.progress.spawnedAgents} done`];
+  if (run.progress.activeAgents > 0) parts.push(`${run.progress.activeAgents} active`);
+  if (run.progress.failedAgents > 0) parts.push(`${run.progress.failedAgents} failed`);
+  if (run.progress.stoppedAgents > 0) parts.push(`${run.progress.stoppedAgents} stopped`);
+  return parts.join(' · ');
+}
+
 /**
  * Selector：取归属 currentSession 的 run，按开始时间倒序（新的在前）。
  * useShallow 作元素级浅比较——workflowRuns 每个事件都换新引用（含别的 session 的事件），
@@ -360,10 +376,7 @@ function WorkflowRunCard({
       <div className="mt-1 flex items-center gap-2 text-[10px] font-mono text-fg-muted">
         <span className="inline-flex items-center gap-1" title="agents：完成/已生成（活跃）">
           <Bot size={10} aria-hidden />
-          {run.progress.finishedAgents}/{run.progress.spawnedAgents}
-          {run.progress.activeAgents > 0 && (
-            <span className="text-warn">·{run.progress.activeAgents}</span>
-          )}
+          {workflowAgentProgressLabel(run)}
         </span>
         {run.tokens && (
           <span className="inline-flex items-center gap-1" title="token：已花/预算">
