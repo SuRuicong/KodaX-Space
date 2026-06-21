@@ -130,11 +130,113 @@ type PushFn = (payload: WorkflowEventPayload) => void;
 // 映射上限——防止长跑进程里 origins 无界增长(终态 run 的归属不再变,留最近 N 条即可)。
 const MAX_ORIGINS = 500;
 const GENERATED_RUN_ID_RE = /^wf_[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+const IPC_SHORT_MAX = 256;
+const IPC_MSG_MAX = 8192;
+const IPC_PATH_MAX = 4096;
+const IPC_MAX_ITEMS = 4096;
+const IPC_MAX_ARTIFACTS = 512;
+
+const SNAPSHOT_SHORT_FIELDS = [
+  'workflowName',
+  'displayName',
+  'savedWorkflowName',
+  'sourceRunId',
+  'sourceWorkflowName',
+  'revisionOf',
+  'activePhaseId',
+  'startedAt',
+  'updatedAt',
+] as const;
+const SNAPSHOT_MSG_FIELDS = ['goal', 'latestMessage', 'resultSummary', 'error'] as const;
+const ITEM_SHORT_FIELDS = [
+  'id',
+  'title',
+  'phaseId',
+  'parentId',
+  'agentId',
+  'childAgentId',
+  'provider',
+  'model',
+  'startedAt',
+  'endedAt',
+] as const;
+const ITEM_MSG_FIELDS = ['summary', 'error'] as const;
 
 function nonnegativeInt(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0
-    ? Math.floor(value)
-    : 0;
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
+}
+
+function clampPlainText(value: unknown, max: number): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  return value.length > max ? value.slice(0, max) : value;
+}
+
+function clampHumanText(value: unknown, max: number): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  if (value.length <= max) return value;
+  const suffix = '\n[truncated]';
+  if (max <= suffix.length) return value.slice(0, max);
+  return `${value.slice(0, max - suffix.length)}${suffix}`;
+}
+
+function clampStringRecord(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [key, rawValue] of Object.entries(value)) {
+    const safeValue = clampHumanText(rawValue, IPC_MSG_MAX);
+    if (safeValue !== undefined) out[key] = safeValue;
+  }
+  return out;
+}
+
+function normalizeWorkflowItem(item: unknown): unknown {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+  const raw = item as Record<string, unknown>;
+  const next: Record<string, unknown> = { ...raw };
+  for (const key of ITEM_SHORT_FIELDS) {
+    const value = clampPlainText(raw[key], IPC_SHORT_MAX);
+    if (value !== undefined) next[key] = value;
+  }
+  for (const key of ITEM_MSG_FIELDS) {
+    const value = clampHumanText(raw[key], IPC_MSG_MAX);
+    if (value !== undefined) next[key] = value;
+  }
+  return next;
+}
+
+function normalizeWorkflowArtifact(artifact: unknown): unknown {
+  if (!artifact || typeof artifact !== 'object' || Array.isArray(artifact)) return artifact;
+  const raw = artifact as Record<string, unknown>;
+  const next: Record<string, unknown> = { ...raw };
+  const name = clampPlainText(raw.name, IPC_SHORT_MAX);
+  const artifactPath = clampPlainText(raw.path, IPC_PATH_MAX);
+  const description = clampHumanText(raw.description, IPC_MSG_MAX);
+  if (name !== undefined) next.name = name;
+  if (artifactPath !== undefined) next.path = artifactPath;
+  if (description !== undefined) next.description = description;
+  return next;
+}
+
+function normalizeWorkflowSnapshot(snapshot: SdkProcessSnapshot): WorkflowRunT {
+  const raw = snapshot as Record<string, unknown>;
+  const next: Record<string, unknown> = { ...raw };
+  for (const key of SNAPSHOT_SHORT_FIELDS) {
+    const value = clampPlainText(raw[key], IPC_SHORT_MAX);
+    if (value !== undefined) next[key] = value;
+  }
+  for (const key of SNAPSHOT_MSG_FIELDS) {
+    const value = clampHumanText(raw[key], IPC_MSG_MAX);
+    if (value !== undefined) next[key] = value;
+  }
+  const hostMetadata = clampStringRecord(raw.hostMetadata);
+  if (hostMetadata !== undefined) next.hostMetadata = hostMetadata;
+  if (Array.isArray(raw.items)) {
+    next.items = raw.items.slice(0, IPC_MAX_ITEMS).map(normalizeWorkflowItem);
+  }
+  if (Array.isArray(raw.artifacts)) {
+    next.artifacts = raw.artifacts.slice(0, IPC_MAX_ARTIFACTS).map(normalizeWorkflowArtifact);
+  }
+  return next as unknown as WorkflowRunT;
 }
 
 interface OriginsFile {
@@ -198,8 +300,10 @@ export class WorkflowController {
     if (!lifecycleStop) return pushed;
     if (pushed) {
       void lifecycleStop.catch((err) => {
-        console.warn('[workflow] stopWorkflow failed after local fallback:',
-          err instanceof Error ? err.message : err);
+        console.warn(
+          '[workflow] stopWorkflow failed after local fallback:',
+          err instanceof Error ? err.message : err,
+        );
       });
       return true;
     }
@@ -233,7 +337,7 @@ export class WorkflowController {
     const items = Array.isArray(raw.items)
       ? raw.items.map((item) => this.toSettledWorkflowItem(item, now))
       : [];
-    return {
+    return normalizeWorkflowSnapshot({
       ...(snapshot as unknown as WorkflowEventPayload['snapshot']),
       status: 'cancelled',
       updatedAt: now,
@@ -241,17 +345,25 @@ export class WorkflowController {
       counts: this.countWorkflowItems(items, raw.counts),
       progress: this.cancelledProgress(raw.progress),
       ...(reason ? { latestMessage: reason } : {}),
-    };
+    } as unknown as SdkProcessSnapshot);
   }
 
   private toSettledWorkflowItem(item: unknown, endedAt: string): unknown {
     if (!item || typeof item !== 'object') return item;
     const rec = item as Record<string, unknown>;
     if (rec.status === 'running') {
-      return { ...rec, status: 'cancelled', endedAt: typeof rec.endedAt === 'string' ? rec.endedAt : endedAt };
+      return {
+        ...rec,
+        status: 'cancelled',
+        endedAt: typeof rec.endedAt === 'string' ? rec.endedAt : endedAt,
+      };
     }
     if (rec.status === 'pending') {
-      return { ...rec, status: 'skipped', endedAt: typeof rec.endedAt === 'string' ? rec.endedAt : endedAt };
+      return {
+        ...rec,
+        status: 'skipped',
+        endedAt: typeof rec.endedAt === 'string' ? rec.endedAt : endedAt,
+      };
     }
     return item;
   }
@@ -269,7 +381,8 @@ export class WorkflowController {
       skipped: 0,
     };
     for (const item of items) {
-      const status = item && typeof item === 'object' ? (item as { status?: unknown }).status : undefined;
+      const status =
+        item && typeof item === 'object' ? (item as { status?: unknown }).status : undefined;
       if (
         status === 'pending' ||
         status === 'running' ||
@@ -305,7 +418,9 @@ export class WorkflowController {
       ...(typeof p.agentCap === 'number' && Number.isFinite(p.agentCap) && p.agentCap >= 0
         ? { agentCap: Math.floor(p.agentCap) }
         : {}),
-      ...(typeof p.plannedItems === 'number' && Number.isFinite(p.plannedItems) && p.plannedItems >= 0
+      ...(typeof p.plannedItems === 'number' &&
+      Number.isFinite(p.plannedItems) &&
+      p.plannedItems >= 0
         ? { plannedItems: Math.floor(p.plannedItems) }
         : {}),
     };
@@ -328,7 +443,8 @@ export class WorkflowController {
 
   /** 删终态 run(活跃 run 被 SDK 拒,除非 force)。删后清本地归属。 */
   async deleteRun(runId: string, force?: boolean): Promise<boolean> {
-    const ok = (await this.lifecycle?.deleteWorkflowRun(runId, force ? { force } : undefined)) ?? false;
+    const ok =
+      (await this.lifecycle?.deleteWorkflowRun(runId, force ? { force } : undefined)) ?? false;
     if (ok) {
       this.bridgedRuns.delete(runId);
       if (this.origins.delete(runId)) void this.persistOrigins();
@@ -363,12 +479,18 @@ export class WorkflowController {
     try {
       builtin = [...(sdk.listBuiltinWorkflows?.() ?? [])] as WorkflowMetaLite[];
     } catch (err) {
-      console.warn('[WorkflowController] listBuiltinWorkflows:', err instanceof Error ? err.message : err);
+      console.warn(
+        '[WorkflowController] listBuiltinWorkflows:',
+        err instanceof Error ? err.message : err,
+      );
     }
     try {
       patterns = [...(sdk.listWorkflowPatternTemplates?.() ?? [])] as WorkflowPatternLite[];
     } catch (err) {
-      console.warn('[WorkflowController] listWorkflowPatternTemplates:', err instanceof Error ? err.message : err);
+      console.warn(
+        '[WorkflowController] listWorkflowPatternTemplates:',
+        err instanceof Error ? err.message : err,
+      );
     }
     try {
       const refs = (await sdk.discoverSavedWorkflows?.(savedWorkflowDirs(projectRoot))) ?? [];
@@ -379,7 +501,10 @@ export class WorkflowController {
         ...(r.execution !== undefined ? { execution: r.execution } : {}),
       }));
     } catch (err) {
-      console.warn('[WorkflowController] discoverSavedWorkflows:', err instanceof Error ? err.message : err);
+      console.warn(
+        '[WorkflowController] discoverSavedWorkflows:',
+        err instanceof Error ? err.message : err,
+      );
     }
     return { builtin, patterns, saved };
   }
@@ -390,7 +515,10 @@ export class WorkflowController {
     // fail-safe：预检能力缺失时不静默放行（否则用户以为"无问题"却跑了未校验的可执行 capsule）。
     // 回一条 warning issue → renderer 弹确认，让用户知情后再决定。
     if (!sdk?.loadSavedWorkflowCapsule || !sdk?.preflightWorkflowCapsule) {
-      return { ok: false, issues: [{ severity: 'warning', message: '预检不可用（SDK 能力缺失），未校验' }] };
+      return {
+        ok: false,
+        issues: [{ severity: 'warning', message: '预检不可用（SDK 能力缺失），未校验' }],
+      };
     }
     try {
       const capsule = await sdk.loadSavedWorkflowCapsule(filePath);
@@ -446,7 +574,11 @@ export class WorkflowController {
         options,
         runId,
         runDir,
-        processMetadata: { displayName: meta?.name, source: 'sdk', hostMetadata: this.hostMetadata(s) },
+        processMetadata: {
+          displayName: meta?.name,
+          source: 'sdk',
+          hostMetadata: this.hostMetadata(s),
+        },
       });
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
@@ -458,7 +590,10 @@ export class WorkflowController {
   // ---- F066 结果 / artifact 读取 ----
 
   /** 读 run 的最终 displayable result（SDK 已 lint 过非空）。无 lifecycle / 不存在 → undefined。 */
-  async createGeneratedWorkflow(request: string, session: LaunchSession): Promise<WorkflowStartResult> {
+  async createGeneratedWorkflow(
+    request: string,
+    session: LaunchSession,
+  ): Promise<WorkflowStartResult> {
     const sdk = await loadCodingSdk();
     if (!sdk?.generateWorkflowFromOptions) return { error: 'workflow generation unavailable' };
     let generated: WorkflowGenerationResultLite;
@@ -531,7 +666,8 @@ export class WorkflowController {
     try {
       const ref = await sdk.saveGeneratedWorkflowFromRun({
         runDir,
-        targetDir: savedWorkflowDirs(projectRoot).project ?? path.join(projectRoot, '.kodax', 'workflows'),
+        targetDir:
+          savedWorkflowDirs(projectRoot).project ?? path.join(projectRoot, '.kodax', 'workflows'),
         name,
       });
       return { name: ref.name, path: ref.path };
@@ -561,7 +697,11 @@ export class WorkflowController {
     }
   }
 
-  async deleteSavedWorkflow(name: string, projectRoot: string, source?: string): Promise<WorkflowSavedResult> {
+  async deleteSavedWorkflow(
+    name: string,
+    projectRoot: string,
+    source?: string,
+  ): Promise<WorkflowSavedResult> {
     const sdk = await loadCodingSdk();
     if (!sdk?.deleteSavedWorkflow) return { error: 'saved workflow delete unavailable' };
     try {
@@ -591,13 +731,18 @@ export class WorkflowController {
     let capsule: WorkflowCapsuleLite;
     try {
       if (input.saved) {
-        if (input.saved.execution !== undefined && input.saved.execution !== 'capability-generated') {
+        if (
+          input.saved.execution !== undefined &&
+          input.saved.execution !== 'capability-generated'
+        ) {
           return { error: 'only generated workflow capsules can be revised' };
         }
-        if (!sdk.loadSavedWorkflowCapsule) return { error: 'saved workflow capsule loading unavailable' };
+        if (!sdk.loadSavedWorkflowCapsule)
+          return { error: 'saved workflow capsule loading unavailable' };
         capsule = asWorkflowCapsule(await sdk.loadSavedWorkflowCapsule(input.saved.path));
       } else {
-        if (!sdk.loadGeneratedWorkflowFromRun) return { error: 'generated run loading unavailable' };
+        if (!sdk.loadGeneratedWorkflowFromRun)
+          return { error: 'generated run loading unavailable' };
         const runDir = generatedRunDir(this.runBaseDir, input.target);
         if (runDir === null) return { error: 'invalid runId' };
         const loaded = await sdk.loadGeneratedWorkflowFromRun({
@@ -629,10 +774,12 @@ export class WorkflowController {
     const dirs = savedWorkflowDirs(input.session.projectRoot);
     const generatedManifest = generated.manifest;
     const replacingName = input.replace ? input.saved?.name : undefined;
-    const savedName = replacingName ?? await nextRevisionWorkflowName(sdk, dirs, generatedManifest.name);
-    const manifest = savedName === generatedManifest.name
-      ? generatedManifest
-      : { ...generatedManifest, name: savedName };
+    const savedName =
+      replacingName ?? (await nextRevisionWorkflowName(sdk, dirs, generatedManifest.name));
+    const manifest =
+      savedName === generatedManifest.name
+        ? generatedManifest
+        : { ...generatedManifest, name: savedName };
     const provenance = buildRevisionProvenance({
       capsule,
       target: input.target,
@@ -791,18 +938,23 @@ export class WorkflowController {
 
   private onEvent(event: SdkProcessEvent): void {
     const origin = this.originFromSnapshot(event.snapshot);
-    // snapshot 原样转发;push.ts 在 IPC 边界做 zod 校验(失败则丢弃+日志),这里不重复校验。
+    const snapshot = normalizeWorkflowSnapshot(event.snapshot);
+    const message = clampHumanText(event.message, IPC_MSG_MAX);
+    // SDK snapshot 可能带完整长报告；IPC 进度快照只传有界预览，完整内容走 result/artifact 读取。
     this.push({
       type: event.type,
-      snapshot: event.snapshot as unknown as WorkflowRunT,
-      ...(event.message !== undefined ? { message: event.message } : {}),
+      snapshot,
+      ...(message !== undefined ? { message } : {}),
       ...(origin.sessionId !== undefined ? { sessionId: origin.sessionId } : {}),
       ...(origin.surface !== undefined ? { surface: origin.surface } : {}),
     });
     // F066:run 终态时把产出的 artifact 桥进 Space artifact 层（方案 A）。fire-and-forget + 顶层 catch。
     if (event.type === 'workflow_finished') {
       void this.bridgeArtifacts(event.snapshot, origin).catch((err) =>
-        console.warn('[WorkflowController] bridgeArtifacts:', err instanceof Error ? err.message : err),
+        console.warn(
+          '[WorkflowController] bridgeArtifacts:',
+          err instanceof Error ? err.message : err,
+        ),
       );
     }
   }
@@ -811,7 +963,10 @@ export class WorkflowController {
    * F066：把 workflow run 的 artifacts 复制进 artifactStore（方案 A——统一面板，复用 F057-F059）。
    * 每个 run 仅桥接一次（防 workflow_finished 重发）。归属到发起 session；外部 run（无 sessionId）跳过。
    */
-  private async bridgeArtifacts(snapshot: SdkProcessSnapshot, origin: WorkflowOrigin): Promise<void> {
+  private async bridgeArtifacts(
+    snapshot: SdkProcessSnapshot,
+    origin: WorkflowOrigin,
+  ): Promise<void> {
     const runId = snapshot.runId;
     if (this.bridgedRuns.has(runId) || !origin.sessionId) return;
     const artifacts = (snapshot as { artifacts?: { name?: string }[] }).artifacts;
@@ -844,18 +999,20 @@ export class WorkflowController {
         });
         pushToRenderer('artifact.changed', { sessionId: origin.sessionId, reason: 'created' });
       } catch (err) {
-        console.warn('[WorkflowController] bridge artifact failed:', name, err instanceof Error ? err.message : err);
+        console.warn(
+          '[WorkflowController] bridge artifact failed:',
+          name,
+          err instanceof Error ? err.message : err,
+        );
       }
     }
   }
 
   private attribute(snapshot: SdkProcessSnapshot): WorkflowRunT {
-    // cast 经 unknown:SDK snapshot 结构与 WorkflowRunT 一致,但带 index signature 不直接兼容。
-    // 运行时正确性:list/get 出参经 IPC register 校验,push 经 push.ts 校验;drift 由 round-trip
-    // 单测 + 真 SDK smoke 守(见 workflow-controller.test.ts)。
     const origin = this.originFromSnapshot(snapshot);
+    const run = normalizeWorkflowSnapshot(snapshot);
     return {
-      ...(snapshot as unknown as WorkflowRunT),
+      ...run,
       ...(origin.sessionId !== undefined ? { sessionId: origin.sessionId } : {}),
       ...(origin.surface !== undefined ? { surface: origin.surface } : {}),
     };
@@ -887,7 +1044,8 @@ export class WorkflowController {
           if (origin && typeof origin === 'object') {
             const o: WorkflowOrigin = {};
             const so = origin as WorkflowOrigin;
-            if (typeof so.sessionId === 'string') (o as { sessionId?: string }).sessionId = so.sessionId;
+            if (typeof so.sessionId === 'string')
+              (o as { sessionId?: string }).sessionId = so.sessionId;
             if (so.surface === 'code' || so.surface === 'partner') {
               (o as { surface?: 'code' | 'partner' }).surface = so.surface;
             }
@@ -1000,12 +1158,17 @@ interface CodingSdkSubset {
   }) => Promise<readonly SavedWorkflowLite[]>;
   loadSavedWorkflow?: (filePath: string) => Promise<unknown>;
   loadSavedWorkflowCapsule?: (filePath: string) => Promise<unknown>;
-  preflightWorkflowCapsule?: (capsuleOrInput: unknown, env?: unknown) => Promise<WorkflowPreflight> | WorkflowPreflight;
+  preflightWorkflowCapsule?: (
+    capsuleOrInput: unknown,
+    env?: unknown,
+  ) => Promise<WorkflowPreflight> | WorkflowPreflight;
   generateWorkflowFromOptions?: (input: {
     request: string;
     options: Record<string, unknown>;
   }) => Promise<WorkflowGenerationResultLite>;
-  loadGeneratedWorkflowFromRun?: (input: { runDir: string }) => Promise<LoadedGeneratedWorkflowLite>;
+  loadGeneratedWorkflowFromRun?: (input: {
+    runDir: string;
+  }) => Promise<LoadedGeneratedWorkflowLite>;
   saveGeneratedWorkflowFromRun?: (input: {
     runDir: string;
     targetDir: string;
@@ -1056,7 +1219,10 @@ async function loadCodingSdk(): Promise<CodingSdkSubset | null> {
     codingSdkCache = (await import('@kodax-ai/kodax/coding')) as unknown as CodingSdkSubset;
     return codingSdkCache;
   } catch (err) {
-    console.warn('[WorkflowController] failed to load SDK coding module:', err instanceof Error ? err.message : err);
+    console.warn(
+      '[WorkflowController] failed to load SDK coding module:',
+      err instanceof Error ? err.message : err,
+    );
     return null;
   }
 }
@@ -1098,7 +1264,10 @@ function asWorkflowCapsule(value: unknown): WorkflowCapsuleLite {
 }
 
 function workflowNameFromModule(module: unknown): string | undefined {
-  const meta = module && typeof module === 'object' ? (module as { meta?: { name?: unknown } }).meta : undefined;
+  const meta =
+    module && typeof module === 'object'
+      ? (module as { meta?: { name?: unknown } }).meta
+      : undefined;
   return typeof meta?.name === 'string' ? meta.name : undefined;
 }
 
@@ -1115,7 +1284,10 @@ function scriptSnapshotFromCapsule(capsule: unknown): WorkflowScriptSnapshotLite
   }
 }
 
-async function preflightCapsule(sdk: CodingSdkSubset, capsule: unknown): Promise<WorkflowPreflight> {
+async function preflightCapsule(
+  sdk: CodingSdkSubset,
+  capsule: unknown,
+): Promise<WorkflowPreflight> {
   if (!sdk.preflightWorkflowCapsule) return { ok: true, issues: [] };
   try {
     const direct = await sdk.preflightWorkflowCapsule(capsule);
@@ -1132,8 +1304,13 @@ async function preflightCapsule(sdk: CodingSdkSubset, capsule: unknown): Promise
 
 function formatPreflightIssues(result: WorkflowPreflight): string {
   if (result.ok) return 'workflow capsule preflight passed';
-  const details = result.issues.map((issue) => issue.message).filter(Boolean).join('; ');
-  return details ? `workflow capsule preflight failed: ${details}` : 'workflow capsule preflight failed';
+  const details = result.issues
+    .map((issue) => issue.message)
+    .filter(Boolean)
+    .join('; ');
+  return details
+    ? `workflow capsule preflight failed: ${details}`
+    : 'workflow capsule preflight failed';
 }
 
 function firstPatternName(manifest: WorkflowScriptManifestLite): string | undefined {
@@ -1196,7 +1373,9 @@ function buildRevisionProvenance(input: {
     ...(fromRunId !== undefined ? { fromRunId } : {}),
     ...(fromWorkflowName !== undefined ? { fromWorkflowName } : {}),
     ...(revisionOf !== undefined ? { revisionOf } : {}),
-    ...(input.replacesWorkflowName !== undefined ? { replacesWorkflowName: input.replacesWorkflowName } : {}),
+    ...(input.replacesWorkflowName !== undefined
+      ? { replacesWorkflowName: input.replacesWorkflowName }
+      : {}),
     createdAt: new Date().toISOString(),
     kodaxVersion: currentKodaxWorkflowVersion(),
   };

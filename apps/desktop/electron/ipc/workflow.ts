@@ -6,7 +6,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { registerChannel } from './register.js';
-import { workflowController } from '../kodax/workflow-controller.js';
+import { workflowController, type LaunchSession } from '../kodax/workflow-controller.js';
 import { workflowPolicyStore } from '../kodax/workflow-policy.js';
 import { kodaxHost } from '../kodax/host.js';
 
@@ -21,6 +21,18 @@ function isSafeWorkflowPath(filePath: string, projectRoot: string | undefined): 
   const allowed = [path.resolve(os.homedir(), '.kodax', 'workflows')];
   if (projectRoot) allowed.push(path.resolve(projectRoot, '.kodax', 'workflows'));
   return allowed.some((prefix) => resolved === prefix || resolved.startsWith(prefix + path.sep));
+}
+
+function toLaunchSession(session: NonNullable<ReturnType<typeof kodaxHost.get>>): LaunchSession {
+  return {
+    sessionId: session.sessionId,
+    surface: session.surface,
+    provider: session.provider,
+    ...(session.model !== undefined ? { model: session.model } : {}),
+    reasoningMode: session.reasoningMode,
+    agentMode: session.agentMode,
+    projectRoot: session.projectRoot,
+  };
 }
 
 export function registerWorkflowChannels(): void {
@@ -55,10 +67,27 @@ export function registerWorkflowChannels(): void {
     ok: await workflowController.deleteRun(input.runId, input.force),
   }));
 
+  registerChannel('workflow.rerun', async (input) => {
+    const session = kodaxHost.get(input.sessionId);
+    if (!session) return { error: 'session not found' };
+    const run = workflowController.get(input.runId);
+    if (!run) return { error: 'workflow run not found' };
+    if (run.sessionId !== input.sessionId) {
+      return { error: 'workflow run does not belong to this session' };
+    }
+    const res = await workflowController.rerunGeneratedWorkflow(
+      input.runId,
+      input.args ?? {},
+      toLaunchSession(session),
+    );
+    return 'error' in res ? { error: res.error } : { runId: res.runId };
+  });
+
   registerChannel('workflow.prune', async (input) => {
-    const options = input.dryRun === true && input.keep === undefined && input.olderThanDays === undefined
-      ? { ...input, keep: 50 }
-      : input;
+    const options =
+      input.dryRun === true && input.keep === undefined && input.olderThanDays === undefined
+        ? { ...input, keep: 50 }
+        : input;
     const r = await workflowController.prune(options);
     // readonly candidates → mutable copy（schema 推断 string[]）。
     return {
@@ -70,7 +99,9 @@ export function registerWorkflowChannels(): void {
   });
 
   // F063 库 / preflight / 启动。
-  registerChannel('workflow.library', async (input) => workflowController.listLibrary(input?.projectRoot));
+  registerChannel('workflow.library', async (input) =>
+    workflowController.listLibrary(input?.projectRoot),
+  );
 
   registerChannel('workflow.preflight', async (input) => {
     // 可信 projectRoot 取自 session；路径白名单（防任意文件加载执行）。
@@ -107,6 +138,33 @@ export function registerWorkflowChannels(): void {
   });
 
   // F064 Host policy（AMAW 自启治理 + caps）。
+  registerChannel('workflow.saved.rename', async (input) => {
+    const session = kodaxHost.get(input.sessionId);
+    if (!session) return { error: 'session not found' };
+    const res = await workflowController.renameSavedWorkflow(
+      input.name,
+      input.newName,
+      session.projectRoot,
+      input.source,
+    );
+    return 'error' in res
+      ? { error: res.error }
+      : { name: res.name, path: res.path, previousPath: res.previousPath };
+  });
+
+  registerChannel('workflow.saved.delete', async (input) => {
+    const session = kodaxHost.get(input.sessionId);
+    if (!session) return { error: 'session not found' };
+    const res = await workflowController.deleteSavedWorkflow(
+      input.name,
+      session.projectRoot,
+      input.source,
+    );
+    return 'error' in res
+      ? { error: res.error }
+      : { name: res.name, path: res.path, previousPath: res.previousPath };
+  });
+
   registerChannel('workflow.policy.get', () => workflowPolicyStore.get());
   registerChannel('workflow.policy.set', (input) => workflowPolicyStore.set(input));
 

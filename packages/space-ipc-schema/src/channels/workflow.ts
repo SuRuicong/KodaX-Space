@@ -221,7 +221,10 @@ const runIdInput = z.object({ runId: z.string().min(1).max(SHORT) });
 export const workflowStopChannel = {
   name: 'workflow.stop',
   direction: 'invoke',
-  input: z.object({ runId: z.string().min(1).max(SHORT), reason: z.string().max(SHORT).optional() }),
+  input: z.object({
+    runId: z.string().min(1).max(SHORT),
+    reason: z.string().max(SHORT).optional(),
+  }),
   output: okResult,
 } as const;
 
@@ -254,6 +257,20 @@ export const workflowDeleteChannel = {
   direction: 'invoke',
   input: z.object({ runId: z.string().min(1).max(SHORT), force: z.boolean().optional() }),
   output: okResult,
+} as const;
+
+export const workflowRerunChannel = {
+  name: 'workflow.rerun',
+  direction: 'invoke',
+  input: z.object({
+    runId: z.string().min(1).max(SHORT),
+    sessionId: z.string().min(1).max(128),
+    args: z.unknown().optional(),
+  }),
+  output: z.object({
+    runId: z.string().max(SHORT).optional(),
+    error: z.string().max(MSG).optional(),
+  }),
 } as const;
 
 export const workflowPruneChannel = {
@@ -343,6 +360,39 @@ export const workflowStartChannel = {
   output: z.object({
     runId: z.string().max(SHORT).optional(),
     /** 启动失败时的诊断（runId 缺省时present）。 */
+    error: z.string().max(MSG).optional(),
+  }),
+} as const;
+
+export const workflowSavedRenameChannel = {
+  name: 'workflow.saved.rename',
+  direction: 'invoke',
+  input: z.object({
+    name: z.string().min(1).max(SHORT),
+    newName: z.string().min(1).max(SHORT),
+    sessionId: z.string().min(1).max(128),
+    source: z.string().max(SHORT).optional(),
+  }),
+  output: z.object({
+    name: z.string().max(SHORT).optional(),
+    path: z.string().max(4096).optional(),
+    previousPath: z.string().max(4096).optional(),
+    error: z.string().max(MSG).optional(),
+  }),
+} as const;
+
+export const workflowSavedDeleteChannel = {
+  name: 'workflow.saved.delete',
+  direction: 'invoke',
+  input: z.object({
+    name: z.string().min(1).max(SHORT),
+    sessionId: z.string().min(1).max(128),
+    source: z.string().max(SHORT).optional(),
+  }),
+  output: z.object({
+    name: z.string().max(SHORT).optional(),
+    path: z.string().max(4096).optional(),
+    previousPath: z.string().max(4096).optional(),
     error: z.string().max(MSG).optional(),
   }),
 } as const;

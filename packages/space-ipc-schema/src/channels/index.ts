@@ -60,19 +60,9 @@ import {
   permissionListChannel,
   permissionRevokeChannel,
 } from './permission.js';
-import {
-  askUserRequestChannel,
-  askUserReplyChannel,
-  askUserCancelledChannel,
-} from './ask-user.js';
-import {
-  slashDiscoverChannel,
-  slashExecChannel,
-} from './slash.js';
-import {
-  skillDiscoverChannel,
-  skillInvokeChannel,
-} from './skill.js';
+import { askUserRequestChannel, askUserReplyChannel, askUserCancelledChannel } from './ask-user.js';
+import { slashDiscoverChannel, slashExecChannel } from './slash.js';
+import { skillDiscoverChannel, skillInvokeChannel } from './skill.js';
 import { agentDiscoverChannel } from './agent.js';
 import {
   mcpDiscoverChannel,
@@ -95,15 +85,16 @@ import {
   providerRemoveCustomChannel,
   providerModelContextWindowChannel,
 } from './provider.js';
-import { filesTreeChannel, filesReadChannel, filesReadBinaryChannel, filesDiffChannel } from './files.js';
+import {
+  filesTreeChannel,
+  filesReadChannel,
+  filesReadBinaryChannel,
+  filesDiffChannel,
+} from './files.js';
 import { titlebarSetOverlayChannel } from './titlebar.js';
 import { settingsGetChannel, settingsSetDefaultWorkspaceChannel } from './settings.js';
 import { notificationShowChannel, notificationClickedChannel } from './notification.js';
-import {
-  updaterCheckChannel,
-  updaterInstallChannel,
-  updaterStatusChannel,
-} from './updater.js';
+import { updaterCheckChannel, updaterInstallChannel, updaterStatusChannel } from './updater.js';
 import {
   mcpbInstallChannel,
   mcpbUninstallChannel,
@@ -140,10 +131,13 @@ import {
   workflowResumeChannel,
   workflowRenameChannel,
   workflowDeleteChannel,
+  workflowRerunChannel,
   workflowPruneChannel,
   workflowLibraryChannel,
   workflowPreflightChannel,
   workflowStartChannel,
+  workflowSavedRenameChannel,
+  workflowSavedDeleteChannel,
   workflowPolicyGetChannel,
   workflowPolicySetChannel,
   workflowResultChannel,
@@ -245,10 +239,13 @@ export const invokeChannels = {
   [workflowResumeChannel.name]: workflowResumeChannel,
   [workflowRenameChannel.name]: workflowRenameChannel,
   [workflowDeleteChannel.name]: workflowDeleteChannel,
+  [workflowRerunChannel.name]: workflowRerunChannel,
   [workflowPruneChannel.name]: workflowPruneChannel,
   [workflowLibraryChannel.name]: workflowLibraryChannel,
   [workflowPreflightChannel.name]: workflowPreflightChannel,
   [workflowStartChannel.name]: workflowStartChannel,
+  [workflowSavedRenameChannel.name]: workflowSavedRenameChannel,
+  [workflowSavedDeleteChannel.name]: workflowSavedDeleteChannel,
   [workflowPolicyGetChannel.name]: workflowPolicyGetChannel,
   [workflowPolicySetChannel.name]: workflowPolicySetChannel,
   [workflowResultChannel.name]: workflowResultChannel,

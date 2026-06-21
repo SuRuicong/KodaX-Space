@@ -17,11 +17,7 @@ export {
   type IpcResult,
 } from './envelope.js';
 
-export {
-  truncateZodError,
-  type SafeZodIssue,
-  type SafeZodErrorDetails,
-} from './utils.js';
+export { truncateZodError, type SafeZodIssue, type SafeZodErrorDetails } from './utils.js';
 
 export { canonProjectRoot } from './path-canon.js';
 
@@ -87,10 +83,7 @@ export {
   type InputArtifact,
 } from './channels/session.js';
 
-export {
-  clipboardSaveImageChannel,
-  clipboardCleanupSessionChannel,
-} from './channels/clipboard.js';
+export { clipboardSaveImageChannel, clipboardCleanupSessionChannel } from './channels/clipboard.js';
 
 export {
   projectListChannel,
@@ -155,10 +148,7 @@ export {
   type McpRuntimeStatusT,
 } from './channels/mcp.js';
 
-export {
-  kodaxGetDefaultsChannel,
-  type KodaxUserDefaults,
-} from './channels/kodax.js';
+export { kodaxGetDefaultsChannel, type KodaxUserDefaults } from './channels/kodax.js';
 
 export {
   kodaxQueueGetChannel,
@@ -215,10 +205,7 @@ export {
   type SpaceSettingsT,
 } from './channels/settings.js';
 
-export {
-  notificationShowChannel,
-  notificationClickedChannel,
-} from './channels/notification.js';
+export { notificationShowChannel, notificationClickedChannel } from './channels/notification.js';
 
 export {
   updaterCheckChannel,
@@ -268,6 +255,9 @@ export {
   workflowListChannel,
   workflowGetChannel,
   workflowEventChannel,
+  workflowRerunChannel,
+  workflowSavedRenameChannel,
+  workflowSavedDeleteChannel,
   workflowProcessItemSchema,
   workflowProcessSnapshotSchema,
   workflowRunSchema,

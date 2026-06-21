@@ -18,7 +18,11 @@ interface FakeSnap {
   runId: string;
   [k: string]: unknown;
 }
-type FakeEvent = { type: 'workflow_started' | 'workflow_updated' | 'workflow_finished'; snapshot: FakeSnap; message?: string };
+type FakeEvent = {
+  type: 'workflow_started' | 'workflow_updated' | 'workflow_finished';
+  snapshot: FakeSnap;
+  message?: string;
+};
 
 function fakeManager() {
   let listener: ((e: FakeEvent) => void) | null = null;
@@ -70,7 +74,13 @@ function sampleSnapshot(runId: string, over: Record<string, unknown> = {}): Fake
       { id: 'a1', title: 'finder:bugs', kind: 'agent', status: 'completed', phaseId: 'p1' },
     ],
     counts: { pending: 0, running: 1, completed: 1, failed: 0, cancelled: 0, skipped: 0 },
-    progress: { spawnedAgents: 1, finishedAgents: 1, activeAgents: 0, failedAgents: 0, stoppedAgents: 0 },
+    progress: {
+      spawnedAgents: 1,
+      finishedAgents: 1,
+      activeAgents: 0,
+      failedAgents: 0,
+      stoppedAgents: 0,
+    },
     ...over,
   };
 }
@@ -223,7 +233,12 @@ function fakeLifecycle() {
     },
     async pruneWorkflowRuns(opts) {
       calls.push(['prune', [opts]]);
-      return { deleted: 2, protectedRuns: 1, candidates: ['r1', 'r2'], dryRun: opts.dryRun ?? false };
+      return {
+        deleted: 2,
+        protectedRuns: 1,
+        candidates: ['r1', 'r2'],
+        dryRun: opts.dryRun ?? false,
+      };
     },
     async readWorkflowResult(runId) {
       calls.push(['readResult', [runId]]);
@@ -275,7 +290,13 @@ test('stop pushes an immediate cancelled snapshot fallback', async () => {
           { id: 'a1', title: 'finder:bugs', kind: 'agent', status: 'pending', phaseId: 'p1' },
         ],
         counts: { pending: 1, running: 1, completed: 0, failed: 0, cancelled: 0, skipped: 0 },
-        progress: { spawnedAgents: 1, finishedAgents: 0, activeAgents: 1, failedAgents: 0, stoppedAgents: 0 },
+        progress: {
+          spawnedAgents: 1,
+          finishedAgents: 0,
+          activeAgents: 1,
+          failedAgents: 0,
+          stoppedAgents: 0,
+        },
       }),
     );
 
@@ -287,7 +308,10 @@ test('stop pushes an immediate cancelled snapshot fallback', async () => {
       assert.equal(parsed.data.type, 'workflow_finished');
       assert.equal(parsed.data.sessionId, 's1');
       assert.equal(parsed.data.snapshot.status, 'cancelled');
-      assert.deepEqual(parsed.data.snapshot.items.map((item) => item.status), ['cancelled', 'skipped']);
+      assert.deepEqual(
+        parsed.data.snapshot.items.map((item) => item.status),
+        ['cancelled', 'skipped'],
+      );
       assert.equal(parsed.data.snapshot.counts.cancelled, 1);
       assert.equal(parsed.data.snapshot.counts.skipped, 1);
       assert.equal(parsed.data.snapshot.progress.activeAgents, 0);
@@ -444,10 +468,13 @@ test('generated workflow controller methods delegate to SDK and start/save succe
     assert.ok('runId' in rerun, JSON.stringify(rerun));
     assert.equal(mgr.started.length, 2);
 
-    assert.deepEqual(await ctrl.saveGeneratedWorkflowFromRun('wf_run_1', 'saved-name', process.cwd()), {
-      name: 'saved-name',
-      path: '/tmp/saved.workflow.ts',
-    });
+    assert.deepEqual(
+      await ctrl.saveGeneratedWorkflowFromRun('wf_run_1', 'saved-name', process.cwd()),
+      {
+        name: 'saved-name',
+        path: '/tmp/saved.workflow.ts',
+      },
+    );
     assert.deepEqual(await ctrl.renameSavedWorkflow('saved-name', 'renamed', process.cwd()), {
       name: 'renamed',
       path: '/tmp/renamed.workflow.ts',
@@ -492,10 +519,9 @@ test('generated workflow run helpers reject unsafe runId before filesystem acces
     const ctrl = new WorkflowController(() => {}, file);
     await ctrl.init(fakeManager());
 
-    assert.deepEqual(
-      await ctrl.rerunGeneratedWorkflow('../outside', {}, LAUNCH_SESSION),
-      { error: 'invalid runId' },
-    );
+    assert.deepEqual(await ctrl.rerunGeneratedWorkflow('../outside', {}, LAUNCH_SESSION), {
+      error: 'invalid runId',
+    });
     assert.deepEqual(
       await ctrl.saveGeneratedWorkflowFromRun('wf_../outside', 'saved-name', process.cwd()),
       { error: 'invalid runId' },
@@ -595,7 +621,10 @@ test('rerunGeneratedWorkflow logs direct preflight fallback before boxed retry',
     let preflightCalls = 0;
     _setCodingSdkForTesting({
       async loadGeneratedWorkflowFromRun() {
-        return { capsule: generatedCapsule('preflight-flow'), module: { meta: { name: 'preflight-flow' } } };
+        return {
+          capsule: generatedCapsule('preflight-flow'),
+          module: { meta: { name: 'preflight-flow' } },
+        };
       },
       async preflightWorkflowCapsule(input: unknown) {
         preflightCalls += 1;
@@ -611,7 +640,9 @@ test('rerunGeneratedWorkflow logs direct preflight fallback before boxed retry',
     assert.ok('runId' in result, JSON.stringify(result));
     assert.equal(preflightCalls, 2);
     assert.ok(
-      warnings.some((args) => String(args[0]).includes('preflightWorkflowCapsule direct call failed')),
+      warnings.some((args) =>
+        String(args[0]).includes('preflightWorkflowCapsule direct call failed'),
+      ),
       JSON.stringify(warnings),
     );
   } finally {
@@ -659,7 +690,11 @@ test('start: unknown builtin returns error (no run started)', async () => {
     const ctrl = new WorkflowController(() => {}, file);
     const mgr = fakeManager();
     await ctrl.init(mgr);
-    const res = await ctrl.start({ target: 'no-such-workflow', source: 'builtin', session: LAUNCH_SESSION });
+    const res = await ctrl.start({
+      target: 'no-such-workflow',
+      source: 'builtin',
+      session: LAUNCH_SESSION,
+    });
     assert.ok('error' in res);
     assert.equal(mgr.started.length, 0);
   } finally {
@@ -673,7 +708,10 @@ test('listLibrary: real SDK returns parallel-investigation among built-ins', asy
     const ctrl = new WorkflowController(() => {}, file);
     await ctrl.init(fakeManager());
     const lib = await ctrl.listLibrary(process.cwd());
-    assert.ok(lib.builtin.some((w) => w.name === 'parallel-investigation'), JSON.stringify(lib.builtin));
+    assert.ok(
+      lib.builtin.some((w) => w.name === 'parallel-investigation'),
+      JSON.stringify(lib.builtin),
+    );
     assert.ok(Array.isArray(lib.patterns));
     assert.ok(Array.isArray(lib.saved));
   } finally {
@@ -698,7 +736,11 @@ test('forwarded payload + snapshot pass the IPC zod schema (no drift / field los
       latestMessage: 'verifying findings',
       artifacts: [{ name: 'report', description: 'final' }],
     });
-    mgr._emit({ type: 'workflow_finished', snapshot: { ...snap, status: 'completed' }, message: 'done' });
+    mgr._emit({
+      type: 'workflow_finished',
+      snapshot: { ...snap, status: 'completed' },
+      message: 'done',
+    });
 
     // push payload 必须过 push 通道 schema
     const parsed = workflowEventChannel.payload.safeParse(pushed[0]);
@@ -710,6 +752,50 @@ test('forwarded payload + snapshot pass the IPC zod schema (no drift / field los
     assert.ok(snapParsed.success);
     assert.equal(snapParsed.success && snapParsed.data.tokens?.spent, 1234);
     assert.equal(snapParsed.success && snapParsed.data.hostMetadata?.sessionId, 's1');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('workflow snapshots are clamped before IPC validation', async () => {
+  const { dir, file } = freshFile();
+  try {
+    const pushed: unknown[] = [];
+    const ctrl = new WorkflowController((p) => pushed.push(p), file);
+    const mgr = fakeManager();
+    await ctrl.init(mgr);
+    ctrl.registerOrigin('r_long', { sessionId: 's1', surface: 'code' });
+
+    const longText = 'x'.repeat(9000);
+    mgr._emit({
+      type: 'workflow_finished',
+      snapshot: sampleSnapshot('r_long', {
+        status: 'completed',
+        resultSummary: longText,
+        latestMessage: longText,
+        hostMetadata: { sessionId: 's1', notes: longText },
+        items: [
+          {
+            id: 'a1',
+            title: 'agent',
+            kind: 'agent',
+            status: 'completed',
+            summary: longText,
+          },
+        ],
+      }),
+      message: longText,
+    });
+
+    const parsed = workflowEventChannel.payload.safeParse(pushed[0]);
+    assert.ok(parsed.success, parsed.success ? '' : JSON.stringify(parsed.error.issues));
+    assert.equal(parsed.success && parsed.data.snapshot.status, 'completed');
+    assert.ok(parsed.success && (parsed.data.snapshot.resultSummary?.length ?? 0) <= 8192);
+    assert.ok(parsed.success && (parsed.data.message?.length ?? 0) <= 8192);
+    assert.ok(parsed.success && (parsed.data.snapshot.items[0]?.summary?.length ?? 0) <= 8192);
+
+    const seeded = ctrl.get('r_long');
+    assert.ok((seeded?.resultSummary?.length ?? 0) <= 8192);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
