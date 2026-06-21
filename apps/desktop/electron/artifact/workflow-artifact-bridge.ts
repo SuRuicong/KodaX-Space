@@ -34,9 +34,27 @@ function detectStringKind(s: string): ArtifactKindT {
   return 'code';
 }
 
+const TEXT_ARTIFACT_KEYS = ['report', 'markdown', 'content', 'text', 'body', 'summary'] as const;
+
+function unwrapTextArtifact(value: unknown): string | undefined {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  for (const key of TEXT_ARTIFACT_KEYS) {
+    const field = record[key];
+    if (typeof field === 'string' && field.trim().length > 0) return field;
+  }
+
+  const entries = Object.entries(record);
+  if (entries.length === 1 && typeof entries[0]?.[1] === 'string') {
+    return entries[0][1];
+  }
+  return undefined;
+}
+
 /**
  * 把任意 workflow artifact 值收敛成 Space artifact。
  *   - string → 嗅探 kind（html/svg/markdown/code）
+ *   - { report|markdown|content|text|body|summary: string } → 解开外壳再嗅探
  *   - object/array/其它 → JSON 串，kind=code
  *   - null/undefined → 空 markdown（保留条目，不丢）
  */
@@ -46,6 +64,10 @@ export function detectArtifactKind(value: unknown): DetectedArtifact {
   }
   if (value === null || value === undefined) {
     return { kind: 'markdown', content: '' };
+  }
+  const unwrapped = unwrapTextArtifact(value);
+  if (unwrapped !== undefined) {
+    return { kind: detectStringKind(unwrapped), content: clip(unwrapped) };
   }
   // 对象/数组/数字/布尔 → JSON 文本（code）
   let json: string;

@@ -27,6 +27,16 @@ test('对象 / 数组 → JSON 文本 code', () => {
   assert.equal(detectArtifactKind([1, 2, 3]).kind, 'code');
 });
 
+test('workflow 文本外壳会解开再嗅探 kind', () => {
+  const report = detectArtifactKind({ report: '# Review report\n\nAll good.' });
+  assert.equal(report.kind, 'markdown');
+  assert.equal(report.content, '# Review report\n\nAll good.');
+
+  const html = detectArtifactKind({ content: '<!doctype html><html><body>ok</body></html>' });
+  assert.equal(html.kind, 'html');
+  assert.equal(html.content, '<!doctype html><html><body>ok</body></html>');
+});
+
 test('null/undefined → 空 markdown（保留条目不丢）', () => {
   assert.deepEqual(detectArtifactKind(null), { kind: 'markdown', content: '' });
   assert.deepEqual(detectArtifactKind(undefined), { kind: 'markdown', content: '' });
