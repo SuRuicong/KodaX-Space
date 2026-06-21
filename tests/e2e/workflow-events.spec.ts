@@ -138,10 +138,63 @@ async function writePersistedWorkflowRun(
 ): Promise<string> {
   const runId = 'wf_persisted_e2e';
   const runDir = path.join(space.testDataDir, 'space', 'workflow-runs', runId);
-  await fs.mkdir(runDir, { recursive: true });
+  const artifactsDir = path.join(runDir, 'artifacts');
+  await fs.mkdir(artifactsDir, { recursive: true });
   await fs.writeFile(
     path.join(runDir, 'manifest.json'),
     JSON.stringify({ patterns: ['fan-out-and-synthesize'] }),
+  );
+  await fs.writeFile(
+    path.join(runDir, 'events.jsonl'),
+    [
+      { seq: 1, type: 'workflow_started', data: { runId }, ts: 1782039116701 },
+      { seq: 2, type: 'phase_started', data: { name: 'Collect changes' }, ts: 1782039116703 },
+      {
+        seq: 3,
+        type: 'agent_spawned',
+        data: { taskId: 'wf-child-1', name: 'Change collector' },
+        ts: 1782039116706,
+      },
+      {
+        seq: 4,
+        type: 'agent_completed',
+        data: {
+          taskId: 'wf-child-1',
+          name: 'Change collector',
+          status: 'completed',
+          provider: 'mock-provider',
+          summaryKind: 'pending',
+          summary: 'Long raw child result should stay folded until a digest is available.',
+        },
+        ts: 1782039208729,
+      },
+      {
+        seq: 5,
+        type: 'agent_summary_updated',
+        data: {
+          taskId: 'wf-child-1',
+          name: 'Change collector',
+          summaryKind: 'digest',
+          summary: 'Recovered persisted child digest.',
+        },
+        ts: 1782039226149,
+      },
+      { seq: 6, type: 'phase_finished', data: { name: 'Collect changes' }, ts: 1782039355793 },
+      { seq: 7, type: 'phase_started', data: { name: 'Synthesize report' }, ts: 1782039355794 },
+      { seq: 8, type: 'artifact_written', data: { name: 'final-report' }, ts: 1782039852802 },
+      {
+        seq: 9,
+        type: 'workflow_completed',
+        data: { resultSummary: '# Persisted final report\n\nRecovered from disk.' },
+        ts: 1782039852803,
+      },
+    ]
+      .map((event) => JSON.stringify(event))
+      .join('\n'),
+  );
+  await fs.writeFile(
+    path.join(artifactsDir, 'final-report.json'),
+    JSON.stringify({ report: '# Durable artifact report\n\nRecovered artifact body.' }),
   );
   await fs.writeFile(
     path.join(runDir, 'run.json'),
@@ -154,7 +207,6 @@ async function writePersistedWorkflowRun(
       endedAt: '2026-06-21T01:01:00.000Z',
       totalSpawned: 1,
       args: { request: 'Restore completed workflow history' },
-      items: [{ id: 'a1', title: 'Reviewer', kind: 'agent', status: 'completed' }],
       artifacts: ['final-report'],
       resultSummary: '# Persisted final report\n\nRecovered from disk.',
       hostMetadata: {
@@ -279,7 +331,9 @@ test('workflow push events update the sidebar and transcript through completion'
         status: 'completed',
         activePhaseIndex: 1,
         latestMessage: 'workflow completed',
-        resultSummary: '# Final workflow report\n\nAll checks passed.',
+        resultSummary: `# Final workflow report\n\n${'All checks passed with a detailed paragraph. '.repeat(
+          30,
+        )}\nTAIL_MARKER_VISIBLE_ONLY_WHEN_EXPANDED`,
         items: [
           { id: 'p1', title: 'Collect changes', kind: 'phase', status: 'completed' },
           {
@@ -318,6 +372,9 @@ test('workflow push events update the sidebar and transcript through completion'
       }),
     ).toBeVisible({ timeout: 5_000 });
     await expect(stream).toContainText('# Final workflow report');
+    await expect(sidebar).not.toContainText('TAIL_MARKER_VISIBLE_ONLY_WHEN_EXPANDED');
+    await sidebar.getByTestId('workflow-summary-toggle').click();
+    await expect(sidebar).toContainText('TAIL_MARKER_VISIBLE_ONLY_WHEN_EXPANDED');
   } finally {
     await space.close();
     await fs.rm(projectDir, { recursive: true, force: true }).catch(() => {});
@@ -335,10 +392,21 @@ test('workflow manager restores completed runs persisted on disk', async () => {
     await expect(panel).toBeVisible({ timeout: 5_000 });
     await expect(panel).toContainText('Persisted Workflow Review', { timeout: 5_000 });
     await expect(panel).toContainText('completed');
+    await expect(panel.getByLabel('Workflow flow graph')).toContainText('Collect changes');
+    await expect(panel.getByLabel('Workflow flow graph')).toContainText('Synthesize report');
+    await panel.getByRole('button', { name: 'Subagents' }).click();
+    await expect(panel.getByTestId('workflow-management-detail')).toContainText('Change collector');
+    await expect(panel.getByTestId('workflow-management-detail')).toContainText(
+      'Recovered persisted child digest.',
+    );
     await expect(panel.getByTestId('workflow-management-detail')).toContainText(
       'Recovered from disk.',
     );
-    await expect(panel.getByLabel('Workflow flow graph')).toContainText('fan-out');
+    await panel.getByTestId('workflow-result-toggle').click();
+    await expect(panel.getByTestId('workflow-management-detail')).toContainText(
+      'Durable artifact report',
+    );
+    await expect(panel.getByTestId('workflow-management-detail')).not.toContainText('加载中');
   } finally {
     await space.close();
     await fs.rm(projectDir, { recursive: true, force: true }).catch(() => {});

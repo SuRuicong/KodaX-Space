@@ -184,12 +184,64 @@ test('list and get restore completed workflow runs from durable run.json', async
   const runBaseDir = join(dir, 'workflow-runs');
   const runId = 'wf_persisted_history';
   const runDir = join(runBaseDir, runId);
+  const artifactsDir = join(runDir, 'artifacts');
   const projectRoot = join(dir, 'project');
   try {
-    mkdirSync(runDir, { recursive: true });
+    mkdirSync(artifactsDir, { recursive: true });
     writeFileSync(
       join(runDir, 'manifest.json'),
       JSON.stringify({ patterns: ['fan-out-and-synthesize'] }),
+    );
+    writeFileSync(
+      join(runDir, 'events.jsonl'),
+      [
+        { seq: 1, type: 'workflow_started', data: { runId }, ts: 1781654400000 },
+        { seq: 2, type: 'phase_started', data: { name: 'Collect facts' }, ts: 1781654401000 },
+        {
+          seq: 3,
+          type: 'agent_spawned',
+          data: { taskId: 'agent-1', name: 'History reviewer' },
+          ts: 1781654402000,
+        },
+        {
+          seq: 4,
+          type: 'agent_completed',
+          data: {
+            taskId: 'agent-1',
+            name: 'History reviewer',
+            status: 'completed',
+            provider: 'mock-provider',
+            summaryKind: 'pending',
+            summary: 'Raw long child result should not be surfaced as a digest yet.',
+          },
+          ts: 1781654403000,
+        },
+        {
+          seq: 5,
+          type: 'agent_summary_updated',
+          data: {
+            taskId: 'agent-1',
+            name: 'History reviewer',
+            summaryKind: 'digest',
+            summary: 'Recovered child agent digest.',
+          },
+          ts: 1781654404000,
+        },
+        { seq: 6, type: 'phase_finished', data: { name: 'Collect facts' }, ts: 1781654405000 },
+        { seq: 7, type: 'artifact_written', data: { name: 'final-report' }, ts: 1781654406000 },
+        {
+          seq: 8,
+          type: 'workflow_completed',
+          data: { resultSummary: '# Persisted final report\n\nRecovered from disk.' },
+          ts: 1781654460000,
+        },
+      ]
+        .map((event) => JSON.stringify(event))
+        .join('\n'),
+    );
+    writeFileSync(
+      join(artifactsDir, 'final-report.json'),
+      JSON.stringify({ report: '# Durable artifact report\n\nFull persisted body.' }),
     );
     writeFileSync(
       join(runDir, 'run.json'),
@@ -201,7 +253,6 @@ test('list and get restore completed workflow runs from durable run.json', async
         endedAt: 1781654460000,
         totalSpawned: 1,
         args: { request: 'Review all current changes' },
-        items: [{ id: 'a1', title: 'reviewer', kind: 'agent', status: 'completed' }],
         artifacts: ['final-report'],
         resultSummary: '# Persisted final report\n\nRecovered from disk.',
         hostMetadata: { sessionId: 's_hist', surface: 'code', projectRoot },
@@ -222,11 +273,21 @@ test('list and get restore completed workflow runs from durable run.json', async
     assert.deepEqual(runs[0]?.patterns, ['fan-out-and-synthesize']);
     assert.equal(runs[0]?.artifacts?.[0]?.name, 'final-report');
     assert.equal(runs[0]?.goal, 'Review all current changes');
+    assert.equal(runs[0]?.items.length, 3);
+    assert.equal(runs[0]?.items[0]?.title, 'Collect facts');
+    assert.equal(runs[0]?.items[1]?.title, 'History reviewer');
+    assert.equal(runs[0]?.items[1]?.summary, 'Recovered child agent digest.');
+    assert.equal(runs[0]?.items[1]?.summaryStatus, 'result');
+    assert.equal(runs[0]?.items[2]?.kind, 'artifact');
 
     const got = ctrl.get(runId);
     assert.equal(got?.runId, runId);
     assert.equal(got?.resultSummary, '# Persisted final report\n\nRecovered from disk.');
     assert.equal(ctrl.list('s_hist')[0]?.runId, runId);
+    assert.equal(await ctrl.readResult(runId), '# Durable artifact report\n\nFull persisted body.');
+    assert.deepEqual(await ctrl.readArtifact(runId, 'final-report'), {
+      report: '# Durable artifact report\n\nFull persisted body.',
+    });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

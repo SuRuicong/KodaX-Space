@@ -445,11 +445,13 @@ function WorkflowRunCard({
         <div className="mt-1 text-[11px] text-danger break-words">{run.error}</div>
       )}
       {run.resultSummary && isTerminal && (
-        <div className="mt-1 text-[11px] text-fg-secondary break-words">{run.resultSummary}</div>
+        <WorkflowSummaryView summary={run.resultSummary} variant={variant} />
       )}
 
       {/* F066 完整结果（终态懒取）；artifacts 已自动桥进 artifact 面板（方案 A）。 */}
-      {isTerminal && run.status === 'completed' && <WorkflowResultView runId={run.runId} />}
+      {isTerminal && run.status === 'completed' && (
+        <WorkflowResultView runId={run.runId} fallback={run.resultSummary} />
+      )}
 
       {/* item 树 */}
       {showTree && tree.length > 0 && (
@@ -466,8 +468,50 @@ function WorkflowRunCard({
   );
 }
 
+function WorkflowSummaryView({
+  summary,
+  variant,
+}: {
+  summary: string;
+  variant: 'compact' | 'full';
+}): JSX.Element {
+  const long = summary.length > 700 || summary.split('\n').length > 8;
+  const [open, setOpen] = useState(!long && variant === 'full');
+  if (!long) {
+    return <div className="mt-1 text-[11px] text-fg-secondary break-words">{summary}</div>;
+  }
+  const preview = summary.slice(0, variant === 'compact' ? 320 : 520).trimEnd();
+  return (
+    <div className="mt-1 rounded border border-border-default/45 bg-surface/30 p-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="mb-1 inline-flex items-center gap-1 text-[10px] text-fg-muted hover:text-fg-primary"
+        aria-expanded={open}
+        data-testid="workflow-summary-toggle"
+      >
+        {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        Summary
+      </button>
+      <pre
+        className={`text-[11px] text-fg-secondary whitespace-pre-wrap break-words ${
+          open ? 'max-h-64 overflow-auto' : 'max-h-20 overflow-hidden'
+        }`}
+      >
+        {open ? summary : `${preview}${preview.length < summary.length ? '\n...' : ''}`}
+      </pre>
+    </div>
+  );
+}
+
 /** F066 完整结果视图：终态懒取 workflow.result，可展开 + 复制。 */
-function WorkflowResultView({ runId }: { runId: string }): JSX.Element {
+function WorkflowResultView({
+  runId,
+  fallback,
+}: {
+  runId: string;
+  fallback?: string;
+}): JSX.Element {
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -478,10 +522,13 @@ function WorkflowResultView({ runId }: { runId: string }): JSX.Element {
     setOpen(next);
     if (next && result === null) {
       setLoading(true);
-      const r = await window.kodaxSpace?.invoke('workflow.result', { runId }).catch(() => null);
-      if (!mountedRef.current) return; // 卸载后不再 setState
-      setResult(r?.ok ? (r.data.result ?? '') : '');
-      setLoading(false);
+      try {
+        const r = await window.kodaxSpace?.invoke('workflow.result', { runId }).catch(() => null);
+        if (!mountedRef.current) return; // 卸载后不再 setState
+        setResult(r?.ok ? (r.data.result ?? fallback ?? '') : (fallback ?? ''));
+      } finally {
+        if (mountedRef.current) setLoading(false);
+      }
     }
   }
   return (
@@ -490,6 +537,7 @@ function WorkflowResultView({ runId }: { runId: string }): JSX.Element {
         type="button"
         onClick={() => void toggle()}
         className="inline-flex items-center gap-1 text-[10px] text-fg-muted hover:text-fg-primary"
+        data-testid="workflow-result-toggle"
       >
         {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
         完整结果
@@ -632,21 +680,70 @@ function DigestLine({
       // 非最终摘要的提示性信息——与 result 区分：弱化 + 前缀标记。
       if (!summary) return null;
       return (
-        <div className="text-[10px] text-fg-faint break-words" style={pad} title={summary}>
-          ⓘ {summary}
-        </div>
+        <CollapsibleDigest
+          text={summary}
+          className="text-[10px] text-fg-faint break-words"
+          style={pad}
+          prefix="ⓘ "
+        />
       );
     case 'result':
       if (!summary) return null;
       return (
-        <div className="text-[10px] text-fg-muted break-words" style={pad} title={summary}>
-          {summary}
-        </div>
+        <CollapsibleDigest
+          text={summary}
+          className="text-[10px] text-fg-muted break-words"
+          style={pad}
+        />
       );
     default:
       // 穷尽性保险：SDK 若加新 summaryStatus，编译期会在此报错。
       return assertNever(status);
   }
+}
+
+function CollapsibleDigest({
+  text,
+  className,
+  style,
+  prefix = '',
+}: {
+  text: string;
+  className: string;
+  style: React.CSSProperties;
+  prefix?: string;
+}): JSX.Element {
+  const long = text.length > 520 || text.split('\n').length > 5;
+  const [open, setOpen] = useState(false);
+  if (!long) {
+    return (
+      <div className={className} style={style} title={text}>
+        {prefix}
+        {text}
+      </div>
+    );
+  }
+  const preview = text.slice(0, 260).trimEnd();
+  return (
+    <div style={style}>
+      <div
+        className={`${className} ${open ? 'max-h-48 overflow-auto' : 'max-h-16 overflow-hidden'}`}
+        title={text}
+      >
+        {prefix}
+        {open ? text : `${preview}${preview.length < text.length ? '\n...' : ''}`}
+      </div>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-fg-faint hover:text-fg-primary"
+        aria-expanded={open}
+      >
+        {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+        {open ? '收起摘要' : '展开摘要'}
+      </button>
+    </div>
+  );
 }
 
 function assertNever(x: never): null {
