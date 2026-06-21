@@ -44,6 +44,7 @@ import type {
 import { useAppStore } from '../../store/appStore.js';
 import { pushToast } from '../../store/toastStore.js';
 import { buildItemTree, type WorkflowTreeNode } from './buildItemTree.js';
+import { WorkflowRunGraph } from './WorkflowRunGraph.js';
 import { WorkflowLauncher } from './WorkflowLauncher.js';
 import { workflowPhaseCounter } from './workflowPhaseDisplay.js';
 
@@ -388,6 +389,8 @@ function WorkflowRunCard({
           {run.latestMessage}
         </div>
       )}
+
+      <WorkflowRunGraph run={run} variant={variant} />
 
       {variant === 'compact' && (tree.length > 0 || !isTerminal) && (
         <button
