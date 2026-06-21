@@ -326,7 +326,6 @@ function readJsonLines(filePath: string): Record<string, unknown>[] {
   try {
     return readFileSync(filePath, 'utf8')
       .split(/\r?\n/)
-      .slice(0, IPC_MAX_ITEMS * 2)
       .flatMap((line) => {
         const trimmed = line.trim();
         if (!trimmed) return [];
@@ -400,6 +399,52 @@ function durableArtifacts(value: unknown): unknown[] {
   });
 }
 
+function readWorkflowManifest(runDir: string): Record<string, unknown> | null {
+  return readJsonObject(path.join(runDir, 'manifest.json'));
+}
+
+function manifestPhaseTitles(manifest: Record<string, unknown> | null): string[] {
+  const phases = manifest?.phases;
+  if (!Array.isArray(phases)) return [];
+  return phases.flatMap((phase) => {
+    const title = clampPlainText(phase, IPC_SHORT_MAX);
+    return title ? [title] : [];
+  });
+}
+
+function artifactNamesFromDir(runDir: string): string[] {
+  try {
+    return readdirSync(path.join(runDir, 'artifacts'), { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .flatMap((entry) => {
+        const name = entry.name.endsWith('.json') ? entry.name.slice(0, -'.json'.length) : entry.name;
+        return safeArtifactName(name) ? [name] : [];
+      })
+      .slice(0, IPC_MAX_ARTIFACTS);
+  } catch {
+    return [];
+  }
+}
+
+function durableArtifactList(rawArtifacts: unknown, runDir: string, events: readonly Record<string, unknown>[]): unknown[] {
+  const names = new Map<string, unknown>();
+  for (const artifact of durableArtifacts(rawArtifacts)) {
+    if (!isRecord(artifact)) continue;
+    const name = clampPlainText(artifact.name, IPC_SHORT_MAX);
+    if (name) names.set(name, artifact);
+  }
+  for (const event of events) {
+    if (event.type !== 'artifact_written') continue;
+    const data = isRecord(event.data) ? event.data : {};
+    const name = clampPlainText(data.name, IPC_SHORT_MAX);
+    if (name && !names.has(name)) names.set(name, { name });
+  }
+  for (const name of artifactNamesFromDir(runDir)) {
+    if (!names.has(name)) names.set(name, { name });
+  }
+  return [...names.values()].slice(0, IPC_MAX_ARTIFACTS);
+}
+
 function countDurableItems(items: readonly unknown[]): WorkflowRunT['counts'] {
   const counts: WorkflowRunT['counts'] = {
     pending: 0,
@@ -433,8 +478,12 @@ function summaryStatusFromKind(value: unknown): WorkflowRunT['items'][number]['s
   return 'result';
 }
 
-function durableItemsFromEvents(runDir: string, terminalStatus: WorkflowRunT['status']): unknown[] {
-  const events = readJsonLines(path.join(runDir, 'events.jsonl'));
+function durableItemsFromEvents(
+  runDir: string,
+  terminalStatus: WorkflowRunT['status'],
+  events: readonly Record<string, unknown>[] = readJsonLines(path.join(runDir, 'events.jsonl')),
+  manifestPhases = manifestPhaseTitles(readWorkflowManifest(runDir)),
+): unknown[] {
   if (events.length === 0) return [];
 
   const items: WorkflowRunT['items'] = [];
@@ -447,32 +496,61 @@ function durableItemsFromEvents(runDir: string, terminalStatus: WorkflowRunT['st
     if (items.length >= IPC_MAX_ITEMS) return;
     items.push(item);
   };
+  const phaseKey = (value: string | undefined) => value?.trim().toLowerCase() ?? '';
+  const phaseById = (id: string | undefined) => items.find((item) => item.id === id);
+  const ensurePhase = (title: string, startedAt?: string): WorkflowRunT['items'][number] => {
+    const key = phaseKey(title);
+    const existing = phases.get(key);
+    if (existing) {
+      if (startedAt && existing.status === 'pending') {
+        existing.status = 'running';
+        existing.startedAt = startedAt;
+      }
+      return existing;
+    }
+    phaseIndex += 1;
+    const item: WorkflowRunT['items'][number] = {
+      id: `phase-${phaseIndex}`,
+      title,
+      kind: 'phase',
+      status: startedAt ? 'running' : 'pending',
+      ...(startedAt ? { startedAt } : {}),
+    };
+    phases.set(key, item);
+    pushItem(item);
+    return item;
+  };
+  const findEventPhaseId = (title?: string): string | undefined => {
+    const exact = phases.get(phaseKey(title));
+    if (exact) return exact.id;
+    const running = [...phases.values()].find((phase) => phase.status === 'running');
+    if (running) return running.id;
+    if (terminalStatus === 'completed') {
+      const all = [...phases.values()];
+      return all.at(-1)?.id;
+    }
+    return undefined;
+  };
+
+  for (const title of manifestPhases) {
+    ensurePhase(title);
+  }
 
   for (const event of events) {
     const type = clampPlainText(event.type, IPC_SHORT_MAX);
     const data = isRecord(event.data) ? event.data : {};
     const ts = isoTimestamp(event.ts);
     if (type === 'phase_started') {
-      phaseIndex += 1;
       const title = clampPlainText(data.name, IPC_SHORT_MAX) ?? `Phase ${phaseIndex}`;
-      const id = `phase-${phaseIndex}`;
-      const item: WorkflowRunT['items'][number] = {
-        id,
-        title,
-        kind: 'phase',
-        status: 'running',
-        startedAt: ts,
-      };
-      phases.set(title, item);
-      currentPhaseId = id;
-      pushItem(item);
+      const item = ensurePhase(title, ts);
+      currentPhaseId = item.id;
       continue;
     }
     if (type === 'phase_finished') {
       const title = clampPlainText(data.name, IPC_SHORT_MAX);
       const phase =
-        (title ? phases.get(title) : undefined) ??
-        (currentPhaseId ? items.find((item) => item.id === currentPhaseId) : undefined);
+        (title ? phases.get(phaseKey(title)) : undefined) ??
+        (currentPhaseId ? phaseById(currentPhaseId) : undefined);
       if (phase) {
         phase.status = 'completed';
         phase.endedAt = ts;
@@ -483,6 +561,7 @@ function durableItemsFromEvents(runDir: string, terminalStatus: WorkflowRunT['st
     if (type === 'agent_spawned') {
       const id = clampPlainText(data.taskId, IPC_SHORT_MAX) ?? `agent-${agents.size + 1}`;
       const title = clampPlainText(data.name, IPC_SHORT_MAX) ?? id;
+      const phaseId = findEventPhaseId(title);
       const item: WorkflowRunT['items'][number] = {
         id,
         title,
@@ -490,26 +569,33 @@ function durableItemsFromEvents(runDir: string, terminalStatus: WorkflowRunT['st
         status: 'running',
         agentId: id,
         childAgentId: id,
-        ...(currentPhaseId !== undefined ? { phaseId: currentPhaseId } : {}),
+        ...(phaseId !== undefined ? { phaseId } : {}),
         startedAt: ts,
       };
       agents.set(id, item);
       pushItem(item);
       continue;
     }
-    if (type === 'agent_completed' || type === 'agent_failed' || type === 'agent_cancelled') {
+    if (
+      type === 'agent_completed' ||
+      type === 'agent_failed' ||
+      type === 'agent_cancelled' ||
+      type === 'agent_stopped'
+    ) {
       const id = clampPlainText(data.taskId, IPC_SHORT_MAX) ?? `agent-${agents.size + 1}`;
       const existing = agents.get(id);
+      const title = clampPlainText(data.name, IPC_SHORT_MAX) ?? id;
+      const phaseId = findEventPhaseId(title);
       const item =
         existing ??
         ({
           id,
-          title: clampPlainText(data.name, IPC_SHORT_MAX) ?? id,
+          title,
           kind: 'agent',
           status: 'running',
           agentId: id,
           childAgentId: id,
-          ...(currentPhaseId !== undefined ? { phaseId: currentPhaseId } : {}),
+          ...(phaseId !== undefined ? { phaseId } : {}),
         } satisfies WorkflowRunT['items'][number]);
       if (!existing) {
         agents.set(id, item);
@@ -517,7 +603,11 @@ function durableItemsFromEvents(runDir: string, terminalStatus: WorkflowRunT['st
       }
       item.status = workflowItemStatus(
         data.status,
-        type === 'agent_failed' ? 'failed' : type === 'agent_cancelled' ? 'cancelled' : 'completed',
+        type === 'agent_failed'
+          ? 'failed'
+          : type === 'agent_cancelled' || type === 'agent_stopped'
+            ? 'cancelled'
+            : 'completed',
       );
       item.endedAt = ts;
       const provider = clampPlainText(data.provider, IPC_SHORT_MAX);
@@ -551,12 +641,13 @@ function durableItemsFromEvents(runDir: string, terminalStatus: WorkflowRunT['st
     if (type === 'artifact_written') {
       const title = clampPlainText(data.name, IPC_SHORT_MAX);
       if (!title) continue;
+      const phaseId = findEventPhaseId(title);
       pushItem({
         id: `artifact-${items.length + 1}`,
         title,
         kind: 'artifact',
         status: 'completed',
-        ...(currentPhaseId !== undefined ? { phaseId: currentPhaseId } : {}),
+        ...(phaseId !== undefined ? { phaseId } : {}),
         endedAt: ts,
       });
     }
@@ -570,6 +661,42 @@ function durableItemsFromEvents(runDir: string, terminalStatus: WorkflowRunT['st
     }
   }
   return items;
+}
+
+function terminalStatusFromEvents(
+  events: readonly Record<string, unknown>[],
+  hasArtifacts: boolean,
+): WorkflowRunT['status'] {
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const type = events[i]?.type;
+    if (type === 'workflow_completed') return 'completed';
+    if (type === 'workflow_failed') return 'failed';
+    if (type === 'workflow_cancelled') return 'cancelled';
+  }
+  if (hasArtifacts || events.some((event) => event.type === 'synthesis_completed')) return 'completed';
+  return 'cancelled';
+}
+
+function eventResultSummary(events: readonly Record<string, unknown>[]): string | undefined {
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const event = events[i];
+    if (!event) continue;
+    const data = isRecord(event.data) ? event.data : {};
+    const summary = clampHumanText(data.resultSummary, IPC_MSG_MAX);
+    if (summary !== undefined) return summary;
+  }
+  return undefined;
+}
+
+function eventError(events: readonly Record<string, unknown>[]): string | undefined {
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const event = events[i];
+    if (!event) continue;
+    const data = isRecord(event.data) ? event.data : {};
+    const error = clampHumanText(data.error, IPC_MSG_MAX);
+    if (error !== undefined) return error;
+  }
+  return undefined;
 }
 
 function durableCounts(
@@ -640,10 +767,16 @@ function durableSnapshotFromRunJson(
   const status = workflowStatus(raw.status);
   const startedAt = isoTimestamp(raw.startedAt);
   const updatedAt = isoTimestamp(raw.updatedAt ?? raw.endedAt, startedAt);
+  const events = readJsonLines(path.join(runDir, 'events.jsonl'));
+  const manifest = readWorkflowManifest(runDir);
   const rawItems = Array.isArray(raw.items) ? raw.items : [];
-  const items = rawItems.length > 0 ? rawItems : durableItemsFromEvents(runDir, status);
+  const items =
+    rawItems.length > 0
+      ? rawItems
+      : durableItemsFromEvents(runDir, status, events, manifestPhaseTitles(manifest));
   const workflowName = durableWorkflowName(raw, runId);
   const goal = durableGoal(raw);
+  const artifacts = durableArtifactList(raw.artifacts, runDir, events);
   return {
     ...raw,
     runId,
@@ -655,7 +788,7 @@ function durableSnapshotFromRunJson(
     items,
     counts: durableCounts(raw, items),
     progress: durableProgress(raw, status, items),
-    artifacts: durableArtifacts(raw.artifacts),
+    artifacts,
     ...(goal !== undefined ? { goal } : {}),
     manifestSnapshotPath:
       clampPlainText(raw.manifestSnapshotPath, IPC_PATH_MAX) ?? path.join(runDir, 'manifest.json'),
@@ -671,7 +804,53 @@ function readDurableWorkflowSnapshot(
   const runDir = generatedRunDir(runBaseDir, runId);
   if (runDir === null) return undefined;
   const raw = readJsonObject(path.join(runDir, 'run.json'));
-  return raw ? (durableSnapshotFromRunJson(raw, runId, runDir) ?? undefined) : undefined;
+  if (raw) return durableSnapshotFromRunJson(raw, runId, runDir) ?? undefined;
+  const events = readJsonLines(path.join(runDir, 'events.jsonl'));
+  if (events.length === 0) return undefined;
+  return durableSnapshotFromEvents(runId, runDir, events);
+}
+
+function durableSnapshotFromEvents(
+  runId: string,
+  runDir: string,
+  events: readonly Record<string, unknown>[],
+): SdkProcessSnapshot | undefined {
+  const manifest = readWorkflowManifest(runDir);
+  const artifactList = durableArtifactList([], runDir, events);
+  const status = terminalStatusFromEvents(events, artifactList.length > 0);
+  const startedAt = isoTimestamp(events[0]?.ts);
+  const updatedAt = isoTimestamp(events.at(-1)?.ts, startedAt);
+  const items = durableItemsFromEvents(runDir, status, events, manifestPhaseTitles(manifest));
+  const startedEvent = events.find((event) => event.type === 'workflow_started');
+  const startedData = isRecord(startedEvent?.data) ? startedEvent.data : {};
+  const workflowName =
+    clampPlainText(manifest?.name, IPC_SHORT_MAX) ??
+    clampPlainText(startedData.workflowName ?? startedData.name, IPC_SHORT_MAX) ??
+    runId;
+  return {
+    runId,
+    workflowName,
+    displayName: workflowName,
+    status,
+    startedAt,
+    updatedAt,
+    items,
+    counts: countDurableItems(items),
+    progress: durableProgress({ totalSpawned: undefined }, status, items),
+    artifacts: artifactList,
+    patterns: normalizeWorkflowPatterns(manifest?.patterns),
+    phaseCount: manifestPhaseTitles(manifest).length || undefined,
+    ...(eventResultSummary(events) !== undefined ? { resultSummary: eventResultSummary(events) } : {}),
+    ...(eventError(events) !== undefined ? { error: eventError(events) } : {}),
+    latestMessage:
+      status === 'completed'
+        ? 'workflow completed'
+        : status === 'failed'
+          ? 'workflow failed'
+          : 'workflow interrupted before completion metadata was written',
+    manifestSnapshotPath: path.join(runDir, 'manifest.json'),
+    scriptSnapshotPath: path.join(runDir, 'script.js'),
+  };
 }
 
 function artifactContentText(value: unknown): string | undefined {
@@ -734,8 +913,8 @@ function readDurableWorkflowResult(runBaseDir: string, runId: string): string | 
   const runDir = generatedRunDir(runBaseDir, runId);
   if (runDir === null) return undefined;
   const raw = readJsonObject(path.join(runDir, 'run.json'));
-  if (!raw) return undefined;
-  const artifacts = Array.isArray(raw.artifacts) ? raw.artifacts : [];
+  const events = readJsonLines(path.join(runDir, 'events.jsonl'));
+  const artifacts = durableArtifactList(raw?.artifacts, runDir, events);
   for (const artifact of artifacts) {
     const name =
       typeof artifact === 'string'
@@ -749,7 +928,7 @@ function readDurableWorkflowResult(runBaseDir: string, runId: string): string | 
       return clampHumanText(text, 1_048_576);
     }
   }
-  return clampHumanText(raw.resultSummary, 1_048_576);
+  return clampHumanText(raw?.resultSummary, 1_048_576) ?? eventResultSummary(events);
 }
 
 function listDurableWorkflowSnapshots(
@@ -806,6 +985,7 @@ export class WorkflowController {
   private unsubscribe: (() => void) | null = null;
   /** 插入序的 runId→origin。Map 迭代序 = 插入序,用于 MAX_ORIGINS LRU 淘汰。*/
   private origins = new Map<string, WorkflowOrigin>();
+  private originsFileMtimeMs = 0;
   /** F066:已桥接过 artifact 的 run（防 workflow_finished 重发导致重复桥接）。*/
   private bridgedRuns = new Set<string>();
   private loaded = false;
@@ -1001,7 +1181,7 @@ export class WorkflowController {
       (await this.lifecycle?.deleteWorkflowRun(runId, force ? { force } : undefined)) ?? false;
     if (ok) {
       this.bridgedRuns.delete(runId);
-      if (this.origins.delete(runId)) void this.persistOrigins();
+      if (this.origins.delete(runId)) await this.persistOrigins();
     }
     return ok;
   }
@@ -1413,6 +1593,7 @@ export class WorkflowController {
 
   /** 切 session 时播种:列出已知 run(可按 sessionId 过滤),带归属。*/
   list(sessionId?: string): WorkflowRunT[] {
+    this.reloadOriginsIfChanged();
     const snapshotsByRunId = new Map<string, SdkProcessSnapshot>();
     for (const snapshot of listDurableWorkflowSnapshots(this.runBaseDir, MAX_ORIGINS)) {
       snapshotsByRunId.set(snapshot.runId, snapshot);
@@ -1431,6 +1612,7 @@ export class WorkflowController {
 
   /** 按 runId 取单个 snapshot(带归属);不存在返回 null。*/
   get(runId: string): WorkflowRunT | null {
+    this.reloadOriginsIfChanged();
     const snap =
       this.manager?.getWorkflowProcessSnapshot(runId) ??
       readDurableWorkflowSnapshot(this.runBaseDir, runId);
@@ -1632,25 +1814,11 @@ export class WorkflowController {
     if (this.loaded) return;
     this.loaded = true;
     try {
+      const stat = await fs.stat(this.originsFile).catch(() => null);
       const raw = await fs.readFile(this.originsFile, 'utf-8');
       const parsed = JSON.parse(raw) as Partial<OriginsFile>;
-      if (parsed && parsed.version === 1 && parsed.origins && typeof parsed.origins === 'object') {
-        for (const [runId, origin] of Object.entries(parsed.origins)) {
-          if (origin && typeof origin === 'object') {
-            const o: WorkflowOrigin = {};
-            const so = origin as WorkflowOrigin;
-            if (typeof so.sessionId === 'string')
-              (o as { sessionId?: string }).sessionId = so.sessionId;
-            if (so.surface === 'code' || so.surface === 'partner') {
-              (o as { surface?: 'code' | 'partner' }).surface = so.surface;
-            }
-            if (typeof so.projectRoot === 'string') {
-              (o as { projectRoot?: string }).projectRoot = so.projectRoot;
-            }
-            this.origins.set(runId, o);
-          }
-        }
-      }
+      this.mergeOrigins(parsed);
+      this.originsFileMtimeMs = stat?.mtimeMs ?? Date.now();
     } catch (err) {
       // ENOENT(首次)静默;其它损坏文件 → 从空开始(归属丢失只影响 UI 分面,不致命)。
       if (!(err instanceof Error && 'code' in err && (err as { code: string }).code === 'ENOENT')) {
@@ -1659,6 +1827,46 @@ export class WorkflowController {
           err instanceof Error ? err.message : String(err),
         );
       }
+    }
+  }
+
+  private reloadOriginsIfChanged(): void {
+    let mtime = 0;
+    try {
+      mtime = statSync(this.originsFile).mtimeMs;
+    } catch {
+      return;
+    }
+    if (mtime <= this.originsFileMtimeMs) return;
+    try {
+      const parsed = JSON.parse(readFileSync(this.originsFile, 'utf-8')) as Partial<OriginsFile>;
+      this.mergeOrigins(parsed);
+      this.loaded = true;
+      this.originsFileMtimeMs = mtime;
+    } catch (err) {
+      console.warn(
+        '[WorkflowController] origins reload failed:',
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
+  private mergeOrigins(parsed: Partial<OriginsFile>): void {
+    if (!parsed || parsed.version !== 1 || !parsed.origins || typeof parsed.origins !== 'object') {
+      return;
+    }
+    for (const [runId, origin] of Object.entries(parsed.origins)) {
+      if (!origin || typeof origin !== 'object') continue;
+      const o: WorkflowOrigin = {};
+      const so = origin as WorkflowOrigin;
+      if (typeof so.sessionId === 'string') (o as { sessionId?: string }).sessionId = so.sessionId;
+      if (so.surface === 'code' || so.surface === 'partner') {
+        (o as { surface?: 'code' | 'partner' }).surface = so.surface;
+      }
+      if (typeof so.projectRoot === 'string') {
+        (o as { projectRoot?: string }).projectRoot = so.projectRoot;
+      }
+      this.origins.set(runId, o);
     }
   }
 

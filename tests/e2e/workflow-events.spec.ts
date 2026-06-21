@@ -219,6 +219,94 @@ async function writePersistedWorkflowRun(
   return runId;
 }
 
+async function writeEventsOnlyWorkflowRun(
+  space: SpaceInstance,
+  projectDir: string,
+): Promise<string> {
+  const runId = 'wf_events_only_e2e';
+  const spaceDir = path.join(space.testDataDir, 'space');
+  const runDir = path.join(spaceDir, 'workflow-runs', runId);
+  const artifactsDir = path.join(runDir, 'artifacts');
+  await fs.mkdir(artifactsDir, { recursive: true });
+  await fs.writeFile(
+    path.join(spaceDir, 'workflow-origins.json'),
+    JSON.stringify({
+      version: 1,
+      origins: {
+        [runId]: {
+          sessionId: 'events-only-session',
+          surface: 'code',
+          projectRoot: projectDir,
+        },
+      },
+    }),
+  );
+  await fs.writeFile(
+    path.join(runDir, 'manifest.json'),
+    JSON.stringify({
+      name: 'Events Only Workflow Review',
+      phases: ['Collect changes', 'Synthesize report'],
+      patterns: ['fan-out-and-synthesize'],
+    }),
+  );
+  const longDigest = `${'Recovered long child digest. '.repeat(
+    35,
+  )}DIGEST_TAIL_VISIBLE_ONLY_WHEN_EXPANDED`;
+  await fs.writeFile(
+    path.join(runDir, 'events.jsonl'),
+    [
+      { seq: 1, type: 'workflow_started', data: { runId }, ts: 1782039916701 },
+      { seq: 2, type: 'phase_started', data: { name: 'Collect changes' }, ts: 1782039916703 },
+      {
+        seq: 3,
+        type: 'agent_spawned',
+        data: { taskId: 'wf-events-child-1', name: 'Events collector' },
+        ts: 1782039916706,
+      },
+      {
+        seq: 4,
+        type: 'agent_completed',
+        data: {
+          taskId: 'wf-events-child-1',
+          name: 'Events collector',
+          status: 'completed',
+          provider: 'mock-provider',
+          summaryKind: 'digest',
+          summary: longDigest,
+        },
+        ts: 1782039928729,
+      },
+      {
+        seq: 5,
+        type: 'agent_spawned',
+        data: { taskId: 'wf-events-child-2', name: 'Synthesize report' },
+        ts: 1782039930000,
+      },
+      {
+        seq: 6,
+        type: 'agent_completed',
+        data: {
+          taskId: 'wf-events-child-2',
+          name: 'Synthesize report',
+          status: 'completed',
+          summaryKind: 'digest',
+          summary: 'Synthesized the final events-only report.',
+        },
+        ts: 1782039935000,
+      },
+      { seq: 7, type: 'synthesis_completed', ts: 1782039936000 },
+      { seq: 8, type: 'artifact_written', data: { name: 'final-report' }, ts: 1782039937000 },
+    ]
+      .map((event) => JSON.stringify(event))
+      .join('\n'),
+  );
+  await fs.writeFile(
+    path.join(artifactsDir, 'final-report.json'),
+    JSON.stringify({ report: '# Events-only artifact report\n\nRecovered without run.json.' }),
+  );
+  return runId;
+}
+
 test('workflow push events update the sidebar and transcript through completion', async () => {
   const testId = `workflow-events-${Date.now()}`;
   const { space, projectDir } = await launchSeededSpace(testId);
@@ -386,11 +474,18 @@ test('workflow manager restores completed runs persisted on disk', async () => {
   const { space, projectDir } = await launchSeededSpace(testId);
   try {
     await writePersistedWorkflowRun(space, projectDir);
+    await writeEventsOnlyWorkflowRun(space, projectDir);
 
     await space.page.getByRole('button', { name: 'Open workflow panel' }).click();
     const panel = space.page.getByTestId('workflow-management-panel');
     await expect(panel).toBeVisible({ timeout: 5_000 });
     await expect(panel).toContainText('Persisted Workflow Review', { timeout: 5_000 });
+    await expect(panel).toContainText('Events Only Workflow Review', { timeout: 5_000 });
+
+    await panel
+      .getByTestId('workflow-run-list-item')
+      .filter({ hasText: 'Persisted Workflow Review' })
+      .click();
     await expect(panel).toContainText('completed');
     await expect(panel.getByLabel('Workflow flow graph')).toContainText('Collect changes');
     await expect(panel.getByLabel('Workflow flow graph')).toContainText('Synthesize report');
@@ -405,6 +500,28 @@ test('workflow manager restores completed runs persisted on disk', async () => {
     await panel.getByTestId('workflow-result-toggle').click();
     await expect(panel.getByTestId('workflow-management-detail')).toContainText(
       'Durable artifact report',
+    );
+    await expect(panel.getByTestId('workflow-management-detail')).not.toContainText('加载中');
+
+    await panel
+      .getByTestId('workflow-run-list-item')
+      .filter({ hasText: 'Events Only Workflow Review' })
+      .click();
+    await expect(panel.getByTestId('workflow-management-detail')).toContainText('completed');
+    await expect(panel.getByLabel('Workflow flow graph')).toContainText('Collect changes');
+    await expect(panel.getByLabel('Workflow flow graph')).toContainText('Synthesize report');
+    await panel.getByRole('button', { name: 'Subagents' }).click();
+    await expect(panel.getByTestId('workflow-management-detail')).toContainText('Events collector');
+    await expect(panel.getByTestId('workflow-management-detail')).not.toContainText(
+      'DIGEST_TAIL_VISIBLE_ONLY_WHEN_EXPANDED',
+    );
+    await panel.getByTestId('workflow-digest-toggle').first().click();
+    await expect(panel.getByTestId('workflow-management-detail')).toContainText(
+      'DIGEST_TAIL_VISIBLE_ONLY_WHEN_EXPANDED',
+    );
+    await panel.getByTestId('workflow-result-toggle').click();
+    await expect(panel.getByTestId('workflow-management-detail')).toContainText(
+      'Events-only artifact report',
     );
     await expect(panel.getByTestId('workflow-management-detail')).not.toContainText('加载中');
   } finally {

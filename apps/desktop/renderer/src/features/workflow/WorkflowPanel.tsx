@@ -738,6 +738,7 @@ function CollapsibleDigest({
         onClick={() => setOpen((value) => !value)}
         className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-fg-faint hover:text-fg-primary"
         aria-expanded={open}
+        data-testid="workflow-digest-toggle"
       >
         {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
         {open ? '收起摘要' : '展开摘要'}

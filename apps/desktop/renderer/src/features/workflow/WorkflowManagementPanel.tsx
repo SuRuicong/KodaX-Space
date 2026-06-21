@@ -293,6 +293,7 @@ function RunListItem({
       <button
         type="button"
         onClick={onSelect}
+        data-testid="workflow-run-list-item"
         className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
           active
             ? 'border-run/60 bg-run/15'

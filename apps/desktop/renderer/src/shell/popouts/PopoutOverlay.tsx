@@ -14,7 +14,7 @@
 // 右侧 slide-in 窄 panel。FULL_COVER_KINDS 控制谁走全宽。
 // **F059c**: artifact 加入 full-cover —— HTML/图表/报告在 760px 窄条里被截、读不全
 // (用户反馈 2026-06-15)。⤢ 后铺满整个中间对话区 (像 diff)；再"单独打开"走 L3 独立窗口。
-const FULL_COVER_KINDS = new Set<string>(['diff', 'artifact']);
+const FULL_COVER_KINDS = new Set<string>(['diff', 'artifact', 'workflow']);
 const POPOUT_WIDTH: Record<string, string> = {
   preview: 'w-[880px]',
   terminal: 'w-[800px]',

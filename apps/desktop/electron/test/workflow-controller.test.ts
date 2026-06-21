@@ -293,6 +293,123 @@ test('list and get restore completed workflow runs from durable run.json', async
   }
 });
 
+test('list and get recover completed workflow runs from durable events without run.json', async () => {
+  const { dir, file } = freshFile();
+  const runBaseDir = join(dir, 'workflow-runs');
+  const runId = 'wf_events_only_history';
+  const runDir = join(runBaseDir, runId);
+  const artifactsDir = join(runDir, 'artifacts');
+  try {
+    mkdirSync(artifactsDir, { recursive: true });
+    writeFileSync(
+      join(runDir, 'manifest.json'),
+      JSON.stringify({
+        name: 'Events Only Review',
+        phases: ['Collect facts', 'Synthesize report'],
+        patterns: ['fan-out-and-synthesize'],
+      }),
+    );
+    writeFileSync(
+      join(runDir, 'events.jsonl'),
+      [
+        { seq: 1, type: 'workflow_started', data: { runId }, ts: 1781654400000 },
+        { seq: 2, type: 'phase_started', data: { name: 'Collect facts' }, ts: 1781654401000 },
+        {
+          seq: 3,
+          type: 'agent_spawned',
+          data: { taskId: 'agent-1', name: 'History reviewer' },
+          ts: 1781654402000,
+        },
+        {
+          seq: 4,
+          type: 'agent_completed',
+          data: {
+            taskId: 'agent-1',
+            name: 'History reviewer',
+            status: 'completed',
+            provider: 'mock-provider',
+            summaryKind: 'digest',
+            summary: 'Recovered digest from events-only run.',
+          },
+          ts: 1781654403000,
+        },
+        {
+          seq: 5,
+          type: 'agent_spawned',
+          data: { taskId: 'agent-2', name: 'Interrupted reviewer' },
+          ts: 1781654403500,
+        },
+        {
+          seq: 6,
+          type: 'agent_stopped',
+          data: { taskId: 'agent-2', name: 'Interrupted reviewer', error: 'Workflow aborted' },
+          ts: 1781654403600,
+        },
+        { seq: 7, type: 'phase_finished', data: { name: 'Collect facts' }, ts: 1781654405000 },
+        {
+          seq: 8,
+          type: 'agent_spawned',
+          data: { taskId: 'agent-3', name: 'Synthesize report' },
+          ts: 1781654405500,
+        },
+        {
+          seq: 9,
+          type: 'agent_completed',
+          data: {
+            taskId: 'agent-3',
+            name: 'Synthesize report',
+            status: 'completed',
+            summaryKind: 'digest',
+            summary: 'Synthesized a durable report.',
+          },
+          ts: 1781654406000,
+        },
+        { seq: 10, type: 'synthesis_completed', ts: 1781654406100 },
+        { seq: 11, type: 'artifact_written', data: { name: 'final-report' }, ts: 1781654406200 },
+      ]
+        .map((event) => JSON.stringify(event))
+        .join('\n'),
+    );
+    writeFileSync(
+      join(artifactsDir, 'final-report.json'),
+      JSON.stringify({ report: '# Events-only durable report\n\nRecovered from artifact.' }),
+    );
+
+    const ctrl = new WorkflowController(() => {}, file, runBaseDir);
+    await ctrl.init(fakeManager());
+    writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        origins: { [runId]: { sessionId: 's_events', surface: 'code', projectRoot: dir } },
+      }),
+    );
+
+    const runs = ctrl.list();
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0]?.runId, runId);
+    assert.equal(runs[0]?.workflowName, 'Events Only Review');
+    assert.equal(runs[0]?.status, 'completed');
+    assert.equal(runs[0]?.sessionId, 's_events');
+    assert.equal(runs[0]?.projectRoot, dir);
+    assert.deepEqual(runs[0]?.patterns, ['fan-out-and-synthesize']);
+    assert.equal(runs[0]?.phaseCount, 2);
+    assert.equal(runs[0]?.artifacts?.[0]?.name, 'final-report');
+    assert.equal(runs[0]?.items.some((item) => item.title === 'Synthesize report'), true);
+    assert.equal(
+      runs[0]?.items.find((item) => item.title === 'Interrupted reviewer')?.status,
+      'cancelled',
+    );
+    assert.equal(
+      runs[0]?.items.find((item) => item.title === 'History reviewer')?.summary,
+      'Recovered digest from events-only run.',
+    );
+    assert.equal(await ctrl.readResult(runId), '# Events-only durable report\n\nRecovered from artifact.');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('manifest patterns are surfaced on workflow snapshots', async () => {
   const { dir, file } = freshFile();
   const runBaseDir = join(dir, 'workflow-runs');
