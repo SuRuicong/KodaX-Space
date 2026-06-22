@@ -507,6 +507,10 @@ function AppTopMenu({
   onOpenSettings,
 }: AppTopMenuProps): JSX.Element {
   const { languageMode, setLanguageMode, t } = useI18n();
+  const theme = useAppStore((s) => s.theme);
+  const visualQuality = useAppStore((s) => s.visualQuality);
+  const setTheme = useAppStore((s) => s.setTheme);
+  const setVisualQuality = useAppStore((s) => s.setVisualQuality);
   const [openMenu, setOpenMenu] = useState<AppMenuId | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
   const lastEditableTargetRef = useRef<HTMLElement | null>(null);
@@ -705,6 +709,54 @@ function AppTopMenu({
         },
         { id: 'view-separator-2', separator: true },
         {
+          id: 'theme-label',
+          label: t('menu.view.theme'),
+          disabled: true,
+        },
+        {
+          id: 'theme-light',
+          label: t('theme.light'),
+          checked: theme === 'light',
+          onSelect: () => setTheme('light'),
+        },
+        {
+          id: 'theme-dark',
+          label: t('theme.dark'),
+          checked: theme === 'dark',
+          onSelect: () => setTheme('dark'),
+        },
+        {
+          id: 'theme-system',
+          label: t('theme.system'),
+          checked: theme === 'system',
+          onSelect: () => setTheme('system'),
+        },
+        { id: 'view-separator-3', separator: true },
+        {
+          id: 'visual-quality-label',
+          label: t('menu.view.visualQuality'),
+          disabled: true,
+        },
+        {
+          id: 'visual-quality-minimal',
+          label: t('visualQuality.minimal'),
+          checked: visualQuality === 'minimal',
+          onSelect: () => setVisualQuality('minimal'),
+        },
+        {
+          id: 'visual-quality-balanced',
+          label: t('visualQuality.balanced'),
+          checked: visualQuality === 'balanced',
+          onSelect: () => setVisualQuality('balanced'),
+        },
+        {
+          id: 'visual-quality-full',
+          label: t('visualQuality.full'),
+          checked: visualQuality === 'full',
+          onSelect: () => setVisualQuality('full'),
+        },
+        { id: 'view-separator-4', separator: true },
+        {
           id: 'language-label',
           label: t('menu.view.language'),
           disabled: true,
@@ -727,7 +779,7 @@ function AppTopMenu({
           checked: languageMode === 'en-US',
           onSelect: () => chooseLanguage('en-US'),
         },
-        { id: 'view-separator-3', separator: true },
+        { id: 'view-separator-5', separator: true },
         {
           id: 'diagnostics',
           label: t('menu.view.diagnostics'),

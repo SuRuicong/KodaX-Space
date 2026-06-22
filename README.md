@@ -2,7 +2,7 @@
 
 > Provider-neutral, local-first AI agent desktop client — KodaX 生态桌面客户端
 
-[![status](https://img.shields.io/badge/status-released-green)]() [![license](https://img.shields.io/badge/license-Apache--2.0-blue)]() [![version](https://img.shields.io/badge/version-0.1.21-blue)]()
+[![status](https://img.shields.io/badge/status-released-green)]() [![license](https://img.shields.io/badge/license-Apache--2.0-blue)]() [![version](https://img.shields.io/badge/version-0.1.22-blue)]()
 
 KodaX Space 是 [KodaX](../KodaX) 生态的 Electron 桌面客户端。对标 Anthropic Claude Desktop 中的 Claude Code，Provider 中立、开源、本地优先（[ADR-004](docs/ADR/ADR-004-panel-model.md)）。
 
@@ -75,20 +75,20 @@ KodaX-Space/
 
 ## Status
 
-**v0.1.21 - Patch lane release** (2026-06-22 released)
+**v0.1.22 - Provider / Queue Patch** (2026-06-22 released)
 
-This patch keeps the v0.1.20 capability baseline and fixes release-critical issues around workflow transcript recovery, Settings CI stability, packaged keychain runtime files, and Windows zipped download fallbacks. See [CHANGELOG.md](CHANGELOG.md) and [docs/features/v0.1.21.md](docs/features/v0.1.21.md).
+This patch keeps the v0.1.20/v0.1.21 baseline intact while fixing trusted internal custom provider compatibility, Space-owned per-session follow-up queues, ask_user modal bridge coverage, and release metadata alignment. See [CHANGELOG.md](CHANGELOG.md) and [docs/features/v0.1.22.md](docs/features/v0.1.22.md).
 
-### v0.1.21 Patch Highlights
+### v0.1.22 Patch Highlights
 
 | Area                  | Summary                                                                                         |
 | --------------------- | ----------------------------------------------------------------------------------------------- |
-| **Workflow recovery** | Restored child summaries/final reports after reload and shows recovered summaries in workflow history. |
-| **Transcript polish** | Workflow completion notices keep readable markdown and expose footer copy/time affordances.      |
-| **Settings CI**       | Stabilized Settings e2e selectors across localized desktops and ambiguous labels.                |
-| **Packaging**         | Included keyring native runtime files and splits macOS x64/arm64 release jobs by runner arch.    |
-| **Release artifacts** | Windows releases include zipped setup/portable fallbacks for unsigned `.exe` download blocking.  |
-| **Planning**          | `v0.1.21` ships as patch-only; `v0.1.22-v0.1.25` remain patch lanes before F103 at `v0.1.26`.     |
+| **Provider trust**    | Trusted internal custom providers can explicitly bypass URL safety checks while default HTTPS and dangerous-scheme guards stay on. |
+| **Config providers**  | KodaX config custom providers keep the trusted path so existing internal gateway entries continue to work. |
+| **Follow-up queue**   | User follow-up prompts now live in a Space-owned per-session queue instead of the SDK main-thread queue. |
+| **Resume pairing**    | Resumed sessions only reuse a configured model when it belongs to the selected provider.          |
+| **Ask user bridge**   | SDK question/select/input prompts are wired through the Space IPC modal path.                    |
+| **Release hygiene**   | Package versions, lockfile metadata, docs, and `space.version` are aligned to `0.1.22` / `space-v0.1.22`. |
 
 **v0.1.20 — Capability catch-up + Display Language MVP ✅**（2026-06-22 released）
 
@@ -111,6 +111,7 @@ This patch keeps the v0.1.20 capability baseline and fixes release-critical issu
 
 | Version | Theme                                                            | Date       |
 | ------- | ---------------------------------------------------------------- | ---------- |
+| v0.1.22 | Provider trust path + per-session follow-up queue                | 2026-06-22 |
 | v0.1.21 | Patch lane: workflow recovery + release artifact resilience      | 2026-06-22 |
 | v0.1.20 | Capability catch-up + Display Language MVP                       | 2026-06-22 |
 | v0.1.19 | Session cancellation/history fix + popout recovery               | 2026-06-18 |

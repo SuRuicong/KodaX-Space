@@ -7,6 +7,7 @@
 
 import { app, BrowserWindow, Menu, shell, session, dialog } from 'electron';
 import path from 'node:path';
+import { mkdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { registerVersionChannel } from './ipc/version.js';
 import { registerRepointelChannels } from './ipc/repointel.js';
@@ -27,6 +28,7 @@ import { prewarmKodaxUserConfig, registerKodaxCustomProviders } from './kodax/us
 import { probeKodaxSdk } from './kodax/kodax-sdk-probe.js';
 import { probeSkillRegistry } from './skill/registry.js';
 import { hydrateShellEnvOnce } from './kodax/shell-env-hydrate.js';
+import { getSpaceDataDir } from './kodax/data-paths.js';
 import { registerProviderChannels, injectAllKeysToEnv } from './ipc/provider.js';
 import { autoActivateProvidersFromEnv } from './providers/auto-activate.js';
 import { registerFilesChannels } from './ipc/files.js';
@@ -66,6 +68,14 @@ const SPACE_APP_USER_MODEL_ID = 'ai.kodax.space';
 app.setName(SPACE_APP_NAME);
 if (process.platform === 'win32') {
   app.setAppUserModelId(SPACE_APP_USER_MODEL_ID);
+}
+
+if (process.env.KODAX_TEST_ONBOARDING) {
+  // Playwright launches multiple isolated Electron processes. The single-instance
+  // lock is scoped to userData, so move it before requestSingleInstanceLock().
+  const testUserDataDir = path.join(getSpaceDataDir(), 'electron-user-data');
+  mkdirSync(testUserDataDir, { recursive: true });
+  app.setPath('userData', testUserDataDir);
 }
 
 // 路径：dist-electron 与 apps/desktop/dist 是兄弟目录。

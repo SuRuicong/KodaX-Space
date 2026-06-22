@@ -1189,7 +1189,7 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
           return {
             ok: true,
             message:
-              '[repointel] trace is read-only in Space v0.1.21; use /repointel trace to show recent session trace events.',
+              '[repointel] trace is read-only in Space v0.1.22; use /repointel trace to show recent session trace events.',
             echo: true,
           };
         }
@@ -1207,7 +1207,7 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
         return {
           ok: true,
           message:
-            `[repointel] ${detailMode} is read-only in Space v0.1.21; manage it through KodaX config until a stable SDK setter exists.`,
+            `[repointel] ${detailMode} is read-only in Space v0.1.22; manage it through KodaX config until a stable SDK setter exists.`,
           echo: true,
         };
       }
