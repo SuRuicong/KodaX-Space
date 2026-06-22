@@ -162,7 +162,8 @@ export const messages = {
     'customProvider.protocol.openai': 'OpenAI compatible',
     'customProvider.protocol.anthropic': 'Anthropic compatible',
     'customProvider.baseUrl.label': 'Base URL',
-    'customProvider.baseUrl.hint': 'HTTPS only unless URL safety checks are skipped. Example: https://openrouter.ai/api/v1',
+    'customProvider.baseUrl.hint':
+      'HTTPS only unless URL safety checks are skipped. Example: https://openrouter.ai/api/v1',
     'customProvider.skipBaseUrlValidation.title': 'Skip URL safety checks',
     'customProvider.skipBaseUrlValidation.description':
       'Use only for trusted internal gateways. Space will pass this URL directly to the SDK.',
@@ -234,6 +235,8 @@ export const messages = {
     'right.runtime': 'Runtime',
     'right.defaultWidth': 'Default width',
     'right.wideWidth': 'Wide width',
+    'right.expandWidth': 'Expand panel width',
+    'right.restoreDefaultWidth': 'Restore default width',
     'right.openFullPanel': 'Open in full panel',
     'right.closePopout': 'Close popout',
     'right.collapseSection': 'Collapse section',
@@ -460,6 +463,8 @@ export const messages = {
     'right.runtime': '运行时',
     'right.defaultWidth': '默认宽度',
     'right.wideWidth': '宽屏宽度',
+    'right.expandWidth': '展开面板宽度',
+    'right.restoreDefaultWidth': '恢复默认宽度',
     'right.openFullPanel': '在完整面板中打开',
     'right.closePopout': '关闭弹出面板',
     'right.collapseSection': '折叠区块',

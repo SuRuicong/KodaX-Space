@@ -44,15 +44,19 @@ import {
 import { useI18n } from '../i18n/I18nProvider.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
-const RIGHT_SIDEBAR_DEFAULT_WIDTH = 320;
-const RIGHT_SIDEBAR_WIDE_WIDTH = 720;
 
 interface RightSidebarProps {
   /** 2026-06: 动态宽度（px）。 */
   readonly width?: number;
+  readonly defaultWidth?: number;
+  readonly expandedWidth?: number;
 }
 
-export function RightSidebar({ width }: RightSidebarProps = {}): JSX.Element {
+export function RightSidebar({
+  width,
+  defaultWidth = 320,
+  expandedWidth = 320,
+}: RightSidebarProps = {}): JSX.Element {
   const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const { artifacts } = useArtifacts(currentSessionId);
@@ -93,7 +97,11 @@ export function RightSidebar({ width }: RightSidebarProps = {}): JSX.Element {
     >
       {/* F059c 动态右侧栏：有产物时顶部出 [概览 | Artifact] 切换；Artifact 占满整栏满高，
           不再挤在底部的 280px 小框。⤢ 展开到中间大图（full-cover，像 diff）。 */}
-      <RightSidebarWidthToolbar />
+      <RightSidebarWidthToolbar
+        width={width}
+        defaultWidth={defaultWidth}
+        expandedWidth={expandedWidth}
+      />
       {hasArtifacts && (
         <div className="flex items-stretch border-b border-border-default flex-shrink-0">
           <SidebarTab active={!showArtifact} onClick={() => setTab('overview')}>
@@ -148,32 +156,42 @@ export function RightSidebar({ width }: RightSidebarProps = {}): JSX.Element {
   );
 }
 
-function RightSidebarWidthToolbar(): JSX.Element {
+function RightSidebarWidthToolbar({
+  width,
+  defaultWidth,
+  expandedWidth,
+}: {
+  readonly width?: number;
+  readonly defaultWidth: number;
+  readonly expandedWidth: number;
+}): JSX.Element {
   const { t } = useI18n();
   const setRightSidebarWidth = useAppStore((s) => s.setRightSidebarWidth);
+  const effectiveDefaultWidth = clampSidebarWidthPx(defaultWidth);
+  const currentWidth = width ?? effectiveDefaultWidth;
+  const hasRoomToExpand = expandedWidth > effectiveDefaultWidth + 8;
+  const isExpanded = hasRoomToExpand && currentWidth >= (effectiveDefaultWidth + expandedWidth) / 2;
+  const isAtDefaultWidth = Math.abs(currentWidth - effectiveDefaultWidth) <= 8;
+  const shouldRestore = isExpanded || !hasRoomToExpand;
+  const Icon = shouldRestore ? Minimize2 : Maximize2;
+  const label = shouldRestore ? t('right.restoreDefaultWidth') : t('right.expandWidth');
+  const disabled = !hasRoomToExpand && isAtDefaultWidth;
   return (
     <div className="flex items-center justify-between gap-2 border-b border-border-default/60 px-2 py-1.5 flex-shrink-0">
       <span className="text-[10px] uppercase tracking-wider text-fg-faint">{t('right.panel')}</span>
-      <div className="flex items-center gap-0.5">
-        <button
-          type="button"
-          onClick={() => setRightSidebarWidth(RIGHT_SIDEBAR_DEFAULT_WIDTH)}
-          className="w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
-          title={t('right.defaultWidth')}
-          aria-label={t('right.defaultWidth')}
-        >
-          <Minimize2 size={13} strokeWidth={1.8} aria-hidden />
-        </button>
-        <button
-          type="button"
-          onClick={() => setRightSidebarWidth(clampSidebarWidthPx(RIGHT_SIDEBAR_WIDE_WIDTH))}
-          className="w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
-          title={t('right.wideWidth')}
-          aria-label={t('right.wideWidth')}
-        >
-          <Maximize2 size={13} strokeWidth={1.8} aria-hidden />
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={() => setRightSidebarWidth(shouldRestore ? effectiveDefaultWidth : expandedWidth)}
+        disabled={disabled}
+        className={`w-6 h-6 inline-flex items-center justify-center rounded hover:bg-surface-3 disabled:pointer-events-none disabled:opacity-35 ${
+          isExpanded ? 'text-fg-primary' : 'text-fg-muted hover:text-fg-primary'
+        }`}
+        title={label}
+        aria-label={label}
+        aria-pressed={isExpanded}
+      >
+        <Icon size={13} strokeWidth={1.8} aria-hidden />
+      </button>
     </div>
   );
 }

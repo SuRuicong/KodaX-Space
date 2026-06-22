@@ -75,6 +75,22 @@ interface ShellProps {
 // store 复写 events 是真实成本）。挪到 module 级 process 级共享，跨 HMR 仍保留。
 const restoredSessionIds = new Set<string>();
 
+const RIGHT_SIDEBAR_DEFAULT_WIDTH = 320;
+const SHELL_PANEL_HORIZONTAL_PADDING_PX = 20;
+const SHELL_PANEL_GAP_PX = 10;
+const RESIZE_HANDLE_WIDTH_PX = 4;
+
+function rightSidebarOpenWidth(leftSidebarVisible: boolean, leftWidth: number): number {
+  const viewportWidth =
+    typeof window !== 'undefined' && window.innerWidth ? window.innerWidth : 1440;
+  const rightSideChrome = RESIZE_HANDLE_WIDTH_PX + SHELL_PANEL_GAP_PX * 2;
+  const leftSideChrome = leftSidebarVisible
+    ? leftWidth + RESIZE_HANDLE_WIDTH_PX + SHELL_PANEL_GAP_PX * 2
+    : 0;
+  const pairedWidth =
+    viewportWidth - SHELL_PANEL_HORIZONTAL_PADDING_PX - leftSideChrome - rightSideChrome;
+  return clampSidebarWidthPx(Math.round(pairedWidth / 2));
+}
 export function Shell({ version = null }: ShellProps): JSX.Element {
   // F045: surface 一等状态（替代旧 local mode）。Partner 自本版起有真实空壳。
   const currentSurface = useSurfaceStore((s) => s.currentSurface);
@@ -101,6 +117,13 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
   const leftWidth = leftWidthDraft ?? persistedLeftWidth;
   const rightWidth = rightWidthDraft ?? persistedRightWidth;
 
+  const openRightSidebarAtBalancedWidth = useCallback((): void => {
+    const targetWidth = rightSidebarOpenWidth(leftSidebarOpen, leftWidth);
+    setRightWidthDraft(null);
+    setRightSidebarWidth(targetWidth);
+    setRightSidebarOpen(true);
+  }, [leftSidebarOpen, leftWidth, setRightSidebarOpen, setRightSidebarWidth]);
+
   // 右侧栏跟 KodaX 计划列表（todoListBySession）联动：plan 出现 → 自动展开；
   // plan 清空 → 自动折叠。只在 hasPlan 状态切换的瞬间动一次，中间段用户的手动 toggle 不会被打扰。
   // 首次挂载只记录状态、不覆盖 localStorage 持久化值——避免用户上次手动设置被开屏一瞬间冲掉。
@@ -118,17 +141,31 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
       return;
     }
     if (lastAutoHadPlanRef.current === hasPlan) return; // 没切换
-    setRightSidebarOpen(hasPlan);
+    if (hasPlan) {
+      if (!rightSidebarOpen) openRightSidebarAtBalancedWidth();
+      else setRightSidebarOpen(true);
+    } else {
+      setRightSidebarOpen(false);
+    }
     lastAutoHadPlanRef.current = hasPlan;
-  }, [planLength, currentSessionIdForPlan, setRightSidebarOpen]);
+  }, [
+    planLength,
+    currentSessionIdForPlan,
+    openRightSidebarAtBalancedWidth,
+    rightSidebarOpen,
+    setRightSidebarOpen,
+  ]);
 
   // F059c: 对话里点 artifact 卡片 → 若右侧栏关着先打开它（RightSidebar 内部再切到 Artifact
   // tab + 选中）。否则点了卡片"什么都没发生"。
   useEffect(() => {
-    const onFocus = (): void => setRightSidebarOpen(true);
+    const onFocus = (): void => {
+      if (!rightSidebarOpen) openRightSidebarAtBalancedWidth();
+      else setRightSidebarOpen(true);
+    };
     window.addEventListener('kodax-space.focus-artifact', onFocus);
     return () => window.removeEventListener('kodax-space.focus-artifact', onFocus);
-  }, [setRightSidebarOpen]);
+  }, [openRightSidebarAtBalancedWidth, rightSidebarOpen, setRightSidebarOpen]);
 
   // 历史 session 切换时按需从 KodaX SDK 拉持久化对话内容回填 store。
   // events / userMessages buffer 是 in-memory；重启 / 切到 new session 后空 → 调
@@ -270,6 +307,19 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
     return () => window.removeEventListener('keydown', onKey);
   }, [currentSurface]);
 
+  const toggleRightSidebar = useCallback((): void => {
+    if (fullscreenRead) {
+      setFullscreenRead(false);
+      openRightSidebarAtBalancedWidth();
+    } else if (rightSidebarOpen) {
+      setRightSidebarOpen(false);
+    } else {
+      openRightSidebarAtBalancedWidth();
+    }
+  }, [fullscreenRead, openRightSidebarAtBalancedWidth, rightSidebarOpen, setRightSidebarOpen]);
+
+  const rightSidebarExpandedWidth = rightSidebarOpenWidth(leftSidebarOpen, leftWidth);
+
   return (
     <div className="h-screen flex flex-col bg-surface text-fg-primary overflow-hidden relative isolate">
       {/* F060: 背景极光层（玻璃 chrome 通过 backdrop-filter 透出它）。minimal 档不渲染。
@@ -292,14 +342,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
               setLeftSidebarOpen(!leftSidebarOpen);
             }
           }}
-          onToggleRightSidebar={() => {
-            if (fullscreenRead) {
-              setFullscreenRead(false);
-              setRightSidebarOpen(true);
-            } else {
-              setRightSidebarOpen(!rightSidebarOpen);
-            }
-          }}
+          onToggleRightSidebar={toggleRightSidebar}
           onToggleFocusMode={() => setFullscreenRead((v) => !v)}
           onToggleDiagnostics={() => setDiagnosticsOpen((v) => !v)}
           onOpenSettings={() => setSettingsOpen(true)}
@@ -383,14 +426,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
                 <SidebarToggleButton
                   side="right"
                   open={rightSidebarOpen && !fullscreenRead}
-                  onClick={() => {
-                    if (fullscreenRead) {
-                      setFullscreenRead(false);
-                      setRightSidebarOpen(true);
-                    } else {
-                      setRightSidebarOpen(!rightSidebarOpen);
-                    }
-                  }}
+                  onClick={toggleRightSidebar}
                 />
               </div>
 
@@ -408,14 +444,18 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
                 <ResizeHandle
                   side="right"
                   width={rightWidth}
-                  defaultWidth={320}
+                  defaultWidth={RIGHT_SIDEBAR_DEFAULT_WIDTH}
                   onPreview={(px) => setRightWidthDraft(clampSidebarWidthPx(px))}
                   onCommit={(px) => {
                     setRightWidthDraft(null);
                     setRightSidebarWidth(clampSidebarWidthPx(px));
                   }}
                 />
-                <RightSidebar width={rightWidth} />
+                <RightSidebar
+                  width={rightWidth}
+                  defaultWidth={RIGHT_SIDEBAR_DEFAULT_WIDTH}
+                  expandedWidth={rightSidebarExpandedWidth}
+                />
               </>
             )}
           </>
