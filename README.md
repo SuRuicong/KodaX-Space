@@ -45,7 +45,7 @@ npm test && npm run typecheck
 npm run build:smoke
 
 # 完整构建 + 打包平台安装包（unsigned — 自家工具不走公开 Beta）
-npm run build:win        # Windows NSIS .exe
+npm run build:win        # Windows NSIS setup .exe + portable .exe (release also uploads zipped fallbacks)
 npm run build:mac        # macOS universal .dmg
 npm run build:linux      # Linux AppImage + .deb
 npm run build            # 当前平台（CI matrix 用）

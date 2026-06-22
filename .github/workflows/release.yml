@@ -98,6 +98,23 @@ jobs:
           # 关闭 native rebuild 在 CI（keytar 在 v0.1.0 是 optional + memory fallback）
           npm_config_build_from_source: 'false'
 
+      - name: Create Windows zip fallback downloads
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($kind in @('Setup', 'Portable')) {
+            Get-ChildItem -LiteralPath out -Filter "*$kind-*.exe" | ForEach-Object {
+              $zipPath = Join-Path $_.DirectoryName ($_.BaseName + '.zip')
+              if (Test-Path -LiteralPath $zipPath) {
+                Remove-Item -LiteralPath $zipPath -Force
+              }
+              Compress-Archive -LiteralPath $_.FullName -DestinationPath $zipPath -CompressionLevel Optimal
+              Write-Host "Created $(Split-Path -Leaf $zipPath)"
+            }
+          }
+          Get-ChildItem -LiteralPath out -Filter '*.zip' | Format-Table -AutoSize
+
       - name: Smoke check installer
         run: npm run smoke:pack
 
@@ -125,6 +142,7 @@ jobs:
             out/*.dmg
             out/*.AppImage
             out/*.deb
+            out/*.zip
             out/*.blockmap
             out/latest*.yml
           retention-days: 30
@@ -147,7 +165,7 @@ jobs:
       - name: Stage release files
         run: |
           mkdir -p release
-          find artifacts -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.blockmap' -o -name 'latest*.yml' \) -exec mv {} release/ \;
+          find artifacts -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.zip' -o -name '*.blockmap' -o -name 'latest*.yml' \) -exec mv {} release/ \;
           ls -la release/
 
       - name: Generate release notes from changelog
@@ -210,7 +228,8 @@ jobs:
             '',
             '> **Unsigned installers:** first launch may trigger OS trust prompts.',
             '',
-            '- Windows: SmartScreen -> click "More info" -> "Run anyway"',
+            '- Windows: use `Setup.exe` for normal install, `Portable.exe` for no-install launch, or the matching `.zip` fallback if the browser blocks direct `.exe` downloads.',
+            '- Windows SmartScreen: click "More info" -> "Run anyway"',
             '- macOS: Gatekeeper -> right-click -> Open -> confirm',
             '- Linux: `chmod +x *.AppImage` then run; or `sudo dpkg -i *.deb`',
             '',
