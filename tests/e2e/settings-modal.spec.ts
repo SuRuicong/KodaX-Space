@@ -31,8 +31,8 @@ test('SettingsModal opens via sidebar ⚙, Esc closes, smart-popout toggle persi
     // 默认没写过 → null;开关默认 on (代码 lsGet !== '0' 判定)
     expect(defaultEnabled === null || defaultEnabled === '1').toBe(true);
 
-    // 点 LeftSidebar 底栏 ⚙ 按钮 — aria-label="Settings"
-    const settingsBtn = page.locator('button[aria-label="Settings"]');
+    // 点 LeftSidebar 底栏设置按钮
+    const settingsBtn = page.getByTestId('settings-button');
     await expect(settingsBtn).toBeVisible({ timeout: 5000 });
     await settingsBtn.click();
 
@@ -82,7 +82,7 @@ test('SettingsModal tab switch keeps both panels mounted (preserves in-progress 
     const { page } = space;
     await page.waitForTimeout(2000);
 
-    await page.locator('button[aria-label="Settings"]').click();
+    await page.getByTestId('settings-button').click();
     await expect(page.locator('#settings-modal-title')).toBeVisible();
 
     // Preferences panel 在,Providers panel 也在 (hidden 模式),只是 hidden 属性切换
@@ -116,7 +116,7 @@ test('SettingsModal providers tab adds a custom provider and saves its API key',
     const { page } = space;
     await page.waitForTimeout(2000);
 
-    await page.locator('button[aria-label="Settings"]').click();
+    await page.getByTestId('settings-button').click();
     await expect(page.locator('#settings-modal-title')).toBeVisible();
 
     await page.locator('button[role="tab"]', { hasText: 'Providers' }).click();
@@ -147,7 +147,7 @@ test('SettingsModal keeps a partially-created custom provider visible when key s
     const { page } = space;
     await page.waitForTimeout(2000);
 
-    await page.locator('button[aria-label="Settings"]').click();
+    await page.getByTestId('settings-button').click();
     await page.locator('button[role="tab"]', { hasText: 'Providers' }).click();
 
     await page.getByRole('button', { name: 'Add custom' }).click();
@@ -178,7 +178,7 @@ test('SettingsModal does not allow an unconfigured provider to become default', 
     const { page } = space;
     await page.waitForTimeout(2000);
 
-    await page.locator('button[aria-label="Settings"]').click();
+    await page.getByTestId('settings-button').click();
     await page.locator('button[role="tab"]', { hasText: 'Providers' }).click();
 
     await page.getByRole('button', { name: 'Add custom' }).click();
@@ -228,7 +228,7 @@ test('SettingsModal API key editor Escape cancels edit without closing the modal
     const { page } = space;
     await page.waitForTimeout(2000);
 
-    await page.locator('button[aria-label="Settings"]').click();
+    await page.getByTestId('settings-button').click();
     await page.locator('button[role="tab"]', { hasText: 'Providers' }).click();
 
     await page.getByRole('button', { name: 'Add custom' }).click();

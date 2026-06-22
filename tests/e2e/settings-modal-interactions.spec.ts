@@ -5,12 +5,17 @@ const TEST_ID = `settings-interactions-${Date.now()}`;
 
 async function openSettings(page: Page): Promise<void> {
   await page.waitForTimeout(2000);
-  await page.locator('button[aria-label="Settings"]').click();
-  await expect(page.locator('#settings-modal-title')).toBeVisible();
+  await page.getByTestId('settings-button').click();
+  await expect(settingsDialog(page)).toBeVisible();
+}
+
+function settingsDialog(page: Page) {
+  return page.locator('[role="dialog"]').filter({ has: page.locator('#settings-modal-title') });
 }
 
 async function openProviders(page: Page): Promise<void> {
-  await page.locator('button[role="tab"]', { hasText: 'Providers' }).click();
+  const dialog = settingsDialog(page);
+  await dialog.locator('#settings-tab-providers').click();
   await expect(page.locator('#settings-panel-providers')).toBeVisible();
 }
 
@@ -158,9 +163,10 @@ test('Settings preferences controls are keyboardable, minimal, and persist edits
   try {
     const { page } = space;
     await openSettings(page);
+    const dialog = settingsDialog(page);
 
-    const workspaceInput = page.getByLabel('Default workspace');
-    const saveWorkspace = page.getByRole('button', { name: 'Save workspace' });
+    const workspaceInput = dialog.getByLabel('Default workspace');
+    const saveWorkspace = dialog.getByRole('button', { name: 'Save workspace' });
     await expect(workspaceInput).toBeVisible();
     await expect(saveWorkspace).toBeDisabled();
 
@@ -182,41 +188,47 @@ test('Settings preferences controls are keyboardable, minimal, and persist edits
       },
       pickedWorkspace,
     );
-    await page.getByRole('button', { name: 'Browse' }).click();
+    await dialog.getByRole('button', { name: 'Browse' }).click();
     await expect(workspaceInput).toHaveValue(pickedWorkspace);
     await saveWorkspace.click();
-    await expect(page.getByText('Saved')).toBeVisible();
+    await expect(dialog.getByText('Saved', { exact: true })).toBeVisible();
 
-    const smartToggle = page.getByLabel('Auto-open Plan, Diff, and Tasks panels');
+    const smartToggle = dialog.getByLabel('Auto-open Plan, Diff, and Tasks panels');
     await smartToggle.uncheck();
     await expect(smartToggle).not.toBeChecked();
     await smartToggle.check();
     await expect(smartToggle).toBeChecked();
 
-    await page.getByRole('button', { name: 'Off' }).click();
-    await expect(page.getByRole('button', { name: 'Off' })).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByText('Never start workflows from natural language.')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Off' }).click();
+    await expect(dialog.getByRole('button', { name: 'Off' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(dialog.getByText('Never start workflows from natural language.')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Auto' }).click();
-    await expect(page.getByRole('button', { name: 'Auto' })).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByText('Start matching workflows without confirmation.')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Auto' }).click();
+    await expect(dialog.getByRole('button', { name: 'Auto' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(dialog.getByText('Start matching workflows without confirmation.')).toBeVisible();
 
-    const advanced = page.getByRole('button', { name: 'Advanced limits' });
+    const advanced = dialog.getByRole('button', { name: 'Advanced limits' });
     await expect(advanced).toHaveAttribute('aria-expanded', 'false');
     await advanced.click();
     await expect(advanced).toHaveAttribute('aria-expanded', 'true');
 
-    await page.getByLabel('Max agents').fill('999');
+    await dialog.getByLabel('Max agents').fill('999');
     await page.keyboard.press('Enter');
-    await expect(page.getByLabel('Max agents')).toHaveValue('64');
+    await expect(dialog.getByLabel('Max agents')).toHaveValue('64');
 
-    await page.getByLabel('Max concurrency').fill('999');
+    await dialog.getByLabel('Max concurrency').fill('999');
     await page.keyboard.press('Enter');
-    await expect(page.getByLabel('Max concurrency')).toHaveValue('16');
+    await expect(dialog.getByLabel('Max concurrency')).toHaveValue('16');
 
-    await page.getByLabel('Token budget').fill('999999');
+    await dialog.getByLabel('Token budget').fill('999999');
     await page.keyboard.press('Enter');
-    await expect(page.getByLabel('Token budget')).toHaveValue('200000');
+    await expect(dialog.getByLabel('Token budget')).toHaveValue('200000');
   } finally {
     await space.close();
   }
@@ -299,9 +311,10 @@ test('Settings providers toolbar and custom form stay compact but complete', asy
     const { page } = space;
     await openSettings(page);
     await openProviders(page);
+    const providersPanel = page.locator('#settings-panel-providers');
 
-    await page.getByRole('button', { name: 'Refresh' }).click();
-    await expect(page.getByRole('button', { name: 'Refresh' })).toBeEnabled();
+    await providersPanel.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await expect(providersPanel.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
 
     await page.getByRole('button', { name: 'Add custom' }).click();
     await expect(page.getByRole('heading', { name: 'Add custom provider' })).toBeVisible();
@@ -563,7 +576,7 @@ test('Settings modal close controls are predictable and non-destructive', async 
     await page.getByRole('button', { name: 'Close settings' }).click();
     await expect(page.locator('#settings-modal-title')).toHaveCount(0);
 
-    await page.locator('button[aria-label="Settings"]').click();
+    await page.getByTestId('settings-button').click();
     await expect(page.locator('#settings-modal-title')).toBeVisible();
     await page.mouse.click(8, 8);
     await expect(page.locator('#settings-modal-title')).toHaveCount(0);

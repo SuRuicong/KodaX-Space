@@ -170,8 +170,8 @@ export function SettingsModal({
               type="button"
               onClick={onClose}
               className="ix-pop inline-flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted hover:bg-hover-bg hover:text-fg-primary"
-              aria-label={t('common.close')}
-              title={t('common.close')}
+              aria-label={t('settings.close')}
+              title={t('settings.close')}
             >
               <X className="h-4 w-4" strokeWidth={1.8} aria-hidden />
             </button>

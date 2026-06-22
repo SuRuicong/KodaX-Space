@@ -44,6 +44,7 @@ export const messages = {
     'language.effective': 'Current: {locale}',
     'settings.subtitle': 'KodaX Space controls',
     'settings.sections': 'Settings sections',
+    'settings.close': 'Close settings',
     'settings.preferences': 'Preferences',
     'settings.preferences.description':
       'Workspace defaults, automation, language, and workflow behavior.',
@@ -275,6 +276,7 @@ export const messages = {
     'language.effective': '当前：{locale}',
     'settings.subtitle': 'KodaX Space 控制项',
     'settings.sections': '设置分区',
+    'settings.close': '关闭设置',
     'settings.preferences': '偏好',
     'settings.preferences.description': '工作区默认值、自动化、语言和工作流行为。',
     'settings.providers': '服务商',

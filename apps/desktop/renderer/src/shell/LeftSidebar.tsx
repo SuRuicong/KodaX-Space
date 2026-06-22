@@ -162,6 +162,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): JSX.Element {
         <button
           type="button"
           onClick={() => setSettingsOpen(true)}
+          data-testid="settings-button"
           className="ix-pop inline-flex shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-fg-secondary hover:bg-hover-bg hover:text-fg-primary"
           aria-label={t('common.settings')}
           title={t('common.settings')}

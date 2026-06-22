@@ -51,6 +51,22 @@ export async function launchSpace(testId: string, opts?: LaunchSpaceOptions): Pr
   const testDataDir = path.join(os.tmpdir(), `kodax-test-${testId}`);
   // 清掉可能上一次跑的同名残留 (testId 来自 spec 名 + timestamp，正常情况不冲突)
   await fs.rm(testDataDir, { recursive: true, force: true }).catch(() => {});
+  const testWorkspaceDir = path.join(testDataDir, 'workspace');
+  const testSpaceDir = path.join(testDataDir, 'space');
+  await fs.mkdir(testSpaceDir, { recursive: true });
+  await fs.writeFile(
+    path.join(testSpaceDir, 'settings.json'),
+    JSON.stringify(
+      {
+        version: 1,
+        defaultWorkspace: testWorkspaceDir,
+        languageMode: 'en-US',
+      },
+      null,
+      2,
+    ),
+    'utf-8',
+  );
 
   // memory note: 用户 shell 有时 export ELECTRON_RUN_AS_NODE=1 让 electron.exe 退化成 Node
   // 跑。Node 不识别 Playwright 注入的 --remote-debugging-port=0 等 Chromium flag，
