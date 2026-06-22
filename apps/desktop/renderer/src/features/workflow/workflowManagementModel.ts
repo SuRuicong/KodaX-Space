@@ -27,6 +27,25 @@ export function workflowRunTitle(run: WorkflowRunT): string {
   return run.displayName ?? run.workflowName ?? run.runId;
 }
 
+export function selectableWorkflowRunSessionId(
+  run: WorkflowRunT,
+  projectSessionIds: ReadonlySet<string>,
+): string | undefined {
+  return run.sessionId !== undefined && projectSessionIds.has(run.sessionId)
+    ? run.sessionId
+    : undefined;
+}
+
+export function workflowRerunSessionId(input: {
+  readonly run: WorkflowRunT;
+  readonly currentSessionId: string | null;
+  readonly projectSessionIds: ReadonlySet<string>;
+}): string | undefined {
+  return (
+    input.currentSessionId ?? selectableWorkflowRunSessionId(input.run, input.projectSessionIds)
+  );
+}
+
 export function workflowRunProjectRoot(run: WorkflowRunT): string | undefined {
   const hostProjectRoot = run.hostMetadata?.projectRoot;
   return run.projectRoot ?? (hostProjectRoot ? hostProjectRoot : undefined);

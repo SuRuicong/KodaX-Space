@@ -9,8 +9,8 @@ import {
   PauseCircle,
   Pencil,
   Play,
+  PlayCircle,
   RefreshCw,
-  RotateCcw,
   Square,
   Trash2,
   Workflow,
@@ -26,7 +26,11 @@ import type {
 import { useSurfaceStore } from '../../store/surface.js';
 import { useAppStore } from '../../store/appStore.js';
 import { pushToast } from '../../store/toastStore.js';
-import { workflowRunBelongsToProject } from './workflowManagementModel.js';
+import {
+  selectableWorkflowRunSessionId,
+  workflowRerunSessionId,
+  workflowRunBelongsToProject,
+} from './workflowManagementModel.js';
 
 type WorkflowLibrary = ChannelOutput<'workflow.library'>;
 type SavedWorkflow = WorkflowLibrary['saved'][number];
@@ -136,10 +140,10 @@ export function WorkflowNavPanel(): JSX.Element | null {
 
   const openWorkflowPanel = useCallback(
     (sessionId?: string) => {
-      if (sessionId) setCurrentSession(sessionId);
+      if (sessionId && projectSessionIds.has(sessionId)) setCurrentSession(sessionId);
       requestPopout('workflow');
     },
-    [requestPopout, setCurrentSession],
+    [projectSessionIds, requestPopout, setCurrentSession],
   );
 
   if (!currentProjectPath) return null;
@@ -197,7 +201,11 @@ export function WorkflowNavPanel(): JSX.Element | null {
                   <WorkflowRunNavRow
                     key={run.runId}
                     run={run}
-                    onOpen={() => openWorkflowPanel(run.sessionId)}
+                    currentSessionId={currentSessionId}
+                    projectSessionIds={projectSessionIds}
+                    onOpen={() =>
+                      openWorkflowPanel(selectableWorkflowRunSessionId(run, projectSessionIds))
+                    }
                   />
                 ))}
                 {runs.length > shownRuns.length && (
@@ -255,9 +263,13 @@ export function WorkflowNavPanel(): JSX.Element | null {
 
 function WorkflowRunNavRow({
   run,
+  currentSessionId,
+  projectSessionIds,
   onOpen,
 }: {
   run: WorkflowRunT;
+  currentSessionId: string | null;
+  projectSessionIds: ReadonlySet<string>;
   onOpen: () => void;
 }): JSX.Element {
   const Icon = STATUS_ICON[run.status];
@@ -285,8 +297,11 @@ function WorkflowRunNavRow({
         </div>
       </button>
       <div className="flex items-center gap-0.5 flex-shrink-0">
-        <IconButton label="Rerun" onClick={() => void rerunWorkflow(run)}>
-          <RotateCcw size={11} />
+        <IconButton
+          label="Run again"
+          onClick={() => void rerunWorkflow(run, currentSessionId, projectSessionIds)}
+        >
+          <PlayCircle size={11} />
         </IconButton>
         {run.status === 'running' && (
           <IconButton label="Pause" onClick={() => void pauseWorkflow(run.runId)}>
@@ -411,13 +426,18 @@ async function stopWorkflow(runId: string): Promise<void> {
   );
 }
 
-async function rerunWorkflow(run: WorkflowRunT): Promise<void> {
-  if (!run.sessionId) {
-    pushToast('Workflow run has no owning session', 'warning');
+async function rerunWorkflow(
+  run: WorkflowRunT,
+  currentSessionId: string | null,
+  projectSessionIds: ReadonlySet<string>,
+): Promise<void> {
+  const sessionId = workflowRerunSessionId({ run, currentSessionId, projectSessionIds });
+  if (!sessionId) {
+    pushToast('Open a session before rerunning a workflow', 'warning');
     return;
   }
   const result = await invokeWorkflowControl(
-    window.kodaxSpace?.invoke('workflow.rerun', { runId: run.runId, sessionId: run.sessionId }),
+    window.kodaxSpace?.invoke('workflow.rerun', { runId: run.runId, sessionId }),
     'Rerun failed',
   );
   if (result) pushToast('Workflow rerun started', 'success');

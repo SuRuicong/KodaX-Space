@@ -417,7 +417,9 @@ function artifactNamesFromDir(runDir: string): string[] {
     return readdirSync(path.join(runDir, 'artifacts'), { withFileTypes: true })
       .filter((entry) => entry.isFile())
       .flatMap((entry) => {
-        const name = entry.name.endsWith('.json') ? entry.name.slice(0, -'.json'.length) : entry.name;
+        const name = entry.name.endsWith('.json')
+          ? entry.name.slice(0, -'.json'.length)
+          : entry.name;
         return safeArtifactName(name) ? [name] : [];
       })
       .slice(0, IPC_MAX_ARTIFACTS);
@@ -426,7 +428,11 @@ function artifactNamesFromDir(runDir: string): string[] {
   }
 }
 
-function durableArtifactList(rawArtifacts: unknown, runDir: string, events: readonly Record<string, unknown>[]): unknown[] {
+function durableArtifactList(
+  rawArtifacts: unknown,
+  runDir: string,
+  events: readonly Record<string, unknown>[],
+): unknown[] {
   const names = new Map<string, unknown>();
   for (const artifact of durableArtifacts(rawArtifacts)) {
     if (!isRecord(artifact)) continue;
@@ -673,7 +679,8 @@ function terminalStatusFromEvents(
     if (type === 'workflow_failed') return 'failed';
     if (type === 'workflow_cancelled') return 'cancelled';
   }
-  if (hasArtifacts || events.some((event) => event.type === 'synthesis_completed')) return 'completed';
+  if (hasArtifacts || events.some((event) => event.type === 'synthesis_completed'))
+    return 'completed';
   return 'cancelled';
 }
 
@@ -769,11 +776,12 @@ function durableSnapshotFromRunJson(
   const updatedAt = isoTimestamp(raw.updatedAt ?? raw.endedAt, startedAt);
   const events = readJsonLines(path.join(runDir, 'events.jsonl'));
   const manifest = readWorkflowManifest(runDir);
+  const manifestPhases = manifestPhaseTitles(manifest);
+  const patterns =
+    normalizeWorkflowPatterns(raw.patterns) ?? normalizeWorkflowPatterns(manifest?.patterns);
   const rawItems = Array.isArray(raw.items) ? raw.items : [];
   const items =
-    rawItems.length > 0
-      ? rawItems
-      : durableItemsFromEvents(runDir, status, events, manifestPhaseTitles(manifest));
+    rawItems.length > 0 ? rawItems : durableItemsFromEvents(runDir, status, events, manifestPhases);
   const workflowName = durableWorkflowName(raw, runId);
   const goal = durableGoal(raw);
   const artifacts = durableArtifactList(raw.artifacts, runDir, events);
@@ -789,6 +797,10 @@ function durableSnapshotFromRunJson(
     counts: durableCounts(raw, items),
     progress: durableProgress(raw, status, items),
     artifacts,
+    ...(patterns !== undefined ? { patterns } : {}),
+    ...(typeof raw.phaseCount === 'number'
+      ? {}
+      : { phaseCount: manifestPhases.length || undefined }),
     ...(goal !== undefined ? { goal } : {}),
     manifestSnapshotPath:
       clampPlainText(raw.manifestSnapshotPath, IPC_PATH_MAX) ?? path.join(runDir, 'manifest.json'),
@@ -840,7 +852,9 @@ function durableSnapshotFromEvents(
     artifacts: artifactList,
     patterns: normalizeWorkflowPatterns(manifest?.patterns),
     phaseCount: manifestPhaseTitles(manifest).length || undefined,
-    ...(eventResultSummary(events) !== undefined ? { resultSummary: eventResultSummary(events) } : {}),
+    ...(eventResultSummary(events) !== undefined
+      ? { resultSummary: eventResultSummary(events) }
+      : {}),
     ...(eventError(events) !== undefined ? { error: eventError(events) } : {}),
     latestMessage:
       status === 'completed'

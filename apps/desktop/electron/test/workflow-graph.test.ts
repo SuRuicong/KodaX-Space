@@ -147,6 +147,29 @@ test('workflow graph assigns running loose agents to the current pending phase',
   assert.equal(model.phases[2]?.status, 'pending');
 });
 
+test('workflow graph avoids synthetic workflow-name phase when real phases exist', () => {
+  const model = buildWorkflowGraphModel(
+    run({
+      displayName: 'Version review workflow',
+      phaseCount: 3,
+      items: [
+        item({ id: 'phase-1', title: 'Collect changes', kind: 'phase', status: 'pending' }),
+        item({ id: 'phase-2', title: 'Review everything', kind: 'phase', status: 'pending' }),
+        item({ id: 'phase-3', title: 'Synthesize', kind: 'phase', status: 'pending' }),
+        item({ id: 'agent-1', title: 'Change collector', kind: 'agent', status: 'running' }),
+      ],
+    }),
+  );
+
+  assert.equal(model.phases.length, 3);
+  assert.deepEqual(
+    model.phases.map((phase) => phase.title),
+    ['Collect changes', 'Review everything', 'Synthesize'],
+  );
+  assert.equal(model.phases[0]?.status, 'running');
+  assert.equal(model.phases[0]?.nodes[0]?.title, 'Change collector');
+});
+
 test('workflow graph creates a synthetic run phase when SDK sends no phase items', () => {
   const model = buildWorkflowGraphModel(
     run({

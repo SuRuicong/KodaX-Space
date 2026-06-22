@@ -221,14 +221,25 @@ function findFallbackPhase(
   if (activeById) return activeById;
 
   if (node.item.status === 'running') {
-    const activeByIndex = findActivePhaseByIndex(phaseRoots, run.activePhaseIndex);
-    if (activeByIndex) return activeByIndex;
     const running = phaseRoots.find((phase) => phaseStatusFromNode(phase) === 'running');
     if (running) return running;
+    const activeByIndex = findActivePhaseByIndex(phaseRoots, run.activePhaseIndex);
+    if (activeByIndex) return activeByIndex;
     return phaseRoots.find((phase) => phaseStatusFromNode(phase) === 'pending');
   }
 
-  return undefined;
+  if (node.item.status === 'failed') {
+    const failed = phaseRoots.find((phase) => phaseStatusFromNode(phase) === 'failed');
+    if (failed) return failed;
+  }
+
+  const lastTouched = findLastPhase(phaseRoots, (phase) => {
+    const status = phaseStatusFromNode(phase);
+    return status !== 'pending' && status !== 'skipped';
+  });
+  if (lastTouched) return lastTouched;
+
+  return phaseRoots.at(-1);
 }
 
 function findActivePhaseById(
@@ -256,6 +267,17 @@ function findActivePhaseByIndex(
 function phaseStatusFromNode(node: WorkflowTreeNode): WorkflowGraphStatus {
   const counts = countNodes(node.children.map((child) => graphNodeFromTreeNode(child, 'running')));
   return derivePhaseStatus(node.item.status, counts);
+}
+
+function findLastPhase(
+  phaseRoots: readonly WorkflowTreeNode[],
+  predicate: (phase: WorkflowTreeNode) => boolean,
+): WorkflowTreeNode | undefined {
+  for (let i = phaseRoots.length - 1; i >= 0; i--) {
+    const phase = phaseRoots[i];
+    if (phase && predicate(phase)) return phase;
+  }
+  return undefined;
 }
 
 function derivePhaseStatus(

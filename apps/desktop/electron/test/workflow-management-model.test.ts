@@ -5,7 +5,9 @@ import {
   chooseWorkflowManagementSelection,
   relatedRunsForSavedWorkflow,
   savedWorkflowKey,
+  selectableWorkflowRunSessionId,
   sortWorkflowRunsForManagement,
+  workflowRerunSessionId,
   workflowRunBelongsToProject,
 } from '../../renderer/src/features/workflow/workflowManagementModel.js';
 
@@ -90,6 +92,53 @@ test('workflow management matches saved workflow to historical runs', () => {
   assert.deepEqual(
     relatedRunsForSavedWorkflow(saved, runs).map((item) => item.runId),
     ['wf-1', 'wf-3'],
+  );
+});
+
+test('workflow management only switches to selectable live project sessions', () => {
+  const projectSessionIds = new Set(['s-live']);
+  assert.equal(
+    selectableWorkflowRunSessionId(
+      run({ runId: 'wf-live', sessionId: 's-live' }),
+      projectSessionIds,
+    ),
+    's-live',
+  );
+  assert.equal(
+    selectableWorkflowRunSessionId(
+      run({ runId: 'wf-history', sessionId: 's-missing' }),
+      projectSessionIds,
+    ),
+    undefined,
+  );
+});
+
+test('workflow rerun uses current session and never falls back to missing historical sessions', () => {
+  const projectSessionIds = new Set(['s-live']);
+  const historicalRun = run({ runId: 'wf-history', sessionId: 's-missing' });
+  assert.equal(
+    workflowRerunSessionId({
+      run: historicalRun,
+      currentSessionId: 's-current',
+      projectSessionIds,
+    }),
+    's-current',
+  );
+  assert.equal(
+    workflowRerunSessionId({
+      run: run({ runId: 'wf-live', sessionId: 's-live' }),
+      currentSessionId: null,
+      projectSessionIds,
+    }),
+    's-live',
+  );
+  assert.equal(
+    workflowRerunSessionId({
+      run: historicalRun,
+      currentSessionId: null,
+      projectSessionIds,
+    }),
+    undefined,
   );
 });
 

@@ -9,8 +9,8 @@ import {
   PauseCircle,
   Pencil,
   Play,
+  PlayCircle,
   RefreshCw,
-  RotateCcw,
   Square,
   Trash2,
   Workflow,
@@ -32,7 +32,9 @@ import {
   chooseWorkflowManagementSelection,
   relatedRunsForSavedWorkflow,
   savedWorkflowKey,
+  selectableWorkflowRunSessionId,
   sortWorkflowRunsForManagement,
+  workflowRerunSessionId,
   workflowRunBelongsToProject,
   workflowRunTitle,
   type SavedWorkflowRef,
@@ -160,10 +162,11 @@ export function WorkflowManagementPanel(): JSX.Element {
 
   const selectRun = useCallback(
     (run: WorkflowRunT) => {
-      if (run.sessionId) setCurrentSession(run.sessionId);
+      const sessionId = selectableWorkflowRunSessionId(run, projectSessionIds);
+      if (sessionId) setCurrentSession(sessionId);
       setSelection({ kind: 'run', id: run.runId });
     },
-    [setCurrentSession],
+    [projectSessionIds, setCurrentSession],
   );
 
   const refreshLibrary = useCallback(() => setRefreshNonce((value) => value + 1), []);
@@ -238,7 +241,13 @@ export function WorkflowManagementPanel(): JSX.Element {
 
         <main className="min-h-0 overflow-y-auto p-3" data-testid="workflow-management-detail">
           {selectedRun ? (
-            <RunDetail run={selectedRun} relatedRuns={runs} onSelectRun={selectRun} />
+            <RunDetail
+              run={selectedRun}
+              relatedRuns={runs}
+              currentSessionId={currentSessionId}
+              projectSessionIds={projectSessionIds}
+              onSelectRun={selectRun}
+            />
           ) : selectedSaved ? (
             <SavedDetail
               saved={selectedSaved}
@@ -364,10 +373,14 @@ function SavedListItem({
 function RunDetail({
   run,
   relatedRuns,
+  currentSessionId,
+  projectSessionIds,
   onSelectRun,
 }: {
   readonly run: WorkflowRunT;
   readonly relatedRuns: readonly WorkflowRunT[];
+  readonly currentSessionId: string | null;
+  readonly projectSessionIds: ReadonlySet<string>;
   readonly onSelectRun: (run: WorkflowRunT) => void;
 }): JSX.Element {
   const title = workflowRunTitle(run);
@@ -378,7 +391,11 @@ function RunDetail({
         title={title}
         subtitle={`${run.status} / ${shortRunId(run.runId)}`}
       >
-        <RunActions run={run} />
+        <RunActions
+          run={run}
+          currentSessionId={currentSessionId}
+          projectSessionIds={projectSessionIds}
+        />
       </DetailHeader>
       <WorkflowPanel runs={[run]} variant="full" hideRunHeader defaultDetailsOpen={false} />
       <HistoryBlock runs={relatedRuns} selectedRunId={run.runId} onSelectRun={onSelectRun} />
@@ -469,14 +486,25 @@ function DetailHeader({
   );
 }
 
-function RunActions({ run }: { readonly run: WorkflowRunT }): JSX.Element {
+function RunActions({
+  run,
+  currentSessionId,
+  projectSessionIds,
+}: {
+  readonly run: WorkflowRunT;
+  readonly currentSessionId: string | null;
+  readonly projectSessionIds: ReadonlySet<string>;
+}): JSX.Element {
   const active = run.status === 'running' || run.status === 'paused';
   const terminal =
     run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled';
   return (
     <>
-      <ActionButton label="Rerun" onClick={() => void rerunWorkflow(run)}>
-        <RotateCcw size={13} />
+      <ActionButton
+        label="Run again"
+        onClick={() => void rerunWorkflow(run, currentSessionId, projectSessionIds)}
+      >
+        <PlayCircle size={13} />
       </ActionButton>
       {run.status === 'running' && (
         <ActionButton label="Pause" onClick={() => void pauseWorkflow(run.runId)}>
@@ -663,13 +691,18 @@ async function stopWorkflow(runId: string): Promise<void> {
   );
 }
 
-async function rerunWorkflow(run: WorkflowRunT): Promise<void> {
-  if (!run.sessionId) {
-    pushToast('Workflow run has no owning session', 'warning');
+async function rerunWorkflow(
+  run: WorkflowRunT,
+  currentSessionId: string | null,
+  projectSessionIds: ReadonlySet<string>,
+): Promise<void> {
+  const sessionId = workflowRerunSessionId({ run, currentSessionId, projectSessionIds });
+  if (!sessionId) {
+    pushToast('Open a session before rerunning a workflow', 'warning');
     return;
   }
   const result = await invokeWorkflowControl(
-    window.kodaxSpace?.invoke('workflow.rerun', { runId: run.runId, sessionId: run.sessionId }),
+    window.kodaxSpace?.invoke('workflow.rerun', { runId: run.runId, sessionId }),
     'Rerun failed',
   );
   if (result) pushToast('Workflow rerun started', 'success');

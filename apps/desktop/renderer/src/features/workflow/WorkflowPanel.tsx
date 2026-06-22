@@ -83,6 +83,7 @@ const SPIN: ReadonlySet<string> = new Set(['running']);
 const TERMINAL: ReadonlySet<WorkflowProcessStatusT> = new Set(['completed', 'failed', 'cancelled']);
 // 缩进每层 12px，但封顶 8 层——防 SDK 给深树时内层被推出面板（视觉饱和钳制）。
 const MAX_INDENT_DEPTH = 8;
+const RESULT_LOAD_TIMEOUT_MS = 3000;
 
 const EMPTY_RUNS: readonly WorkflowRunT[] = [];
 const EMPTY_ACTIVITY: readonly WorkflowActivityPayload[] = [];
@@ -434,10 +435,19 @@ function WorkflowRunCard({
           onClick={() => setDetailsOpen((v) => !v)}
           className="mt-1 inline-flex items-center gap-1 text-[10px] text-fg-muted hover:text-fg-primary"
           aria-expanded={detailsOpen}
+          data-testid="workflow-details-toggle"
         >
           {detailsOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-          Subagents
+          阶段详情
         </button>
+      )}
+
+      {showTree && tree.length > 0 && (
+        <ul className="mt-1.5 space-y-0.5">
+          {tree.map((node) => (
+            <WorkflowItemRow key={node.item.id} node={node} depth={0} />
+          ))}
+        </ul>
       )}
 
       {/* 结果 / 错误（终态） */}
@@ -451,15 +461,6 @@ function WorkflowRunCard({
       {/* F066 完整结果（终态懒取）；artifacts 已自动桥进 artifact 面板（方案 A）。 */}
       {isTerminal && run.status === 'completed' && (
         <WorkflowResultView runId={run.runId} fallback={run.resultSummary} />
-      )}
-
-      {/* item 树 */}
-      {showTree && tree.length > 0 && (
-        <ul className="mt-1.5 space-y-0.5">
-          {tree.map((node) => (
-            <WorkflowItemRow key={node.item.id} node={node} depth={0} />
-          ))}
-        </ul>
       )}
 
       {/* F065 子 agent 活动遥测（活跃 / full 时显示，不淹主 transcript） */}
@@ -513,17 +514,28 @@ function WorkflowResultView({
   fallback?: string;
 }): JSX.Element {
   const [open, setOpen] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(fallback ?? null);
   const [loading, setLoading] = useState(false);
+  const [fetchAttempted, setFetchAttempted] = useState(false);
   const mountedRef = useRef(true);
   useEffect(() => () => void (mountedRef.current = false), []);
+  useEffect(() => {
+    if (fallback) setResult((current) => current ?? fallback);
+  }, [fallback]);
   async function toggle(): Promise<void> {
     const next = !open;
     setOpen(next);
-    if (next && result === null) {
-      setLoading(true);
+    if (next && !fetchAttempted) {
+      setFetchAttempted(true);
+      setLoading(result === null);
       try {
-        const r = await window.kodaxSpace?.invoke('workflow.result', { runId }).catch(() => null);
+        const resultPromise =
+          window.kodaxSpace?.invoke('workflow.result', { runId }).catch(() => null) ??
+          Promise.resolve(null);
+        const timeoutPromise = new Promise<null>((resolve) =>
+          window.setTimeout(() => resolve(null), RESULT_LOAD_TIMEOUT_MS),
+        );
+        const r = await Promise.race([resultPromise, timeoutPromise]);
         if (!mountedRef.current) return; // 卸载后不再 setState
         setResult(r?.ok ? (r.data.result ?? fallback ?? '') : (fallback ?? ''));
       } finally {
@@ -544,11 +556,14 @@ function WorkflowResultView({
       </button>
       {open && (
         <div className="mt-1">
-          {loading ? (
+          {loading && !result ? (
             <div className="text-[10px] text-fg-faint">加载中…</div>
           ) : result ? (
             <div className="relative">
-              <pre className="max-h-48 overflow-auto rounded bg-surface-3 p-1.5 text-[10px] text-fg-secondary whitespace-pre-wrap break-words">
+              <pre
+                className="max-h-48 overflow-auto rounded bg-surface-3 p-1.5 text-[10px] text-fg-secondary whitespace-pre-wrap break-words"
+                data-testid="workflow-result-body"
+              >
                 {result}
               </pre>
               <button
@@ -612,12 +627,28 @@ function WorkflowItemRow({ node, depth }: { node: WorkflowTreeNode; depth: numbe
   const { item, children } = node;
   const Icon = ITEM_ICON[item.status];
   const indentPx = Math.min(depth, MAX_INDENT_DEPTH) * 12;
+  const hasChildren = children.length > 0;
+  const [childrenOpen, setChildrenOpen] = useState(true);
   return (
     <li>
       <div
         className="flex items-center gap-1.5 text-[11px] min-w-0"
         style={{ paddingLeft: `${indentPx}px` }}
       >
+        {hasChildren ? (
+          <button
+            type="button"
+            onClick={() => setChildrenOpen((value) => !value)}
+            className="flex-shrink-0 text-fg-faint hover:text-fg-primary"
+            aria-expanded={childrenOpen}
+            aria-label={`Toggle ${item.title || item.id}`}
+            data-testid="workflow-item-toggle"
+          >
+            {childrenOpen ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+          </button>
+        ) : (
+          <span className="w-2.5 flex-shrink-0" aria-hidden />
+        )}
         <Icon
           size={11}
           className={`flex-shrink-0 ${ITEM_COLOR[item.status]} ${SPIN.has(item.status) ? 'animate-spin' : ''}`}
@@ -642,7 +673,7 @@ function WorkflowItemRow({ node, depth }: { node: WorkflowTreeNode; depth: numbe
       {item.summaryStatus !== undefined && (
         <DigestLine status={item.summaryStatus} summary={item.summary} indentPx={indentPx} />
       )}
-      {children.length > 0 && (
+      {hasChildren && childrenOpen && (
         <ul className="space-y-0.5">
           {children.map((c) => (
             <WorkflowItemRow key={c.item.id} node={c} depth={depth + 1} />

@@ -35,6 +35,11 @@ function toLaunchSession(session: NonNullable<ReturnType<typeof kodaxHost.get>>)
   };
 }
 
+function sameProjectRoot(left: string | undefined, right: string | undefined): boolean {
+  if (!left || !right) return true;
+  return path.resolve(left) === path.resolve(right);
+}
+
 export function registerWorkflowChannels(): void {
   registerChannel('workflow.list', (input) => {
     const runs = workflowController.list(input?.sessionId);
@@ -68,13 +73,18 @@ export function registerWorkflowChannels(): void {
   }));
 
   registerChannel('workflow.rerun', async (input) => {
-    const session = kodaxHost.get(input.sessionId);
-    if (!session) return { error: 'session not found' };
     const run = workflowController.get(input.runId);
     if (!run) return { error: 'workflow run not found' };
-    if (run.sessionId !== input.sessionId) {
-      return { error: 'workflow run does not belong to this session' };
+    let session = kodaxHost.get(input.sessionId);
+    if (!session && (await kodaxHost.tryResume(input.sessionId))) {
+      session = kodaxHost.get(input.sessionId);
     }
+    if (!session) return { error: 'session not found' };
+    if (!sameProjectRoot(run.projectRoot, session.projectRoot)) {
+      return { error: 'workflow run belongs to another project' };
+    }
+    if (run.surface && run.surface !== session.surface)
+      return { error: 'workflow run belongs to another surface' };
     const res = await workflowController.rerunGeneratedWorkflow(
       input.runId,
       input.args ?? {},

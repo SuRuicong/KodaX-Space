@@ -473,6 +473,7 @@ test('workflow manager restores completed runs persisted on disk', async () => {
   const testId = `workflow-history-${Date.now()}`;
   const { space, projectDir } = await launchSeededSpace(testId);
   try {
+    await getCurrentSessionId(space);
     await writePersistedWorkflowRun(space, projectDir);
     await writeEventsOnlyWorkflowRun(space, projectDir);
 
@@ -489,16 +490,31 @@ test('workflow manager restores completed runs persisted on disk', async () => {
     await expect(panel).toContainText('completed');
     await expect(panel.getByLabel('Workflow flow graph')).toContainText('Collect changes');
     await expect(panel.getByLabel('Workflow flow graph')).toContainText('Synthesize report');
-    await panel.getByRole('button', { name: 'Subagents' }).click();
+    await expect(panel.getByTestId('workflow-pattern-topology')).toContainText('Fan out');
+    await expect(panel.getByTestId('workflow-pattern-topology')).toContainText('Workers');
+    await expect(panel.getByTestId('workflow-topology-diagram')).toContainText('Collect changes');
+    await expect(panel.getByTestId('workflow-topology-diagram')).toContainText('Change collector');
+    await panel.getByTestId('workflow-details-toggle').click();
     await expect(panel.getByTestId('workflow-management-detail')).toContainText('Change collector');
+    await panel.getByTestId('workflow-item-toggle').first().click();
+    await expect(panel.getByTestId('workflow-management-detail')).not.toContainText(
+      'Recovered persisted child digest.',
+    );
+    await panel.getByTestId('workflow-item-toggle').first().click();
     await expect(panel.getByTestId('workflow-management-detail')).toContainText(
       'Recovered persisted child digest.',
     );
     await expect(panel.getByTestId('workflow-management-detail')).toContainText(
       'Recovered from disk.',
     );
+    await panel
+      .getByTestId('workflow-management-detail')
+      .getByRole('button', { name: 'Run again' })
+      .click();
+    await space.page.waitForTimeout(500);
+    await expect(space.page.getByText('session not found')).toHaveCount(0);
     await panel.getByTestId('workflow-result-toggle').click();
-    await expect(panel.getByTestId('workflow-management-detail')).toContainText(
+    await expect(panel.getByTestId('workflow-result-body')).toContainText(
       'Durable artifact report',
     );
     await expect(panel.getByTestId('workflow-management-detail')).not.toContainText('加载中');
@@ -510,7 +526,8 @@ test('workflow manager restores completed runs persisted on disk', async () => {
     await expect(panel.getByTestId('workflow-management-detail')).toContainText('completed');
     await expect(panel.getByLabel('Workflow flow graph')).toContainText('Collect changes');
     await expect(panel.getByLabel('Workflow flow graph')).toContainText('Synthesize report');
-    await panel.getByRole('button', { name: 'Subagents' }).click();
+    await expect(panel.getByTestId('workflow-topology-diagram')).toContainText('Events collector');
+    await panel.getByTestId('workflow-details-toggle').click();
     await expect(panel.getByTestId('workflow-management-detail')).toContainText('Events collector');
     await expect(panel.getByTestId('workflow-management-detail')).not.toContainText(
       'DIGEST_TAIL_VISIBLE_ONLY_WHEN_EXPANDED',
@@ -520,7 +537,7 @@ test('workflow manager restores completed runs persisted on disk', async () => {
       'DIGEST_TAIL_VISIBLE_ONLY_WHEN_EXPANDED',
     );
     await panel.getByTestId('workflow-result-toggle').click();
-    await expect(panel.getByTestId('workflow-management-detail')).toContainText(
+    await expect(panel.getByTestId('workflow-result-body')).toContainText(
       'Events-only artifact report',
     );
     await expect(panel.getByTestId('workflow-management-detail')).not.toContainText('加载中');
