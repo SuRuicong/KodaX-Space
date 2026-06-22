@@ -514,6 +514,7 @@ export function SystemNotice({
   text,
   action,
   retryAvailableAt,
+  sentAt,
 }: Extract<ConversationMessage, { kind: 'system_notice' }>): JSX.Element {
   const isWorkflow = variant === 'workflow';
   const color =
@@ -525,21 +526,34 @@ export function SystemNotice({
   const secondsLeft = useRetryCountdown(retryAvailableAt);
   const countdownActive = action === 'retry' && secondsLeft > 0;
 
+  if (isWorkflow) {
+    return (
+      <div
+        className={['notice-in text-[11px] font-mono border-y', color, 'px-3 py-2 text-left'].join(
+          ' ',
+        )}
+        data-testid="system-notice"
+        data-notice-variant={variant}
+      >
+        <div className="min-w-0 whitespace-pre-wrap break-words">{text}</div>
+        <div className="font-sans">
+          <MessageFooter text={text} sentAt={sentAt} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={[
         'notice-in text-[11px] font-mono border-y',
         color,
-        isWorkflow
-          ? 'px-3 py-2 text-left flex items-start justify-start gap-2'
-          : 'py-1 text-center flex items-center justify-center gap-2 flex-wrap',
+        'py-1 text-center flex items-center justify-center gap-2 flex-wrap',
       ].join(' ')}
       data-testid="system-notice"
       data-notice-variant={variant}
     >
-      <span className={isWorkflow ? 'min-w-0 flex-1 whitespace-pre-wrap break-words' : undefined}>
-        {text}
-      </span>
+      <span>{text}</span>
       {actionDef && (
         <button
           type="button"

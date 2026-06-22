@@ -65,6 +65,7 @@ test('workflow notices render as workflow system notices, not user bubbles', () 
   if (notice.kind === 'system_notice') {
     assert.equal(notice.variant, 'workflow');
     assert.equal(notice.text, '[workflow] generating workflow...');
+    assert.equal(notice.sentAt, 1001);
   }
 });
 test('thinking_delta attaches to current assistant bubble', () => {

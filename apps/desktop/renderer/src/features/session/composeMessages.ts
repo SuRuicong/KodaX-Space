@@ -61,6 +61,8 @@ export type ConversationMessage =
        *  直接透传 evt.retryAvailableAt 不再加工，避免 composeMessages 每次重跑都让倒计时
        *  漂移 (review HIGH-2 修复后的定型形态)。*/
       retryAvailableAt?: number;
+      /** Renderer-local notices (workflow) keep their own wall-clock timestamp for footer UI. */
+      sentAt?: number;
     };
 
 interface ComposeInput {
@@ -117,6 +119,7 @@ export function composeMessages({
         id: local.notice.id,
         variant: 'workflow',
         text: local.notice.content,
+        sentAt: local.notice.sentAt,
       });
       continue;
     }
