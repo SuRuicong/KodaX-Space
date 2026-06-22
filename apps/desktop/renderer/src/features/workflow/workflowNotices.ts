@@ -2,11 +2,13 @@ import type {
   WorkflowActivityPayload,
   WorkflowEventPayload,
   WorkflowProcessItemT,
+  WorkflowRunT,
 } from '@kodax-space/space-ipc-schema';
 
 export interface WorkflowNoticeCandidate {
   readonly key: string;
   readonly text: string;
+  readonly sentAt?: number;
 }
 
 const FINAL_REPORT_MAX = 1400;
@@ -52,8 +54,9 @@ export function formatWorkflowEventNotices(
   if (progressNotice) notices.push(progressNotice);
 
   if (payload.type === 'workflow_updated' || payload.type === 'workflow_finished') {
+    const fallbackSentAt = timestampFromIso(payload.snapshot.updatedAt);
     for (const item of payload.snapshot.items) {
-      const summaryNotice = formatItemSummaryNotice(payload.snapshot.runId, item);
+      const summaryNotice = formatItemSummaryNotice(payload.snapshot.runId, item, fallbackSentAt);
       if (summaryNotice) notices.push(summaryNotice);
     }
   }
@@ -66,6 +69,21 @@ export function formatWorkflowEventNotices(
   return notices;
 }
 
+export function formatWorkflowRunRestoreNotices(run: WorkflowRunT): WorkflowNoticeCandidate[] {
+  const type =
+    run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled'
+      ? 'workflow_finished'
+      : 'workflow_updated';
+  return formatWorkflowEventNotices({
+    type,
+    snapshot: run,
+    ...(run.latestMessage !== undefined ? { message: run.latestMessage } : {}),
+    ...(run.sessionId !== undefined ? { sessionId: run.sessionId } : {}),
+    ...(run.surface !== undefined ? { surface: run.surface } : {}),
+    ...(run.projectRoot !== undefined ? { projectRoot: run.projectRoot } : {}),
+  });
+}
+
 function formatWorkflowProgressNotice(
   payload: WorkflowEventPayload,
 ): WorkflowNoticeCandidate | null {
@@ -75,6 +93,7 @@ function formatWorkflowProgressNotice(
   return {
     key: `progress:${payload.snapshot.runId}:${fingerprintText(message)}`,
     text: `[workflow] ${message}`,
+    sentAt: timestampFromIso(payload.snapshot.updatedAt),
   };
 }
 
@@ -106,12 +125,14 @@ function formatWorkflowFinishedNotice(
   return {
     key: `finished:${payload.snapshot.runId}:${status}:${fingerprintText(detail)}`,
     text,
+    sentAt: timestampFromIso(payload.snapshot.updatedAt),
   };
 }
 
 function formatItemSummaryNotice(
   runId: string,
   item: WorkflowProcessItemT,
+  fallbackSentAt?: number,
 ): WorkflowNoticeCandidate | null {
   if (item.kind !== 'agent') return null;
 
@@ -129,7 +150,14 @@ function formatItemSummaryNotice(
   return {
     key: `item:${runId}:${item.id}:${statusPart}:${fingerprintText(body)}`,
     text: `[workflow] ${label}: ${title}\n${body}`,
+    sentAt: timestampFromIso(item.endedAt ?? item.startedAt) ?? fallbackSentAt,
   };
+}
+
+function timestampFromIso(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function fingerprintText(value: string): string {

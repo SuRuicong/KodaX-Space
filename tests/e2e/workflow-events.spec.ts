@@ -135,6 +135,7 @@ async function emitWorkflowEvent(
 async function writePersistedWorkflowRun(
   space: SpaceInstance,
   projectDir: string,
+  sessionId = 'persisted-session',
 ): Promise<string> {
   const runId = 'wf_persisted_e2e';
   const runDir = path.join(space.testDataDir, 'space', 'workflow-runs', runId);
@@ -210,13 +211,74 @@ async function writePersistedWorkflowRun(
       artifacts: ['final-report'],
       resultSummary: '# Persisted final report\n\nRecovered from disk.',
       hostMetadata: {
-        sessionId: 'persisted-session',
+        sessionId,
         surface: 'code',
         projectRoot: projectDir,
       },
     }),
   );
   return runId;
+}
+
+async function writeTranscriptRestoreWorkflowRun(
+  space: SpaceInstance,
+  projectDir: string,
+  sessionId: string,
+): Promise<void> {
+  const runId = `wf_restore_transcript_${Date.now()}`;
+  const runDir = path.join(space.testDataDir, 'space', 'workflow-runs', runId);
+  await fs.mkdir(runDir, { recursive: true });
+  await fs.writeFile(
+    path.join(runDir, 'events.jsonl'),
+    [
+      { seq: 1, type: 'workflow_started', data: { runId }, ts: 1782041000000 },
+      { seq: 2, type: 'phase_started', data: { name: 'Collect history' }, ts: 1782041001000 },
+      {
+        seq: 3,
+        type: 'agent_spawned',
+        data: { taskId: 'restore-child-1', name: 'Restore child reviewer' },
+        ts: 1782041002000,
+      },
+      {
+        seq: 4,
+        type: 'agent_completed',
+        data: {
+          taskId: 'restore-child-1',
+          name: 'Restore child reviewer',
+          status: 'completed',
+          summaryKind: 'digest',
+          summary: 'Transcript restore child digest visible after reload.',
+        },
+        ts: 1782041003000,
+      },
+      {
+        seq: 5,
+        type: 'workflow_completed',
+        data: {
+          resultSummary:
+            '# Transcript restore final report\n\nMain workflow report visible after reload.',
+        },
+        ts: 1782041004000,
+      },
+    ]
+      .map((event) => JSON.stringify(event))
+      .join('\n'),
+  );
+  await fs.writeFile(
+    path.join(runDir, 'run.json'),
+    JSON.stringify({
+      runId,
+      workflow: 'Transcript Restore Workflow',
+      displayName: 'Transcript Restore Workflow',
+      status: 'completed',
+      startedAt: '2026-06-21T01:23:20.000Z',
+      endedAt: '2026-06-21T01:23:24.000Z',
+      totalSpawned: 1,
+      resultSummary:
+        '# Transcript restore final report\n\nMain workflow report visible after reload.',
+      hostMetadata: { sessionId, surface: 'code', projectRoot: projectDir },
+    }),
+  );
 }
 
 async function writeEventsOnlyWorkflowRun(
@@ -473,8 +535,19 @@ test('workflow manager restores completed runs persisted on disk', async () => {
   const testId = `workflow-history-${Date.now()}`;
   const { space, projectDir } = await launchSeededSpace(testId);
   try {
-    await getCurrentSessionId(space);
-    await writePersistedWorkflowRun(space, projectDir);
+    const textarea = space.page.locator('textarea').first();
+    const stream = space.page.getByTestId('conversation-stream');
+    await expect(textarea).toBeEnabled({ timeout: 10_000 });
+
+    const prompt = 'seed workflow history session';
+    await textarea.fill(prompt);
+    await textarea.press('Enter');
+    await expect(stream.getByTestId('user-message-bubble').filter({ hasText: prompt })).toBeVisible(
+      { timeout: 5_000 },
+    );
+
+    const sessionId = await getCurrentSessionId(space);
+    await writePersistedWorkflowRun(space, projectDir, sessionId);
     await writeEventsOnlyWorkflowRun(space, projectDir);
 
     await space.page.getByRole('button', { name: 'Open workflow panel' }).click();
@@ -541,6 +614,53 @@ test('workflow manager restores completed runs persisted on disk', async () => {
       'Events-only artifact report',
     );
     await expect(panel.getByTestId('workflow-management-detail')).not.toContainText('加载中');
+  } finally {
+    await space.close();
+    await fs.rm(projectDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test('restored workflow runs hydrate transcript summaries after renderer reload', async () => {
+  const testId = `workflow-transcript-restore-${Date.now()}`;
+  const { space, projectDir } = await launchSeededSpace(testId);
+  try {
+    const textarea = space.page.locator('textarea').first();
+    const stream = space.page.getByTestId('conversation-stream');
+    await expect(textarea).toBeEnabled({ timeout: 10_000 });
+
+    const prompt = 'seed transcript restore session';
+    await textarea.fill(prompt);
+    await textarea.press('Enter');
+    await expect(stream.getByTestId('user-message-bubble').filter({ hasText: prompt })).toBeVisible(
+      { timeout: 5_000 },
+    );
+    const sessionId = await getCurrentSessionId(space);
+
+    await writeTranscriptRestoreWorkflowRun(space, projectDir, sessionId);
+    await space.page.reload();
+    await space.page.waitForLoadState('domcontentloaded');
+    await space.page.getByRole('button', { name: /seed transcript restore session/ }).click();
+
+    const reloadedStream = space.page.getByTestId('conversation-stream');
+    await expect(
+      reloadedStream.locator('[data-testid="system-notice"][data-notice-variant="workflow"]', {
+        hasText: '[workflow] agent summary: Restore child reviewer',
+      }),
+    ).toBeVisible({ timeout: 8_000 });
+    await expect(reloadedStream).toContainText(
+      'Transcript restore child digest visible after reload.',
+    );
+    await expect(
+      reloadedStream.locator('[data-testid="system-notice"][data-notice-variant="workflow"]', {
+        hasText: '[workflow] completed: Transcript Restore Workflow',
+      }),
+    ).toBeVisible({ timeout: 8_000 });
+    await expect(reloadedStream).toContainText('# Transcript restore final report');
+    await expect(
+      reloadedStream
+        .getByTestId('user-message-bubble')
+        .filter({ hasText: '[workflow] completed: Transcript Restore Workflow' }),
+    ).toHaveCount(0);
   } finally {
     await space.close();
     await fs.rm(projectDir, { recursive: true, force: true }).catch(() => {});

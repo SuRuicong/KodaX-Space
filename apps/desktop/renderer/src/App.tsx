@@ -34,6 +34,7 @@ import { Shell } from './shell/Shell.js';
 import {
   formatWorkflowActivityNotice,
   formatWorkflowEventNotices,
+  formatWorkflowRunRestoreNotices,
 } from './features/workflow/workflowNotices.js';
 
 // alpha.1: Claude Desktop 风 shell 已成为默认 UI。
@@ -190,7 +191,17 @@ export default function App(): JSX.Element {
     bridge
       .invoke('workflow.list', undefined)
       .then((r) => {
-        if (r.ok) seedWorkflowRuns(r.data.runs);
+        if (r.ok) {
+          seedWorkflowRuns(r.data.runs);
+          for (const run of r.data.runs) {
+            if (run.sessionId === undefined || run.surface === 'partner') continue;
+            for (const notice of formatWorkflowRunRestoreNotices(run)) {
+              if (rememberWorkflowNoticeKey(notice.key)) {
+                appendWorkflowNotice(run.sessionId, notice.text, notice.sentAt);
+              }
+            }
+          }
+        }
       })
       .catch(() => {
         /* best-effort 播种；失败由后续实时事件补齐 */
@@ -201,7 +212,7 @@ export default function App(): JSX.Element {
         if (payload.sessionId !== undefined && payload.surface !== 'partner') {
           for (const notice of formatWorkflowEventNotices(payload)) {
             if (rememberWorkflowNoticeKey(notice.key)) {
-              appendWorkflowNotice(payload.sessionId, notice.text);
+              appendWorkflowNotice(payload.sessionId, notice.text, notice.sentAt);
             }
           }
         }

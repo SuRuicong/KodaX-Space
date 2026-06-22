@@ -4,6 +4,7 @@ import type { WorkflowEventPayload, WorkflowRunT } from '@kodax-space/space-ipc-
 import {
   formatWorkflowActivityNotice,
   formatWorkflowEventNotices,
+  formatWorkflowRunRestoreNotices,
 } from '../../renderer/src/features/workflow/workflowNotices.js';
 
 function run(over: Partial<WorkflowRunT>): WorkflowRunT {
@@ -79,6 +80,43 @@ test('workflow finished notice preserves readable markdown instead of one-line c
     notices[0]?.text,
     '[workflow] completed: review\n# Final report\n\n- OK\n- Follow up later',
   );
+});
+
+test('restored workflow runs hydrate child summaries and final report notices', () => {
+  const notices = formatWorkflowRunRestoreNotices(
+    run({
+      status: 'completed',
+      updatedAt: '2026-06-21T00:02:00.000Z',
+      sessionId: 's1',
+      surface: 'code',
+      items: [
+        {
+          id: 'a1',
+          title: 'Impact reviewer',
+          kind: 'agent',
+          status: 'completed',
+          summaryStatus: 'result',
+          summary: 'Recovered child digest.',
+          endedAt: '2026-06-21T00:01:00.000Z',
+        },
+      ],
+      resultSummary: '# Restored final report\n\nWorkflow completed.',
+    }),
+  );
+
+  assert.equal(notices.length, 2);
+  assert.match(notices[0]?.key ?? '', /^item:wf-notice:a1:/);
+  assert.equal(
+    notices[0]?.text,
+    '[workflow] agent summary: Impact reviewer\nRecovered child digest.',
+  );
+  assert.equal(notices[0]?.sentAt, Date.parse('2026-06-21T00:01:00.000Z'));
+  assert.match(notices[1]?.key ?? '', /^finished:wf-notice:completed:/);
+  assert.equal(
+    notices[1]?.text,
+    '[workflow] completed: review\n# Restored final report\n\nWorkflow completed.',
+  );
+  assert.equal(notices[1]?.sentAt, Date.parse('2026-06-21T00:02:00.000Z'));
 });
 
 test('workflow event notices surface meaningful progress messages', () => {

@@ -141,3 +141,44 @@ test('appendWorkflowNotice keeps notices for current session before session list
   assert.equal(notices.length, 1);
   assert.equal(notices[0]?.content, '[workflow] agent spawned: reviewer');
 });
+
+test('appendWorkflowNotice keeps restored workflow notices before session list catches up', () => {
+  useAppStore.setState({
+    sessions: [],
+    currentSessionId: null,
+    workflowRuns: {
+      wf_restored: {
+        runId: 'wf_restored',
+        workflowName: 'review',
+        status: 'completed',
+        startedAt: '2026-06-21T00:00:00.000Z',
+        updatedAt: '2026-06-21T00:01:00.000Z',
+        sessionId: SID,
+        surface: 'code',
+        items: [],
+        counts: { pending: 0, running: 0, completed: 0, failed: 0, cancelled: 0, skipped: 0 },
+        progress: {
+          spawnedAgents: 0,
+          finishedAgents: 0,
+          activeAgents: 0,
+          failedAgents: 0,
+          stoppedAgents: 0,
+        },
+      },
+    },
+    workflowNoticesBySession: {},
+  });
+
+  useAppStore
+    .getState()
+    .appendWorkflowNotice(
+      SID,
+      '[workflow] completed: review',
+      Date.parse('2026-06-21T00:01:00.000Z'),
+    );
+
+  const notices = useAppStore.getState().workflowNoticesBySession[SID] ?? [];
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0]?.content, '[workflow] completed: review');
+  assert.equal(notices[0]?.sentAt, Date.parse('2026-06-21T00:01:00.000Z'));
+});
