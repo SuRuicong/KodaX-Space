@@ -1,6 +1,6 @@
-# KodaX Space — 使用指南 (v0.1.9)
+# KodaX Space — 使用指南 (v0.1.20)
 
-> 文档对齐 v0.1.9 release（2026-06-08）。v0.1.10 in planning：F044 git working-tree diff popout + chore 清理 `~/.kodax_space` 孤儿目录。
+> 文档对齐 v0.1.20 release candidate（2026-06-22）：KodaX 0.7.53 capability catch-up、Workflow surfaces、CLI handoff receiver、Quick Ask continuity、Repointel diagnostics、Display Language MVP。
 
 KodaX Space 是 KodaX SDK 的桌面客户端。设计目标：**不要让用户在 Space 和 KodaX CLI 之间重复配置**。绝大多数 KodaX CLI 已经配好的东西，Space 启动后会自动认。
 
@@ -26,27 +26,29 @@ npm run dev
 
 ```bash
 npm run typecheck   # 通过才往下
-npm run test        # 348 个测试，应该全过
+npm test --workspace @kodax-space/desktop
+npm test -w @kodax-space/space-ipc-schema
+npm run build:smoke
 npm run build:win   # Windows；mac 走 build:mac
 ```
 
 ## 2. 配置复用矩阵 (Space ↔ KodaX CLI)
 
-| KodaX 配置 | Space 行为 | 备注 |
-|---|---|---|
-| `~/.kodax/config.json` → `mcpServers` | ✅ 自动加载 (SDK listMcpServers) | global server 直接出现在 MCP popout |
-| `~/.kodax/config.json` → `provider` | ✅ 首次自动选 | Space `defaultProviderId === null` 时 fallback；切过下拉用 Space 的 |
-| `~/.kodax/config.json` → `reasoningMode` / `reasoningCeiling` | ✅ 新 session 初值 | reasoningCeiling (v0.7.29+) 优先；session 内 `/reasoning` 切 |
-| `~/.kodax/config.json` → `permissionMode` | ✅ 'plan' / 'accept-edits' 1:1 | KodaX 'default'/'bypass-permissions' Space 不复刻，走 Space 默认 |
-| `~/.kodax/config.json` → `thinking` | ✅ session 创建时 fill | 之后用 `/thinking` 切 |
-| `~/.kodax/config.json` → `customProviders[]` | ✅ runtime 已注册 | 启动期调 SDK `registerConfiguredCustomProviders`；用 `/provider <name>` 切。⚠️ 不在 Providers 面板显示 (schema 不兼容，面板复用 deferred v0.1.7+) |
-| `~/.kodax/config.json` → `model` | ❌ 暂不读 | 跨 provider 时 model 名通常对不上；session 创建后用 `/model` 切 |
-| `${projectRoot}/.kodax/config.json` → `mcpServers` | ✅ 自动加载 (Space parse) | SDK 不读项目级 config |
-| `~/.kodax/AGENTS.md` + `${projectRoot}/AGENTS.md` | ✅ 自动加载 (SDK loadAgentsFiles) | 递归扫 cwd→root + .kodax/ |
-| `~/.kodax/auto-rules.jsonc` + 项目级 | ✅ 自动加载 (SDK loadAutoRules) | auto 模式判定用 |
-| `~/.kodax/sessions/` | ✅ 共享 (SDK /session) | KodaX CLI 跑过的 session 在 Space tree 出现 |
-| **API Keys** | ⚠️ Space 这边配 | Space 用 OS keychain；启动前 `export ANTHROPIC_API_KEY=...` 走 env 也行 |
-| `~/.kodax/commands/` (user commands) | ⚠️ 暂不复用 | 等 SlashCommandDef ↔ KodaXCommand 适配 (deferred v0.1.7+) |
+| KodaX 配置                                                    | Space 行为                         | 备注                                                                                                        |
+| ------------------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `~/.kodax/config.json` → `mcpServers`                         | ✅ 自动加载 (SDK listMcpServers)   | global server 直接出现在 MCP popout                                                                         |
+| `~/.kodax/config.json` → `provider`                           | ✅ 首次自动选                      | Space `defaultProviderId === null` 时 fallback；切过下拉用 Space 的                                         |
+| `~/.kodax/config.json` → `reasoningMode` / `reasoningCeiling` | ✅ 新 session 初值                 | reasoningCeiling (v0.7.29+) 优先；session 内 `/reasoning` 切                                                |
+| `~/.kodax/config.json` → `permissionMode`                     | ✅ 'plan' / 'accept-edits' 1:1     | KodaX 'default'/'bypass-permissions' Space 不复刻，走 Space 默认                                            |
+| `~/.kodax/config.json` → `thinking`                           | ✅ session 创建时 fill             | 之后用 `/thinking` 切                                                                                       |
+| `~/.kodax/config.json` → `customProviders[]`                  | ✅ runtime 已注册 + Providers 可见 | 启动期调 SDK `registerConfiguredCustomProviders`；Provider 面板、`/provider <name>`、session 创建都能识别。 |
+| `~/.kodax/config.json` → `model`                              | ❌ 暂不读                          | 跨 provider 时 model 名通常对不上；session 创建后用 `/model` 切                                             |
+| `${projectRoot}/.kodax/config.json` → `mcpServers`            | ✅ 自动加载 (Space parse)          | SDK 不读项目级 config                                                                                       |
+| `~/.kodax/AGENTS.md` + `${projectRoot}/AGENTS.md`             | ✅ 自动加载 (SDK loadAgentsFiles)  | 递归扫 cwd→root + .kodax/                                                                                   |
+| `~/.kodax/auto-rules.jsonc` + 项目级                          | ✅ 自动加载 (SDK loadAutoRules)    | auto 模式判定用                                                                                             |
+| `~/.kodax/sessions/`                                          | ✅ 共享 (SDK /session)             | KodaX CLI 跑过的 session 在 Space tree 出现                                                                 |
+| **API Keys**                                                  | ⚠️ Space 这边配                    | Space 用 OS keychain（不可用时 memory fallback）；启动前 `export ANTHROPIC_API_KEY=...` 走 env 也行         |
+| `~/.kodax/commands/` (user commands)                          | ⚠️ 暂不复用                        | 等 SlashCommandDef ↔ KodaXCommand 适配 (deferred v0.1.7+)                                                   |
 
 > 注：`~/.kodax/config.json` 改动的 hot-reload 行为待 SDK 文档确认。若改完发现 Space 没拿到新值，重启 Space 兜底。
 
@@ -58,17 +60,15 @@ npm run build:win   # Windows；mac 走 build:mac
 - `${projectRoot}/AGENTS.md` 标 **project** 或 **directory** scope (绿/蓝；SDK 用 directory 表示"递归扫到 projectRoot 顶上的那个")
 - 改了 AGENTS.md 不用重启 Space — 下次打开 popout 就刷新
 
-### 2.2 MCP servers 全自动 (global)
+### 2.2 MCP servers 全自动 (global/project)
 
 如果你在 KodaX CLI 用过 `kodax mcp add filesystem npx -y @modelcontextprotocol/server-filesystem`，那台机器上的 `~/.kodax/config.json` 已经有 mcpServers 段。Space 启动时直接从 SDK 读，不重复解析。
 
-打开顶栏 "MCP" popout 就能看到列表。`source` 字段标 `global` 或 `project`，方便区分来源。
-
-注：**只读展示**，不启动连接。完整的 启停 / 日志 / tool catalog 在 F039 (v0.1.7+) 做。
+打开 MCP popout 就能看到列表。`source` 字段标 `global` 或 `project`，方便区分来源。v0.1.5 起 F039 已接入 start/stop/diag/tool catalog；如果某个 server 无法启动，优先检查 `~/.kodax/config.json` 命令、PATH 和项目级配置。
 
 ### 2.3 API Keys
 
-Space 用 OS keychain (keytar) 存 key，跟 KodaX CLI 的 env 写法独立。**第一次启动**需要在设置面板填一次。流程：
+Space 用 OS keychain (`@napi-rs/keyring`) 存 key，跟 KodaX CLI 的 env 写法独立。Keychain 不可用时会退回 memory backend，重启后需重新配置。**第一次启动**需要在设置面板填一次。流程：
 
 1. 打开 "Providers" 面板（齿轮图标）
 2. 选 provider (Anthropic / OpenAI / Kimi / Qwen / DeepSeek / Zhipu / 火山 Ark / Gemini / etc.)
@@ -103,34 +103,98 @@ SDK 0.7.42 的 `/session` 模块统一管理持久化。KodaX CLI 跑过的 sess
 1. `npm run dev`，等窗口起来
 2. 在 chat 输入框点 "Select project root" → 选个项目目录 (要 absolute path；Space main 会 reject 非绝对路径，防 SSRF / 路径穿越)
 3. 输入 `/provider`，看 KodaX CLI 已经配好的 provider 是否亮起（绿色 = 有 key；灰 = 缺 key）
-4. 若灰：齿轮图标 → "Providers" → 填 key → Test
+4. 若灰：左下角 "设置" 或菜单 File → Settings → Providers → 填 key → Test
 5. 回到 chat，发第一条 prompt
 6. 想用工具？默认是 **plan** 模式（只读 / 分析类工具可用，写文件 / 跑命令需手动改）
    - `/mode default` — 默认；写工具会触发权限弹窗
    - `/mode auto` — 走 `auto-rules.jsonc` 自动判
    - `/mode plan` — 只读
 
-## 4. v0.1.9 新功能速览
+## 4. v0.1.20 重点更新
 
-### 4.0 图片粘贴（多模态输入）
+### 4.0 Display Language MVP
+
+现在可以在两处切换界面语言：
+
+- Settings → Preferences → Language
+- 顶部菜单 View → Language
+
+可选值：
+
+| 选项          | 行为                                               |
+| ------------- | -------------------------------------------------- |
+| Follow system | 系统首选语言是简体中文时走 `zh-CN`，否则走 `en-US` |
+| 简体中文      | 强制中文界面                                       |
+| English       | 强制英文界面                                       |
+
+当前覆盖范围是高频 chrome：菜单栏、Settings、左侧栏、右侧栏标题、Provider 设置、常用弹窗/Toast。模型回复、工具输出、文件内容、路径、provider/model 名不会被翻译。
+
+### 4.1 KodaX 0.7.53 host events
+
+Space 已消费 KodaX 0.7.53 的两个新 host event：
+
+- `onSidecarMessage` → `sidecar_message`：verifier revise/blocked 信息会作为系统提示进入会话。
+- `onTodoDriftWarning` → `todo_drift_warning`：在没有进行中 todo 时启动工作，会出现 session-scoped 通知。
+
+`kodax sessions dedupe` 仍是 CLI maintenance；桌面不会在本版加按钮。
+
+### 4.2 Workflow surfaces
+
+Workflow 现在不只是底部 live strip：
+
+- 右侧 Workflow 面板可看 run 列表、生命周期、子步骤状态。
+- Workflow graph / pattern graph 显示流程拓扑。
+- Workflow summary 可进入 transcript。
+- 已完成 workflow 的 detail/history 会从持久化记录恢复。
+- 取消/失败路径有本地兜底，避免 UI 停在旧状态。
+
+### 4.3 Repointel diagnostics
+
+Repointel 状态不再只靠一个模糊 chip。现在有：
+
+- `repointel.status` IPC
+- `/repointel status`
+- `/repointel trace`
+- chip popover 里展示项目/git/trace/warm 支持状态
+
+Standalone warm start/cancel/progress 仍等 SDK 暴露公共 API；Space 会明确显示 SDK-gated，而不是偷偷跑隐藏 warm 动作。
+
+### 4.4 Quick Ask continuity
+
+Quick Ask 仍是临时问答入口，但在 SDK 暴露真正 `sideQuery` 前，本版把过渡语义说清楚：
+
+- 使用临时 plan-mode session。
+- 窗口关闭时 best-effort 清理。
+- 回答有用时可点 Continue in Coder，晋升为普通 Coder session。
+- Partner promotion 和真正无 session side query 仍是后续项。
+
+### 4.5 CLI / REPL handoff receiver
+
+Space 会监听 `~/.kodax/handoffs/*.json`。当 CLI/REPL 以后写入 handoff descriptor 时，Space titlebar inbox 可接收并打开同一 KodaX session。
+
+本版已具备 receiver / watcher / accept / dismiss / stale-invalid 状态；CLI writer 仍是 KodaX 侧后续接入。
+
+## 5. v0.1.9+ 持续可用能力
+
+### 5.1 图片粘贴（多模态输入）
 
 输入框直接 Ctrl+V 粘贴 PNG/JPEG/WEBP 截图。缩略图 chip 显示在 textarea 上方,× 可删,8 张/turn × 6 MiB/张 上限。发送时 SDK `KodaXContextOptions.inputArtifacts` 自动拼成 multimodal content block 喂给 provider。
 
 落盘位置: `app.getPath('temp')/kodax-space/clipboard/<sessionId>/<ts>.png`,session 删除时 best-effort 清理。
 
-### 4.0.1 Smart Popout Director
+### 5.2 Smart Popout Director
 
 Session 首次出现下列信号时,右侧对应 popout **自动展开一次** (per session × per kind 只一次,不打扰):
 
-| 信号 | 自动开 |
-|--|--|
-| `todo_update`(items > 0) | Plan popout |
-| `tool_start` 是 write/edit/multi_edit/str_replace/insert_after_anchor | Diff popout |
-| `managed_task_status.activeWorkerId` | Tasks popout |
+| 信号                                                                  | 自动开       |
+| --------------------------------------------------------------------- | ------------ |
+| `todo_update`(items > 0)                                              | Plan popout  |
+| `tool_start` 是 write/edit/multi_edit/str_replace/insert_after_anchor | Diff popout  |
+| `managed_task_status.activeWorkerId`                                  | Tasks popout |
 
 优先级 tasks > plan > diff (一帧多触发取一个)。用户已开别的 popout 不抢,手动开/关也算"已处理"不再 auto-open。Preferences 里可关 director 总开关。
 
-### 4.0.2 项目拖排 + 可调侧栏 (Codex parity)
+### 5.3 项目拖排 + 可调侧栏 (Codex parity)
 
 - 左侧栏项目 row HTML5 DnD 拖排,顺序持久化 lsKey;current project 仍 pin 顶
 - "Archived (N)" 折叠状态持久化
@@ -138,7 +202,7 @@ Session 首次出现下列信号时,右侧对应 popout **自动展开一次** (
 - aside 默认基础字号 [13px] 对齐 Codex 视觉
 - 项目 session 默认显示 8 条,超出 "+N more" 弹 ProjectSessionPicker overlay 全量搜索
 
-### 4.1 内置终端（多 tab）
+### 5.4 内置终端（多 tab）
 
 右上 Toolbar 第 3 个图标 → 弹出真 PTY shell（不是工具日志 viewer，是真 `cmd.exe` / `zsh` / `bash`）。
 
@@ -148,24 +212,25 @@ Session 首次出现下列信号时,右侧对应 popout **自动展开一次** (
 - 跨平台：Win11 cmd.exe / Mac zsh / Linux bash
 - Env 已剥所有 `*_KEY` `*_TOKEN`，shell 里 `echo $ANTHROPIC_API_KEY` 拿不到
 
-### 4.2 ⌘Shift+P 命令面板（Win/Linux: Ctrl+Shift+P）
+### 5.5 ⌘Shift+P 命令面板（Win/Linux: Ctrl+Shift+P）
 
 VS Code 同款 muscle memory，全局快捷键召出模糊搜索框。4 个分组：
 
-| 分组 | 干啥 |
-|--|--|
-| **Actions** | New session / Toggle theme / Clear conversation view |
-| **Sessions** | 当前项目最近 30 个 session（选中切过去） |
-| **Files** | 项目下所有文件（选中在输入框插 `@path`） |
-| **Slash** | 所有 slash 命令（选中插 `/cmd` 待执行） |
+| 分组         | 干啥                                                 |
+| ------------ | ---------------------------------------------------- |
+| **Actions**  | New session / Toggle theme / Clear conversation view |
+| **Sessions** | 当前项目最近 30 个 session（选中切过去）             |
+| **Files**    | 项目下所有文件（选中在输入框插 `@path`）             |
+| **Slash**    | 所有 slash 命令（选中插 `/cmd` 待执行）              |
 
 输入框模糊匹配，↑↓ 跨组导航，Enter 触发，Esc 关。
 
 **⌘K vs ⌘Shift+P 区分**：
+
 - **⌘K** = F018 Quick Ask（临时问一句；默认不加入正常 session，关闭会清理，点 Continue in Coder 后晋升）
 - **⌘Shift+P** = F026 Command Palette（导航 / 执行 / 插入）
 
-### 4.3 文件富预览（PDF / docx / xlsx）
+### 5.6 文件富预览（PDF / docx / xlsx）
 
 Preview popout（右上 Toolbar 第 1 个图标）输入文件路径自动按 ext 路由：
 
@@ -177,36 +242,34 @@ Preview popout（右上 Toolbar 第 1 个图标）输入文件路径自动按 ex
 
 3 个 viewer 都是 **lazy 加载** — 不点开对应文件就不下载依赖；main bundle 不受影响。
 
-## 5. Slash 命令清单 (v0.1.9 builtin)
+## 6. Slash 命令清单 (v0.1.20 builtin)
 
-| 命令 | 作用 |
-|---|---|
-| `/mode <default\|auto\|plan>` | 切权限模式 |
-| `/auto-engine <local\|sdk\|hybrid>` | 控 auto 模式判定引擎 |
-| `/provider <id>` | 切当前 session 的 provider |
-| `/model <id\|default>` | 切模型；`default` 清掉 override 回 provider default |
-| `/thinking <on\|off>` | 切 extended thinking |
-| `/reasoning <effort>` | 控 reasoning depth (OpenAI 系列) |
-| `/clear` | 清当前会话历史 |
-| `/help` | 显示所有命令 |
+| 命令                                | 作用                                                |
+| ----------------------------------- | --------------------------------------------------- |
+| `/mode <default\|auto\|plan>`       | 切权限模式                                          |
+| `/auto-engine <local\|sdk\|hybrid>` | 控 auto 模式判定引擎                                |
+| `/provider <id>`                    | 切当前 session 的 provider                          |
+| `/model <id\|default>`              | 切模型；`default` 清掉 override 回 provider default |
+| `/thinking <on\|off>`               | 切 extended thinking                                |
+| `/reasoning <effort>`               | 控 reasoning depth (OpenAI 系列)                    |
+| `/clear`                            | 清当前会话历史                                      |
+| `/help`                             | 显示所有命令                                        |
 
 除此之外 `/` 触发命令搜索 popover — F035 已经把 SDK skills 也合到这个 picker 里，可以同时搜内建命令 + skill。
 
-## 6. 已知限制 (v0.1.9)
+## 7. 已知限制 (v0.1.20)
 
-- **历史 session 右侧 Changes 点文件**: 当前只查 tool-call cache,历史 session 永远 "No diff available" → **v0.1.10 F044 加 git working-tree fallback**
 - **图片粘贴 + queued path**: SDK MessageQueue 当前只接 prompt string,turn 跑中粘图发送会 fail-loud,需等 turn 完。SDK 暴露 enqueueWithArtifacts 后改通
 - **图片拖拽 / "+attach image" 按钮**: 当前 OC-31 只接 clipboard.paste,drag-drop / file picker 后续 polish
-- **自定义 provider UI 不显示**: KodaX `customProviders[]` 已在 SDK runtime 注册（用 `/provider <name>` 切），但 Providers 面板没列出它们。原因：SDK shape 与 Space schema 不兼容，UI 同步需 schema breaking + 数据迁移 (deferred)
 - **User commands**: KodaX `~/.kodax/commands/` 暂不在 Space 显示。需要适配 SlashCommandDef ↔ KodaXCommand 两个 shape (deferred)
-- **MCP 启停**: v0.1.5 起已支持（F039 完整版），如不工作请检查 KodaX SDK 版本 ≥ 0.7.45
 - **model 默认值不读 KodaX config**: 因为跨 provider 时 model 名通常对不上，session 创建后手动 `/model` 切。后续可能做 provider×model 映射
 - **打包安装**: 不签名（KodaX Space 是自家工具不走公开 Beta）；OS 首启 Gatekeeper / SmartScreen 警告需手动 Open 接受
 - **F015 Repointel warm API**: chip 显示 trace OK，但 standalone warm 入口未实现（留待 SDK 暴露 warm API）
 - **F017 CLI ↔ Space teleport**: Space 侧 handoff inbox / accept receiver 已实现；CLI/REPL writer 仍待 SDK/CLI 接入
 - **F018 Quick Ask vs PRD**: 当前实现走临时 session + plan mode，支持关闭清理与 Continue in Coder；真正无 session 的 sideQuery 仍待 SDK 暴露
+- **F104 Display Language MVP**: 只覆盖高频 chrome。Slash 输出、tool output、历史文档、部分专业面板仍可能是英文，完整 i18n QA 留给 F076/F077/F078
 
-## 7. 报问题
+## 8. 报问题
 
 - Bug: GitHub Issues
 - 安全相关: 不要走 issue；私下 contact

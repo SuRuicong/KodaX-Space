@@ -12,21 +12,62 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 > v0.1.7 内容 (F011/F023/F024/F026/F038) 跟 v0.1.8 一起发。GitHub Releases 顶部仍是 v0.1.5，
 > 0.1.7 这条 section 留作历史记录、git log 引用入口。
 
-## [0.1.20] - Unreleased
+## [0.1.20] - 2026-06-22
 
-### Changed
+### Theme
 
-- **`@kodax-ai/kodax` 0.7.52 -> 0.7.53** - Space now consumes the 0.7.53 SDK baseline from both root and desktop workspace package specs.
+**KodaX capability catch-up + Display Language MVP + release cohesion.**
+
+This release closes the post-v0.1.19 continuity lane: Space now exposes KodaX SDK capability state more honestly, consumes the KodaX 0.7.53 host events, adds the Space-side CLI handoff receiver, and ships the first user-visible English / Simplified Chinese display-language switch. It also includes workflow UI recovery fixes and release-readiness hardening found during the v0.1.20 review pass.
 
 ### Added
 
-- **Sidecar verifier visibility** - `onSidecarMessage` now flows through typed session IPC as `sidecar_message` and renders revise/blocked verifier output as a system notice.
-- **Todo drift warning bridge** - `onTodoDriftWarning` now flows through `todo_drift_warning` and raises a session-scoped notification when work starts while no todo is marked in progress.
+- **F081 capability ledger and diagnostics** — Added `docs/KODAX_CAPABILITY_LEDGER.md`, extended `space.version` with KodaX SDK version/spec, capability contract, and degraded capability states.
+- **F082 Repointel status and trace surface** — Added `repointel.status`, `/repointel status`, `/repointel trace`, and chip popover diagnostics. Standalone warm remains SDK-gated and is reported as such.
+- **F083 Quick Ask continuity** — Quick Ask now captures temporary-session events locally and can promote a useful answer into a normal Coder session with provenance. True no-session `sideQuery` remains SDK-gated.
+- **F084 Space-side handoff receiver** — Added handoff IPC, watcher push, titlebar inbox UI, accept/dismiss flow, stale/invalid handling, and session-id guarded cleanup for `~/.kodax/handoffs/*.json`.
+- **F104 Display Language MVP** — Added persisted `languageMode`, effective-locale resolution, Settings language control, top-menu language switching, and English / Simplified Chinese coverage for menu chrome, Settings, sidebar headings, right-sidebar headings, provider settings, common modal/toast text, and frequent controls.
+- **KodaX 0.7.53 host events** — `onSidecarMessage` now flows through typed `sidecar_message` events and renders verifier revise/blocked output as system notices; `onTodoDriftWarning` now flows through `todo_drift_warning` and raises session-scoped notifications.
+- **Workflow management surfaces** — Added workflow capability channels, workflow management panel, workflow flow graph / pattern graph, workflow summaries in transcript, and persisted workflow history detail recovery.
 
-### Planning
+### Changed
+
+- **`@kodax-ai/kodax` 0.7.52 -> 0.7.53** — Space now consumes the 0.7.53 SDK baseline from both root and desktop workspace package specs.
+- **Version alignment** — Root, desktop, IPC schema, UI kit, and lockfile versions are aligned to `0.1.20`.
+- **Menu and Settings UX** — The custom titlebar menu now includes localized File/Edit/View/Help entries, a View > Language quick switch, and a non-transparent menu popup layer for readability over glass panels.
+- **Provider settings localization** — Provider cards, custom provider form, key-state labels, and provider settings summaries now participate in Display Language MVP coverage.
+
+### Fixed
+
+- **Workflow lifecycle and history recovery** — Hardened workflow lifecycle IPC, restored persisted workflow history/detail rendering, kept workflow details after completion, stabilized progress UI, recovered workflow reports/artifacts, and hardened generated workflow rerun inputs.
+- **Session completion notification replay guard** — Background completion notifications now ignore restored historical prompt timestamps and only notify for fresh live prompts.
+- **Settings entry ambiguity** — The left sidebar footer now keeps `KodaX Space` as the app label and exposes `gear + Settings/设置` as one clickable settings button.
+- **Menu popup contrast** — The titlebar menu dropdown now uses an opaque floating surface instead of a transparent/blurred layer that allowed underlying panel text to overlap visually.
+
+### Security / Hardening
+
+- **Shell and handoff IPC hardening** — Shell reveal/open-external and handoff file flows now have explicit tests around path allowlists, invalid/stale payloads, and destructive operations.
+- **Provider guard closure** — The v0.1.18/v0.1.19 custom-provider SSRF/env-injection risk is closed by `apiKeyEnv` and `baseUrl` validation across Space custom providers, KodaX config providers, and connection tests.
+- **Workflow path defense in depth** — Generated workflow run IDs are validated before controller filesystem joins.
+
+### Planning Notes
 
 - `kodax sessions dedupe` remains CLI-only for now; desktop exposure is deferred until session hygiene/doctor UX.
 - 0.7.53 extension/MCP resume-state preservation is tracked under F090 rather than expanded into v0.1.20 scope.
+- v0.1.21 planning lane now targets F103 Pinned Runtime Summary; the previous v0.1.21-v0.1.24 planned 0.1.x features move to v0.1.31-v0.1.34.
+
+### Verified
+
+- `node --test --import tsx/esm apps\desktop\electron\test\session-complete-notification.test.ts`
+- `node --test --import tsx/esm packages\space-ipc-schema\test\settings.test.ts apps\desktop\electron\test\settings-store.test.ts`
+- `npm test -w @kodax-space/space-ipc-schema`
+- `npm test --workspace @kodax-space/desktop`
+- `npm run typecheck`
+- `npm run build:smoke`
+- `npm run build:win`
+- `npm run smoke:pack`
+- `npm run smoke:boot`
+- `git diff --check` (Windows LF/CRLF warnings only)
 
 ## [0.1.19] - 2026-06-18
 
