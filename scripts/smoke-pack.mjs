@@ -76,6 +76,8 @@ function keyringNativePatternForAsar(asarPath) {
     const hasX64Dmg = macArtifacts.some((name) => /-x64\.dmg$/i.test(name));
     if (hasArm64Dmg && !hasX64Dmg) return /keyring\.darwin-arm64\.node$/;
     if (hasX64Dmg && !hasArm64Dmg) return /keyring\.darwin-x64\.node$/;
+    if (process.arch === 'arm64') return /keyring\.darwin-arm64\.node$/;
+    if (process.arch === 'x64') return /keyring\.darwin-x64\.node$/;
     return /keyring\.darwin-x64\.node$/;
   }
 
