@@ -6,14 +6,28 @@
 
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { kodaxHost } from '../kodax/host.js';
 import { setRendererTarget } from '../ipc/push.js';
 import { installSessionStoreMock, type MockSessionState } from './_helpers/session-store-mock.js';
+import { setUserConfigImpl, type KodaxUserConfigImpl } from '../kodax/user-config.js';
+import { providerConfigStore } from '../providers/config.js';
 
 let mockState: MockSessionState;
+let tmpDir = '';
 
 beforeEach(async () => {
   mockState = installSessionStoreMock();
+  mockUserConfig({});
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kodax-host-resume-test-'));
+  (providerConfigStore as any).spaceCache = null;
+  (providerConfigStore as any).customCache = null;
+  (providerConfigStore as any).spaceFile = path.join(tmpDir, 'space.json');
+  (providerConfigStore as any).spaceDir = tmpDir;
+  (providerConfigStore as any).customFile = path.join(tmpDir, 'custom.json');
+  (providerConfigStore as any).customDir = tmpDir;
   await kodaxHost.disposeAll();
   // 不需要真 push；测试只看 host.sessions Map 的状态变化
   setRendererTarget(() => null);
@@ -22,8 +36,27 @@ beforeEach(async () => {
 afterEach(async () => {
   await kodaxHost.disposeAll();
   setRendererTarget(() => null);
+  setUserConfigImpl(null);
   mockState.reset();
+  try {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  } catch {
+    // ignore cleanup errors
+  }
 });
+
+function mockUserConfig(
+  config: Record<string, unknown>,
+  opts: { registerCalls?: Array<{ customProviders?: unknown[] }> } = {},
+): void {
+  const impl: KodaxUserConfigImpl = {
+    loadConfig: (() => config) as never,
+    registerCustomProviders: ((payload: { customProviders?: unknown[] }) => {
+      opts.registerCalls?.push(payload);
+    }) as never,
+  };
+  setUserConfigImpl(impl);
+}
 
 test('tryResume returns false for sessionId that exists neither in-flight nor on disk', async () => {
   const ok = await kodaxHost.tryResume('s_does-not-exist');
@@ -60,6 +93,57 @@ test('tryResume rehydrates a persisted-only session into the in-flight Map', asy
   assert.equal(resumed!.projectRoot, 'C:/proj/example');
   // title 从 persisted 拉过来
   assert.equal(resumed!.title, '你好');
+});
+
+test('tryResume hydrates configured model when it belongs to the resolved provider', async () => {
+  mockUserConfig({ provider: 'zhipu-coding', model: 'glm-5.2' });
+  const id = 's_resume-model';
+  mockState.seed(id, 'C:/proj/example', 'model resume');
+
+  const ok = await kodaxHost.tryResume(id);
+  assert.equal(ok, true);
+  const resumed = kodaxHost.get(id);
+  assert.ok(resumed);
+  assert.equal(resumed.provider, 'zhipu-coding');
+  assert.equal(resumed.model, 'glm-5.2');
+});
+
+test('tryResume ignores configured model when it does not belong to the resolved provider', async () => {
+  mockUserConfig({ provider: 'zhipu-coding', model: 'mimo-v2.5-pro' });
+  const id = 's_resume-stale-model';
+  mockState.seed(id, 'C:/proj/example', 'stale model');
+
+  const ok = await kodaxHost.tryResume(id);
+  assert.equal(ok, true);
+  const resumed = kodaxHost.get(id);
+  assert.ok(resumed);
+  assert.equal(resumed.provider, 'zhipu-coding');
+  assert.equal(resumed.model, undefined);
+});
+
+test('tryResume registers Space custom default provider before rehydrating session', async () => {
+  const registerCalls: Array<{ customProviders?: unknown[] }> = [];
+  mockUserConfig({}, { registerCalls });
+  const customId = await providerConfigStore.addCustom({
+    displayName: 'Internal Gateway',
+    protocol: 'openai',
+    baseUrl: 'http://10.8.0.12:8080/v1',
+    skipBaseUrlValidation: true,
+    apiKeyEnv: 'INTERNAL_GATEWAY_API_KEY',
+    defaultModel: 'gateway-model',
+    models: ['gateway-model'],
+  });
+  await providerConfigStore.setDefault(customId);
+
+  const id = 's_resume-custom-provider';
+  mockState.seed(id, 'C:/proj/example', 'custom provider resume');
+
+  const ok = await kodaxHost.tryResume(id);
+  assert.equal(ok, true);
+  assert.equal(kodaxHost.get(id)?.provider, customId);
+  assert.equal(registerCalls.length, 1);
+  const registeredNames = registerCalls[0]?.customProviders?.map((p) => (p as { name?: string }).name);
+  assert.deepEqual(registeredNames, [customId]);
 });
 
 test('tryResume recovers surface from persisted SDK tag (Partner stays Partner)', async () => {

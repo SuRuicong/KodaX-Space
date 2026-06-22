@@ -175,9 +175,9 @@ export default function App(): JSX.Element {
       }),
     );
 
-    // KodaX SDK MessageQueue (FEATURE_115/159) — 启动期拉一次,然后订阅 main 推的实时变更。
-    // SDK queue 当前 mid-turn drain / subagent task-notification / REPL 等场景会写;
-    // Space 这里只读 + 显示,enqueue/dequeue 由 SDK 自己管。
+    // Queue snapshot combines the SDK process-global MessageQueue with Space
+    // per-session follow-up prompts. Renderer reads/displays it; enqueue/dequeue
+    // ownership stays in main/SDK.
     bridge.invoke('kodax.queueGet', {}).then((r) => {
       if (r.ok) setQueueState(r.data.messages, r.data.totalSize);
     });

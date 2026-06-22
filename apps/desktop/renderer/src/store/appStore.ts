@@ -313,9 +313,9 @@ interface AppState {
    */
   inputHistoryBySession: Readonly<Record<string, readonly string[]>>;
   /**
-   * KodaX SDK process-global MessageQueue 快照 (FEATURE_115/159)。
-   * main 端订阅 SDK queue mutation → push 'kodax.queueChanged' 时更新这里。
-   * Renderer UI badge / popout 读这俩字段;text_delta 等 hot path 与这里无关,不会被打扰。
+   * Queue snapshot shown in the renderer (SDK process-global messages plus
+   * Space-owned per-session follow-up prompts). Main pushes updates via
+   * 'kodax.queueChanged'; renderer UI only reads these fields.
    */
   queueSnapshot: readonly QueuedMessageT[];
   queueTotalSize: number;

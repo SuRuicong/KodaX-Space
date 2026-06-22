@@ -1,6 +1,6 @@
 {
   "name": "kodax-space",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "description": "KodaX Space — Provider-neutral, local-first AI agent desktop client (KodaX 生态桌面客户端)",
   "private": true,
   "type": "module",
@@ -28,7 +28,7 @@
     "build:linux": "node scripts/gen-icon.mjs && npm run build:smoke && node scripts/pack.mjs --linux",
     "build:smoke": "npm run build:packages && npm run build:renderer && npm run build:main",
     "smoke:pack": "node scripts/smoke-pack.mjs",
-    "typecheck": "tsc -p apps/desktop && tsc -p apps/desktop/electron",
+    "typecheck": "npm run build:packages && tsc -p apps/desktop && tsc -p apps/desktop/electron",
     "lint": "eslint . --ext .ts,.tsx,.mjs --max-warnings 0",
     "lint:fix": "eslint . --ext .ts,.tsx,.mjs --fix",
     "format": "prettier --write .",

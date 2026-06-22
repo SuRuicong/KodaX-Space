@@ -12,6 +12,38 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 > v0.1.7 内容 (F011/F023/F024/F026/F038) 跟 v0.1.8 一起发。GitHub Releases 顶部仍是 v0.1.5，
 > 0.1.7 这条 section 留作历史记录、git log 引用入口。
 
+## [0.1.22] - 2026-06-22
+
+### Theme
+
+**Provider trust-path patch: internal custom providers, per-session follow-up queue, and release hygiene.**
+
+This patch keeps the v0.1.20/v0.1.21 baseline intact while fixing the custom-provider regression for trusted internal gateways, closing the cross-session follow-up queue risk found during review, and aligning release metadata for the next patch build.
+
+### Fixed
+
+- **Trusted internal custom providers** - The custom-provider form can explicitly skip URL safety checks for trusted internal HTTP/IP gateways, while the default path still enforces HTTPS and dangerous-scheme guards.
+- **Config-provider compatibility** - Custom providers loaded directly from KodaX config keep the trusted path so existing internal provider entries continue to run as they did before the stricter UI validation.
+- **Per-session follow-up queue** - User follow-up prompts no longer enter the SDK main-thread queue; Space stores them in a session-owned queue and starts the next prompt only after the same session's current turn settles.
+- **Resume model/provider pairing** - Resumed sessions only reuse a configured model when it belongs to the selected provider, avoiding stale provider/model combinations.
+- **Title sanitization source hygiene** - Escaped the control-character ranges used by title sanitization so the source file no longer contains an embedded NUL byte.
+- **Ask-user bridge coverage** - SDK `ask_user_question`, select, and input prompts are wired through the Space IPC modal path.
+- **MCP manager lifecycle races** - Hardened init, reload, and dispose paths against overlapping lifecycle operations.
+
+### Changed
+
+- **Version alignment** - Root, desktop, IPC schema, UI kit, lockfile, docs, and `space.version` capability contract are aligned to `0.1.22` / `space-v0.1.22`.
+- **Build verification path** - `npm run typecheck` now builds workspace packages first so generated package artifacts are available before TypeScript checks run.
+- **macOS packaging script** - macOS release builds pass explicit `--x64 --arm64` architecture flags.
+- **Patch-lane planning** - `v0.1.22` is consumed by this provider/queue patch; `v0.1.23` and `v0.1.25` remain patch lanes, and `v0.1.24` remains the customer timebox entitlement MVP lane.
+
+### Verified
+
+- `npm run typecheck`
+- `npm test`
+- `npm run build:smoke`
+- `npx playwright test tests/e2e/settings-modal-interactions.spec.ts`
+
 ## [0.1.21] - 2026-06-22
 
 ### Theme

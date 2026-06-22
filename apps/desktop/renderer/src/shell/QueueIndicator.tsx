@@ -1,14 +1,9 @@
-// QueueIndicator — KodaX SDK MessageQueue 可观察 UI (v0.1.x)
+// QueueIndicator - combined queue observability UI (v0.1.x)
 //
-// 暴露 KodaX 进程内 process-global MessageQueue (FEATURE_115/159) 的实时状态:
-//   - badge: 当前队列总长度 (主线程 + 所有 subagent 累计)
-//   - 点击 → 弹出 popover 列出每条消息 (priority / mode / agentId / content 预览 / enqueuedAt)
-//
-// 数据来源: appStore.queueSnapshot + queueTotalSize,由 App.tsx 订阅 'kodax.queueChanged'
-// push 自动更新。点击 badge 时不需要再发 IPC,直接读 store。
-//
-// 队列为空 (totalSize === 0) → 不显示,免得占视觉位置。
-
+// Shows a live snapshot of SDK process-global MessageQueue entries plus
+// Space-owned per-session follow-up prompts. Renderer state is fed by
+// App.tsx via 'kodax.queueChanged'; clicking the badge only reads the store.
+// Empty queues stay hidden so the toolbar does not reserve space.
 import { useState } from 'react';
 import { Hourglass } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';

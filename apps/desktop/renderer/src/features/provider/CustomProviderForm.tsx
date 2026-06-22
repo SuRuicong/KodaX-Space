@@ -26,6 +26,8 @@ const FIELD_IDS = {
   protocolHint: 'custom-provider-protocol-hint',
   baseUrl: 'custom-provider-base-url',
   baseUrlHint: 'custom-provider-base-url-hint',
+  skipBaseUrlValidation: 'custom-provider-skip-base-url-validation',
+  skipBaseUrlValidationHint: 'custom-provider-skip-base-url-validation-hint',
   apiKeyEnv: 'custom-provider-api-key-env',
   apiKeyEnvHint: 'custom-provider-api-key-env-hint',
   defaultModel: 'custom-provider-default-model',
@@ -46,6 +48,7 @@ export function CustomProviderForm({
   const [displayName, setDisplayName] = useState('');
   const [protocol, setProtocol] = useState<CustomProtocol>('openai');
   const [baseUrl, setBaseUrl] = useState('');
+  const [skipBaseUrlValidation, setSkipBaseUrlValidation] = useState(false);
   const [apiKeyEnv, setApiKeyEnv] = useState('');
   const [defaultModel, setDefaultModel] = useState('');
   const [modelsCsv, setModelsCsv] = useState('');
@@ -86,6 +89,7 @@ export function CustomProviderForm({
         displayName: displayName.trim(),
         protocol,
         baseUrl: baseUrl.trim(),
+        skipBaseUrlValidation: skipBaseUrlValidation ? true : undefined,
         apiKeyEnv: apiKeyEnv.trim(),
         defaultModel: defaultModel.trim(),
         models: models.length > 0 ? models : undefined,
@@ -243,6 +247,32 @@ export function CustomProviderForm({
             aria-describedby={FIELD_IDS.baseUrlHint}
           />
         </Field>
+
+        <label
+          htmlFor={FIELD_IDS.skipBaseUrlValidation}
+          className="flex cursor-pointer items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-3 lg:col-span-2"
+        >
+          <input
+            id={FIELD_IDS.skipBaseUrlValidation}
+            type="checkbox"
+            checked={skipBaseUrlValidation}
+            onChange={(e) => setSkipBaseUrlValidation(e.target.checked)}
+            className="mt-1 h-4 w-4 accent-warning"
+            disabled={formLocked}
+            aria-describedby={FIELD_IDS.skipBaseUrlValidationHint}
+          />
+          <span className="min-w-0">
+            <span className="block text-xs font-medium text-fg-primary">
+              {t('customProvider.skipBaseUrlValidation.title')}
+            </span>
+            <span
+              id={FIELD_IDS.skipBaseUrlValidationHint}
+              className="mt-0.5 block text-[11px] leading-5 text-fg-muted"
+            >
+              {t('customProvider.skipBaseUrlValidation.description')}
+            </span>
+          </span>
+        </label>
 
         <Field
           label={t('customProvider.apiKeyEnv.label')}

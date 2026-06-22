@@ -37,7 +37,8 @@ const providerInfoSchema = z.object({
   isDefault: z.boolean(),
   isCustom: z.boolean(),
   // 自定义 provider 才有；built-in 走 SDK 内置 baseUrl
-  baseUrl: z.string().url().max(512).optional(),
+  baseUrl: z.string().min(1).max(512).optional(),
+  skipBaseUrlValidation: z.boolean().optional(),
 });
 
 // --- Invoke: provider.list ---
@@ -118,24 +119,21 @@ export const providerSetDefaultChannel = {
 } as const;
 
 // --- Invoke: provider.addCustom ---
-//
-// 自定义 provider 持久化到 ~/.kodax/config.json（与 KodaX CLI 共享路径）。
-// id 由 main 生成（"custom_" + 16 hex），不接受用户指定—— 避免与 built-in id 冲突。
-//
-// review C1+M2-sec：baseUrl 必须 https://（schema 第一道；main 端 validateBaseUrl 第二道
-// 拦 IP literal / 内网 hostname / 非标准端口）
-// review H2-sec：apiKeyEnv 必须是合法 env var 名 + 不在 main 端的 reserved 黑名单
-export const providerAddCustomChannel = {
-  name: 'provider.addCustom',
-  direction: 'invoke',
-  input: z.object({
+
+function isHttpsBaseUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+const providerAddCustomInputSchema = z
+  .object({
     displayName: z.string().min(1).max(128),
     protocol: z.enum(['anthropic', 'openai']),
-    baseUrl: z
-      .string()
-      .url()
-      .max(512)
-      .startsWith('https://', { message: 'baseUrl must use https://' }),
+    baseUrl: z.string().min(1).max(512),
+    skipBaseUrlValidation: z.boolean().optional(),
     apiKeyEnv: z
       .string()
       .min(1)
@@ -143,7 +141,22 @@ export const providerAddCustomChannel = {
       .regex(/^[A-Z_][A-Z0-9_]{0,127}$/, { message: 'apiKeyEnv must be uppercase snake_case' }),
     defaultModel: z.string().min(1).max(128),
     models: z.array(z.string().min(1).max(128)).max(64).optional(),
-  }),
+  })
+  .superRefine((value, ctx) => {
+    if (value.skipBaseUrlValidation === true) return;
+    if (isHttpsBaseUrl(value.baseUrl)) return;
+
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['baseUrl'],
+      message: 'baseUrl must use https:// unless URL validation is skipped',
+    });
+  });
+
+export const providerAddCustomChannel = {
+  name: 'provider.addCustom',
+  direction: 'invoke',
+  input: providerAddCustomInputSchema,
   output: z.object({
     ok: z.boolean(),
     providerId: z.string().min(1).max(64),

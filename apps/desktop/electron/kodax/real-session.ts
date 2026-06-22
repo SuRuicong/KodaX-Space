@@ -111,7 +111,11 @@ import type {
   SendResult,
   SessionCreateOptions,
 } from './session-adapter.js';
-import { enqueueUserPrompt, drainQueueForSession } from '../ipc/queue.js';
+import {
+  dequeueNextUserPromptForSession,
+  drainQueueForSession,
+  enqueueUserPrompt,
+} from '../ipc/queue.js';
 
 type SpaceReasoning = 'off' | 'auto' | 'quick' | 'balanced' | 'deep';
 
@@ -198,23 +202,15 @@ export class RealKodaXSession implements ManagedSession {
     if (this.disposed) {
       throw new Error(`[real-session ${this.sessionId}] already disposed`);
     }
-    // v0.1.4 B1：之前 currentAbort != null 直接 throw，造成"流式中再发"用户面前永远是
-    // HANDLER_ERROR。现在改成走 KodaX SDK MessageQueue —— mid-turn drain 把 user-priority
-    // 消息排在下一个 LLM call 前消费，等同于"上轮跑完再起一轮"。
-    //
-    // review HIGH-1: 必须传 agentId=this.sessionId，否则 process-global queue 上
-    // 多 in-flight session 时 A 的 prompt 可能被 B 先 drain 跑掉（跨 session 路由）。
-    // review HIGH-2: enqueueUserPrompt 内部 MAX_QUEUE_DEPTH guard 防 OOM。
-    //
-    // OC-31 v0.1.9 — artifacts 仅在"立即起 run"路径生效（直接灌进
-    // options.context.inputArtifacts）。queued 路径 KodaX MessageQueue 当前签名
-    // 只接 prompt string，artifacts 在 drain 那一轮拿不到。先 fail-loud 反映
-    // 限制，让用户知道"图片只能在 idle 时贴"，避免静默丢图。后续可在 SDK
-    // 暴露 enqueueWithArtifacts 后改成 queue 也保留。
+
+    // Follow-up prompts are queued by Space per session and are started after
+    // the current turn settles. The SDK main-thread MessageQueue is
+    // process-global, so it cannot safely carry desktop session follow-ups
+    // while multiple Space sessions are running concurrently.
     if (this.currentAbort) {
       if (artifacts && artifacts.length > 0) {
         throw new Error(
-          'Cannot attach images while a turn is running — wait for the current response to finish, then paste again.',
+          'Cannot attach images while a turn is running; wait for the current response to finish, then paste again.',
         );
       }
       const queueId = await enqueueUserPrompt(this.sessionId, prompt);
@@ -222,23 +218,36 @@ export class RealKodaXSession implements ManagedSession {
       return { queued: true, queueId };
     }
 
+    this.startRun(prompt, artifacts);
+    return { queued: false };
+  }
+
+  private startRun(prompt: string, artifacts?: readonly InputArtifact[]): void {
     const abort = new AbortController();
     this.currentAbort = abort;
     this.lastActivityAt = Date.now();
 
     void this.runRealStream(prompt, abort.signal, artifacts).finally(() => {
       if (this.currentAbort === abort) this.currentAbort = null;
+      if (!this.disposed && !abort.signal.aborted) {
+        this.startQueuedPromptIfIdle();
+      }
     });
-    return { queued: false };
+  }
+
+  private startQueuedPromptIfIdle(): void {
+    if (this.disposed || this.currentAbort !== null) return;
+    const nextPrompt = dequeueNextUserPromptForSession(this.sessionId);
+    if (nextPrompt === undefined) return;
+    this.startRun(nextPrompt);
   }
 
   async cancel(): Promise<void> {
     if (this.currentAbort) {
       this.currentAbort.abort();
     }
-    // v0.1.4 B1 review MED-2: 不清 queue 的话 Stop 完下一帧 SDK mid-turn drain
-    // 就把残留 prompt 拉起新 run，违反 Stop 语义。filter 按 agentId=sessionId 只清本 session。
-    // 失败不抛 —— cancel 是 best-effort，丢失 drain 失败不该阻塞 abort 流程。
+    // Stop should also drop queued follow-up prompts so cancel means
+    // "do not continue". Drain failure must not block abort.
     await drainQueueForSession(this.sessionId).catch((err) => {
       console.warn(`[real-session ${this.sessionId}] queue drain on cancel failed:`,
         err instanceof Error ? err.message : err);
@@ -248,9 +257,8 @@ export class RealKodaXSession implements ManagedSession {
   async dispose(): Promise<void> {
     this.disposed = true;
     if (this.currentAbort) this.currentAbort.abort();
-    // v0.1.4 B1 review MED-3: dispose 后 host map 移除本 session，若 queue 里还有
-    // agentId=this.sessionId 的项，SDK drain 行为未定义（可能 error / 静默丢 / 路由
-    // 到别的 session）。显式清掉。
+    // Dispose removes this session from the host map; drop any remaining
+    // Space-owned queued prompts for the same session.
     await drainQueueForSession(this.sessionId).catch((err) => {
       console.warn(`[real-session ${this.sessionId}] queue drain on dispose failed:`,
         err instanceof Error ? err.message : err);
@@ -396,6 +404,56 @@ export class RealKodaXSession implements ManagedSession {
     // F058: register the in-process create_artifact tool once (global registry).
     // Lazy here (first run) so the agent's tool schema includes it; idempotent.
     ensureCreateArtifactToolRegistered(sdk);
+
+    type SdkAskUserQuestionOptions = Parameters<NonNullable<KodaXEvents['askUser']>>[0];
+    type SdkAskUserMultiOptions = Parameters<NonNullable<KodaXEvents['askUserMulti']>>[0];
+    type SdkAskUserInputOptions = Parameters<NonNullable<KodaXEvents['askUserInput']>>[0];
+
+    const cancelledToolResult = sdk.CANCELLED_TOOL_RESULT_MESSAGE ?? '[Cancelled] Operation cancelled by user';
+    const requestSdkUserQuestion = async (options: SdkAskUserQuestionOptions): Promise<string | undefined> => {
+      const kind = options.kind ?? 'select';
+      if (kind === 'select' && (!options.options || options.options.length === 0)) {
+        console.warn(`[real-session ${sid}] SDK askUser select request had no options; cancelling prompt`);
+        return undefined;
+      }
+      return askUserBroker.requestQuestion({
+        sessionId: sid,
+        kind,
+        question: options.question,
+        ...(kind === 'select' ? { options: options.options } : {}),
+        ...(options.multiSelect !== undefined ? { multiSelect: options.multiSelect } : {}),
+        ...(options.default !== undefined ? { default: options.default } : {}),
+      });
+    };
+
+    const requestSdkUserInput = (options: SdkAskUserInputOptions): Promise<string | undefined> =>
+      askUserBroker.requestQuestion({
+        sessionId: sid,
+        kind: 'input',
+        question: options.question,
+        ...(options.default !== undefined ? { default: options.default } : {}),
+      });
+
+    const requestSdkUserMulti = async (options: SdkAskUserMultiOptions): Promise<Record<string, string> | undefined> => {
+      const answers: Record<string, string> = {};
+      for (const question of options.questions) {
+        if (!question.options || question.options.length === 0) {
+          console.warn(`[real-session ${sid}] SDK askUserMulti select request had no options; cancelling prompt`);
+          return undefined;
+        }
+        const answer = await askUserBroker.requestQuestion({
+          sessionId: sid,
+          kind: 'select',
+          question: question.question,
+          ...(question.header !== undefined ? { header: question.header } : {}),
+          options: question.options,
+          ...(question.multiSelect !== undefined ? { multiSelect: question.multiSelect } : {}),
+        });
+        if (answer === undefined) return undefined;
+        answers[question.question] = answer;
+      }
+      return answers;
+    };
 
     // Permission 统一钩子。KodaX 在工具实际执行前调这个，返回 false → 跳过执行，
     // 返回 true → 正常执行，返回 string → 直接当作 tool result（覆盖执行）。
@@ -776,6 +834,11 @@ export class RealKodaXSession implements ManagedSession {
       onError: (err) => {
         pendingTerminalError = err;
       },
+
+      // ---- Interactive user questions ----
+      askUser: async (options) => (await requestSdkUserQuestion(options)) ?? cancelledToolResult,
+      askUserMulti: requestSdkUserMulti,
+      askUserInput: requestSdkUserInput,
 
       // ---- Permission 钩子 ----
       beforeToolExecute,

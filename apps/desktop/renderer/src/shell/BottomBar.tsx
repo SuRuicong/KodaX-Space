@@ -1529,8 +1529,8 @@ export function BottomBar(): JSX.Element {
           `${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`,
         );
       } else if (result.data.queued) {
-        // v0.1.4 B1: session 正在跑，prompt 进了 KodaX SDK MessageQueue。spinner 已经亮
-        // （上一轮在跑），不动 pendingSend。toast 提示用户消息已排队，不必再追着发。
+        // The turn is already running; main accepted the prompt into Space's
+        // per-session follow-up queue. Keep the current spinner and show a toast.
         pushToast('Queued — will run after the current turn finishes', 'info');
       }
     } finally {

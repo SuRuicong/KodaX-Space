@@ -9,7 +9,7 @@ import { askUserBroker } from '../permission/ask-user-broker.js';
 
 export function registerAskUserChannels(): void {
   registerChannel('askUser.reply', (input) => {
-    const ok = askUserBroker.resolve(input.reqId, input.verdict);
+    const ok = askUserBroker.resolve(input.reqId, input);
     return { ok };
   });
 }

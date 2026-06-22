@@ -109,6 +109,8 @@ export {
   type AskUserVerdict,
   type AskUserSignal,
   type AskUserToolCall,
+  type AskUserQuestionOption,
+  type AskUserReplyInput,
   type AskUserRequestPayload,
 } from './channels/ask-user.js';
 

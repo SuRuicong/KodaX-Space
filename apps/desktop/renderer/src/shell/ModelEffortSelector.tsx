@@ -78,11 +78,10 @@ export function ModelEffortSelector(): JSX.Element {
   const activeProvider: ProviderInfo | undefined = activeProviderId
     ? providers.find((p) => p.id === activeProviderId)
     : undefined;
-  // 模型解析做 provider 一致性校验（见 resolveActiveModel）：pendingModel 跨重启持久化但
-  // pendingProviderId 不持久，stale pendingModel(如 glm-5.2) 会和重启后的默认 provider(如
-  // MiMo) 凑成 "MiMo · glm-5.2" 错配（用户复报 bug）。只有候选 model 确属 active provider 才用，
-  // 否则回退到该 provider 自己的 defaultModel。
-  const activeModel: string = resolveActiveModel({
+  // Preference/default model is only a preview source. For an active session,
+  // runtime session.model is authoritative; when it is unset the SDK will use
+  // the provider default, regardless of pendingModel or KodaX config defaults.
+  const preferredModel: string = resolveActiveModel({
     activeProviderId,
     activeProviderModels: activeProvider?.models,
     activeProviderDefaultModel: activeProvider?.defaultModel,
@@ -90,6 +89,10 @@ export function ModelEffortSelector(): JSX.Element {
     kodaxDefaultsProvider: kodaxDefaults?.provider,
     kodaxDefaultsModel: kodaxDefaults?.model,
   });
+  const runtimeModel = session
+    ? (session.model ?? activeProvider?.defaultModel ?? '—')
+    : undefined;
+  const activeModel = runtimeModel ?? preferredModel;
   const activeEffort: ReasoningMode =
     session?.reasoningMode ?? pendingReasoningMode ?? kodaxDefaults?.reasoningMode ?? 'auto';
 
@@ -122,23 +125,26 @@ export function ModelEffortSelector(): JSX.Element {
         }
       }
       if (session && window.kodaxSpace) {
-        // 切 provider
-        if (providerId !== session.provider) {
-          const r = await window.kodaxSpace.invoke('session.setProvider', {
+        const providerChanged = providerId !== session.provider;
+        const currentRuntimeModel = providerChanged
+          ? undefined
+          : (session.model ?? activeProvider?.defaultModel ?? '—');
+        if (model !== currentRuntimeModel || session.model === undefined || providerChanged) {
+          const modelArg = providerChanged ? `${providerId}/${model}` : model;
+          const r = await window.kodaxSpace.invoke('slash.exec', {
             sessionId: session.sessionId,
-            providerId,
+            name: 'model',
+            args: [modelArg],
           });
-          if (r.ok) upsertSession({ ...session, provider: providerId });
-        }
-        // 切 model — 通过 /model slash 命令 (KodaX REPL 内置)
-        if (model !== activeModel) {
-          await window.kodaxSpace
-            .invoke('slash.exec', {
-              sessionId: session.sessionId,
-              name: 'model',
-              args: [model],
-            })
-            .catch(() => {});
+          if (!r.ok) {
+            console.warn('[picker] /model failed:', r.error);
+            return;
+          }
+          if (!r.data.ok) {
+            console.warn('[picker] /model failed:', r.data.message);
+            return;
+          }
+          upsertSession({ ...session, provider: providerId, model });
           setPendingModel(model);
         }
       } else {

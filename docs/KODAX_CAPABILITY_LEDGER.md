@@ -8,15 +8,15 @@ This file is the Space-side source of truth for capabilities that depend on the 
 
 | Component          | Current baseline                                   | Notes                                                                                            |
 | ------------------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| KodaX Space app    | 0.1.21                                             | Patch release baseline.                                                                          |
-| Desktop package    | 0.1.21                                             | `@kodax-space/desktop`.                                                                          |
-| IPC schema package | 0.1.21                                             | Aligned with app release baseline.                                                               |
-| UI kit package     | 0.1.21                                             | Aligned with app release baseline.                                                               |
+| KodaX Space app    | 0.1.22                                             | Patch release baseline.                                                                          |
+| Desktop package    | 0.1.22                                             | `@kodax-space/desktop`.                                                                          |
+| IPC schema package | 0.1.22                                             | Aligned with app release baseline.                                                               |
+| UI kit package     | 0.1.22                                             | Aligned with app release baseline.                                                               |
 | KodaX SDK          | 0.7.53 installed, `^0.7.53` root and desktop specs | Keep this row aligned with `package.json`, `apps/desktop/package.json`, and `package-lock.json`. |
 
 ## Capability Contract
 
-Runtime IPC contract: `space-v0.1.21`
+Runtime IPC contract: `space-v0.1.22`
 
 `space.version` now exposes:
 

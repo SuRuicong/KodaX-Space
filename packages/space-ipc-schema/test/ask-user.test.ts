@@ -105,3 +105,42 @@ test('askUser.request payload rejects oversized reason (2KB+)', () => {
   });
   assert.equal(result.success, false);
 });
+
+test('askUser.request payload accepts select and input question shapes', () => {
+  const selectResult = askUserRequestChannel.payload.safeParse({
+    kind: 'select',
+    reqId: 'req-select',
+    sessionId: 's_1',
+    question: 'Pick one',
+    options: [
+      { label: 'A', value: 'a' },
+      { label: 'B', description: 'second', value: 'b' },
+    ],
+  });
+  assert.equal(selectResult.success, true);
+
+  const inputResult = askUserRequestChannel.payload.safeParse({
+    kind: 'input',
+    reqId: 'req-input',
+    sessionId: 's_1',
+    question: 'Type value',
+    default: 'hello',
+  });
+  assert.equal(inputResult.success, true);
+});
+
+test('askUser.request payload rejects select questions without options', () => {
+  const result = askUserRequestChannel.payload.safeParse({
+    kind: 'select',
+    reqId: 'req-select-empty',
+    sessionId: 's_1',
+    question: 'Pick one',
+  });
+  assert.equal(result.success, false);
+});
+
+test('askUser.reply input accepts value and cancelled replies', () => {
+  assert.equal(askUserReplyChannel.input.safeParse({ reqId: 'r', value: 'answer' }).success, true);
+  assert.equal(askUserReplyChannel.input.safeParse({ reqId: 'r', cancelled: true }).success, true);
+  assert.equal(askUserReplyChannel.input.safeParse({ reqId: 'r', cancelled: false }).success, false);
+});

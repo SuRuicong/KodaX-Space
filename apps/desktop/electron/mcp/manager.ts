@@ -35,46 +35,70 @@ let lastConstructError: string | null = null;
 // 出来,前面那个就被 cached 覆盖丢失 (其 stdio child 进程留作 zombie)。用一个 initPromise 串行
 // 所有并发首调 (审查 HIGH)。
 let initPromise: Promise<ManagerInstance> | null = null;
+let initGeneration = 0;
+let shuttingDown = false;
 
 /**
  * 拿当前 Manager 实例; 缓存命中直接返回, 没有则 lazy 创建。
  * 第一次失败的 error 被缓存; reload() 调用清掉允许重试。
  */
 export async function getMcpManager(): Promise<ManagerInstance> {
+  if (shuttingDown) {
+    throw new Error('McpManager unavailable: shutting down');
+  }
   if (cached !== null) return cached.manager;
   if (lastConstructError !== null) {
     throw new Error(`McpManager unavailable: ${lastConstructError}`);
   }
   if (initPromise !== null) return initPromise;
-  initPromise = (async (): Promise<ManagerInstance> => {
+
+  const generation = initGeneration;
+  let promise: Promise<ManagerInstance> | null = null;
+  promise = (async (): Promise<ManagerInstance> => {
     try {
       const mod = await import('@kodax-ai/kodax/mcp');
       const servers = await loadKodaxUserConfig().catch(() => undefined);
       const manager = new mod.McpManager(servers);
+
+      if (generation !== initGeneration) {
+        await manager.dispose().catch(() => undefined);
+        if (shuttingDown) {
+          throw new Error('McpManager init cancelled by shutdown');
+        }
+        return getMcpManager();
+      }
+
       cached = { module: mod, manager };
       return manager;
     } catch (err) {
+      if (generation !== initGeneration) {
+        if (shuttingDown) {
+          throw new Error('McpManager init cancelled by shutdown');
+        }
+        return getMcpManager();
+      }
       const msg = err instanceof Error ? err.message : String(err);
       lastConstructError = msg;
       throw new Error(`McpManager init failed: ${msg}`);
     } finally {
-      // 清掉 in-flight 引用,允许 reload 后下次从头来过
-      initPromise = null;
+      if (generation === initGeneration && initPromise === promise) {
+        initPromise = null;
+      }
     }
   })();
-  return initPromise;
+  initPromise = promise;
+  return promise;
 }
-
 /**
  * 用户改 config.json 后调: dispose 现 Manager + 清缓存。下一次 getMcpManager() 会用最新配置
  * 重新构造。dispose 失败也清缓存 (SDK 文档说 dispose 后实例不可用)。
  */
 export async function reloadMcpManager(): Promise<void> {
+  shuttingDown = false;
+  initGeneration += 1;
   const prev = cached;
   cached = null;
   lastConstructError = null;
-  // 同时清掉 initPromise — 如果 reload 在初次 init 还没 resolve 时被调,旧 init 完成后会被
-  // finally 里的 `initPromise = null` 自然清掉; 但 reload 走在前面时显式清避免被 prev 覆盖。
   initPromise = null;
   if (prev !== null) {
     try {
@@ -84,12 +108,15 @@ export async function reloadMcpManager(): Promise<void> {
     }
   }
 }
-
 /**
  * 进程退出时调 — 释放 stdio transport 子进程等。
  * Space main.ts before-quit 钩子调。失败仅 log,不阻塞退出。
  */
 export async function disposeMcpManager(): Promise<void> {
+  shuttingDown = true;
+  initGeneration += 1;
+  initPromise = null;
+  lastConstructError = null;
   if (cached === null) return;
   const prev = cached;
   cached = null;

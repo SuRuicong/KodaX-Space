@@ -16,17 +16,6 @@
 
 import type { AgentMode, AutoModeEngine, InputArtifact, PermissionDecision, PermissionMode, SessionEvent, Surface } from '@kodax-space/space-ipc-schema';
 
-/**
- * 工具调用前的权限请求回调。
- *
- * - session 实现（Mock / Real）在调用真实 tool 前调一次
- * - host 注入实现：转 PermissionBroker，broker 推 IPC 给 renderer，等用户决策
- * - 返回 'deny' → session **必须**放弃本次 tool 调用，emit 一条 tool_result 说明 "permission denied"
- * - 返回 'allow_once' / 'allow_always' → session 继续执行
- *
- * 即便 session 实现不接 permission 流（早期 Mock 或 Real adapter 不需要 gate 的工具），
- * 这个字段可以不调用——`session-adapter` 不强制每次 tool 都过 gate。
- */
 export type PermissionRequestFn = (req: {
   readonly toolId: string;
   readonly toolName: string;
@@ -39,30 +28,21 @@ export type SessionCreateOptions = {
   readonly provider: string;
   readonly reasoningMode: 'off' | 'auto' | 'quick' | 'balanced' | 'deep';
   readonly permissionMode: PermissionMode;
-  /** 仅 permissionMode === 'auto' 时生效；缺省 'llm'。FEATURE_029 */
   readonly autoModeEngine?: AutoModeEngine;
-  /** AMA (默认) / SA — KodaX agent 形态。缺省 'ama'。*/
   readonly agentMode?: AgentMode;
-  /** F045: 工作面（'code' = Coder / 'partner' = Partner）。缺省 'code'。持久化为 SDK session tag。*/
   readonly surface?: Surface;
-  /**
-   * 生效 model（创建时即带上）。undefined = 用 provider 默认。
-   * 显式带上能让 SDK 应用该 model 的 per-model 能力（如真实 contextWindow），
-   * 避免默认模型下 SDK 兜底到小窗口导致过早压缩（2026-06-15 用户复报）。
-   */
   readonly model?: string;
-  /** FEATURE_033 fork 时由 host 传入；root session 不带。*/
   readonly parentSessionId?: string;
   readonly forkPointTurnIdx?: number;
   readonly emit: (event: SessionEvent) => void;
-  /** 工具调用前的 gate；host 注入。Mock 用来模拟弹窗。*/
   readonly requestPermission: PermissionRequestFn;
 };
 
 /**
- * send() 的返回值 —— v0.1.4 起带 queue 路径信息。
- *   - { queued: false }                  立即起 run，走原来的事件流
- *   - { queued: true, queueId: '...' }   推到 KodaX SDK MessageQueue，下一轮 mid-turn drain 时消费
+ * send() ACK returned to IPC callers.
+ *   - { queued: false }                A run was started immediately.
+ *   - { queued: true, queueId: '...' } The prompt was accepted into Space's
+ *                                      per-session follow-up queue.
  */
 export interface SendResult {
   readonly queued: boolean;
@@ -144,9 +124,10 @@ export interface ManagedSession {
    *
    * 并发约束：同一 session 在 send 进行中（即上一次 send 启动的事件流还没 emit
    * session_complete / session_error）不允许再 send——策略由实现选：
-   *   - 排队  ：v0.1.4 起 Real adapter 把后续 prompt enqueue 到 SDK MessageQueue，
-   *             返回 `{queued:true, queueId}`；KodaX mid-turn drain 会消费
-   *   - 拒绝  ：throw，让 IPC handler 走 HANDLER_ERROR envelope（Mock 用这个）
+   *   - queue: Real adapter stores follow-up prompts in Space's per-session
+   *            queue and returns `{ queued: true, queueId }`. The same session
+   *            starts the next queued prompt after the current turn settles.
+   *   - reject: throw; IPC handler returns a HANDLER_ERROR envelope (Mock uses this).
    *
    * @throws 同步抛 / Promise reject：session 已 disposed、或拒绝并发
    */

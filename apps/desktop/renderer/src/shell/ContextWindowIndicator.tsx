@@ -15,6 +15,7 @@ import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { Caret } from '../components/Caret.js';
 import { useAppStore, type UserMessage } from '../store/appStore.js';
 import { getModelContextCap } from './modelContextCaps.js';
+import { resolveActiveModel } from './resolveActiveModel.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 const EMPTY_USER_MESSAGES: readonly UserMessage[] = [];
@@ -53,7 +54,10 @@ function useResolvedContextWindow(
   );
 
   useEffect(() => {
-    if (!providerId || !model) return;
+    if (!providerId || !model) {
+      setResolved(null);
+      return;
+    }
     const key = cacheKey(providerId, model);
     const cached = contextWindowCache.get(key);
     // cached === number → 已查过，setState 同步把值刷新到本组件
@@ -63,7 +67,11 @@ function useResolvedContextWindow(
     }
     // cached === null → 正在查；订阅一次性 setState（其他实例会一起更新）。
     // 这里简化：每个组件都查一次，IPC 端处理重复请求成本 50ms 以内可忽略。
-    if (cached === null) return;
+    if (cached === null) {
+      setResolved(null);
+      return;
+    }
+    setResolved(null);
     contextWindowCache.set(key, null); // pending sentinel
     let cancelled = false;
     // window.kodaxSpace 在 preload 注入；prod 永远 defined，但 type 上是 optional
@@ -136,7 +144,17 @@ export function ContextWindowIndicator(): JSX.Element | null {
   const activeProvider = activeProviderId
     ? providers.find((p) => p.id === activeProviderId)
     : undefined;
-  const activeModel = pendingModel ?? kodaxDefaults?.model ?? activeProvider?.defaultModel ?? null;
+  const preferredModel = resolveActiveModel({
+    activeProviderId,
+    activeProviderModels: activeProvider?.models,
+    activeProviderDefaultModel: activeProvider?.defaultModel,
+    pendingModel,
+    kodaxDefaultsProvider: kodaxDefaults?.provider,
+    kodaxDefaultsModel: kodaxDefaults?.model,
+  });
+  const activeModel = session
+    ? (session.model ?? activeProvider?.defaultModel ?? null)
+    : (preferredModel !== '—' ? preferredModel : null);
   const hardcodedCap = getModelContextCap(activeModel);
   const cap = useResolvedContextWindow(activeProviderId, activeModel, hardcodedCap);
 

@@ -42,6 +42,7 @@ export interface KodaxConfigCustomProvider {
   readonly displayName: string;
   readonly protocol: 'anthropic' | 'openai';
   readonly baseUrl: string;
+  readonly skipBaseUrlValidation?: boolean;
   readonly apiKeyEnv: string;
   readonly defaultModel: string;
   readonly models?: readonly string[];
@@ -51,6 +52,7 @@ export interface SpaceCustomProviderForSdk {
   readonly id: string;
   readonly protocol: 'anthropic' | 'openai';
   readonly baseUrl: string;
+  readonly skipBaseUrlValidation?: boolean;
   readonly apiKeyEnv: string;
   readonly defaultModel: string;
   readonly models?: readonly string[];
@@ -336,7 +338,7 @@ function normalizeKodaxConfigCustomProvider(
   const envErr = validateApiKeyEnv(apiKeyEnv);
   if (envErr) return null;
 
-  const urlCheck = validateBaseUrl(baseUrl);
+  const urlCheck = validateBaseUrl(baseUrl, { skipValidation: true });
   if (!urlCheck.ok || !urlCheck.normalizedUrl) return null;
 
   const models = normalizeModelList(raw.models);
@@ -345,6 +347,7 @@ function normalizeKodaxConfigCustomProvider(
     displayName: name,
     protocol,
     baseUrl: urlCheck.normalizedUrl,
+    skipBaseUrlValidation: true,
     apiKeyEnv,
     defaultModel: model,
     ...(models ? { models } : {}),
@@ -370,7 +373,9 @@ function normalizeSpaceCustomProviderForSdk(
 ): SdkCustomProviderConfig | null {
   const envErr = validateApiKeyEnv(provider.apiKeyEnv);
   if (envErr) return null;
-  const urlCheck = validateBaseUrl(provider.baseUrl);
+  const urlCheck = validateBaseUrl(provider.baseUrl, {
+    skipValidation: provider.skipBaseUrlValidation === true,
+  });
   if (!urlCheck.ok || !urlCheck.normalizedUrl) return null;
   return spaceCustomProviderToSdk({
     ...provider,

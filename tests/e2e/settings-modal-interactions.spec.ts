@@ -275,6 +275,7 @@ test('Settings interactive inventory has no unnamed controls across dynamic stat
       'OpenAI compatible',
       'Anthropic compatible',
       'Base URL',
+      'Skip URL safety checks',
       'API key env var',
       'Default model',
       'Model aliases',

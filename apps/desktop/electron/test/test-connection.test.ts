@@ -110,11 +110,21 @@ test('custom provider createCustomProvider throws → invalid config error', asy
 });
 
 test('custom provider SSRF baseUrl rejected before SDK call (defense-in-depth)', async () => {
-  // 即使 deps 注入会返回 ok，validateBaseUrl 也应在 createCustomProvider 前拦下内网/metadata URL。
   const evil: CustomProvider = { ...CUSTOM, baseUrl: 'http://169.254.169.254/v1' };
   const r = await testProvider(evil, {}, deps({ custom: vr({ ok: true }) }));
   assert.equal(r.ok, false);
   assert.match(r.error ?? '', /invalid baseUrl/);
+});
+
+test('custom provider can skip Space baseUrl guard for trusted internal gateway', async () => {
+  const trusted: CustomProvider = {
+    ...CUSTOM,
+    baseUrl: 'http://10.8.0.12:8080/v1',
+    skipBaseUrlValidation: true,
+  };
+  const r = await testProvider(trusted, {}, deps({ custom: vr({ ok: true, durationMs: 21 }) }));
+  assert.equal(r.ok, true);
+  assert.equal(r.latencyMs, 21);
 });
 
 // ---- SDK 不可用降级 ----

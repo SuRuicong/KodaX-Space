@@ -1,25 +1,11 @@
 // AskUserModal — FEATURE_032
 //
-// 配合 KodaX AutoModeAskUser 接口的用户交互界面。
-//
-// 视觉与 PermissionModal 区分：
-//   - PermissionModal 是"工具调用 gate"，每次 tool 触发一次，UI 突出 tool name + input
-//   - AskUserModal 是"agent / guardrail 主动问"，频次低，UI 突出 reason 文本 +
-//     可选 signals 标签 (FEATURE_158 Scope/Risk hints)
-//
-// Verdict 两选项：Allow / Block（与 KodaX AutoModeAskUserVerdict 严格对齐）。
-// Escape = Block；Enter = Allow（保守默认是 Block，但 enter 不应该越权变 block —
-// 用户常用回车确认 = allow 是直觉一致的）。
-//
-// 安全注意：
-//   - reason / toolName / input 字段已在 main 端 sanitize；这里多加 truncate 防极端长 string
-//   - signals 文本来自 KodaX 静态分析（trusted），但仍按 plain text 渲染防御 future 路径
+// Shared UI for KodaX guardrail escalation and ask_user_question prompts.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AskUserSignal, AskUserVerdict } from '@kodax-space/space-ipc-schema';
+import type { AskUserRequestPayload, AskUserSignal, AskUserVerdict } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
 
-// Severity badge — 双主题。同 PermissionModal RISK_STYLE 同款思路: dark 深底浅字, light 浅底深字。
 const SEVERITY_STYLE: Record<AskUserSignal['severity'], string> = {
   info: 'bg-info/12 text-info',
   warning: 'bg-warn/12 text-warn',
@@ -31,6 +17,17 @@ function truncate(s: string, max: number): string {
   return s.slice(0, max - 1) + '…';
 }
 
+type GuardrailPayload = Extract<AskUserRequestPayload, { toolCall: unknown }>;
+type QuestionPayload = Extract<AskUserRequestPayload, { question: string }>;
+
+function isGuardrail(payload: AskUserRequestPayload): payload is GuardrailPayload {
+  return 'toolCall' in payload;
+}
+
+function isQuestion(payload: AskUserRequestPayload): payload is QuestionPayload {
+  return 'question' in payload;
+}
+
 export function AskUserModal(): JSX.Element | null {
   const queue = useAppStore((s) => s.askUserQueue);
   const dequeue = useAppStore((s) => s.dequeueAskUser);
@@ -38,42 +35,46 @@ export function AskUserModal(): JSX.Element | null {
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [inputValue, setInputValue] = useState('');
+  const [selectedValues, setSelectedValues] = useState<ReadonlySet<string>>(new Set());
+
+  const guardrail = head && isGuardrail(head) ? head : null;
+  const question = head && isQuestion(head) ? head : null;
+  const kind = question ? question.kind : 'guardrail';
 
   useEffect(() => {
     setBusy(false);
     setErr(null);
-  }, [head?.reqId]);
+    setInputValue(question && kind === 'input' ? question.default ?? '' : '');
+    setSelectedValues(new Set(question && kind === 'select' && question.default ? [question.default] : []));
+  }, [head?.reqId, kind, question]);
 
   const inputPreview = useMemo(() => {
-    if (!head?.toolCall.input) return null;
+    if (!guardrail?.toolCall.input) return null;
     try {
-      return truncate(JSON.stringify(head.toolCall.input, null, 2), 2000);
+      return truncate(JSON.stringify(guardrail.toolCall.input, null, 2), 2000);
     } catch {
       return '[unserializable input]';
     }
-  }, [head]);
+  }, [guardrail]);
 
-  const answer = useCallback(
-    async (verdict: AskUserVerdict): Promise<void> => {
+  const reply = useCallback(
+    async (payload: { verdict: AskUserVerdict } | { value: string } | { cancelled: true }): Promise<void> => {
       if (!head || !window.kodaxSpace || busy) return;
       setBusy(true);
       setErr(null);
       try {
         const result = await window.kodaxSpace.invoke('askUser.reply', {
           reqId: head.reqId,
-          verdict,
+          ...payload,
         });
         if (!result.ok) {
-          // result.error 在 IpcResult union 类型上 ok=false 时存在；但 defensive 用 optional
-          // chaining 防御未来 envelope shape 变化 / 异常路径 result.error 为 undefined
           const code = result.error?.code ?? 'ERR_UNKNOWN';
           const message = result.error?.message ?? 'unknown error';
           setErr(`${code}: ${message}`);
           setBusy(false);
           return;
         }
-        // ok:true; data.ok 是 broker 端"该 reqId 还在 pending 吗"——晚到答案就当
-        // dequeue 静默丢弃，视觉一致。
         dequeue(head.reqId);
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e));
@@ -83,23 +84,68 @@ export function AskUserModal(): JSX.Element | null {
     [head, busy, dequeue],
   );
 
+  const answerGuardrail = useCallback(
+    (verdict: AskUserVerdict): void => {
+      void reply({ verdict });
+    },
+    [reply],
+  );
+
+  const submitQuestion = useCallback((): void => {
+    if (!head || kind === 'guardrail') return;
+    if (kind === 'input') {
+      void reply({ value: inputValue });
+      return;
+    }
+    const values = [...selectedValues];
+    if (values.length === 0) {
+      setErr('Choose at least one option.');
+      return;
+    }
+    void reply({ value: values.join(', ') });
+  }, [head, kind, inputValue, selectedValues, reply]);
+
+  const cancelQuestion = useCallback((): void => {
+    void reply({ cancelled: true });
+  }, [reply]);
+
   useEffect(() => {
     if (!head) return;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
-        void answer('block');
-      } else if (e.key === 'Enter' && !busy) {
-        void answer('allow');
+        if (kind === 'guardrail') answerGuardrail('block');
+        else cancelQuestion();
+      } else if (e.key === 'Enter' && !busy && !(e.target instanceof HTMLTextAreaElement)) {
+        if (kind === 'guardrail') answerGuardrail('allow');
+        else submitQuestion();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [head, busy, answer]);
+  }, [head, busy, kind, answerGuardrail, cancelQuestion, submitQuestion]);
 
   if (!head) return null;
 
-  const hasDangerSignal = head.signals?.some((s) => s.severity === 'danger');
+  const hasDangerSignal = guardrail?.signals?.some((s) => s.severity === 'danger') ?? false;
   const borderClass = hasDangerSignal ? 'border-danger' : 'border-warn';
+  const title = kind === 'guardrail'
+    ? 'Agent needs your input'
+    : kind === 'input'
+      ? 'Answer question'
+      : 'Choose an answer';
+
+  const toggleOption = (value: string): void => {
+    if (!question || kind !== 'select') return;
+    if (question.multiSelect) {
+      const next = new Set(selectedValues);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      setSelectedValues(next);
+    } else {
+      setSelectedValues(new Set([value]));
+      void reply({ value });
+    }
+  };
 
   return (
     <div
@@ -116,7 +162,7 @@ export function AskUserModal(): JSX.Element | null {
             ASK
           </span>
           <h2 id="ask-user-modal-title" className="text-sm font-semibold text-fg-primary">
-            Agent needs your input
+            {title}
           </h2>
           {queue.length > 1 && (
             <span className="ml-auto text-[11px] font-mono text-fg-muted">
@@ -126,66 +172,143 @@ export function AskUserModal(): JSX.Element | null {
         </div>
 
         <div className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
-          <div className="text-sm text-fg-primary leading-relaxed whitespace-pre-wrap">
-            {truncate(head.reason, 1500)}
-          </div>
-
-          <div className="space-y-1">
-            <div className="text-[11px] font-mono uppercase text-fg-muted">Tool</div>
-            <div className="text-sm font-mono text-warn">{head.toolCall.toolName}</div>
-          </div>
-
-          {inputPreview && (
-            <div className="space-y-1">
-              <div className="text-[11px] font-mono uppercase text-fg-muted">Input</div>
-              <pre className="text-xs font-mono bg-surface border border-border-default rounded p-2 overflow-x-auto max-h-48">
-                {inputPreview}
-              </pre>
-            </div>
-          )}
-
-          {head.signals && head.signals.length > 0 && (
-            <div className="space-y-1">
-              <div className="text-[11px] font-mono uppercase text-fg-muted">Signals</div>
-              <div className="flex flex-wrap gap-1">
-                {head.signals.map((sig, idx) => (
-                  <span
-                    key={`${sig.type}-${idx}`}
-                    className={`text-[11px] px-2 py-0.5 rounded font-mono ${SEVERITY_STYLE[sig.severity]}`}
-                    title={sig.message}
-                  >
-                    {sig.type}
-                  </span>
-                ))}
+          {guardrail ? (
+            <>
+              <div className="text-sm text-fg-primary leading-relaxed whitespace-pre-wrap">
+                {truncate(guardrail.reason, 1500)}
               </div>
-              {head.signals.map((sig, idx) => (
-                <div key={`msg-${sig.type}-${idx}`} className="text-xs text-fg-muted pl-2">
-                  · {truncate(sig.message, 200)}
+
+              <div className="space-y-1">
+                <div className="text-[11px] font-mono uppercase text-fg-muted">Tool</div>
+                <div className="text-sm font-mono text-warn">{guardrail.toolCall.toolName}</div>
+              </div>
+
+              {inputPreview && (
+                <div className="space-y-1">
+                  <div className="text-[11px] font-mono uppercase text-fg-muted">Input</div>
+                  <pre className="text-xs font-mono bg-surface border border-border-default rounded p-2 overflow-x-auto max-h-48">
+                    {inputPreview}
+                  </pre>
                 </div>
-              ))}
-            </div>
+              )}
+
+              {guardrail.signals && guardrail.signals.length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-[11px] font-mono uppercase text-fg-muted">Signals</div>
+                  <div className="flex flex-wrap gap-1">
+                    {guardrail.signals.map((sig, idx) => (
+                      <span
+                        key={`${sig.type}-${idx}`}
+                        className={`text-[11px] px-2 py-0.5 rounded font-mono ${SEVERITY_STYLE[sig.severity]}`}
+                        title={sig.message}
+                      >
+                        {sig.type}
+                      </span>
+                    ))}
+                  </div>
+                  {guardrail.signals.map((sig, idx) => (
+                    <div key={`msg-${sig.type}-${idx}`} className="text-xs text-fg-muted pl-2">
+                      · {truncate(sig.message, 200)}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {question?.header && (
+                <div className="text-[11px] font-mono uppercase text-fg-muted">{truncate(question.header, 96)}</div>
+              )}
+              <div className="text-sm text-fg-primary leading-relaxed whitespace-pre-wrap">
+                {question ? truncate(question.question, 1500) : ''}
+              </div>
+              {kind === 'input' ? (
+                <textarea
+                  autoFocus
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  className="w-full min-h-24 resize-y rounded border border-border-default bg-surface px-3 py-2 text-sm text-fg-primary outline-none focus:border-accent"
+                />
+              ) : (
+                <div className="space-y-2">
+                  {question?.options?.map((option) => {
+                    const selected = selectedValues.has(option.value);
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        disabled={busy}
+                        onClick={() => toggleOption(option.value)}
+                        className={`w-full text-left rounded border px-3 py-2 transition ${
+                          selected
+                            ? 'border-ok bg-ok/12 text-fg-primary'
+                            : 'border-border-default bg-surface hover:bg-hover-bg text-fg-primary'
+                        } disabled:opacity-50`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {question.multiSelect && (
+                            <span
+                              className={`h-3.5 w-3.5 rounded-sm border ${
+                                selected ? 'bg-ok border-ok' : 'border-fg-muted'
+                              }`}
+                            />
+                          )}
+                          <span className="text-sm font-medium">{truncate(option.label, 160)}</span>
+                        </div>
+                        {option.description && (
+                          <div className="mt-1 text-xs text-fg-muted">{truncate(option.description, 300)}</div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
 
           {err && <div className="text-xs text-danger font-mono">{err}</div>}
         </div>
 
         <div className="px-5 py-3 border-t border-border-default flex items-center justify-end gap-2 flex-shrink-0">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void answer('block')}
-            className="px-3 py-1.5 text-xs rounded bg-surface-3 text-fg-primary hover:bg-hover-bg disabled:opacity-50"
-          >
-            Block (Esc)
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void answer('allow')}
-            className="px-3 py-1.5 text-xs rounded font-medium bg-ok/15 text-ok border border-ok/50 hover:bg-ok/25 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Allow (Enter)
-          </button>
+          {kind === 'guardrail' ? (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => answerGuardrail('block')}
+                className="px-3 py-1.5 text-xs rounded bg-surface-3 text-fg-primary hover:bg-hover-bg disabled:opacity-50"
+              >
+                Block (Esc)
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => answerGuardrail('allow')}
+                className="px-3 py-1.5 text-xs rounded font-medium bg-ok/15 text-ok border border-ok/50 hover:bg-ok/25 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Allow (Enter)
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={cancelQuestion}
+                className="px-3 py-1.5 text-xs rounded bg-surface-3 text-fg-primary hover:bg-hover-bg disabled:opacity-50"
+              >
+                Cancel (Esc)
+              </button>
+              <button
+                type="button"
+                disabled={busy || (kind === 'select' && selectedValues.size === 0)}
+                onClick={submitQuestion}
+                className="px-3 py-1.5 text-xs rounded font-medium bg-ok/15 text-ok border border-ok/50 hover:bg-ok/25 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Submit
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

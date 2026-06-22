@@ -21,6 +21,7 @@ export interface CustomProviderProbe {
   readonly id: string;
   readonly protocol: CustomProvider['protocol'];
   readonly baseUrl: string;
+  readonly skipBaseUrlValidation?: boolean;
   readonly apiKeyEnv: string;
   readonly defaultModel: string;
   readonly models?: readonly string[];
@@ -119,7 +120,9 @@ export async function testProvider(
     // SSRF defense-in-depth：custom-providers.json 可能被外部进程篡改成内网 / metadata URL
     //（如 http://169.254.169.254）。addCustom 时已 validateBaseUrl，这里运行前再 double-check——
     // baseUrl 会带着 env 里的 API key 真发请求，篡改后果是 key 泄露给攻击者端点。
-    const urlCheck = validateBaseUrl(provider.baseUrl);
+    const urlCheck = validateBaseUrl(provider.baseUrl, {
+      skipValidation: provider.skipBaseUrlValidation === true,
+    });
     if (!urlCheck.ok || !urlCheck.normalizedUrl) {
       return { ok: false, error: `invalid baseUrl: ${urlCheck.error ?? 'validation failed'}` };
     }

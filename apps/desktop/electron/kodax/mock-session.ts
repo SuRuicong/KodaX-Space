@@ -174,8 +174,8 @@ export class MockKodaXSession implements ManagedSession {
   async send(prompt: string, _artifacts?: readonly InputArtifact[]): Promise<SendResult> {
     if (this.disposed) throw new Error(`[mock-session ${this.sessionId}] already disposed`);
     if (this.currentAbort) {
-      // Mock 没有真正的 KodaX SDK MessageQueue 可用，仍走 throw → HANDLER_ERROR
-      // （production 走 real-session 时才有 queue 路径 B1）
+      // Mock does not model queued follow-up prompts; production uses
+      // RealKodaXSession with Space's per-session queue.
       throw new Error(`[mock-session ${this.sessionId}] previous send still in-flight`);
     }
 

@@ -128,3 +128,15 @@ test('rejects garbage', () => {
   assert.equal(r.ok, false);
 });
 
+test('skipValidation accepts unchecked internal http URL', () => {
+  const r = validateBaseUrl(' http://122.1.23.23/a/b/v1/ ', { skipValidation: true });
+  assert.equal(r.ok, true);
+  assert.equal(r.normalizedUrl, 'http://122.1.23.23/a/b/v1');
+});
+
+test('skipValidation accepts unchecked internal http IP with explicit port', () => {
+  const r = validateBaseUrl(' http://10.8.0.12:8080/v1/ ', { skipValidation: true });
+  assert.equal(r.ok, true);
+  assert.equal(r.normalizedUrl, 'http://10.8.0.12:8080/v1');
+});
+

@@ -1,17 +1,31 @@
-// KodaX message queue IPC — query + subscribe (v0.1.x)
+// KodaX message queue IPC: query + subscribe.
 //
-// 暴露 KodaX SDK 的 process-global MessageQueue (@kodax-ai/kodax/agent, FEATURE_115/159)
-// 给 renderer:
-//   - kodax.queueGet     一次性 peek (UI 打开 Queue 面板时拉一次)
-//   - kodax.queueChanged push channel; main 启动后订阅 SDK queue 的 mutation,实时推给 renderer
-//
-// SDK 是 ESM-only subpath,main 是 CJS — 必须 dynamic import (跟其他 SDK 接入处一致)。
-
+// Space still exposes the SDK process-global MessageQueue for renderer
+// visibility, but user follow-up prompts are kept in a Space-owned per-session
+// queue. The SDK main-thread queue (`agentId === undefined`) is process-global,
+// so using it for desktop session follow-ups lets an already-running different
+// Space session drain the wrong prompt. Per-session local queues preserve
+// concurrent sessions while keeping queued prompts observable in the UI.
 import { registerChannel } from './register.js';
 import { pushToRenderer } from './push.js';
-import type { QueuedMessageT, MessagePriorityT, MessageModeT } from '@kodax-space/space-ipc-schema';
+import type {
+  QueuedMessageT,
+  MessagePriorityT,
+  MessageModeT,
+  QueueEventKindT,
+} from '@kodax-space/space-ipc-schema';
 
 type AgentModule = typeof import('@kodax-ai/kodax/agent');
+type MessageQueue = ReturnType<AgentModule['getMessageQueue']>;
+type QueuedMessage = import('@kodax-ai/kodax/agent').QueuedMessage;
+
+type QueueGetInput = {
+  readonly agentId?: string;
+  readonly maxPriority?: MessagePriorityT;
+  readonly mode?: MessageModeT;
+  readonly limit?: number;
+};
+
 let agentModuleCache: AgentModule | null = null;
 async function loadAgent(): Promise<AgentModule> {
   if (agentModuleCache === null) {
@@ -20,82 +34,28 @@ async function loadAgent(): Promise<AgentModule> {
   return agentModuleCache;
 }
 
-/**
- * Renderer 同时只能把"流式中又敲的 prompt"压上限数到这个值。
- * 超过就 throw —— 防 renderer bug 或暴力点 Send 把 main 进程 OOM
- * (review HIGH-2, B1)。
- *
- * 10 条是经验值：用户能合理在 in-flight 期间挂载的连续追问数量上限，
- * 超过就是机器或意外行为。SDK 端 mid-turn drain 一次最多消费 N 条
- * (priority='user' 全收)，10 条相当于"撑一次 drain"。
- */
-const MAX_QUEUE_DEPTH = 10;
-
-/**
- * v0.1.4 B1：把"流式中用户又敲了一个 prompt"推到 SDK queue。
- *
- * - priority='user': KodaX mid-turn drain 把 user 排在 background 前
- * - mode='prompt': 当成新一轮用户输入处理（vs task-notification / system-reminder）
- * - **agentId=sessionId** (review HIGH-1)：把消息绑死到这个 session 上，
- *   SDK drain 时只有对应 session 的 mid-turn loop 才会消费它。
- *   多 in-flight session 时不会出现"A 的 prompt 被 B 跑掉"。
- *   sessionId === RealKodaXSession.sessionId（host map 的 key）。
- *
- * 失败抛：
- *   - queue 已满（>= MAX_QUEUE_DEPTH）→ throw，registerChannel 转 HANDLER_ERROR
- *     envelope，BottomBar 走 setErr 路径 + rollbackLastUserMessage 收尾
- *
- * 返回 SDK 分配的消息 id；renderer 用它跟 user message 做 correlation
- * （目前还只做"标 queued"，未来如要做"dequeued → 清 pill"再用）。
- *
- * **已知限制（B1 review MED-1，pending SDK 协助）**：queued prompt drain 时用
- * **当前** session.permissionMode，不是 enqueue 时的 mode。用户在 accept-edits 下
- * 敲新 prompt（→ queue）然后切到 plan → drain 跑在 plan 下。SDK EnqueueInput 没
- * 暴露 metadata 字段让 Space stash 入队时模式；当 SDK 加 enqueue() metadata 或
- * onMidTurnDrain hook 后 Space 这边接成 `Map<queueId, mode>` 用上再清。
- * 现状不是 privilege escalation（plan 严格更收，accept-edits→auto 也是用户主动选
- * 升级）；只是"行为略意外"。已发需求给 KodaX 团队。
- */
-export async function enqueueUserPrompt(sessionId: string, content: string): Promise<string> {
+async function loadQueue(): Promise<MessageQueue> {
   const agent = await loadAgent();
-  const q = agent.getMessageQueue();
-  if (q.size() >= MAX_QUEUE_DEPTH) {
-    throw new Error(
-      `Message queue full (${q.size()} >= ${MAX_QUEUE_DEPTH}); wait for the current turn to drain`,
-    );
-  }
-  return q.enqueue({
-    priority: 'user',
-    mode: 'prompt',
-    content,
-    agentId: sessionId,
-  });
+  return agent.getMessageQueue();
 }
 
-/**
- * v0.1.4 B1 review MEDIUM-2/3：清空指定 session 的所有 queued 消息。
- * Stop 按钮 + session.dispose 都调这个，让"用户预期是停"真的是停，
- * 不被 queue 里残留的 prompt 立刻再拉起新 run / 跑到错的 session。
- *
- * 用 dequeue（带 filter）而不是 SDK 的全局 clear() —— 后者会扫掉别的
- * session 的 queue 项。dequeue 返回 dropped 数量供日志，main 端 caller
- * 不需要拿走具体内容。
- *
- * agentId 与 enqueueUserPrompt 对称（都是 RealKodaXSession.sessionId）。
- */
-export async function drainQueueForSession(sessionId: string): Promise<number> {
-  if (agentModuleCache === null) return 0; // queue 没初始化过 → 没东西可清
-  const q = agentModuleCache.getMessageQueue();
-  const drained = q.dequeue({
-    agentId: sessionId,
-    // 'background' 是 enum 里"最大值"，覆盖 user + background 两档
-    maxPriority: 'background',
-  });
-  return drained.length;
-}
+const MAX_QUEUE_DEPTH_PER_SESSION = 10;
+const QUEUE_CONTENT_SCHEMA_MAX = 32 * 1024;
+const TRUNCATED_SUFFIX = '\n[truncated]';
+let nextSpaceQueueSeq = 1;
 
-/** SDK QueuedMessage → IPC schema 形态 (zod 已经在 schema 出口校验,这里只做 plain object 投影)。*/
-function projectMessage(m: import('@kodax-ai/kodax/agent').QueuedMessage): QueuedMessageT {
+type SpaceQueuedPrompt = {
+  readonly id: string;
+  readonly priority: 'user';
+  readonly mode: 'prompt';
+  readonly agentId: string;
+  readonly content: string;
+  readonly enqueuedAt: number;
+};
+
+const spacePromptQueues = new Map<string, SpaceQueuedPrompt[]>();
+
+function projectMessage(m: QueuedMessage): QueuedMessageT {
   const proj: QueuedMessageT = {
     id: m.id,
     priority: m.priority as MessagePriorityT,
@@ -103,56 +63,180 @@ function projectMessage(m: import('@kodax-ai/kodax/agent').QueuedMessage): Queue
     content: m.content,
     enqueuedAt: m.enqueuedAt,
   };
-  // agentId 是 optional;只在有值时投影出去,避免 schema 多余 undefined 字段
   if (m.agentId !== undefined) {
     return { ...proj, agentId: m.agentId };
   }
   return proj;
 }
 
-export function registerQueueChannels(): void {
-  // kodax.queueGet — peek 当前快照,可选 filter
-  registerChannel('kodax.queueGet', async (input) => {
-    const agent = await loadAgent();
-    const q = agent.getMessageQueue();
-    const filter: import('@kodax-ai/kodax/agent').DequeueFilter = {
-      agentId: input?.agentId,
-      // 默认 'background' = 看全部 (含 user 和 background); 'user' = 只看 user 优先级
-      maxPriority: input?.maxPriority ?? 'background',
-      mode: input?.mode,
-      limit: input?.limit,
-    };
-    const peeked = q.peek(filter);
-    return {
-      messages: peeked.map(projectMessage),
-      totalSize: q.size(),
-    };
+function clampQueueContentForIpc(content: string): string {
+  if (content.length <= QUEUE_CONTENT_SCHEMA_MAX) return content;
+  return content.slice(0, QUEUE_CONTENT_SCHEMA_MAX - TRUNCATED_SUFFIX.length) + TRUNCATED_SUFFIX;
+}
+
+function projectSpacePrompt(m: SpaceQueuedPrompt): QueuedMessageT {
+  return {
+    id: m.id,
+    priority: m.priority,
+    mode: m.mode,
+    agentId: m.agentId,
+    content: clampQueueContentForIpc(m.content),
+    enqueuedAt: m.enqueuedAt,
+  };
+}
+
+function getSdkSnapshotIfLoaded(): { messages: QueuedMessageT[]; totalSize: number } {
+  if (agentModuleCache === null) return { messages: [], totalSize: 0 };
+  const q = agentModuleCache.getMessageQueue();
+  return {
+    messages: q.getSnapshot().map(projectMessage),
+    totalSize: q.size(),
+  };
+}
+
+function getSpacePromptSnapshot(): QueuedMessageT[] {
+  const messages: QueuedMessageT[] = [];
+  for (const queue of spacePromptQueues.values()) {
+    messages.push(...queue.map(projectSpacePrompt));
+  }
+  return messages;
+}
+
+function getSpacePromptTotalSize(): number {
+  let total = 0;
+  for (const queue of spacePromptQueues.values()) total += queue.length;
+  return total;
+}
+
+function priorityWithinMax(priority: MessagePriorityT, maxPriority: MessagePriorityT): boolean {
+  if (maxPriority === 'background') return true;
+  return priority === 'user';
+}
+
+function filterProjectedMessages(
+  messages: readonly QueuedMessageT[],
+  filter: QueueGetInput | undefined,
+): QueuedMessageT[] {
+  const maxPriority = filter?.maxPriority ?? 'background';
+  const filtered = messages.filter((message) => {
+    if (filter?.agentId !== undefined && message.agentId !== filter.agentId) return false;
+    if (!priorityWithinMax(message.priority, maxPriority)) return false;
+    if (filter?.mode !== undefined && message.mode !== filter.mode) return false;
+    return true;
+  });
+  return filter?.limit !== undefined ? filtered.slice(0, filter.limit) : filtered;
+}
+
+function combinedSnapshot(): { messages: QueuedMessageT[]; totalSize: number } {
+  const sdk = getSdkSnapshotIfLoaded();
+  const space = getSpacePromptSnapshot();
+  return {
+    messages: [...sdk.messages, ...space],
+    totalSize: sdk.totalSize + space.length,
+  };
+}
+
+function emitQueueChanged(kind: QueueEventKindT, affected: QueuedMessageT[]): void {
+  const snapshot = combinedSnapshot();
+  pushToRenderer('kodax.queueChanged', {
+    kind,
+    affected,
+    snapshot: snapshot.messages,
+    totalSize: snapshot.totalSize,
   });
 }
 
 /**
- * 启动期订阅 SDK queue 的 mutation,转 push channel 给 renderer。
- * lazy 触发: 先 await SDK import,然后 subscribe — failure 不阻塞启动。
- * 返回 unsubscribe; main shutdown 时调 (当前 Space 不显式 shutdown,进程退出即清,可忽略)。
+ * Queue a follow-up user prompt for a single Space session.
+ *
+ * This intentionally does not enqueue into the SDK main-thread MessageQueue:
+ * that SDK route is process-global and cannot distinguish Space desktop
+ * sessions. RealKodaXSession consumes this queue when its current turn settles.
  */
+export async function enqueueUserPrompt(sessionId: string, content: string): Promise<string> {
+  const queue = spacePromptQueues.get(sessionId) ?? [];
+  if (queue.length >= MAX_QUEUE_DEPTH_PER_SESSION) {
+    throw new Error(
+      `Message queue full for session ${sessionId} (${queue.length} >= ${MAX_QUEUE_DEPTH_PER_SESSION}); ` +
+        'wait for the current turn to drain',
+    );
+  }
+
+  const message: SpaceQueuedPrompt = {
+    id: `space-msg-${nextSpaceQueueSeq++}`,
+    priority: 'user',
+    mode: 'prompt',
+    agentId: sessionId,
+    content,
+    enqueuedAt: Date.now(),
+  };
+  queue.push(message);
+  spacePromptQueues.set(sessionId, queue);
+  emitQueueChanged('enqueued', [projectSpacePrompt(message)]);
+  return message.id;
+}
+
+/** Pop the next queued follow-up prompt for one Space session. */
+export function dequeueNextUserPromptForSession(sessionId: string): string | undefined {
+  const queue = spacePromptQueues.get(sessionId);
+  if (queue === undefined || queue.length === 0) return undefined;
+
+  const [message] = queue.splice(0, 1);
+  if (queue.length === 0) {
+    spacePromptQueues.delete(sessionId);
+  }
+  if (message !== undefined) {
+    emitQueueChanged('dequeued', [projectSpacePrompt(message)]);
+    return message.content;
+  }
+  return undefined;
+}
+
+/** Clear Space-owned queued user prompts when a session is cancelled/disposed. */
+export async function drainQueueForSession(sessionId: string): Promise<number> {
+  const drained = spacePromptQueues.get(sessionId);
+  if (drained === undefined || drained.length === 0) return 0;
+  spacePromptQueues.delete(sessionId);
+  emitQueueChanged('dequeued', drained.map(projectSpacePrompt));
+  return drained.length;
+}
+
+export function registerQueueChannels(): void {
+  registerChannel('kodax.queueGet', async (input) => {
+    const q = await loadQueue();
+    const filter: import('@kodax-ai/kodax/agent').DequeueFilter = {
+      agentId: input?.agentId,
+      maxPriority: input?.maxPriority ?? 'background',
+      mode: input?.mode,
+      limit: input?.limit,
+    };
+    const sdkMessages = q.peek(filter).map(projectMessage);
+    const spaceMessages = filterProjectedMessages(getSpacePromptSnapshot(), input);
+    const limit = input?.limit;
+    const messages = [...sdkMessages, ...spaceMessages];
+    return {
+      messages: limit !== undefined ? messages.slice(0, limit) : messages,
+      totalSize: q.size() + getSpacePromptTotalSize(),
+    };
+  });
+}
+
 export async function startQueueWatch(): Promise<() => void> {
-  const agent = await loadAgent();
-  const q = agent.getMessageQueue();
+  const q = await loadQueue();
   const unsubscribe = q.subscribe((event) => {
-    // SDK QueueEvent → IPC payload
     let affected: QueuedMessageT[];
     if (event.kind === 'enqueued') {
       affected = [projectMessage(event.message)];
     } else {
       affected = event.messages.map(projectMessage);
     }
-    const snapshot = q.getSnapshot().map(projectMessage);
-    pushToRenderer('kodax.queueChanged', {
-      kind: event.kind,
-      affected,
-      snapshot,
-      totalSize: q.size(),
-    });
+    emitQueueChanged(event.kind, affected);
   });
   return unsubscribe;
+}
+
+export function _resetQueueStateForTests(): void {
+  nextSpaceQueueSeq = 1;
+  spacePromptQueues.clear();
+  agentModuleCache = null;
 }

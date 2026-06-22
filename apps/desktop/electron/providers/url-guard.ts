@@ -1,26 +1,13 @@
-// SSRF / scheme guard for renderer-supplied baseUrl — review C1 + M2-sec (2026-05-17)
+// URL guard for renderer-supplied custom-provider baseUrl.
 //
-// Threat: 用户（被 LLM 诱导）或被攻陷的 renderer 添加自定义 provider 时填
-// `http://169.254.169.254/...`（AWS metadata endpoint） 或 `http://attacker.com`，
-// 然后点 Test connection——main 会用用户的 API key 作 Authorization 头去请求那个 URL，
-// **把 key 泄给攻击者控制的端点**。
+// Default mode is conservative because provider tests send the user's API key to
+// this URL: require https, reject IP/localhost/private-looking hostnames, and
+// allow only standard reverse-proxy ports.
 //
-// 防御层：
-//   1) 仅允许 https://（cleartext key 是不可接受的）
-//   2) 解析后的 hostname 不允许是：
-//      - 数字 IP（IPv4 / IPv6 字面量）—— 内部网段太多无法穷举，干脆全禁
-//      - localhost / *.localhost / 0.0.0.0
-//      - private suffixes（.local / .internal / .lan / .corp 等）
-//   3) port 限制：标准 https 端口（443）或常见 reverse-proxy 端口（8443）；
-//      其余端口都拦——4444/8000/8080/9000 等是常见内网服务
-//
-// 备注：
-//   - 这是 defense-in-depth，不是绝对安全。攻击者控制公网域名 + 反向解析到内网是另一层威胁
-//     （SSRF via DNS rebinding），需要在 fetch 时再校验解析后的 IP——本期不做（fetch 用 keep-alive，
-//     重新 resolve 涉及 socket-level 拦截，超出 alpha 范围）
-//   - 这个 guard 的调用点：addCustom IPC handler（持久化前校验用户填的 baseUrl）。
-//     （测连接已改走 SDK verifyProviderCredential，不再在 Space 侧拼 probe URL。）
-
+// Trusted/internal mode is explicit: callers pass skipValidation=true. That path
+// only trims whitespace and one trailing slash so enterprise gateways like
+// http://10.8.0.12:8080/v1, localhost labs, or IP:port endpoints continue to
+// work when the user deliberately opts out of Space URL safety checks.
 const ALLOWED_PORTS = new Set([443, 8443]);
 
 const BLOCKED_HOSTNAME_SUFFIXES = [
@@ -53,6 +40,20 @@ export interface UrlValidation {
   readonly error?: string;
 }
 
+export interface UrlValidationOptions {
+  readonly skipValidation?: boolean;
+}
+
+function normalizeUncheckedBaseUrl(input: string): UrlValidation {
+  // Trusted/internal mode: callers explicitly opted out of Space URL safety
+  // checks. Keep this path format-light so http://IP:port gateways work.
+  const normalizedUrl = input.trim().replace(/\/$/, '');
+  if (normalizedUrl.length === 0) {
+    return { ok: false, error: 'empty URL' };
+  }
+  return { ok: true, normalizedUrl };
+}
+
 /**
  * 校验 + normalize 用户提供的 baseUrl。
  *
@@ -61,7 +62,12 @@ export interface UrlValidation {
  *
  * normalizedUrl：去掉 trailing slash，便于后续 `${baseUrl}/models` 拼接。
  */
-export function validateBaseUrl(input: string): UrlValidation {
+export function validateBaseUrl(
+  input: string,
+  options: UrlValidationOptions = {},
+): UrlValidation {
+  if (options.skipValidation === true) return normalizeUncheckedBaseUrl(input);
+
   let parsed: URL;
   try {
     parsed = new URL(input);

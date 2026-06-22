@@ -154,7 +154,10 @@ export const messages = {
     'customProvider.protocol.openai': 'OpenAI compatible',
     'customProvider.protocol.anthropic': 'Anthropic compatible',
     'customProvider.baseUrl.label': 'Base URL',
-    'customProvider.baseUrl.hint': 'HTTPS only. Example: https://openrouter.ai/api/v1',
+    'customProvider.baseUrl.hint': 'HTTPS only unless URL safety checks are skipped. Example: https://openrouter.ai/api/v1',
+    'customProvider.skipBaseUrlValidation.title': 'Skip URL safety checks',
+    'customProvider.skipBaseUrlValidation.description':
+      'Use only for trusted internal gateways. Space will pass this URL directly to the SDK.',
     'customProvider.apiKeyEnv.label': 'API key env var',
     'customProvider.apiKeyEnv.hint': 'Uppercase snake case, for SDK env injection.',
     'customProvider.defaultModel.label': 'Default model',
@@ -373,7 +376,10 @@ export const messages = {
     'customProvider.protocol.openai': 'OpenAI 兼容',
     'customProvider.protocol.anthropic': 'Anthropic 兼容',
     'customProvider.baseUrl.label': 'Base URL',
-    'customProvider.baseUrl.hint': '仅支持 HTTPS。例如：https://openrouter.ai/api/v1',
+    'customProvider.baseUrl.hint': '默认仅支持 HTTPS；跳过 URL 安全校验后可使用内网地址。',
+    'customProvider.skipBaseUrlValidation.title': '跳过 URL 安全校验',
+    'customProvider.skipBaseUrlValidation.description':
+      '仅用于可信内网网关。Space 会直接把该地址交给 SDK 测试和使用。',
     'customProvider.apiKeyEnv.label': 'API Key 环境变量',
     'customProvider.apiKeyEnv.hint': '大写 snake case，用于 SDK 环境变量注入。',
     'customProvider.defaultModel.label': '默认模型',

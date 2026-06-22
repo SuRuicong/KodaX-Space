@@ -169,9 +169,19 @@ test('loadKodaxCustomProviders exposes SDK config custom providers as Space summ
       displayName: 'newapi-anthropic',
       protocol: 'anthropic',
       baseUrl: 'https://llm.example.com/v1',
+      skipBaseUrlValidation: true,
       apiKeyEnv: 'NEWAPI_API_KEY',
       defaultModel: 'claude-sonnet-4-6',
       models: ['claude-sonnet-4-6', 'claude-opus-4-7'],
+    },
+    {
+      id: 'metadata-ssrf',
+      displayName: 'metadata-ssrf',
+      protocol: 'openai',
+      baseUrl: 'https://169.254.169.254/latest/meta-data',
+      skipBaseUrlValidation: true,
+      apiKeyEnv: 'METADATA_API_KEY',
+      defaultModel: 'gpt-5',
     },
   ]);
 });
@@ -211,6 +221,13 @@ test('registerKodaxCustomProviders forwards customProviders array to SDK', async
       protocol: 'anthropic',
       baseUrl: 'https://p1.example.com/v1',
       apiKeyEnv: 'P1_API_KEY',
+      model: 'claude-sonnet-4-6',
+    },
+    {
+      name: 'bad-url',
+      protocol: 'anthropic',
+      baseUrl: 'http://169.254.169.254/latest/meta-data',
+      apiKeyEnv: 'P3_API_KEY',
       model: 'claude-sonnet-4-6',
     },
   ]);

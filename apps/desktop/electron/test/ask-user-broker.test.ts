@@ -33,6 +33,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  askUserBroker.cancelAll('shutdown');
   setRendererTarget(() => null);
   if (keepalive) { clearInterval(keepalive); keepalive = null; }
 });
@@ -192,4 +193,66 @@ test('pendingCount reflects in-flight requests', async () => {
   askUserBroker.resolve(reqId, 'allow');
   await p1;
   assert.equal(askUserBroker.pendingCount(), baseline);
+});
+
+test('requestQuestion select resolves renderer value', async () => {
+  const pending = askUserBroker.requestQuestion({
+    sessionId: 's_question',
+    kind: 'select',
+    question: 'Pick one',
+    options: [
+      { label: 'A', value: 'a' },
+      { label: 'B', value: 'b' },
+    ],
+  });
+  await new Promise((r) => setImmediate(r));
+  const evt = captured.find((c) => c.channel === 'askUser.request');
+  assert.ok(evt);
+  const payload = evt.payload as { reqId: string; kind: string; question: string; options?: unknown[] };
+  assert.equal(payload.kind, 'select');
+  assert.equal(payload.question, 'Pick one');
+  assert.equal(payload.options?.length, 2);
+
+  assert.equal(askUserBroker.resolve(payload.reqId, { reqId: payload.reqId, value: 'b' }), true);
+  assert.equal(await pending, 'b');
+});
+
+test('requestQuestion select without options cancels without pending push', async () => {
+  const before = askUserBroker.pendingCount();
+  const result = await askUserBroker.requestQuestion({
+    sessionId: 's_empty_select',
+    kind: 'select',
+    question: 'Pick one',
+  });
+
+  assert.equal(result, undefined);
+  assert.equal(askUserBroker.pendingCount(), before);
+  assert.equal(captured.some((c) => c.channel === 'askUser.request'), false);
+});
+
+test('requestQuestion input resolves undefined when cancelled', async () => {
+  const pending = askUserBroker.requestQuestion({
+    sessionId: 's_input_cancel',
+    kind: 'input',
+    question: 'Type something',
+  });
+  await new Promise((r) => setImmediate(r));
+  askUserBroker.cancelSession('s_input_cancel', 'session_cancelled');
+  assert.equal(await pending, undefined);
+});
+
+test('requestQuestion timeout resolves undefined + pushes cancelled', async () => {
+  const pending = askUserBroker.requestQuestion({
+    sessionId: 's_question_timeout',
+    kind: 'input',
+    question: 'will timeout',
+    timeoutMs: 300,
+  });
+  const result = await pending;
+  assert.equal(result, undefined);
+  const cancelled = captured.find(
+    (c) => c.channel === 'askUser.cancelled'
+      && (c.payload as { reason: string }).reason === 'timeout',
+  );
+  assert.ok(cancelled, 'must push cancelled with reason=timeout');
 });

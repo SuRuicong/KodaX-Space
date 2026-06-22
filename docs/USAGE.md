@@ -1,6 +1,6 @@
-# KodaX Space — 使用指南 (v0.1.21)
+# KodaX Space - Usage Guide (v0.1.22)
 
-> 文档对齐 v0.1.21 release（2026-06-22）：v0.1.20 capability baseline + workflow transcript/report recovery、Settings CI stability、packaged keychain runtime guard、Windows zipped release fallbacks。
+> Document aligned with v0.1.22 release (2026-06-22): trusted internal custom providers, config-provider compatibility, Space-owned per-session follow-up queue, ask_user modal bridge coverage, and release metadata alignment.
 
 KodaX Space 是 KodaX SDK 的桌面客户端。设计目标：**不要让用户在 Space 和 KodaX CLI 之间重复配置**。绝大多数 KodaX CLI 已经配好的东西，Space 启动后会自动认。
 
@@ -112,9 +112,19 @@ SDK 0.7.42 的 `/session` 模块统一管理持久化。KodaX CLI 跑过的 sess
    - `/mode auto` — 走 `auto-rules.jsonc` 自动判
    - `/mode plan` — 只读
 
-## 4. v0.1.21 patch + v0.1.20 重点更新
+## 4. v0.1.22 patch + v0.1.20 重点更新
 
-### 4.0 v0.1.21 patch release
+### 4.0 v0.1.22 patch release
+
+v0.1.22 is a patch release for trusted internal provider workflows and queue correctness:
+
+- Custom providers added through Settings can explicitly skip URL safety validation for trusted internal HTTP/IP gateways, while default custom providers still require HTTPS and block dangerous schemes.
+- Custom providers loaded from KodaX config keep the trusted path, preserving existing direct-config internal provider behavior.
+- Follow-up prompts sent while a session is running use Space's per-session queue and run only after that same session settles.
+- SDK ask-user question/select/input prompts now surface through the Space modal path.
+- Package versions, lockfile metadata, docs, and the runtime capability contract are aligned to `0.1.22` / `space-v0.1.22`.
+
+### 4.0.1 v0.1.21 patch release
 
 v0.1.21 是为补丁发布预留出的第一条 patch lane，不新增 planned feature；主要修复 release 后发现的高风险问题：
 
@@ -255,7 +265,7 @@ Preview popout（右上 Toolbar 第 1 个图标）输入文件路径自动按 ex
 
 3 个 viewer 都是 **lazy 加载** — 不点开对应文件就不下载依赖；main bundle 不受影响。
 
-## 6. Slash 命令清单 (v0.1.21 builtin)
+## 6. Slash 命令清单 (v0.1.22 builtin)
 
 | 命令                                | 作用                                                |
 | ----------------------------------- | --------------------------------------------------- |
@@ -270,7 +280,7 @@ Preview popout（右上 Toolbar 第 1 个图标）输入文件路径自动按 ex
 
 除此之外 `/` 触发命令搜索 popover — F035 已经把 SDK skills 也合到这个 picker 里，可以同时搜内建命令 + skill。
 
-## 7. 已知限制 (v0.1.21)
+## 7. 已知限制 (v0.1.22)
 
 - **图片粘贴 + queued path**: SDK MessageQueue 当前只接 prompt string,turn 跑中粘图发送会 fail-loud,需等 turn 完。SDK 暴露 enqueueWithArtifacts 后改通
 - **图片拖拽 / "+attach image" 按钮**: 当前 OC-31 只接 clipboard.paste,drag-drop / file picker 后续 polish

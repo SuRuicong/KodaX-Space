@@ -233,6 +233,7 @@ export function registerProviderChannels(): void {
         isDefault: defaultId === c.id,
         isCustom: true,
         baseUrl: c.baseUrl,
+        skipBaseUrlValidation: c.skipBaseUrlValidation,
       });
     }
     for (const c of await loadKodaxCustomProviders()) {
@@ -251,6 +252,7 @@ export function registerProviderChannels(): void {
         isDefault: defaultId === c.id,
         isCustom: true,
         baseUrl: c.baseUrl,
+        skipBaseUrlValidation: c.skipBaseUrlValidation,
       });
     }
 
@@ -330,7 +332,9 @@ export function registerProviderChannels(): void {
   //   2) apiKeyEnv 是合法的 env var 名 + 不在 reserved blocklist（H2-sec NODE_OPTIONS 注入）
   //   3) displayName / defaultModel 由 schema 已经限了长度
   registerChannel('provider.addCustom', async (input) => {
-    const urlCheck = validateBaseUrl(input.baseUrl);
+    const urlCheck = validateBaseUrl(input.baseUrl, {
+      skipValidation: input.skipBaseUrlValidation === true,
+    });
     if (!urlCheck.ok || !urlCheck.normalizedUrl) {
       throw new Error(`baseUrl rejected: ${urlCheck.error}`);
     }
@@ -341,6 +345,7 @@ export function registerProviderChannels(): void {
       displayName: input.displayName,
       protocol: input.protocol,
       baseUrl: urlCheck.normalizedUrl,
+      skipBaseUrlValidation: input.skipBaseUrlValidation === true ? true : undefined,
       apiKeyEnv: input.apiKeyEnv,
       defaultModel: input.defaultModel,
       models: input.models,
