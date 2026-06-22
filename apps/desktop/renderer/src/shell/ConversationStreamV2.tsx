@@ -10,7 +10,7 @@
 // 一组内 N >= 1 时显示 "Ran N commands ›"（N=1 时仍折叠，统一形态）。
 // 点击聚合行展开 = 显示组里每个 tool 的细节卡。
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { useAppStore, type UserMessage, type WorkflowNoticeMessage } from '../store/appStore.js';
 import { composeMessages, type ConversationMessage } from '../features/session/composeMessages.js';
@@ -32,7 +32,7 @@ import { ActivitySpinner, useIsStreaming } from './ActivitySpinner.js';
 import { Caret } from '../components/Caret.js';
 import { Reveal } from '../components/Reveal.js';
 import { Collapse } from '../components/Collapse.js';
-import { ArrowDown } from 'lucide-react';
+import { ArrowDown, FileOutput, Maximize2 } from 'lucide-react';
 // 聚合后的 view-only message kind —— 两层折叠对齐 Claude Desktop "Ran 6 commands ⌄":
 //
 //   ▸ Ran 6 commands · 12s              ← 外层 cluster (此处折叠 = 默认)
@@ -68,6 +68,17 @@ type ToolClusterMessage = {
   thinkingTokens: number;
 };
 
+type ArtifactMessage = {
+  kind: 'artifact';
+  id: string;
+  artifactId: string | null;
+  title: string;
+  artifactKind: string;
+  version?: number;
+  status: 'running' | 'done';
+  summary?: string;
+};
+
 /**
  * Thinking-only 视图节点 —— 对齐 VSCode Claude Code 的 "Thought for Xs" 折叠行。
  * 之前 thinking 跟 text 被绑在同一个 assistant_text 上，groupTools 把后跟 tools 的整条
@@ -83,6 +94,7 @@ type ThinkingMessage = {
 type ViewMessage =
   | Exclude<ConversationMessage, { kind: 'tool_call' }>
   | ToolClusterMessage
+  | ArtifactMessage
   | ThinkingMessage;
 
 /**
@@ -99,6 +111,37 @@ function summarizeTools(tools: readonly ToolCallMsg[]): string {
   for (const t of tools) counts.set(t.toolName, (counts.get(t.toolName) ?? 0) + 1);
   const parts = [...counts.entries()].map(([name, n]) => (n > 1 ? `${n} ${name}s` : `1 ${name}`));
   return `Ran ${parts.join(' + ')}`;
+}
+const ARTIFACT_RESULT_RE = /\(id=([^,]+), v(\d+)\)/;
+
+function pickToolString(input: Record<string, unknown> | undefined, key: string): string | null {
+  if (!input) return null;
+  const value = input[key];
+  return typeof value === 'string' ? value : null;
+}
+
+function artifactMessageFromTool(tool: ToolCallMsg): ArtifactMessage | null {
+  if (tool.toolName !== 'create_artifact') return null;
+  const match = typeof tool.result === 'string' ? ARTIFACT_RESULT_RE.exec(tool.result) : null;
+  if (tool.status === 'done' && !match) return null;
+
+  const artifactId = match?.[1]?.trim() ?? null;
+  const parsedVersion = match ? Number(match[2]) : undefined;
+  const version = Number.isFinite(parsedVersion) ? parsedVersion : undefined;
+  const title = pickToolString(tool.input, 'title') ?? 'Artifact';
+  const artifactKind = pickToolString(tool.input, 'kind') ?? 'artifact';
+  const summary = pickToolString(tool.input, 'summary');
+
+  return {
+    kind: 'artifact',
+    id: `${tool.id}_artifact`,
+    artifactId,
+    title,
+    artifactKind,
+    ...(version !== undefined ? { version } : {}),
+    status: tool.status,
+    ...(summary ? { summary } : {}),
+  };
 }
 
 function groupTools(
@@ -144,7 +187,9 @@ function groupTools(
       const tools: ToolCallMsg[] = [];
       let j = i + 1;
       while (j < messages.length && messages[j].kind === 'tool_call') {
-        tools.push(messages[j] as ToolCallMsg);
+        const tool = messages[j] as ToolCallMsg;
+        if (artifactMessageFromTool(tool)) break;
+        tools.push(tool);
         j++;
       }
       if (tools.length > 0) {
@@ -192,12 +237,24 @@ function groupTools(
         i = j - 1; // 跳过 consumed tool_calls (for loop ++ 再 +1 到 j)
       } else {
         flushCluster();
-        out.push(m);
+        const hasThinking = Boolean(m.thinking && m.thinking.length > 0);
+        const hasText = m.text.length > 0;
+        if (hasThinking && !hasText) {
+          out.push({ kind: 'thinking', id: `${m.id}_thinking`, thinking: m.thinking! });
+        } else {
+          out.push(m);
+        }
       }
       continue;
     }
 
     if (m.kind === 'tool_call') {
+      const artifact = artifactMessageFromTool(m);
+      if (artifact) {
+        flushCluster();
+        out.push(artifact);
+        continue;
+      }
       // 没前置 assistant_text 的 tool (罕见，首轮 thinking 直接出工具)：
       // 单独成一个 sub-cluster，标题用 tool 汇总（syntheticTitle=true）。
       pendingCluster.push({
@@ -319,6 +376,16 @@ export function ConversationStreamV2(): JSX.Element {
           break;
         case 'system_notice':
           txt = m.text;
+          break;
+        case 'artifact':
+          txt = [
+            m.title,
+            m.artifactKind,
+            m.summary ?? '',
+            m.artifactId ?? '',
+            m.version !== undefined ? `v${m.version}` : '',
+            m.status,
+          ].join(' ');
           break;
         case 'tool_cluster':
           txt = m.subClusters
@@ -503,6 +570,10 @@ export function ConversationStreamV2(): JSX.Element {
                   inner = <SystemNotice {...m} />;
                   markerTone = 'system';
                   break;
+                case 'artifact':
+                  inner = <ArtifactInlineCallout artifact={m} />;
+                  markerTone = 'artifact';
+                  break;
                 case 'tool_cluster':
                   inner = (
                     <ToolCluster
@@ -622,15 +693,100 @@ export function ConversationStreamV2(): JSX.Element {
   );
 }
 
+function ArtifactInlineCallout({ artifact }: { artifact: ArtifactMessage }): JSX.Element {
+  const projectRoot = useAppStore((s) => {
+    const cur = s.currentSessionId;
+    return cur ? (s.sessions.find((x) => x.sessionId === cur)?.projectRoot ?? null) : null;
+  });
+  const canOpen = artifact.status === 'done' && Boolean(artifact.artifactId);
+  const kindLabel = artifact.artifactKind.trim() ? artifact.artifactKind.toUpperCase() : 'ARTIFACT';
+  const meta = [kindLabel, artifact.version !== undefined ? `v${artifact.version}` : null]
+    .filter(Boolean)
+    .join(' / ');
+
+  function focusInPanel(): void {
+    if (!artifact.artifactId) return;
+    window.dispatchEvent(
+      new CustomEvent('kodax-space.focus-artifact', { detail: { id: artifact.artifactId } }),
+    );
+  }
+
+  function openWindow(e: MouseEvent<HTMLButtonElement>): void {
+    e.stopPropagation();
+    if (!artifact.artifactId) return;
+    window.kodaxSpace
+      ?.invoke('artifact.openWindow', {
+        id: artifact.artifactId,
+        ...(artifact.version !== undefined ? { version: artifact.version } : {}),
+        ...(projectRoot ? { projectRoot } : {}),
+        title: artifact.title,
+      })
+      .catch(() => {});
+  }
+
+  return (
+    <div
+      className={[
+        'group/artifact flex min-h-11 w-full items-center gap-1 rounded-md border px-1 py-1 text-xs',
+        canOpen
+          ? 'border-border-default bg-surface-2/45 hover:border-accent/45 hover:bg-surface-3/55 transition-colors'
+          : 'border-border-default bg-surface-2/35',
+      ].join(' ')}
+    >
+      <button
+        type="button"
+        onClick={focusInPanel}
+        disabled={!canOpen}
+        className="flex min-w-0 flex-1 items-center gap-2 rounded px-1.5 py-1 text-left disabled:cursor-default"
+        title={canOpen ? 'View artifact' : 'Creating artifact'}
+      >
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-accent/30 bg-accent/10 text-accent-ink">
+          {canOpen ? (
+            <FileOutput className="h-4 w-4" strokeWidth={1.8} aria-hidden />
+          ) : (
+            <span className="activity-spinner-comet" aria-hidden />
+          )}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[10px] font-medium uppercase tracking-wide text-fg-muted">
+            {canOpen ? 'Artifact created' : 'Creating artifact'}
+          </span>
+          <span className="block truncate text-sm font-medium text-fg-primary">{artifact.title}</span>
+          <span className="block truncate text-[11px] text-fg-muted">
+            <span className="uppercase tracking-wide">{meta}</span>
+            {artifact.summary ? <span> / {artifact.summary}</span> : null}
+          </span>
+        </span>
+        {canOpen && (
+          <span className="shrink-0 pr-1 text-[11px] font-medium text-accent-ink opacity-85 group-hover/artifact:opacity-100">
+            Open
+          </span>
+        )}
+      </button>
+      {canOpen && (
+        <button
+          type="button"
+          onClick={openWindow}
+          title="Open artifact in a separate window"
+          aria-label="Open artifact in a separate window"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-fg-muted hover:bg-surface-3 hover:text-fg-primary"
+        >
+          <Maximize2 className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
+        </button>
+      )}
+    </div>
+  );
+}
 // Timeline rail marker —— absolute 定位到时间线竖线上，配色按消息 kind 区分
 // 让用户一眼能扫出"哪些是我说的 / 模型说的 / 系统通知 / 工具调用 / 思考"。
 // 直径 9px，与 rail (1px wide @ left:7px) 居中对齐 = marker.left = 3px。
-type MarkerTone = 'user' | 'assistant' | 'system' | 'tool' | 'thinking';
+type MarkerTone = 'user' | 'assistant' | 'system' | 'tool' | 'artifact' | 'thinking';
 const MARKER_TONE_CLASS: Record<MarkerTone, string> = {
   user: 'bg-run',
   assistant: 'bg-ok',
   system: 'bg-warn',
   tool: 'bg-fg-faint dark:bg-fg-muted',
+  artifact: 'bg-accent-ink',
   thinking: 'bg-thinking',
 };
 function TimelineMarker({ tone }: { tone: MarkerTone }): JSX.Element {
@@ -652,8 +808,6 @@ function StreamingSpinnerRow(): JSX.Element | null {
     <div className="relative">
       <TimelineMarker tone="assistant" />
       <ActivitySpinner />
-      {/* F068: 流式打字光标 —— 竖条呼吸，给「正在生成」即时物理反馈 */}
-      <span className="caret-stream text-fg-secondary ml-1" aria-hidden />
     </div>
   );
 }

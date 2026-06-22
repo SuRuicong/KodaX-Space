@@ -1,6 +1,6 @@
 # KodaX Space - Usage Guide (v0.1.22)
 
-> Document aligned with v0.1.22 release (2026-06-22): trusted internal custom providers, config-provider compatibility, Space-owned per-session follow-up queue, ask_user modal bridge coverage, and release metadata alignment.
+> Document aligned with v0.1.22 release (2026-06-22): trusted internal custom providers, config-provider compatibility, Space-owned per-session follow-up queue, ask_user modal bridge coverage, View menu appearance shortcuts, artifact transcript callouts, CSS spinner frame stability, Diff loading polish, test-mode Electron userData isolation, and release metadata alignment.
 
 KodaX Space 是 KodaX SDK 的桌面客户端。设计目标：**不要让用户在 Space 和 KodaX CLI 之间重复配置**。绝大多数 KodaX CLI 已经配好的东西，Space 启动后会自动认。
 
@@ -123,6 +123,13 @@ v0.1.22 is a patch release for trusted internal provider workflows and queue cor
 - Follow-up prompts sent while a session is running use Space's per-session queue and run only after that same session settles.
 - SDK ask-user question/select/input prompts now surface through the Space modal path.
 - Package versions, lockfile metadata, docs, and the runtime capability contract are aligned to `0.1.22` / `space-v0.1.22`.
+- The top View menu exposes Theme (`Light` / `Dark` / `System`) and Visual Quality (`Minimal` / `Balanced` / `Full`) shortcuts in the active display language.
+- The Thinking spinner no longer shows the inherited blinking streaming caret on the next line.
+- Artifact creation results stay visible as standalone transcript callouts instead of being hidden inside collapsed command runs; click the row to focus the Artifact panel or the corner icon to open a separate window.
+- Streaming activity uses a CSS comet spinner, so token/tool rerenders do not drive animation frames through React timers.
+- The Diff popout shows the target path while loading and fetches cached tool diffs and git file diffs concurrently for faster content display.
+- The right sidebar width toggle expands to a workspace-aware review width, which makes focused Artifact and review flows readable without permanently taking over the layout.
+- E2E test launches isolate Electron `userData` under `KODAX_TEST_ONBOARDING`, so the single-instance lock no longer blocks Settings interaction coverage.
 
 ### 4.0.1 v0.1.21 patch release
 
@@ -141,6 +148,7 @@ v0.1.21 是为补丁发布预留出的第一条 patch lane，不新增 planned f
 
 - Settings → Preferences → Language
 - 顶部菜单 View → Language
+- 顶部菜单 View → Theme / Visual Quality
 
 可选值：
 

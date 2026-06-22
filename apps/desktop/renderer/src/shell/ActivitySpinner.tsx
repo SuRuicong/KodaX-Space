@@ -1,6 +1,6 @@
 // ActivitySpinner — alpha.1 / P0 polish
 //
-// 流式响应中的活动指示器，挂在输入框上方。Braille 帧循环（80ms / 帧）+
+// 流式响应中的活动指示器，挂在输入框上方。CSS spinner +
 // 实时状态文案（"Thinking…" / "Reading file…" / "Running bash…"）+ 当前 iter / tokens +
 // 已用秒数（spinner stats tail，对齐 KodaX TUI）。
 //
@@ -16,8 +16,6 @@ import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
-const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-const FRAME_MS = 80;
 
 interface ActivitySnapshot {
   readonly streaming: boolean;
@@ -272,18 +270,13 @@ export function ActivitySpinner(): JSX.Element | null {
   );
 
   const snap = snapshotFromEvents(events, pending, managedPhase);
-  const [frame, setFrame] = useState(0);
-  // elapsed 用 1s 心跳，独立于 80ms spinner 帧，避免重复 setState
+  // Elapsed display still ticks once per second; spinner motion itself is CSS-driven.
   const [, forceTick] = useState(0);
 
   useEffect(() => {
     if (!snap.streaming) return undefined;
-    const spinId = setInterval(() => setFrame((f) => (f + 1) % FRAMES.length), FRAME_MS);
     const elapsedId = setInterval(() => forceTick((n) => (n + 1) % 1000), 1_000);
-    return () => {
-      clearInterval(spinId);
-      clearInterval(elapsedId);
-    };
+    return () => clearInterval(elapsedId);
   }, [snap.streaming]);
 
   if (!snap.streaming) return null;
@@ -324,9 +317,7 @@ export function ActivitySpinner(): JSX.Element | null {
 
   return (
     <div className="flex items-center gap-2 text-xs text-fg-muted font-mono px-1 py-0.5">
-      <span className="text-warn inline-block w-3 text-center" aria-hidden>
-        {FRAMES[frame]}
-      </span>
+      <span className="activity-spinner-comet" aria-hidden />
       <span className="text-fg-secondary">{statusBase}</span>
       {toolBase && (
         <span className="text-fg-muted truncate max-w-[280px]" title={snap.toolPath ?? undefined}>

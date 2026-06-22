@@ -844,16 +844,6 @@ html:not(.dark) .aurora-blob {
     box-shadow: 0 0 0 8px rgb(var(--ok) / 0);
   }
 }
-/* —— 流式打字光标：竖条呼吸（step 计时，替代纯文字省略号，物理感更强）。 —— */
-@keyframes ks-caret-blink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
-}
 /* —— 复制成功脉冲：scale 弹一下（overshoot），给「复制成功」即时视觉反馈。 —— */
 @keyframes ks-copy-pulse {
   0% {
@@ -878,6 +868,12 @@ html:not(.dark) .aurora-blob {
   }
 }
 
+@keyframes ks-activity-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
 /* —— 工具类：全部 html:not(.q-minimal) 前缀（极简档瞬切）+ reduced-motion 兜底 —— */
 
 /* 消息入场：Reveal 组件挂此 class，inline animation-delay 注入 stagger。 */
@@ -896,15 +892,24 @@ html:not(.q-minimal) .copy-pulse {
 html:not(.q-minimal) .notice-in {
   animation: ks-notice-in var(--motion-normal) var(--ease-expo) both;
 }
-/* 流式打字光标：step 计时（无 easing，纯时间切帧）。1.06s 周期 = 530ms 亮 + 530ms 灭。 */
-html:not(.q-minimal) .caret-stream {
+/* Conversation tail activity indicator: CSS-driven comet ring, no React frame timer. */
+.activity-spinner-comet {
   display: inline-block;
-  width: 2px;
-  height: 1em;
-  margin-left: 1px;
-  vertical-align: text-bottom;
-  background: currentColor;
-  animation: ks-caret-blink 1.06s steps(1, end) infinite;
+  width: 0.75rem;
+  height: 0.75rem;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: conic-gradient(
+    from 25deg,
+    rgb(var(--warn) / 0) 0deg,
+    rgb(var(--warn) / 0.18) 145deg,
+    rgb(var(--warn) / 0.92) 310deg,
+    rgb(var(--warn) / 0) 360deg
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.7px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.7px));
+  filter: drop-shadow(0 0 4px rgb(var(--warn) / 0.22));
+  animation: ks-activity-spin 920ms linear infinite;
 }
 /* 工具卡 running→done 状态 crossfade：border-color + background-color 平滑过渡。 */
 html:not(.q-minimal) .tool-card-anim {
@@ -936,7 +941,7 @@ html:not(.q-minimal) .collapse-track {
   html:not(.q-minimal) .reveal-marker,
   html:not(.q-minimal) .copy-pulse,
   html:not(.q-minimal) .notice-in,
-  html:not(.q-minimal) .caret-stream,
+  .activity-spinner-comet,
   html:not(.q-minimal) .tool-card-anim,
   html:not(.q-minimal) .search-ring-anim,
   html:not(.q-minimal) .collapse-track {

@@ -16,8 +16,30 @@ type ToolGroup = {
   id: string;
   tools: Array<Extract<ConversationMessage, { kind: 'tool_call' }>>;
 };
-type ViewMessage = Exclude<ConversationMessage, { kind: 'tool_call' }> | ToolGroup;
+type ArtifactEntry = {
+  kind: 'artifact';
+  id: string;
+  artifactId: string;
+  title: string;
+  artifactKind: string;
+  version?: number;
+};
+type ViewMessage = Exclude<ConversationMessage, { kind: 'tool_call' }> | ToolGroup | ArtifactEntry;
 
+function artifactFromTool(tool: Extract<ConversationMessage, { kind: 'tool_call' }>): ArtifactEntry | null {
+  if (tool.toolName !== 'create_artifact') return null;
+  const match = typeof tool.result === 'string' ? /\(id=([^,]+), v(\d+)\)/.exec(tool.result) : null;
+  if (!match) return null;
+  const version = Number(match[2]);
+  return {
+    kind: 'artifact',
+    id: `${tool.id}_artifact`,
+    artifactId: match[1].trim(),
+    title: typeof tool.input?.title === 'string' ? tool.input.title : 'Artifact',
+    artifactKind: typeof tool.input?.kind === 'string' ? tool.input.kind : 'artifact',
+    ...(Number.isFinite(version) ? { version } : {}),
+  };
+}
 function groupTools(messages: ConversationMessage[]): ViewMessage[] {
   const out: ViewMessage[] = [];
   let buffer: ToolGroup['tools'] = [];
@@ -27,8 +49,15 @@ function groupTools(messages: ConversationMessage[]): ViewMessage[] {
     buffer = [];
   };
   for (const m of messages) {
-    if (m.kind === 'tool_call') buffer.push(m);
-    else {
+    if (m.kind === 'tool_call') {
+      const artifact = artifactFromTool(m);
+      if (artifact) {
+        flush();
+        out.push(artifact);
+      } else {
+        buffer.push(m);
+      }
+    } else {
       flush();
       out.push(m);
     }
@@ -41,6 +70,17 @@ function tool(id: string, toolName = 'read', status: 'running' | 'done' = 'done'
   return { kind: 'tool_call', id, toolId: `t_${id}`, toolName, status };
 }
 
+function artifactTool(id: string): ConversationMessage {
+  return {
+    kind: 'tool_call',
+    id,
+    toolId: `t_${id}`,
+    toolName: 'create_artifact',
+    input: { title: 'Release report', kind: 'markdown' },
+    result: 'Artifact created: "Release report" (id=artifact_1, v2). It is shown in the Artifact panel.',
+    status: 'done',
+  };
+}
 function user(id: string, content = 'hi'): ConversationMessage {
   return { kind: 'user', id, content, sentAt: 0 };
 }
@@ -131,4 +171,19 @@ test('groupTools: group id deterministic from first tool id + count', () => {
   if (out[0].kind === 'tool_group') {
     assert.equal(out[0].id, 'group_t1_2');
   }
+});
+test('groupTools: create_artifact promotes to standalone artifact entry', () => {
+  const out = groupTools([tool('t1', 'bash'), artifactTool('a1'), tool('t2', 'read')]);
+  assert.equal(out.length, 3);
+  assert.equal(out[0].kind, 'tool_group');
+  assert.equal(out[1].kind, 'artifact');
+  assert.equal(out[2].kind, 'tool_group');
+  if (out[0].kind === 'tool_group') assert.equal(out[0].tools.length, 1);
+  if (out[1].kind === 'artifact') {
+    assert.equal(out[1].artifactId, 'artifact_1');
+    assert.equal(out[1].title, 'Release report');
+    assert.equal(out[1].artifactKind, 'markdown');
+    assert.equal(out[1].version, 2);
+  }
+  if (out[2].kind === 'tool_group') assert.equal(out[2].tools.length, 1);
 });

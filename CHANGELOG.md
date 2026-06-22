@@ -29,10 +29,17 @@ This patch keeps the v0.1.20/v0.1.21 baseline intact while fixing the custom-pro
 - **Title sanitization source hygiene** - Escaped the control-character ranges used by title sanitization so the source file no longer contains an embedded NUL byte.
 - **Ask-user bridge coverage** - SDK `ask_user_question`, select, and input prompts are wired through the Space IPC modal path.
 - **MCP manager lifecycle races** - Hardened init, reload, and dispose paths against overlapping lifecycle operations.
+- **Playwright single-instance isolation** - E2E launches now scope Electron `userData` to the `KODAX_TEST_ONBOARDING` sandbox before acquiring the single-instance lock, so Settings interaction tests can launch reliably beside an existing app or another test process.
+- **Streaming spinner caret cleanup** - Removed the v0.1.16 streaming caret from the conversation tail so the Thinking spinner no longer shows a blinking cursor on the next line.
+- **Streaming spinner frame stability** - Replaced the React timer-driven text spinner with a CSS comet spinner so streaming rerenders no longer throttle animation frames.
+- **Diff popout loading path** - Diff opens with path-aware loading UI and races cached tool diffs with git file diffs so the first paint is no longer a long blank state.
+- **Artifact transcript surfacing** - `create_artifact` results are promoted out of collapsed command clusters into a standalone clickable Artifact callout with right-panel focus and separate-window open actions.
 
 ### Changed
 
 - **Version alignment** - Root, desktop, IPC schema, UI kit, lockfile, docs, and `space.version` capability contract are aligned to `0.1.22` / `space-v0.1.22`.
+- **View menu appearance shortcuts** - The app View menu now exposes localized Theme (`Light` / `Dark` / `System`) and Visual Quality (`Minimal` / `Balanced` / `Full`) choices alongside the language switch.
+- **Right sidebar expansion** - The right sidebar width toggle now balances against the current workspace width, so Artifact focus and review flows open into a readable panel without crowding the main transcript.
 - **Build verification path** - `npm run typecheck` now builds workspace packages first so generated package artifacts are available before TypeScript checks run.
 - **macOS packaging script** - macOS release builds pass explicit `--x64 --arm64` architecture flags.
 - **Patch-lane planning** - `v0.1.22` is consumed by this provider/queue patch; `v0.1.23` and `v0.1.25` remain patch lanes, and `v0.1.24` remains the customer timebox entitlement MVP lane.
@@ -40,7 +47,7 @@ This patch keeps the v0.1.20/v0.1.21 baseline intact while fixing the custom-pro
 ### Verified
 
 - `npm run typecheck`
-- `npm test`
+- `$env:SKIP_PTY_TESTS='1'; npm test`
 - `npm run build:smoke`
 - `npx playwright test tests/e2e/settings-modal-interactions.spec.ts`
 

@@ -77,7 +77,7 @@ KodaX-Space/
 
 **v0.1.22 - Provider / Queue Patch** (2026-06-22 released)
 
-This patch keeps the v0.1.20/v0.1.21 baseline intact while fixing trusted internal custom provider compatibility, Space-owned per-session follow-up queues, ask_user modal bridge coverage, and release metadata alignment. See [CHANGELOG.md](CHANGELOG.md) and [docs/features/v0.1.22.md](docs/features/v0.1.22.md).
+This patch keeps the v0.1.20/v0.1.21 baseline intact while fixing trusted internal custom provider compatibility, Space-owned per-session follow-up queues, ask_user modal bridge coverage, View menu polish, artifact transcript callouts, CSS spinner stability, Diff loading polish, and release metadata alignment. See [CHANGELOG.md](CHANGELOG.md) and [docs/features/v0.1.22.md](docs/features/v0.1.22.md).
 
 ### v0.1.22 Patch Highlights
 
@@ -88,7 +88,10 @@ This patch keeps the v0.1.20/v0.1.21 baseline intact while fixing trusted intern
 | **Follow-up queue**   | User follow-up prompts now live in a Space-owned per-session queue instead of the SDK main-thread queue. |
 | **Resume pairing**    | Resumed sessions only reuse a configured model when it belongs to the selected provider.          |
 | **Ask user bridge**   | SDK question/select/input prompts are wired through the Space IPC modal path.                    |
-| **Release hygiene**   | Package versions, lockfile metadata, docs, and `space.version` are aligned to `0.1.22` / `space-v0.1.22`. |
+| **View menu polish**  | Theme and Visual Quality can be changed from the localized View menu alongside Language.             |
+| **Conversation polish** | Artifact creation now surfaces as a standalone clickable callout; the Thinking spinner no longer leaves a caret or timer-janks during streaming. |
+| **Layout polish** | The right sidebar expansion toggle opens a readable review panel while preserving room for the transcript. |
+| **Release hygiene**   | Package versions, lockfile metadata, docs, `space.version`, Diff loading polish, and test-mode Electron userData isolation are aligned for `0.1.22`. |
 
 **v0.1.20 — Capability catch-up + Display Language MVP ✅**（2026-06-22 released）
 

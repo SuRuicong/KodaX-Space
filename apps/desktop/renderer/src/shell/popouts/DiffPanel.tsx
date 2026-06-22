@@ -21,7 +21,7 @@ export function DiffPanel(): JSX.Element {
   const lastDiffPath = useAppStore((s) => s.lastDiffPath);
   const clearLastDiffPath = useAppStore((s) => s.clearLastDiffPath);
 
-  const [path, setPath] = useState<string | null>(null);
+  const [path, setPath] = useState<string | null>(() => lastDiffPath);
   const [diff, setDiff] = useState<{ before: string; after: string; source: DiffSource } | null>(
     null,
   );
@@ -30,6 +30,8 @@ export function DiffPanel(): JSX.Element {
   // 接住 store 的 lastDiffPath（tool_call 自动注入）
   useEffect(() => {
     if (lastDiffPath !== null) {
+      setErr(null);
+      setDiff(null);
       setPath(lastDiffPath);
       clearLastDiffPath();
     }
@@ -46,50 +48,69 @@ export function DiffPanel(): JSX.Element {
     const fetchDiff = async (): Promise<void> => {
       setErr(null);
       setDiff(null);
-      try {
-        const cacheR = await window.kodaxSpace!.invoke('files.diff', { projectRoot, path });
-        if (cancelled) return;
+
+      const bridge = window.kodaxSpace!;
+      const settle = async <T,>(
+        promise: Promise<T>,
+      ): Promise<{ value: T } | { error: unknown }> => {
+        try {
+          return { value: await promise };
+        } catch (error) {
+          return { error };
+        }
+      };
+
+      const cachePromise = settle(bridge.invoke('files.diff', { projectRoot, path }));
+      const gitPromise = settle(bridge.invoke('project.gitFileDiff', { projectRoot, path }));
+
+      const cacheSettled = await cachePromise;
+      if (cancelled) return;
+      if ('value' in cacheSettled) {
+        const cacheR = cacheSettled.value;
         if (cacheR.ok && cacheR.data.available) {
           setDiff({ before: cacheR.data.before, after: cacheR.data.after, source: 'tool-call' });
           return;
         }
+      }
 
-        // fallback: git working tree diff
-        const gitR = await window.kodaxSpace!.invoke('project.gitFileDiff', { projectRoot, path });
-        if (cancelled) return;
-        if (gitR.ok && gitR.data.available) {
-          setDiff({
-            before: gitR.data.before,
-            after: gitR.data.after,
-            source: gitR.data.isUntracked ? 'git-untracked' : 'git-tracked',
-          });
-          return;
-        }
-        // 两条路径都 miss,显示 reason 友好文案
-        if (gitR.ok) {
-          switch (gitR.data.reason) {
-            case 'is-binary':
-              setErr('Binary file — inline diff not available');
-              break;
-            case 'file-too-large':
-              setErr('File too large for inline diff (> 1 MB)');
-              break;
-            case 'not-a-git-repo':
-              setErr('Not a git repository — no working-tree diff to show');
-              break;
-            case 'no-such-file':
-              setErr('File not found in working tree');
-              break;
-            default:
-              setErr('No diff available');
-          }
-        } else {
-          setErr(`${gitR.error?.code ?? 'ERR_UNKNOWN'}: ${gitR.error?.message ?? 'unknown'}`);
-        }
-      } catch (e) {
-        if (cancelled) return;
-        const msg = e instanceof Error ? e.message : String(e);
+      const gitSettled = await gitPromise;
+      if (cancelled) return;
+      if ('error' in gitSettled) {
+        const fallbackError = 'error' in cacheSettled ? cacheSettled.error : gitSettled.error;
+        const msg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
         setErr(`Failed to load diff: ${msg}`);
+        return;
+      }
+
+      const gitR = gitSettled.value;
+      if (gitR.ok && gitR.data.available) {
+        setDiff({
+          before: gitR.data.before,
+          after: gitR.data.after,
+          source: gitR.data.isUntracked ? 'git-untracked' : 'git-tracked',
+        });
+        return;
+      }
+
+      if (gitR.ok) {
+        switch (gitR.data.reason) {
+          case 'is-binary':
+            setErr('Binary file — inline diff not available');
+            break;
+          case 'file-too-large':
+            setErr('File too large for inline diff (> 1 MB)');
+            break;
+          case 'not-a-git-repo':
+            setErr('Not a git repository — no working-tree diff to show');
+            break;
+          case 'no-such-file':
+            setErr('File not found in working tree');
+            break;
+          default:
+            setErr('No diff available');
+        }
+      } else {
+        setErr(`${gitR.error?.code ?? 'ERR_UNKNOWN'}: ${gitR.error?.message ?? 'unknown'}`);
       }
     };
     void fetchDiff();
@@ -109,7 +130,22 @@ export function DiffPanel(): JSX.Element {
     return <div className="p-3 text-xs text-fg-muted font-mono">{err}</div>;
   }
   if (!diff) {
-    return <div className="p-3 text-xs text-fg-muted">loading…</div>;
+    return (
+      <div className="h-full flex flex-col">
+        <div className="px-3 py-1 border-b border-border-default text-xs text-fg-muted font-mono flex-shrink-0 flex items-center gap-2">
+          <span className="px-1.5 py-0.5 rounded text-[11px] font-medium flex-shrink-0 bg-surface-3 text-fg-muted">
+            Loading
+          </span>
+          <span className="truncate flex-1" title={path}>
+            {path}
+          </span>
+        </div>
+        <div className="p-3 text-xs text-fg-muted flex items-center gap-2">
+          <span className="activity-spinner-comet" aria-hidden />
+          <span>loading diff data...</span>
+        </div>
+      </div>
+    );
   }
   // F044: 头部加 source pill 让用户分辨数据来源
   const sourcePill = (() => {
