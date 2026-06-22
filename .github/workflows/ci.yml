@@ -30,6 +30,9 @@ on:
 permissions:
   contents: read
 
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
+
 jobs:
   test:
     name: ${{ matrix.os }}
