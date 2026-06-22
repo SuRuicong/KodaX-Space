@@ -121,7 +121,7 @@ v0.1.21 是为补丁发布预留出的第一条 patch lane，不新增 planned f
 - Workflow 完成后 reload，transcript 会恢复 child summary 与 final report notice；Workflow manager 的历史详情也会直接显示恢复出的 final summary，且不会把 workflow notice 误显示成 user message。
 - Workflow completion notice 保留可读 markdown final report，并补齐复制按钮与相对时间 footer。
 - Settings e2e 改用稳定 test id / scoped selector，避免系统语言和同名按钮导致 CI 误红。
-- Electron 打包显式包含 `@napi-rs/keyring` 与 native binding，`smoke:pack` 会检查 keychain runtime 是否进入 `app.asar.unpacked`。
+- Electron 打包显式包含 `@napi-rs/keyring` 与 native binding；macOS x64/arm64 release jobs 分别在匹配架构 runner 上打包，`smoke:pack` 会检查 keychain runtime 是否进入 `app.asar.unpacked`。
 - Windows release 除直接 `.exe` 外，也提供 `Setup.zip` / `Portable.zip` 备用下载。
 - `v0.1.21` 用作第一条 patch-only release lane；`v0.1.22-v0.1.25` 继续预留给补丁发布，F103 从 `v0.1.26` 开始。
 

@@ -86,7 +86,7 @@ This patch keeps the v0.1.20 capability baseline and fixes release-critical issu
 | **Workflow recovery** | Restored child summaries/final reports after reload and shows recovered summaries in workflow history. |
 | **Transcript polish** | Workflow completion notices keep readable markdown and expose footer copy/time affordances.      |
 | **Settings CI**       | Stabilized Settings e2e selectors across localized desktops and ambiguous labels.                |
-| **Packaging**         | Included `@napi-rs/keyring` native runtime files and packaged keychain smoke guards.             |
+| **Packaging**         | Included keyring native runtime files and splits macOS x64/arm64 release jobs by runner arch.    |
 | **Release artifacts** | Windows releases include zipped setup/portable fallbacks for unsigned `.exe` download blocking.  |
 | **Planning**          | `v0.1.21` ships as patch-only; `v0.1.22-v0.1.25` remain patch lanes before F103 at `v0.1.26`.     |
 

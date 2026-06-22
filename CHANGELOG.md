@@ -27,7 +27,7 @@ This patch release keeps the v0.1.20 feature baseline intact while fixing the hi
 - **Workflow manager history details** - Restored completed workflow runs now show their final summary directly in the manager detail pane before users expand the durable artifact body.
 - **Workflow notice affordances** - Added stable footer controls/timestamps for workflow system notices so copied/restored workflow messages behave like other transcript entries.
 - **Settings modal e2e stability** - Stabilized Settings tests with scoped selectors, a dedicated settings button test id, English e2e fixture language, and a more specific "Close settings" accessibility label.
-- **Packaged keychain runtime** - Included `@napi-rs/keyring` and its native bindings in Electron packaging, unpacked native `.node` modules correctly, and extended packaged smoke checks to fail if keychain runtime files are missing.
+- **Packaged keychain runtime** - Included `@napi-rs/keyring` and its native bindings in Electron packaging, unpacked native `.node` modules correctly, split macOS x64/arm64 release jobs onto matching runner architectures, and extended packaged smoke checks to fail if keychain runtime files are missing.
 - **Windows release downloads** - Added zipped Windows release fallbacks so users can download `Setup.zip` / `Portable.zip` when direct unsigned `.exe` downloads are blocked.
 
 ### Changed

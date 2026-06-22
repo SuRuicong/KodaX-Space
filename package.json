@@ -23,6 +23,8 @@
     "build:pack": "node scripts/pack.mjs",
     "build:win": "node scripts/gen-icon.mjs && npm run build:smoke && node scripts/pack.mjs --win",
     "build:mac": "node scripts/gen-icon.mjs && npm run build:smoke && node scripts/pack.mjs --mac",
+    "build:mac:x64": "node scripts/gen-icon.mjs && npm run build:smoke && node scripts/pack.mjs --mac --x64",
+    "build:mac:arm64": "node scripts/gen-icon.mjs && npm run build:smoke && node scripts/pack.mjs --mac --arm64",
     "build:linux": "node scripts/gen-icon.mjs && npm run build:smoke && node scripts/pack.mjs --linux",
     "build:smoke": "npm run build:packages && npm run build:renderer && npm run build:main",
     "smoke:pack": "node scripts/smoke-pack.mjs",
