@@ -23,7 +23,7 @@ import { sanitizeForDisplay } from '../permission/sanitize.js';
 import { assessRisk } from '../permission/risk.js';
 import { recordDiff } from '../ipc/files-core.js';
 
-const CHUNK_DELAY_MS = 35;
+const CHUNK_DELAY_MS = process.env.KODAX_TEST_ONBOARDING ? 0 : 35;
 const ACCEPT_EDITS_AUTO_ALLOWED_TOOLS = new Set([
   'edit',
   'write',
@@ -78,6 +78,12 @@ function pickMockToolCall(prompt: string): { toolName: string; input: Record<str
 }
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  if (ms <= 0) {
+    if (signal.aborted) {
+      return Promise.reject(new DOMException('aborted', 'AbortError'));
+    }
+    return Promise.resolve();
+  }
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => {
       signal.removeEventListener('abort', onAbort);
