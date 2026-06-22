@@ -7,7 +7,12 @@
 //   3. cancel() 通过 AbortSignal 中断 chunk 序列，emit session_error('cancelled')
 //   4. 并发 send：第二次 send 在 in-flight 时直接 reject，不排队（F003 范围内的 send 已经一次跑完才会 ACK）
 
-import type { InputArtifact, SessionEvent } from '@kodax-space/space-ipc-schema';
+import type {
+  InputArtifact,
+  PermissionDecision,
+  PermissionMode,
+  SessionEvent,
+} from '@kodax-space/space-ipc-schema';
 import type {
   ManagedSession,
   PermissionRequestFn,
@@ -15,9 +20,27 @@ import type {
   SessionCreateOptions,
 } from './session-adapter.js';
 import { sanitizeForDisplay } from '../permission/sanitize.js';
+import { assessRisk } from '../permission/risk.js';
 import { recordDiff } from '../ipc/files-core.js';
 
 const CHUNK_DELAY_MS = 35;
+const ACCEPT_EDITS_AUTO_ALLOWED_TOOLS = new Set([
+  'edit',
+  'write',
+  'multi_edit',
+  'insert_after_anchor',
+  'read',
+  'read_file',
+  'glob',
+  'grep',
+  'ripgrep',
+  'search',
+  'ls',
+  'list_directory',
+  'list_files',
+  'web_fetch',
+  'web_search',
+]);
 
 /**
  * 决定 mock 这一轮要"申请"哪个工具的权限。
@@ -66,6 +89,24 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
     };
     signal.addEventListener('abort', onAbort, { once: true });
   });
+}
+
+function mockModeDecision(
+  mode: PermissionMode,
+  toolName: string,
+  input: Record<string, unknown>,
+): PermissionDecision | null {
+  const assessment = assessRisk(toolName, input);
+  if (mode === 'plan') return 'deny';
+  if (mode === 'auto' && !assessment.dangerous) return 'allow_once';
+  if (
+    mode === 'accept-edits' &&
+    !assessment.dangerous &&
+    ACCEPT_EDITS_AUTO_ALLOWED_TOOLS.has(toolName.toLowerCase())
+  ) {
+    return 'allow_once';
+  }
+  return null;
 }
 
 export class MockKodaXSession implements ManagedSession {
@@ -203,7 +244,9 @@ export class MockKodaXSession implements ManagedSession {
       const { toolName, input } = pickMockToolCall(prompt);
 
       // F007 permission gate：工具调用前先问。被拒绝就 emit tool_result 说明，结束本轮
-      const decision = await this.requestPermission({ toolId, toolName, input });
+      const decision =
+        mockModeDecision(this.permissionMode, toolName, input) ??
+        (await this.requestPermission({ toolId, toolName, input }));
       if (signal.aborted) {
         throw new DOMException('aborted', 'AbortError');
       }

@@ -64,9 +64,6 @@ mac:
   category: public.app-category.developer-tools
   target:
     - target: dmg
-      arch:
-        - x64
-        - arm64
   # 不签名（FEATURE_027 已 drop）
   identity: null
   hardenedRuntime: false
