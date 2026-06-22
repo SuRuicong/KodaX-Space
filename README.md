@@ -2,7 +2,7 @@
 
 > Provider-neutral, local-first AI agent desktop client — KodaX 生态桌面客户端
 
-[![status](https://img.shields.io/badge/status-release_candidate-yellow)]() [![license](https://img.shields.io/badge/license-Apache--2.0-blue)]() [![version](https://img.shields.io/badge/version-0.1.20-blue)]()
+[![status](https://img.shields.io/badge/status-released-green)]() [![license](https://img.shields.io/badge/license-Apache--2.0-blue)]() [![version](https://img.shields.io/badge/version-0.1.20-blue)]()
 
 KodaX Space 是 [KodaX](../KodaX) 生态的 Electron 桌面客户端。对标 Anthropic Claude Desktop 中的 Claude Code，Provider 中立、开源、本地优先（[ADR-004](docs/ADR/ADR-004-panel-model.md)）。
 
@@ -75,7 +75,7 @@ KodaX-Space/
 
 ## Status
 
-**v0.1.20 — Capability catch-up + Display Language MVP ✅**（2026-06-22 release candidate）
+**v0.1.20 — Capability catch-up + Display Language MVP ✅**（2026-06-22 released）
 
 本版本在 v0.1.19 应急维护基线上收口 KodaX 0.7.53 消费、workflow 可视化/恢复、Space-side handoff receiver、Quick Ask 连续性、Repointel 诊断和中/英显示语言 MVP。详见 [CHANGELOG.md](CHANGELOG.md) 和 [docs/features/v0.1.20.md](docs/features/v0.1.20.md)。
 

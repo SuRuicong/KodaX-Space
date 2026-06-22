@@ -1,6 +1,6 @@
 # KodaX Space Feature List
 
-> Last Updated: 2026-06-22 (v0.1.20 release candidate：F081/F082/F083/F084/F104 已收口，package/lockfile/docs 已对齐到 0.1.20；release 前剩余 gate 是全量测试、build smoke、Windows packaged smoke、tag/publish)。
+> Last Updated: 2026-06-22 (v0.1.20 released：F081/F082/F083/F084/F104 已收口，package/lockfile/docs 已对齐到 0.1.20；typecheck、desktop/schema tests、build smoke、Windows packaged smoke、boot smoke 已通过，tag/publish 已进入 release 流程)。
 > 2026-06-22 (Display Language MVP 前移：从 F076 全量 i18n foundation 中拆出 F104，纳入 `v0.1.20`，先覆盖菜单、Settings、侧栏、右栏标题和常用弹窗；F076/F077/F078 保留在 `v0.1.34` 负责全量 typed locale、pseudo-locale 和 CI scanner)。
 > 2026-06-21 (GLM gap review follow-up：确认 `v0.1.20` 之前无新旧债；F081-F084 当前工作树已 Done；provider custom config 安全项已在工作树补 guard，纳入 F094 release verification；OS 执行沙箱先做 F094 feasibility，实施落 F099/后续；PR/GitHub 闭环归入 F096/F095；企业 SSO/SAML/SCIM 不进当前 0.2.x，F098 保持 local-first policy/audit)。
 > 2026-06-08 (v0.1.10 planning: F044 git diff popout + F054 视觉系统刷新(refined dark+light token/Geist+JetBrains Mono/Lucide/单一琥珀金, In Progress) + chore: 清理 ~/.kodax_space 孤儿目录。

@@ -1,6 +1,6 @@
 # KodaX Space — 使用指南 (v0.1.20)
 
-> 文档对齐 v0.1.20 release candidate（2026-06-22）：KodaX 0.7.53 capability catch-up、Workflow surfaces、CLI handoff receiver、Quick Ask continuity、Repointel diagnostics、Display Language MVP。
+> 文档对齐 v0.1.20 release（2026-06-22）：KodaX 0.7.53 capability catch-up、Workflow surfaces、CLI handoff receiver、Quick Ask continuity、Repointel diagnostics、Display Language MVP。
 
 KodaX Space 是 KodaX SDK 的桌面客户端。设计目标：**不要让用户在 Space 和 KodaX CLI 之间重复配置**。绝大多数 KodaX CLI 已经配好的东西，Space 启动后会自动认。
 
