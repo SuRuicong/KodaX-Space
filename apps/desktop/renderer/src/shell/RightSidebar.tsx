@@ -41,6 +41,7 @@ import {
   type SidebarPlanRow,
   type SidebarTodoStatus,
 } from './sidebarPlanView.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 const RIGHT_SIDEBAR_DEFAULT_WIDTH = 320;
@@ -52,6 +53,7 @@ interface RightSidebarProps {
 }
 
 export function RightSidebar({ width }: RightSidebarProps = {}): JSX.Element {
+  const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const { artifacts } = useArtifacts(currentSessionId);
   const requestPopout = useAppStore((s) => s.requestPopout);
@@ -95,17 +97,17 @@ export function RightSidebar({ width }: RightSidebarProps = {}): JSX.Element {
       {hasArtifacts && (
         <div className="flex items-stretch border-b border-border-default flex-shrink-0">
           <SidebarTab active={!showArtifact} onClick={() => setTab('overview')}>
-            概览
+            {t('right.overview')}
           </SidebarTab>
           <SidebarTab active={showArtifact} onClick={() => setTab('artifact')}>
-            Artifact ({artifacts.length})
+            {t('right.artifact')} ({artifacts.length})
           </SidebarTab>
           {showArtifact && (
             <button
               type="button"
               onClick={() => requestPopout('artifact')}
-              title="展开到中间大图"
-              aria-label="展开 Artifact 到中间大图"
+              title={t('right.expandArtifact')}
+              aria-label={t('right.expandArtifact')}
               className="px-2.5 inline-flex items-center justify-center text-fg-muted hover:text-fg-primary hover:bg-surface-3 border-l border-border-default/60"
             >
               <svg
@@ -147,17 +149,18 @@ export function RightSidebar({ width }: RightSidebarProps = {}): JSX.Element {
 }
 
 function RightSidebarWidthToolbar(): JSX.Element {
+  const { t } = useI18n();
   const setRightSidebarWidth = useAppStore((s) => s.setRightSidebarWidth);
   return (
     <div className="flex items-center justify-between gap-2 border-b border-border-default/60 px-2 py-1.5 flex-shrink-0">
-      <span className="text-[10px] uppercase tracking-wider text-fg-faint">Panel</span>
+      <span className="text-[10px] uppercase tracking-wider text-fg-faint">{t('right.panel')}</span>
       <div className="flex items-center gap-0.5">
         <button
           type="button"
           onClick={() => setRightSidebarWidth(RIGHT_SIDEBAR_DEFAULT_WIDTH)}
           className="w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
-          title="Default width"
-          aria-label="Set right panel to default width"
+          title={t('right.defaultWidth')}
+          aria-label={t('right.defaultWidth')}
         >
           <Minimize2 size={13} strokeWidth={1.8} aria-hidden />
         </button>
@@ -165,8 +168,8 @@ function RightSidebarWidthToolbar(): JSX.Element {
           type="button"
           onClick={() => setRightSidebarWidth(clampSidebarWidthPx(RIGHT_SIDEBAR_WIDE_WIDTH))}
           className="w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
-          title="Wide width"
-          aria-label="Set right panel to wide width"
+          title={t('right.wideWidth')}
+          aria-label={t('right.wideWidth')}
         >
           <Maximize2 size={13} strokeWidth={1.8} aria-hidden />
         </button>
@@ -210,6 +213,7 @@ interface SectionProps {
 }
 
 function Section({ title, defaultOpen = true, popoutKind, children }: SectionProps): JSX.Element {
+  const { t } = useI18n();
   const [open, setOpen] = useState(defaultOpen);
   const requestPopout = useAppStore((s) => s.requestPopout);
   // v0.1.9 fix: ⤢ 改 toggle —— 当前 popout 已经是 popoutKind 时再点关掉,否则打开。
@@ -245,8 +249,8 @@ function Section({ title, defaultOpen = true, popoutKind, children }: SectionPro
                 }
               }}
               className="w-5 h-5 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
-              title={isThisPopoutActive ? 'Close popout' : 'Open in full panel'}
-              aria-label={isThisPopoutActive ? `Close ${title} popout` : `Open ${title} in popout`}
+              title={isThisPopoutActive ? t('right.closePopout') : t('right.openFullPanel')}
+              aria-label={isThisPopoutActive ? t('right.closePopout') : t('right.openFullPanel')}
               aria-pressed={isThisPopoutActive}
             >
               {isThisPopoutActive ? (
@@ -288,8 +292,8 @@ function Section({ title, defaultOpen = true, popoutKind, children }: SectionPro
             type="button"
             onClick={() => setOpen((v) => !v)}
             className="w-5 h-5 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
-            title={open ? 'Collapse section' : 'Expand section'}
-            aria-label={open ? `Collapse ${title}` : `Expand ${title}`}
+            title={open ? t('right.collapseSection') : t('right.expandSection')}
+            aria-label={open ? t('right.collapseSection') : t('right.expandSection')}
             aria-expanded={open}
           >
             {/* 统一走 Caret（chevron-right 旋转）：collapsed 指右、expanded 朝下 */}
@@ -305,6 +309,7 @@ function Section({ title, defaultOpen = true, popoutKind, children }: SectionPro
 // ---- Plan section（KodaX Scout todo list） ----
 
 function PlanSection(): JSX.Element | null {
+  const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const todos = useAppStore((s) =>
     currentSessionId ? s.todoListBySession[currentSessionId] : undefined,
@@ -315,7 +320,7 @@ function PlanSection(): JSX.Element | null {
   const plan = buildSidebarPlanView(todos);
 
   return (
-    <Section title={`Plan (${plan.completed}/${plan.total})`} popoutKind="plan">
+    <Section title={`${t('right.plan')} (${plan.completed}/${plan.total})`} popoutKind="plan">
       {plan.running?.activeForm && (
         <div className="text-xs text-fg-muted mb-2 truncate" title={plan.running.activeForm}>
           → {plan.running.activeForm}
@@ -420,18 +425,20 @@ function planTodoTextClass(status: SidebarTodoStatus): string {
 // 无归属当前 session 的工作流 run 时整段隐藏；有历史 run 时保留最近一次终态，
 // 避免 workflow 刚完成右栏突然消失，用户无法回看流程图 / 子 agent 状态。
 function WorkflowSection(): JSX.Element | null {
+  const { t } = useI18n();
   const runs = useSessionWorkflowRuns();
   const currentRun =
     runs.find((run) => run.status === 'running' || run.status === 'paused') ?? runs[0];
   if (!currentRun) return null;
   return (
-    <Section title="Workflow" popoutKind="workflow">
+    <Section title={t('right.workflow')} popoutKind="workflow">
       <WorkflowPanel runs={[currentRun]} variant="compact" />
     </Section>
   );
 }
 
 function WorkersSection(): JSX.Element | null {
+  const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const status = useAppStore((s) =>
     currentSessionId ? s.managedTaskStatusBySession[currentSessionId] : undefined,
@@ -449,7 +456,11 @@ function WorkersSection(): JSX.Element | null {
   const active = workers.filter((w) => w.isActive);
 
   return (
-    <Section title={`Workers (${workers.length})`} defaultOpen={false} popoutKind="tasks">
+    <Section
+      title={`${t('right.workers')} (${workers.length})`}
+      defaultOpen={false}
+      popoutKind="tasks"
+    >
       {budget && (
         <div className="mb-2 text-[11px]">
           <div className="text-fg-secondary font-mono">
@@ -510,6 +521,7 @@ interface GitChangesSnapshot {
 const CHANGES_REFRESH_DEBOUNCE_MS = 800;
 
 function ChangesSection(): JSX.Element | null {
+  const { t } = useI18n();
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const requestPopout = useAppStore((s) => s.requestPopout);
@@ -618,7 +630,9 @@ function ChangesSection(): JSX.Element | null {
   }
 
   return (
-    <Section title={`Changes (${snapshot.files.length}${snapshot.truncated ? '+' : ''})`}>
+    <Section
+      title={`${t('right.changes')} (${snapshot.files.length}${snapshot.truncated ? '+' : ''})`}
+    >
       {snapshot.branch && (
         <div className="text-[11px] text-fg-muted mb-1.5 font-mono">on {snapshot.branch}</div>
       )}
@@ -807,11 +821,12 @@ function StatusBadge({
 // ---- Working folder（降级到底部） ----
 
 function WorkingFolderSection(): JSX.Element {
+  const { t } = useI18n();
   const projectPath = useAppStore((s) => s.currentProjectPath);
   const projectName = projectPath ? projectPath.split(/[\\/]/).filter(Boolean).pop() : null;
 
   return (
-    <Section title="Working folder" defaultOpen={false}>
+    <Section title={t('right.workingFolder')} defaultOpen={false}>
       {projectPath ? (
         <div className="text-xs text-fg-secondary space-y-1">
           <div className="flex items-center gap-1.5">
@@ -849,6 +864,7 @@ function WorkingFolderSection(): JSX.Element {
 // ---- Context（降级到底部） ----
 
 function ContextSection(): JSX.Element {
+  const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const events = useAppStore((s) =>
     currentSessionId ? (s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS) : EMPTY_EVENTS,
@@ -858,7 +874,7 @@ function ContextSection(): JSX.Element {
 
   if (refs.tools.length === 0 && refs.files.length === 0) {
     return (
-      <Section title="Context" defaultOpen={false}>
+      <Section title={t('right.context')} defaultOpen={false}>
         <div className="text-xs text-fg-muted leading-relaxed">
           Track tools and referenced files used in this task.
         </div>
@@ -867,7 +883,7 @@ function ContextSection(): JSX.Element {
   }
 
   return (
-    <Section title="Context" defaultOpen={false}>
+    <Section title={t('right.context')} defaultOpen={false}>
       {refs.tools.length > 0 && (
         <div className="mb-3">
           <div className="text-[11px] uppercase tracking-wider text-fg-muted mb-1">Tools used</div>

@@ -95,8 +95,13 @@ export function HelpOverlayController(): JSX.Element | null {
         setOpen(false);
       }
     };
+    const onOpen = (): void => setOpen(true);
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('kodax-space.open-help', onOpen);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('kodax-space.open-help', onOpen);
+    };
   }, [open]);
 
   // platform 在挂载后稳定，useMemo 单次解析

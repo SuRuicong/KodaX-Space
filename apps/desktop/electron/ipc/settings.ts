@@ -4,14 +4,41 @@
 // 写后立即 ensure 目录存在，让 setDefaultWorkspace 返回后 renderer 直接拿来当
 // currentProjectPath 用，不会撞 ENOENT。
 
+import { createRequire } from 'node:module';
 import { registerChannel } from './register.js';
 import { settingsStore } from '../settings/store.js';
 import { validateProjectRoot } from './validate.js';
+import { resolveEffectiveLocale, type SpaceSettingsT } from '@kodax-space/space-ipc-schema';
+
+function getPreferredSystemLanguages(): string[] {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const meta = typeof require !== 'undefined' ? null : (import.meta as any);
+    const req = meta ? createRequire(meta.url) : require;
+    const electron = req('electron') as typeof import('electron');
+    return electron.app.getPreferredSystemLanguages();
+  } catch {
+    return [];
+  }
+}
+
+function toSettingsOutput(settings: {
+  readonly defaultWorkspace: string;
+  readonly languageMode: SpaceSettingsT['languageMode'];
+}): SpaceSettingsT {
+  const preferredSystemLanguages = getPreferredSystemLanguages();
+  return {
+    defaultWorkspace: settings.defaultWorkspace,
+    languageMode: settings.languageMode,
+    effectiveLocale: resolveEffectiveLocale(settings.languageMode, preferredSystemLanguages),
+    preferredSystemLanguages,
+  };
+}
 
 export function registerSettingsChannels(): void {
   registerChannel('settings.get', async () => {
     const s = await settingsStore.load();
-    return { defaultWorkspace: s.defaultWorkspace };
+    return toSettingsOutput(s);
   });
 
   registerChannel('settings.setDefaultWorkspace', async ({ path }) => {
@@ -19,6 +46,11 @@ export function registerSettingsChannels(): void {
     const safePath = validateProjectRoot(path);
     const next = await settingsStore.setDefaultWorkspace(safePath);
     await settingsStore.ensureWorkspaceExists();
-    return { defaultWorkspace: next.defaultWorkspace };
+    return toSettingsOutput(next);
+  });
+
+  registerChannel('settings.setLanguageMode', async ({ languageMode }) => {
+    const next = await settingsStore.setLanguageMode(languageMode);
+    return toSettingsOutput(next);
   });
 }

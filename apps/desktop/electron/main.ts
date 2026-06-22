@@ -60,6 +60,13 @@ import { providerConfigStore } from './providers/config.js';
 // dev 环境从 vite dev server 加载；生产从打包后的 index.html 加载
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 const isDev = Boolean(VITE_DEV_SERVER_URL);
+const SPACE_APP_NAME = 'KodaX Space';
+const SPACE_APP_USER_MODEL_ID = 'ai.kodax.space';
+
+app.setName(SPACE_APP_NAME);
+if (process.platform === 'win32') {
+  app.setAppUserModelId(SPACE_APP_USER_MODEL_ID);
+}
 
 // 路径：dist-electron 与 apps/desktop/dist 是兄弟目录。
 //

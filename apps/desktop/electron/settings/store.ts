@@ -27,6 +27,7 @@ const SETTINGS_FILE = path.join(SPACE_DATA_DIR, 'settings.json');
 const fileSchema = z.object({
   version: z.literal(1),
   defaultWorkspace: z.string().min(1).max(4096),
+  languageMode: z.enum(['system', 'zh-CN', 'en-US']).default('system'),
 });
 
 export type SpaceSettings = z.infer<typeof fileSchema>;
@@ -59,7 +60,7 @@ export class SettingsStore {
       }
     }
     // Fallback
-    this.cached = { version: 1, defaultWorkspace: DEFAULT_WORKSPACE };
+    this.cached = { version: 1, defaultWorkspace: DEFAULT_WORKSPACE, languageMode: 'system' };
     return { ...this.cached };
   }
 
@@ -114,6 +115,16 @@ export class SettingsStore {
   async setDefaultWorkspace(absPath: string): Promise<SpaceSettings> {
     const cur = await this.load();
     const next: SpaceSettings = { ...cur, defaultWorkspace: absPath };
+    return this.write(next);
+  }
+
+  async setLanguageMode(languageMode: SpaceSettings['languageMode']): Promise<SpaceSettings> {
+    const cur = await this.load();
+    const next: SpaceSettings = { ...cur, languageMode };
+    return this.write(next);
+  }
+
+  private async write(next: SpaceSettings): Promise<SpaceSettings> {
     this.cached = next;
     // serialize 写
     this.writeLock = this.writeLock.then(async () => {

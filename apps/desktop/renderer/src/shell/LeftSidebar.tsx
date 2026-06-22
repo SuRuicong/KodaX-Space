@@ -38,6 +38,7 @@ import { WorkflowNavPanel } from '../features/workflow/WorkflowNavPanel.js';
 import { useSessionStatusMap, type SessionStatus } from '../features/session/useSessionStatus.js';
 import { pushToast } from '../store/toastStore.js';
 import type { Project } from '@kodax-space/space-ipc-schema';
+import { useI18n } from '../i18n/I18nProvider.js';
 
 // Hover-prefetch: 用户鼠标悬停在 Recents 项上时,后台触发 session.history IPC
 // 让 main 端 5-LRU cache (session-store.ts) 提前 warm 起来。等用户真正点击时,handler 命中
@@ -62,6 +63,7 @@ interface LeftSidebarProps {
 }
 
 export function LeftSidebar({ width }: LeftSidebarProps): JSX.Element {
+  const { t } = useI18n();
   const sessions = useAppStore((s) => s.sessions);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const setCurrentSession = useAppStore((s) => s.setCurrentSession);
@@ -121,15 +123,15 @@ export function LeftSidebar({ width }: LeftSidebarProps): JSX.Element {
           onClick={handleNewSession}
           disabled={!currentProjectPath}
           className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-hover-bg text-fg-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-          title={!currentProjectPath ? 'Open a folder first' : 'New session'}
+          title={!currentProjectPath ? t('sidebar.openFolderFirst') : t('sidebar.newSession')}
         >
           <Plus className="w-4 h-4 flex-shrink-0" strokeWidth={1.75} aria-hidden />
-          New session
+          {t('sidebar.newSession')}
         </button>
         <WorkflowNavPanel />
-        <DisabledMenuItem Icon={Clock} label="Scheduled" hint="v0.1.x" />
-        <DisabledMenuItem Icon={Briefcase} label="Customize" hint="v0.1.x" />
-        <DisabledMenuItem Icon={ChevronDown} label="More" hint="" />
+        <DisabledMenuItem Icon={Clock} label={t('sidebar.scheduled')} hint="v0.1.x" />
+        <DisabledMenuItem Icon={Briefcase} label={t('sidebar.customize')} hint="v0.1.x" />
+        <DisabledMenuItem Icon={ChevronDown} label={t('sidebar.more')} hint="" />
       </div>
 
       {/* F017 Running peers — 其他 KodaX 进程（CLI / 别的 Space 窗口）当前活动的 session。
@@ -142,7 +144,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): JSX.Element {
       <div className="flex-1 overflow-y-auto px-1.5 pb-2">
         {visibleSessions.length === 0 && (
           <div className="text-xs text-fg-muted px-2 py-3">
-            {currentProjectPath ? 'No sessions yet.' : 'Open a folder to start.'}
+            {currentProjectPath ? t('sidebar.noSessionsYet') : t('sidebar.openFolderToStart')}
           </div>
         )}
         {/* F040: 多项目可折叠树。currentProjectPath 默认展开 + 高亮；
@@ -154,17 +156,18 @@ export function LeftSidebar({ width }: LeftSidebarProps): JSX.Element {
         />
       </div>
 
-      {/* Bottom: mode/gateway label */}
-      <div className="border-t border-border-default px-3 py-2 text-[11px] text-fg-muted flex justify-between flex-shrink-0">
-        <span className="truncate">KodaX Space · Gateway</span>
+      {/* Bottom: app label + settings entry */}
+      <div className="border-t border-border-default px-3 py-2 text-[11px] text-fg-muted flex items-center justify-between gap-2 flex-shrink-0">
+        <span className="min-w-0 truncate">KodaX Space</span>
         <button
           type="button"
           onClick={() => setSettingsOpen(true)}
-          className="ix-pop text-fg-secondary hover:text-fg-primary inline-flex items-center"
-          aria-label="Settings"
-          title="Settings"
+          className="ix-pop inline-flex shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-fg-secondary hover:bg-hover-bg hover:text-fg-primary"
+          aria-label={t('common.settings')}
+          title={t('common.settings')}
         >
-          <Settings className="w-4 h-4" strokeWidth={1.75} />
+          <Settings className="w-4 h-4" strokeWidth={1.75} aria-hidden />
+          <span>{t('common.settings')}</span>
         </button>
       </div>
       {settingsOpen && (
@@ -202,6 +205,7 @@ function ProjectTree({
   readonly currentSessionId: string | null;
   readonly onSelect: (sessionId: string) => void;
 }): JSX.Element | null {
+  const { t } = useI18n();
   const projects = useAppStore((s) => s.projects);
   const setProjects = useAppStore((s) => s.setProjects);
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
@@ -232,9 +236,9 @@ function ProjectTree({
       setProjects(r.data.projects);
     } else {
       // MED-4 fix：原静默 drop → sidebar 跟 main 端不一致；surface error 让用户重试
-      pushToast('Failed to refresh projects — sidebar may be stale', 'error');
+      pushToast(t('sidebar.refreshFailed'), 'error');
     }
-  }, [setProjects]);
+  }, [setProjects, t]);
 
   // 全 session id 列表 → 一次拿状态 map（reducer 内部按 id 切片，比每个 SessionRow 单独 hook 省 N 次 store subscribe）
   const allSessionIds = useMemo(() => sessions.map((s) => s.sessionId), [sessions]);
@@ -313,12 +317,12 @@ function ProjectTree({
         name: trimmed,
       });
       if (!r.ok || !r.data.renamed) {
-        pushToast('Rename failed', 'error');
+        pushToast(t('sidebar.renameFailed'), 'error');
         return;
       }
       await refreshProjects();
     },
-    [refreshProjects],
+    [refreshProjects, t],
   );
 
   // ⚠️ 早 return 必须放在所有 hooks 之后 —— 否则首次启动 (projects 空) 提前 return 会跳过
@@ -459,8 +463,8 @@ function ProjectTree({
                   st.setCurrentSession(null);
                 }}
                 className="text-fg-muted hover:text-fg-primary px-1 leading-none"
-                aria-label={`New session in ${proj.name}`}
-                title="New session in this project"
+                aria-label={`${t('sidebar.newSessionInProject')}: ${proj.name}`}
+                title={t('sidebar.newSessionInProject')}
               >
                 ＋
               </button>
@@ -473,7 +477,7 @@ function ProjectTree({
                 }}
                 className="text-fg-muted hover:text-fg-primary px-1 leading-none"
                 aria-label={`${proj.name} actions`}
-                title="More actions"
+                title={t('sidebar.moreActions')}
               >
                 ⋯
               </button>
@@ -484,7 +488,7 @@ function ProjectTree({
           <div className="ml-1">
             {projSessions.length === 0 ? (
               <div className="text-[11px] text-fg-muted italic px-3 py-1">
-                No sessions in this project.
+                {t('sidebar.noProjectSessions')}
               </div>
             ) : (
               <SessionTree
@@ -537,7 +541,7 @@ function ProjectTree({
             aria-expanded={archivedExpanded}
           >
             <Caret open={archivedExpanded} />
-            Archived ({archived.length})
+            {t('sidebar.archived')} ({archived.length})
           </button>
           {archivedExpanded && (
             <div className="opacity-60">{archived.map((proj) => renderProject(proj, false))}</div>
@@ -1045,6 +1049,7 @@ function RunningPeersPanel(): JSX.Element | null {
 const EMPTY_PEERS: readonly RunningSessionInfoT[] = [];
 
 function RecentsHeader(): JSX.Element {
+  const { t } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const filter = useAppStore((s) => s.recentsFilter);
@@ -1060,7 +1065,7 @@ function RecentsHeader(): JSX.Element {
     <div className="px-3 pt-3 pb-1 text-[11px] uppercase tracking-wider text-fg-muted flex justify-between items-center flex-shrink-0 relative">
       {/* F043 v0.1.9: 改为"Projects" — 实际形态就是项目折叠树，原 Recents 概念被
           ProjectTree 取代；点 ⇅ 仍调过滤菜单（session 级 active/archived/sort 等）。 */}
-      <span>Projects</span>
+      <span>{t('sidebar.projects')}</span>
       <div className="flex items-center gap-2">
         {summary && <span className="normal-case text-fg-muted text-[9px]">{summary}</span>}
         <button

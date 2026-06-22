@@ -92,7 +92,11 @@ import {
   filesDiffChannel,
 } from './files.js';
 import { titlebarSetOverlayChannel } from './titlebar.js';
-import { settingsGetChannel, settingsSetDefaultWorkspaceChannel } from './settings.js';
+import {
+  settingsGetChannel,
+  settingsSetDefaultWorkspaceChannel,
+  settingsSetLanguageModeChannel,
+} from './settings.js';
 import { notificationShowChannel, notificationClickedChannel } from './notification.js';
 import { updaterCheckChannel, updaterInstallChannel, updaterStatusChannel } from './updater.js';
 import {
@@ -211,6 +215,7 @@ export const invokeChannels = {
   [titlebarSetOverlayChannel.name]: titlebarSetOverlayChannel,
   [settingsGetChannel.name]: settingsGetChannel,
   [settingsSetDefaultWorkspaceChannel.name]: settingsSetDefaultWorkspaceChannel,
+  [settingsSetLanguageModeChannel.name]: settingsSetLanguageModeChannel,
   [notificationShowChannel.name]: notificationShowChannel,
   [updaterCheckChannel.name]: updaterCheckChannel,
   [updaterInstallChannel.name]: updaterInstallChannel,

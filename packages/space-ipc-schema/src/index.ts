@@ -202,7 +202,13 @@ export { titlebarSetOverlayChannel } from './channels/titlebar.js';
 export {
   settingsGetChannel,
   settingsSetDefaultWorkspaceChannel,
+  settingsSetLanguageModeChannel,
+  languageModeSchema,
+  supportedLocaleSchema,
+  resolveEffectiveLocale,
   type SpaceSettingsT,
+  type LanguageModeT,
+  type SupportedLocaleT,
 } from './channels/settings.js';
 
 export { notificationShowChannel, notificationClickedChannel } from './channels/notification.js';

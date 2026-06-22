@@ -23,8 +23,20 @@
 //   - Permission modal / Settings overlay → 复用旧 App 的实现挂载点
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Info, PanelLeft, PanelRight } from 'lucide-react';
-import type { SpaceCapabilityStatus, SpaceVersionOutput } from '@kodax-space/space-ipc-schema';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  ChevronDown,
+  Info,
+  PanelLeft,
+  PanelRight,
+} from 'lucide-react';
+import type {
+  LanguageModeT,
+  SpaceCapabilityStatus,
+  SpaceVersionOutput,
+} from '@kodax-space/space-ipc-schema';
 import { LeftSidebar } from './LeftSidebar.js';
 import { ResizeHandle } from './ResizeHandle.js';
 import { useSmartPopoutDirector } from '../features/popout-director/useSmartPopoutDirector.js';
@@ -46,9 +58,12 @@ import { ToastContainer } from './ToastContainer.js';
 import { ZoomController } from './ZoomController.js';
 import { UpdateBanner } from '../features/updater/UpdateBanner.js';
 import { useAppStore, clampSidebarWidthPx } from '../store/appStore.js';
+import { pushToast } from '../store/toastStore.js';
 import { useSurfaceStore } from '../store/surface.js';
 import { PartnerWorkspace } from '../features/partner/PartnerWorkspace.js';
 import { HandoffInbox } from './HandoffInbox.js';
+import { SettingsModal } from '../features/settings/SettingsModal.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 
 interface ShellProps {
   readonly version?: SpaceVersionOutput | null;
@@ -82,6 +97,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
   const [leftWidthDraft, setLeftWidthDraft] = useState<number | null>(null);
   const [rightWidthDraft, setRightWidthDraft] = useState<number | null>(null);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const leftWidth = leftWidthDraft ?? persistedLeftWidth;
   const rightWidth = rightWidthDraft ?? persistedRightWidth;
 
@@ -263,14 +279,31 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
       {/* 顶部自定义 titlebar — 自身做窗口拖动 + 留出 Windows overlay 控件 (close/min/max) 空间。
           Mac 上 traffic lights 占 ~78px (hiddenInset)；Windows 上 OS 把 close/min/max 画在右侧 ~138px (titleBarOverlay)。 */}
       <div className="app-titlebar glass ix-zone h-9 flex items-center px-3 flex-shrink-0 select-none relative z-20">
-        <div className="text-[12px] text-fg-muted titlebar-brand flex items-center gap-1.5">
-          <span className="text-accent-ink text-[13px] leading-none" aria-hidden>
-            ✱
-          </span>
-          <span>
-            <span className="text-fg-primary font-semibold">KodaX</span> Space
-          </span>
-        </div>
+        <AppTopMenu
+          leftSidebarOpen={leftSidebarOpen && !fullscreenRead}
+          rightSidebarOpen={rightSidebarOpen && !fullscreenRead}
+          focusMode={fullscreenRead}
+          diagnosticsOpen={diagnosticsOpen}
+          onToggleLeftSidebar={() => {
+            if (fullscreenRead) {
+              setFullscreenRead(false);
+              setLeftSidebarOpen(true);
+            } else {
+              setLeftSidebarOpen(!leftSidebarOpen);
+            }
+          }}
+          onToggleRightSidebar={() => {
+            if (fullscreenRead) {
+              setFullscreenRead(false);
+              setRightSidebarOpen(true);
+            } else {
+              setRightSidebarOpen(!rightSidebarOpen);
+            }
+          }}
+          onToggleFocusMode={() => setFullscreenRead((v) => !v)}
+          onToggleDiagnostics={() => setDiagnosticsOpen((v) => !v)}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
         <div className="flex-1" />
         <div className="flex items-center gap-1.5">
           <button
@@ -392,6 +425,9 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
       {/* 模态/命令面板：在面板区之外，保证 position:fixed 相对视口正常铺满 */}
       <PermissionModal />
       <AskUserModal />
+      {settingsOpen && (
+        <SettingsModal initialTab="preferences" onClose={() => setSettingsOpen(false)} />
+      )}
       <HelpOverlayController />
       <CommandPaletteController />
 
@@ -408,11 +444,436 @@ interface SidebarToggleButtonProps {
   onClick: () => void;
 }
 
-/**
- * 侧栏切换按钮 — 放在 breadcrumb 行的两端，常驻显示。
- * - icon: ◧ (left) / ◨ (right)，对应侧的紧凑指示
- * - open 时图标 text-fg-primary；close 时 text-fg-muted（让用户一眼看出当前状态）
- */
+type AppMenuId = 'file' | 'edit' | 'view' | 'help';
+
+interface AppTopMenuProps {
+  readonly leftSidebarOpen: boolean;
+  readonly rightSidebarOpen: boolean;
+  readonly focusMode: boolean;
+  readonly diagnosticsOpen: boolean;
+  readonly onToggleLeftSidebar: () => void;
+  readonly onToggleRightSidebar: () => void;
+  readonly onToggleFocusMode: () => void;
+  readonly onToggleDiagnostics: () => void;
+  readonly onOpenSettings: () => void;
+}
+
+interface AppMenuItem {
+  readonly id: string;
+  readonly label?: string;
+  readonly shortcut?: string;
+  readonly disabled?: boolean;
+  readonly checked?: boolean;
+  readonly separator?: boolean;
+  readonly onSelect?: () => void | Promise<void>;
+}
+
+function isMacPlatform(): boolean {
+  return /Mac|iPhone|iPad|iPod/i.test(navigator.platform) || /Mac OS X/i.test(navigator.userAgent);
+}
+
+function isPrimaryShortcut(e: KeyboardEvent): boolean {
+  return isMacPlatform() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+}
+
+function isEditableTarget(target: EventTarget | null): target is HTMLElement {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  if (target instanceof HTMLTextAreaElement) return !target.disabled;
+  if (!(target instanceof HTMLInputElement)) return false;
+  if (target.disabled || target.readOnly) return false;
+  const editableTypes = new Set([
+    '',
+    'email',
+    'number',
+    'password',
+    'search',
+    'tel',
+    'text',
+    'url',
+  ]);
+  return editableTypes.has(target.type);
+}
+
+function AppTopMenu({
+  leftSidebarOpen,
+  rightSidebarOpen,
+  focusMode,
+  diagnosticsOpen,
+  onToggleLeftSidebar,
+  onToggleRightSidebar,
+  onToggleFocusMode,
+  onToggleDiagnostics,
+  onOpenSettings,
+}: AppTopMenuProps): JSX.Element {
+  const { languageMode, setLanguageMode, t } = useI18n();
+  const [openMenu, setOpenMenu] = useState<AppMenuId | null>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const lastEditableTargetRef = useRef<HTMLElement | null>(null);
+  const shortcutModifier = isMacPlatform() ? 'Cmd' : 'Ctrl';
+
+  useEffect(() => {
+    if (openMenu === null) return;
+    const onDocDown = (e: MouseEvent): void => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpenMenu(null);
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setOpenMenu(null);
+    };
+    document.addEventListener('mousedown', onDocDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [openMenu]);
+
+  useEffect(() => {
+    const rememberEditableFocus = (e: FocusEvent): void => {
+      const target = e.target;
+      if (isEditableTarget(target)) lastEditableTargetRef.current = target;
+    };
+    document.addEventListener('focusin', rememberEditableFocus);
+    return () => document.removeEventListener('focusin', rememberEditableFocus);
+  }, []);
+
+  const startNewSession = useCallback((): void => {
+    useAppStore.getState().setCurrentSession(null);
+    window.dispatchEvent(new Event('kodax-space.focus-textarea'));
+  }, []);
+
+  const openProject = useCallback(async (): Promise<void> => {
+    const bridge = window.kodaxSpace;
+    if (!bridge) return;
+    try {
+      const result = await bridge.invoke('project.openDialog', undefined);
+      if (!result.ok || result.data.path === null) return;
+      const { path } = result.data;
+      useAppStore.getState().setCurrentProject(path);
+      await bridge.invoke('project.recent.add', { path });
+      const listResult = await bridge.invoke('project.list', undefined);
+      if (listResult.ok) useAppStore.getState().setProjects(listResult.data.projects);
+    } catch {
+      pushToast(t('toast.openFolderFailed'), 'error');
+    }
+  }, [t]);
+
+  const runEditCommand = (command: string): void => {
+    const target = lastEditableTargetRef.current;
+    if (target && document.contains(target)) {
+      target.focus({ preventScroll: true });
+    }
+    const ok = document.execCommand(command);
+    if (!ok && command === 'paste') pushToast(t('toast.pasteUnavailable'), 'warning');
+  };
+
+  const openCommandPalette = (): void => {
+    window.dispatchEvent(new Event('kodax-space.open-command-palette'));
+  };
+
+  const openHelp = (): void => {
+    window.dispatchEvent(new Event('kodax-space.open-help'));
+  };
+
+  useEffect(() => {
+    const onShortcut = (e: KeyboardEvent): void => {
+      if (isEditableTarget(e.target)) return;
+      if (!isPrimaryShortcut(e) || e.shiftKey || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === 'n') {
+        e.preventDefault();
+        startNewSession();
+      } else if (key === 'o') {
+        e.preventDefault();
+        void openProject();
+      } else if (e.key === ',') {
+        e.preventDefault();
+        onOpenSettings();
+      }
+    };
+    window.addEventListener('keydown', onShortcut);
+    return () => window.removeEventListener('keydown', onShortcut);
+  }, [onOpenSettings, openProject, startNewSession]);
+
+  const chooseLanguage = async (mode: LanguageModeT): Promise<void> => {
+    const ok = await setLanguageMode(mode);
+    if (ok) pushToast(t('toast.languageSaved'), 'success', 1800);
+  };
+
+  const menus: ReadonlyArray<{
+    readonly id: AppMenuId;
+    readonly label: string;
+    readonly items: readonly AppMenuItem[];
+  }> = [
+    {
+      id: 'file',
+      label: t('menu.file'),
+      items: [
+        {
+          id: 'new-session',
+          label: t('menu.file.newSession'),
+          shortcut: `${shortcutModifier}+N`,
+          onSelect: startNewSession,
+        },
+        {
+          id: 'open-folder',
+          label: t('menu.file.openFolder'),
+          shortcut: `${shortcutModifier}+O`,
+          onSelect: openProject,
+        },
+        { id: 'file-separator-1', separator: true },
+        {
+          id: 'settings',
+          label: t('menu.file.settings'),
+          shortcut: `${shortcutModifier}+,`,
+          onSelect: onOpenSettings,
+        },
+      ],
+    },
+    {
+      id: 'edit',
+      label: t('menu.edit'),
+      items: [
+        {
+          id: 'undo',
+          label: t('menu.edit.undo'),
+          shortcut: `${shortcutModifier}+Z`,
+          onSelect: () => runEditCommand('undo'),
+        },
+        {
+          id: 'redo',
+          label: t('menu.edit.redo'),
+          shortcut: `${shortcutModifier}+Y`,
+          onSelect: () => runEditCommand('redo'),
+        },
+        { id: 'edit-separator-1', separator: true },
+        {
+          id: 'cut',
+          label: t('menu.edit.cut'),
+          shortcut: `${shortcutModifier}+X`,
+          onSelect: () => runEditCommand('cut'),
+        },
+        {
+          id: 'copy',
+          label: t('menu.edit.copy'),
+          shortcut: `${shortcutModifier}+C`,
+          onSelect: () => runEditCommand('copy'),
+        },
+        {
+          id: 'paste',
+          label: t('menu.edit.paste'),
+          shortcut: `${shortcutModifier}+V`,
+          onSelect: () => runEditCommand('paste'),
+        },
+        {
+          id: 'select-all',
+          label: t('menu.edit.selectAll'),
+          shortcut: `${shortcutModifier}+A`,
+          onSelect: () => runEditCommand('selectAll'),
+        },
+      ],
+    },
+    {
+      id: 'view',
+      label: t('menu.view'),
+      items: [
+        {
+          id: 'command-palette',
+          label: t('menu.view.commandPalette'),
+          shortcut: `${shortcutModifier}+Shift+P`,
+          onSelect: openCommandPalette,
+        },
+        { id: 'view-separator-1', separator: true },
+        {
+          id: 'left-sidebar',
+          label: t('menu.view.leftSidebar'),
+          checked: leftSidebarOpen,
+          onSelect: onToggleLeftSidebar,
+        },
+        {
+          id: 'right-sidebar',
+          label: t('menu.view.rightSidebar'),
+          checked: rightSidebarOpen,
+          onSelect: onToggleRightSidebar,
+        },
+        {
+          id: 'focus-mode',
+          label: t('menu.view.focusMode'),
+          shortcut: 'Ctrl+\\',
+          checked: focusMode,
+          onSelect: onToggleFocusMode,
+        },
+        { id: 'view-separator-2', separator: true },
+        {
+          id: 'language-label',
+          label: t('menu.view.language'),
+          disabled: true,
+        },
+        {
+          id: 'language-system',
+          label: t('language.followSystem'),
+          checked: languageMode === 'system',
+          onSelect: () => chooseLanguage('system'),
+        },
+        {
+          id: 'language-zh-cn',
+          label: t('language.zhCN'),
+          checked: languageMode === 'zh-CN',
+          onSelect: () => chooseLanguage('zh-CN'),
+        },
+        {
+          id: 'language-en-us',
+          label: t('language.enUS'),
+          checked: languageMode === 'en-US',
+          onSelect: () => chooseLanguage('en-US'),
+        },
+        { id: 'view-separator-3', separator: true },
+        {
+          id: 'diagnostics',
+          label: t('menu.view.diagnostics'),
+          checked: diagnosticsOpen,
+          onSelect: onToggleDiagnostics,
+        },
+      ],
+    },
+    {
+      id: 'help',
+      label: t('menu.help'),
+      items: [
+        { id: 'shortcuts', label: t('menu.help.shortcuts'), shortcut: '?', onSelect: openHelp },
+      ],
+    },
+  ];
+
+  return (
+    <div
+      ref={ref}
+      className="app-no-drag flex h-7 min-w-0 items-center gap-0.5 text-[12px] text-fg-secondary"
+    >
+      <TitlebarIconButton
+        label={leftSidebarOpen ? t('menu.view.hideLeftSidebar') : t('menu.view.showLeftSidebar')}
+        active={leftSidebarOpen}
+        onClick={onToggleLeftSidebar}
+      >
+        <PanelLeft className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+      </TitlebarIconButton>
+      <TitlebarIconButton label={t('menu.nav.back')} disabled onClick={() => undefined}>
+        <ArrowLeft className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+      </TitlebarIconButton>
+      <TitlebarIconButton label={t('menu.nav.forward')} disabled onClick={() => undefined}>
+        <ArrowRight className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+      </TitlebarIconButton>
+      <div className="mx-1 h-4 w-px bg-border-default/70" aria-hidden />
+
+      {menus.map((menu) => (
+        <div key={menu.id} className="relative">
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setOpenMenu((current) => (current === menu.id ? null : menu.id))}
+            onMouseEnter={() => {
+              if (openMenu !== null) setOpenMenu(menu.id);
+            }}
+            className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-[12px] hover:bg-hover-bg hover:text-fg-primary ${
+              openMenu === menu.id ? 'bg-surface-3 text-fg-primary' : 'text-fg-secondary'
+            }`}
+            aria-haspopup="menu"
+            aria-expanded={openMenu === menu.id}
+          >
+            <span>{menu.label}</span>
+            <ChevronDown className="h-3 w-3 text-fg-faint" strokeWidth={1.75} aria-hidden />
+          </button>
+          {openMenu === menu.id && (
+            <AppMenuDropdown items={menu.items} onClose={() => setOpenMenu(null)} />
+          )}
+        </div>
+      ))}
+
+      <span className="ml-2 hidden max-w-[180px] truncate text-[11px] text-fg-faint sm:inline">
+        KodaX Space
+      </span>
+    </div>
+  );
+}
+
+interface TitlebarIconButtonProps {
+  readonly label: string;
+  readonly active?: boolean;
+  readonly disabled?: boolean;
+  readonly onClick: () => void;
+  readonly children: JSX.Element;
+}
+
+function TitlebarIconButton({
+  label,
+  active = false,
+  disabled = false,
+  onClick,
+  children,
+}: TitlebarIconButtonProps): JSX.Element {
+  return (
+    <button
+      type="button"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+        active ? 'text-fg-primary' : 'text-fg-muted'
+      } ${
+        disabled
+          ? 'cursor-default opacity-35'
+          : 'hover:bg-hover-bg hover:text-fg-primary active:bg-surface-3'
+      }`}
+      title={label}
+      aria-label={label}
+      aria-pressed={active}
+    >
+      {children}
+    </button>
+  );
+}
+
+interface AppMenuDropdownProps {
+  readonly items: readonly AppMenuItem[];
+  readonly onClose: () => void;
+}
+
+function AppMenuDropdown({ items, onClose }: AppMenuDropdownProps): JSX.Element {
+  return (
+    <div
+      className="absolute left-0 top-full z-[70] mt-1 w-56 overflow-hidden rounded-lg border border-border-default bg-surface-4 py-1 shadow-2xl"
+      role="menu"
+    >
+      {items.map((item) =>
+        item.separator ? (
+          <div key={item.id} className="my-1 h-px bg-border-default" role="separator" />
+        ) : (
+          <button
+            key={item.id}
+            type="button"
+            disabled={item.disabled}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              onClose();
+              void item.onSelect?.();
+            }}
+            className="grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2 px-2.5 py-1.5 text-left text-[12px] text-fg-secondary hover:bg-hover-bg hover:text-fg-primary disabled:pointer-events-none disabled:opacity-45"
+            role="menuitem"
+          >
+            <span className="flex h-4 w-4 items-center justify-center">
+              {item.checked && <Check className="h-3.5 w-3.5 text-accent-ink" strokeWidth={2} />}
+            </span>
+            <span className="truncate">{item.label}</span>
+            {item.shortcut && (
+              <span className="pl-4 text-[11px] text-fg-faint">{item.shortcut}</span>
+            )}
+          </button>
+        ),
+      )}
+    </div>
+  );
+}
+
 interface RuntimeDiagnosticsProps {
   readonly version: SpaceVersionOutput | null;
   readonly onClose: () => void;
@@ -497,6 +958,11 @@ function RuntimeDiagnostics({ version, onClose }: RuntimeDiagnosticsProps): JSX.
   );
 }
 
+/**
+ * 侧栏切换按钮 — 放在 breadcrumb 行的两端，常驻显示。
+ * - icon: ◧ (left) / ◨ (right)，对应侧的紧凑指示
+ * - open 时图标 text-fg-primary；close 时 text-fg-muted（让用户一眼看出当前状态）
+ */
 function SidebarToggleButton({ side, open, onClick }: SidebarToggleButtonProps): JSX.Element {
   const Icon = side === 'left' ? PanelLeft : PanelRight;
   const label = `${open ? 'Hide' : 'Show'} ${side} sidebar`;

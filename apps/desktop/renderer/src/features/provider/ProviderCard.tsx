@@ -13,6 +13,8 @@ import {
   XCircle,
 } from 'lucide-react';
 import type { ProviderInfo } from '@kodax-space/space-ipc-schema';
+import { useI18n } from '../../i18n/I18nProvider.js';
+import type { MessageKey } from '../../i18n/messages.js';
 
 interface ProviderCardProps {
   readonly provider: ProviderInfo;
@@ -25,8 +27,10 @@ type TestState =
   | { kind: 'ok'; latencyMs: number }
   | { kind: 'fail'; error: string };
 type CredentialSource = ProviderInfo['configuredSource'];
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
 export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.Element {
+  const { t } = useI18n();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [reveal, setReveal] = useState(false);
@@ -136,11 +140,7 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
 
   async function handleRemoveCustom(): Promise<void> {
     if (!window.kodaxSpace || !provider.isCustom) return;
-    if (
-      !window.confirm(
-        `Delete custom provider "${provider.displayName}"? Its API key is removed too.`,
-      )
-    ) {
+    if (!window.confirm(t('provider.deleteConfirm', { name: provider.displayName }))) {
       return;
     }
     setBusy(true);
@@ -195,10 +195,10 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
             </h4>
             {provider.isDefault && (
               <Badge tone="ok" icon={Star}>
-                Default
+                {t('provider.badge.default')}
               </Badge>
             )}
-            {provider.isCustom && <Badge tone="info">Custom</Badge>}
+            {provider.isCustom && <Badge tone="info">{t('provider.badge.custom')}</Badge>}
           </div>
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-fg-muted">
             <span className="font-mono">{provider.id}</span>
@@ -210,16 +210,19 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
       </div>
 
       <dl className="mt-4 grid gap-2 rounded-lg border border-border-default bg-surface px-3 py-3 text-xs">
-        <MetaRow label="Env" value={provider.apiKeyEnv} />
-        <MetaRow label="Key" value={credentialSourceLabel(credentialSource)} />
-        <MetaRow label="Model" value={provider.defaultModel} />
+        <MetaRow label={t('provider.meta.env')} value={provider.apiKeyEnv} />
+        <MetaRow
+          label={t('provider.meta.key')}
+          value={credentialSourceLabel(credentialSource, t)}
+        />
+        <MetaRow label={t('provider.meta.model')} value={provider.defaultModel} />
         {provider.baseUrl && <MetaRow label="URL" value={provider.baseUrl} />}
       </dl>
 
       {editing ? (
         <div className="mt-4 rounded-lg border border-info/40 bg-info/10 p-3">
           <label className="block text-[11px] font-medium uppercase tracking-wide text-fg-muted">
-            API key
+            {t('provider.apiKey')}
           </label>
           <div className="mt-2 flex gap-2">
             <div className="relative min-w-0 flex-1">
@@ -246,8 +249,8 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
                     setReveal(false);
                   }
                 }}
-                placeholder={`Paste ${provider.apiKeyEnv}`}
-                aria-label={`${provider.apiKeyEnv} API key`}
+                placeholder={t('provider.pasteKey', { env: provider.apiKeyEnv })}
+                aria-label={`${provider.apiKeyEnv} ${t('provider.apiKey')}`}
                 className="h-9 w-full rounded-lg border border-border-default bg-surface px-9 text-xs font-mono text-fg-primary outline-none focus:border-info disabled:cursor-not-allowed disabled:opacity-60"
                 autoComplete="off"
                 disabled={busy}
@@ -258,8 +261,8 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
               onClick={() => setReveal((v) => !v)}
               disabled={busy}
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border-default bg-surface-3 text-fg-muted hover:bg-hover-bg hover:text-fg-primary disabled:cursor-not-allowed disabled:opacity-50"
-              title={reveal ? 'Hide key' : 'Show key'}
-              aria-label={reveal ? 'Hide key' : 'Show key'}
+              title={reveal ? t('provider.hideKey') : t('provider.showKey')}
+              aria-label={reveal ? t('provider.hideKey') : t('provider.showKey')}
             >
               {reveal ? (
                 <EyeOff className="h-4 w-4" strokeWidth={1.8} aria-hidden />
@@ -276,7 +279,7 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
               className="inline-flex min-h-8 items-center justify-center gap-2 rounded-lg border border-info/50 bg-info/15 px-3 text-xs font-medium text-info hover:bg-info/25 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} />}
-              Save key
+              {t('provider.saveKey')}
             </button>
             <button
               type="button"
@@ -288,7 +291,7 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
               disabled={busy}
               className="inline-flex min-h-8 items-center justify-center rounded-lg border border-border-default bg-surface-3 px-3 text-xs text-fg-secondary hover:bg-hover-bg hover:text-fg-primary disabled:opacity-50"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
           </div>
         </div>
@@ -306,7 +309,7 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
             ].join(' ')}
           >
             <KeyRound className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
-            {provider.configured ? 'Update key' : 'Add key'}
+            {provider.configured ? t('provider.updateKey') : t('provider.addKey')}
           </button>
 
           {provider.configured && (
@@ -319,7 +322,7 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
               {test.kind === 'testing' && (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} aria-hidden />
               )}
-              Test
+              {t('provider.test')}
             </button>
           )}
 
@@ -331,7 +334,7 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
               className="inline-flex min-h-8 items-center justify-center gap-2 rounded-lg border border-ok/50 bg-ok/15 px-3 text-xs font-medium text-ok hover:bg-ok/25 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Star className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
-              Set default
+              {t('provider.setDefault')}
             </button>
           )}
 
@@ -342,7 +345,7 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
               disabled={busy}
               className="inline-flex min-h-8 items-center justify-center rounded-lg border border-danger/40 bg-danger/12 px-3 text-xs text-danger hover:bg-danger/20 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Remove key
+              {t('provider.removeKey')}
             </button>
           )}
 
@@ -354,7 +357,7 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
               className="ml-auto inline-flex min-h-8 items-center justify-center gap-2 rounded-lg border border-border-default bg-surface-3 px-3 text-xs text-fg-muted hover:border-danger/40 hover:bg-danger/12 hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
-              Delete
+              {t('common.delete')}
             </button>
           )}
         </div>
@@ -390,11 +393,11 @@ function MetaRow({
   );
 }
 
-function credentialSourceLabel(source: CredentialSource): string {
-  if (source === 'both') return 'Keychain + env';
-  if (source === 'keychain') return 'Keychain';
-  if (source === 'env') return 'Environment';
-  return 'None';
+function credentialSourceLabel(source: CredentialSource, t: Translate): string {
+  if (source === 'both') return t('provider.keySource.both');
+  if (source === 'keychain') return t('provider.keySource.keychain');
+  if (source === 'env') return t('provider.keySource.env');
+  return t('provider.keySource.none');
 }
 
 function StatusBadge({
@@ -404,29 +407,31 @@ function StatusBadge({
   readonly configured: boolean;
   readonly source: CredentialSource;
 }): JSX.Element {
+  const { t } = useI18n();
   return configured ? (
     <span
       className="inline-flex shrink-0 items-center gap-1 rounded-full bg-ok/15 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-ok"
-      title={credentialSourceLabel(source)}
+      title={credentialSourceLabel(source, t)}
     >
       <CheckCircle2 className="h-3 w-3" strokeWidth={1.8} aria-hidden />
-      Ready
+      {t('provider.ready')}
     </span>
   ) : (
     <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-surface-3 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-fg-muted">
       <XCircle className="h-3 w-3" strokeWidth={1.8} aria-hidden />
-      No key
+      {t('provider.noKey')}
     </span>
   );
 }
 
 function TestResult({ test }: { readonly test: TestState }): JSX.Element | null {
+  const { t } = useI18n();
   if (test.kind === 'idle' || test.kind === 'testing') return null;
   if (test.kind === 'ok') {
     return (
       <div className="flex items-center gap-2 rounded-lg border border-ok/35 bg-ok/10 px-3 py-2 text-[11px] text-ok">
         <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
-        Connection OK in {test.latencyMs}ms
+        {t('provider.connectionOk', { ms: test.latencyMs })}
       </div>
     );
   }

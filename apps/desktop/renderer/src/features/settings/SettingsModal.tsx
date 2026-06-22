@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   FolderOpen,
   KeyRound,
+  Languages,
   Loader2,
   Plus,
   RefreshCw,
@@ -21,8 +22,11 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import type { ProviderInfo } from '@kodax-space/space-ipc-schema';
+import type { LanguageModeT, ProviderInfo } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
+import { localeDisplayName, useI18n } from '../../i18n/I18nProvider.js';
+import type { MessageKey } from '../../i18n/messages.js';
+import { pushToast } from '../../store/toastStore.js';
 import { ProviderCard } from '../provider/ProviderCard.js';
 import { CustomProviderForm } from '../provider/CustomProviderForm.js';
 import { WorkflowPolicySection } from '../workflow/WorkflowPolicySection.js';
@@ -36,22 +40,22 @@ interface SettingsModalProps {
 
 interface SettingsTabMeta {
   readonly id: SettingsTab;
-  readonly label: string;
-  readonly description: string;
+  readonly labelKey: MessageKey;
+  readonly descriptionKey: MessageKey;
   readonly Icon: LucideIcon;
 }
 
 const TABS: readonly SettingsTabMeta[] = [
   {
     id: 'preferences',
-    label: 'Preferences',
-    description: 'Workspace defaults, automation, and workflow behavior.',
+    labelKey: 'settings.preferences',
+    descriptionKey: 'settings.preferences.description',
     Icon: SlidersHorizontal,
   },
   {
     id: 'providers',
-    label: 'Providers',
-    description: 'Models, API keys, default provider, and custom endpoints.',
+    labelKey: 'settings.providers',
+    descriptionKey: 'settings.providers.description',
     Icon: KeyRound,
   },
 ];
@@ -60,6 +64,7 @@ export function SettingsModal({
   initialTab = 'preferences',
   onClose,
 }: SettingsModalProps): JSX.Element {
+  const { t } = useI18n();
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   const activeTab = TABS.find((t) => t.id === tab) ?? TABS[0];
 
@@ -118,16 +123,16 @@ export function SettingsModal({
               </div>
               <div className="min-w-0">
                 <h2 id="settings-modal-title" className="text-base font-semibold leading-tight">
-                  Settings
+                  {t('common.settings')}
                 </h2>
-                <p className="truncate text-[11px] text-fg-muted">KodaX Space controls</p>
+                <p className="truncate text-[11px] text-fg-muted">{t('settings.subtitle')}</p>
               </div>
             </div>
           </div>
 
           <nav
             role="tablist"
-            aria-label="Settings sections"
+            aria-label={t('settings.sections')}
             className="flex-1 space-y-1 px-3 py-3"
             onKeyDown={handleTabListKeyDown}
           >
@@ -135,6 +140,8 @@ export function SettingsModal({
               <SettingsNavButton
                 key={t.id}
                 tab={t}
+                label={t.labelKey}
+                description={t.descriptionKey}
                 active={tab === t.id}
                 onClick={() => selectTab(t.id)}
               />
@@ -144,11 +151,10 @@ export function SettingsModal({
           <div className="m-3 rounded-lg border border-border-default bg-surface-2 p-3">
             <div className="mb-1 flex items-center gap-2 text-xs font-medium text-fg-primary">
               <ShieldCheck className="h-3.5 w-3.5 text-ok" strokeWidth={1.8} aria-hidden />
-              Key safety
+              {t('settings.keySafety.title')}
             </div>
             <p className="text-[11px] leading-5 text-fg-muted">
-              API keys are sent only to the Electron main process. The renderer sees configured
-              state, never the secret value.
+              {t('settings.keySafety.description')}
             </p>
           </div>
         </aside>
@@ -157,15 +163,15 @@ export function SettingsModal({
           <header className="flex min-h-[72px] shrink-0 items-center gap-3 border-b border-border-default px-5 py-3">
             <activeTab.Icon className="h-5 w-5 text-fg-secondary" strokeWidth={1.8} aria-hidden />
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-semibold leading-tight">{activeTab.label}</div>
-              <div className="truncate text-xs text-fg-muted">{activeTab.description}</div>
+              <div className="text-sm font-semibold leading-tight">{t(activeTab.labelKey)}</div>
+              <div className="truncate text-xs text-fg-muted">{t(activeTab.descriptionKey)}</div>
             </div>
             <button
               type="button"
               onClick={onClose}
               className="ix-pop inline-flex h-8 w-8 items-center justify-center rounded-lg text-fg-muted hover:bg-hover-bg hover:text-fg-primary"
-              aria-label="Close settings"
-              title="Close settings"
+              aria-label={t('common.close')}
+              title={t('common.close')}
             >
               <X className="h-4 w-4" strokeWidth={1.8} aria-hidden />
             </button>
@@ -201,13 +207,18 @@ export function SettingsModal({
 
 function SettingsNavButton({
   tab,
+  label,
+  description,
   active,
   onClick,
 }: {
   readonly tab: SettingsTabMeta;
+  readonly label: MessageKey;
+  readonly description: MessageKey;
   readonly active: boolean;
   readonly onClick: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <button
       id={`settings-tab-${tab.id}`}
@@ -226,14 +237,15 @@ function SettingsNavButton({
     >
       <tab.Icon className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.8} aria-hidden />
       <span className="min-w-0">
-        <span className="block text-sm font-medium leading-tight">{tab.label}</span>
-        <span className="mt-0.5 block text-[11px] leading-4 text-fg-muted">{tab.description}</span>
+        <span className="block text-sm font-medium leading-tight">{t(label)}</span>
+        <span className="mt-0.5 block text-[11px] leading-4 text-fg-muted">{t(description)}</span>
       </span>
     </button>
   );
 }
 
 function PreferencesPanel(): JSX.Element {
+  const { t } = useI18n();
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const setCurrentProject = useAppStore((s) => s.setCurrentProject);
 
@@ -270,7 +282,7 @@ function PreferencesPanel(): JSX.Element {
     try {
       const trimmed = defaultWorkspace.trim();
       if (!trimmed) {
-        setErr('Path cannot be empty.');
+        setErr(t('settings.workspace.emptyError'));
         return;
       }
       const r = await window.kodaxSpace.invoke('settings.setDefaultWorkspace', { path: trimmed });
@@ -297,16 +309,18 @@ function PreferencesPanel(): JSX.Element {
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-5">
+      <LanguageSection />
+
       <SettingsSection
-        title="Workspace"
-        description="Choose where new sessions start and where default project files live."
+        title={t('settings.workspace.title')}
+        description={t('settings.workspace.description')}
         icon={FolderOpen}
       >
         <label
           htmlFor="settings-default-workspace"
           className="block text-[11px] font-medium uppercase tracking-wide text-fg-muted"
         >
-          Default workspace
+          {t('settings.workspace.default')}
         </label>
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
           <input
@@ -318,21 +332,24 @@ function PreferencesPanel(): JSX.Element {
               setSaved(false);
             }}
             className="min-h-9 flex-1 rounded-lg border border-border-default bg-surface px-3 py-2 font-mono text-xs text-fg-primary outline-none focus:border-info"
-            placeholder="C:/Users/you/kodax_workspace"
+            placeholder={t('settings.workspace.placeholder')}
             aria-describedby="settings-default-workspace-hint"
           />
           <button
             type="button"
             onClick={() => void browseFolder()}
             className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-border-default bg-surface-3 px-3 text-xs text-fg-primary hover:bg-hover-bg"
-            title="Browse for folder"
+            title={t('settings.workspace.browseTitle')}
           >
             <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
-            Browse
+            {t('common.browse')}
           </button>
         </div>
-        <div id="settings-default-workspace-hint" className="mt-2 text-[11px] leading-5 text-fg-muted">
-          New sessions default to this folder. It is created automatically when missing.
+        <div
+          id="settings-default-workspace-hint"
+          className="mt-2 text-[11px] leading-5 text-fg-muted"
+        >
+          {t('settings.workspace.hint')}
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <button
@@ -342,29 +359,32 @@ function PreferencesPanel(): JSX.Element {
             className="inline-flex min-h-8 items-center justify-center gap-2 rounded-lg border border-ok/50 bg-ok/15 px-3 text-xs font-medium text-ok hover:bg-ok/25 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} />}
-            {busy ? 'Saving' : 'Save workspace'}
+            {busy ? t('common.saving') : t('settings.workspace.save')}
           </button>
           {err && <span className="text-xs text-danger">{err}</span>}
           {saved && (
             <span className="inline-flex items-center gap-1.5 text-xs text-ok">
               <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
-              Saved
+              {t('common.saved')}
             </span>
           )}
         </div>
       </SettingsSection>
 
       <SettingsSection
-        title="Interface behavior"
-        description="Tune automatic panels and the moments when Space brings helper views forward."
+        title={t('settings.interface.title')}
+        description={t('settings.interface.description')}
         icon={SlidersHorizontal}
       >
-        <SmartPopoutToggle />
+        <div className="space-y-3">
+          <SmartPopoutToggle />
+          <NativeCompletionNotificationToggle />
+        </div>
       </SettingsSection>
 
       <SettingsSection
-        title="Workflow host"
-        description="Control when natural-language workflow runs start and how large they can get."
+        title={t('settings.workflowHost.title')}
+        description={t('settings.workflowHost.description')}
         icon={Settings2}
       >
         <WorkflowPolicySection />
@@ -373,7 +393,62 @@ function PreferencesPanel(): JSX.Element {
   );
 }
 
+function LanguageSection(): JSX.Element {
+  const { languageMode, effectiveLocale, setLanguageMode, t } = useI18n();
+  const [busy, setBusy] = useState<LanguageModeT | null>(null);
+  const options: ReadonlyArray<{ readonly mode: LanguageModeT; readonly label: MessageKey }> = [
+    { mode: 'system', label: 'language.followSystem' },
+    { mode: 'zh-CN', label: 'language.zhCN' },
+    { mode: 'en-US', label: 'language.enUS' },
+  ];
+
+  async function chooseLanguage(next: LanguageModeT): Promise<void> {
+    if (next === languageMode || busy !== null) return;
+    setBusy(next);
+    try {
+      const ok = await setLanguageMode(next);
+      if (ok) pushToast(t('toast.languageSaved'), 'success', 1800);
+      else pushToast(t('toast.languageSaveFailed'), 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <SettingsSection
+      title={t('settings.language.title')}
+      description={t('settings.language.description')}
+      icon={Languages}
+    >
+      <div className="grid gap-2 sm:grid-cols-3">
+        {options.map((option) => (
+          <button
+            key={option.mode}
+            type="button"
+            onClick={() => void chooseLanguage(option.mode)}
+            disabled={busy !== null}
+            aria-pressed={languageMode === option.mode}
+            className={[
+              'min-h-10 rounded-lg border px-3 text-left text-sm transition-colors',
+              languageMode === option.mode
+                ? 'border-info/70 bg-info/10 text-fg-primary'
+                : 'border-border-default bg-surface text-fg-secondary hover:bg-hover-bg hover:text-fg-primary',
+            ].join(' ')}
+          >
+            <span className="block font-medium">{t(option.label)}</span>
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 text-xs leading-5 text-fg-muted">
+        {t('language.effective', { locale: localeDisplayName(effectiveLocale) })}
+      </div>
+      <div className="mt-1 text-[11px] leading-5 text-fg-muted">{t('settings.language.help')}</div>
+    </SettingsSection>
+  );
+}
+
 function SmartPopoutToggle(): JSX.Element {
+  const { t } = useI18n();
   const enabled = useAppStore((s) => s.smartPopoutEnabled);
   const setEnabled = useAppStore((s) => s.setSmartPopoutEnabled);
   return (
@@ -386,11 +461,34 @@ function SmartPopoutToggle(): JSX.Element {
       />
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-medium text-fg-primary">
-          Auto-open Plan, Diff, and Tasks panels
+          {t('settings.smartPopout.title')}
         </span>
         <span className="mt-1 block text-xs leading-5 text-fg-muted">
-          Space opens the right panel the first time a plan is drafted, a file is edited, or workers
-          fan out. Disable this when you want panels to stay strictly manual.
+          {t('settings.smartPopout.description')}
+        </span>
+      </span>
+    </label>
+  );
+}
+
+function NativeCompletionNotificationToggle(): JSX.Element {
+  const { t } = useI18n();
+  const enabled = useAppStore((s) => s.nativeCompletionNotificationsEnabled);
+  const setEnabled = useAppStore((s) => s.setNativeCompletionNotificationsEnabled);
+  return (
+    <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border-default bg-surface px-3 py-3">
+      <input
+        type="checkbox"
+        checked={enabled}
+        onChange={(e) => setEnabled(e.target.checked)}
+        className="mt-1 h-4 w-4 accent-ok"
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium text-fg-primary">
+          {t('settings.notifications.title')}
+        </span>
+        <span className="mt-1 block text-xs leading-5 text-fg-muted">
+          {t('settings.notifications.description')}
         </span>
       </span>
     </label>
@@ -398,6 +496,7 @@ function SmartPopoutToggle(): JSX.Element {
 }
 
 function ProvidersPanel(): JSX.Element {
+  const { t } = useI18n();
   const providers = useAppStore((s) => s.providers);
   const keychainBackend = useAppStore((s) => s.keychainBackend);
   const setProviders = useAppStore((s) => s.setProviders);
@@ -446,25 +545,31 @@ function ProvidersPanel(): JSX.Element {
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <ProviderStat
-            label="Configured"
+            label={t('settings.providers.configured')}
             value={`${configuredCount}/${providers.length}`}
-            detail="Providers with a key or env value"
+            detail={t('settings.providers.configured.detail')}
           />
           <ProviderStat
-            label="Default"
-            value={defaultProvider?.displayName ?? 'None'}
-            detail={defaultProvider?.defaultModel ?? 'Choose a provider for new sessions'}
+            label={t('settings.providers.default')}
+            value={defaultProvider?.displayName ?? t('settings.providers.default.none')}
+            detail={defaultProvider?.defaultModel ?? t('settings.providers.default.detail')}
           />
           <ProviderStat
-            label="Custom"
+            label={t('settings.providers.custom')}
             value={String(custom.length)}
-            detail="User-added endpoints"
+            detail={t('settings.providers.custom.detail')}
           />
           <ProviderStat
-            label="Key storage"
-            value={keychainBackend === 'memory' ? 'Memory' : 'Keychain'}
+            label={t('settings.providers.keyStorage')}
+            value={
+              keychainBackend === 'memory'
+                ? t('settings.providers.keyStorage.memory')
+                : t('settings.providers.keyStorage.keychain')
+            }
             detail={
-              keychainBackend === 'memory' ? 'Not persistent after restart' : 'OS credential store'
+              keychainBackend === 'memory'
+                ? t('settings.providers.keyStorage.memoryDetail')
+                : t('settings.providers.keyStorage.keychainDetail')
             }
           />
         </div>
@@ -480,7 +585,7 @@ function ProvidersPanel(): JSX.Element {
               strokeWidth={1.8}
               aria-hidden
             />
-            Refresh
+            {t('common.refresh')}
           </button>
           <button
             type="button"
@@ -492,7 +597,7 @@ function ProvidersPanel(): JSX.Element {
             ) : (
               <Plus className="h-3.5 w-3.5" strokeWidth={1.8} />
             )}
-            {showCustomForm ? 'Close form' : 'Add custom'}
+            {showCustomForm ? t('settings.providers.closeForm') : t('settings.providers.addCustom')}
           </button>
         </div>
       </div>
@@ -507,12 +612,9 @@ function ProvidersPanel(): JSX.Element {
         <div className="flex gap-3 rounded-lg border border-warn/45 bg-warn/12 px-3 py-3 text-xs text-warn">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.8} aria-hidden />
           <div className="leading-5">
-            <div className="font-semibold">
-              Keychain unavailable. Keys are stored in memory only.
-            </div>
+            <div className="font-semibold">{t('settings.providers.keychainUnavailable.title')}</div>
             <div className="text-warn/90">
-              API keys saved here work for this session but disappear after restart. Install the OS
-              keychain dependency to make them persistent.
+              {t('settings.providers.keychainUnavailable.description')}
             </div>
           </div>
         </div>
@@ -543,46 +645,50 @@ function ProvidersPanel(): JSX.Element {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="h-9 w-full rounded-lg border border-border-default bg-surface pl-9 pr-3 text-xs text-fg-primary outline-none focus:border-info"
-            placeholder="Search providers, env vars, models..."
-            aria-label="Search providers"
+            placeholder={t('settings.providers.search.placeholder')}
+            aria-label={t('settings.providers.search.aria')}
           />
         </label>
         <div className="text-xs text-fg-muted">
-          {filteredBuiltIn.length + filteredCustom.length} shown
+          {t('settings.providers.search.shown', {
+            count: filteredBuiltIn.length + filteredCustom.length,
+          })}
         </div>
       </div>
 
       <ProviderGroup
-        title="Custom providers"
-        description="OpenAI- or Anthropic-compatible endpoints you add yourself."
+        title={t('settings.providers.customGroup.title')}
+        description={t('settings.providers.customGroup.description')}
         providers={filteredCustom}
         empty={
           query.trim()
-            ? 'No custom providers match the search.'
-            : 'No custom providers yet. Add one for OpenRouter, LiteLLM, or your own gateway.'
+            ? t('settings.providers.customGroup.emptySearch')
+            : t('settings.providers.customGroup.empty')
         }
         onChanged={refresh}
       />
 
       <ProviderGroup
-        title="Built-in providers"
-        description="Providers shipped by the KodaX runtime catalog."
+        title={t('settings.providers.builtInGroup.title')}
+        description={t('settings.providers.builtInGroup.description')}
         providers={filteredBuiltIn}
         empty={
-          query.trim() ? 'No built-in providers match the search.' : 'No built-in providers found.'
+          query.trim()
+            ? t('settings.providers.builtInGroup.emptySearch')
+            : t('settings.providers.builtInGroup.empty')
         }
         onChanged={refresh}
       />
 
       <section className="rounded-lg border border-border-default bg-surface-2 p-4">
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
-          Storage
+          {t('settings.providers.storage.title')}
         </h3>
         <div className="grid gap-2 text-xs leading-5 text-fg-muted sm:grid-cols-2">
-          <div>API keys are stored in your OS keychain when available.</div>
-          <div>Custom providers are persisted to ~/.kodax/custom-providers.json.</div>
-          <div>The renderer only receives configured yes/no state.</div>
-          <div>Setting a default provider changes what new sessions use automatically.</div>
+          <div>{t('settings.providers.storage.keychain')}</div>
+          <div>{t('settings.providers.storage.customProviders')}</div>
+          <div>{t('settings.providers.storage.rendererState')}</div>
+          <div>{t('settings.providers.storage.defaultProvider')}</div>
         </div>
       </section>
     </div>

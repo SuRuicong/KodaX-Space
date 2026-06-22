@@ -1,5 +1,14 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 import { Check, Eye, EyeOff, KeyRound, Loader2, Plus, Server } from 'lucide-react';
+import { useI18n } from '../../i18n/I18nProvider.js';
+import type { MessageKey } from '../../i18n/messages.js';
 
 interface CustomProviderFormProps {
   readonly onAdded: (providerId: string) => Promise<void>;
@@ -8,6 +17,7 @@ interface CustomProviderFormProps {
 }
 
 type CustomProtocol = 'openai' | 'anthropic';
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
 const FIELD_IDS = {
   displayName: 'custom-provider-display-name',
@@ -31,6 +41,7 @@ export function CustomProviderForm({
   onPartialAdded,
   onCancel,
 }: CustomProviderFormProps): JSX.Element {
+  const { t } = useI18n();
   const mountedRef = useRef(true);
   const [displayName, setDisplayName] = useState('');
   const [protocol, setProtocol] = useState<CustomProtocol>('openai');
@@ -46,9 +57,12 @@ export function CustomProviderForm({
   const [step, setStep] = useState<'idle' | 'provider' | 'key' | 'default'>('idle');
   const [createdProviderId, setCreatedProviderId] = useState<string | null>(null);
 
-  useEffect(() => () => {
-    mountedRef.current = false;
-  }, []);
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+    },
+    [],
+  );
 
   async function handleSubmit(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -94,7 +108,10 @@ export function CustomProviderForm({
           setCreatedProviderId(providerId);
           await onPartialAdded(providerId);
           setErr(
-            `Provider was added, but the API key was not saved: ${keyResult.error.code}: ${keyResult.error.message}`,
+            t('customProvider.error.keyNotSaved', {
+              code: keyResult.error.code,
+              message: keyResult.error.message,
+            }),
           );
           return;
         }
@@ -107,7 +124,10 @@ export function CustomProviderForm({
           setCreatedProviderId(providerId);
           await onPartialAdded(providerId);
           setErr(
-            `Provider was added, but could not be set as default: ${defaultResult.error.code}: ${defaultResult.error.message}`,
+            t('customProvider.error.defaultNotSet', {
+              code: defaultResult.error.code,
+              message: defaultResult.error.message,
+            }),
           );
           return;
         }
@@ -151,17 +171,17 @@ export function CustomProviderForm({
           <Server className="h-4 w-4" strokeWidth={1.8} aria-hidden />
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold text-fg-primary">Add custom provider</h3>
+          <h3 className="text-sm font-semibold text-fg-primary">{t('customProvider.title')}</h3>
           <p className="mt-0.5 text-xs leading-5 text-fg-muted">
-            Create the endpoint, optionally save its API key, and make it available to sessions.
+            {t('customProvider.description')}
           </p>
         </div>
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
         <Field
-          label="Display name"
-          hint="Shown in provider pickers."
+          label={t('customProvider.displayName.label')}
+          hint={t('customProvider.displayName.hint')}
           inputId={FIELD_IDS.displayName}
           hintId={FIELD_IDS.displayNameHint}
         >
@@ -179,8 +199,8 @@ export function CustomProviderForm({
         </Field>
 
         <Field
-          label="Protocol"
-          hint="Choose the API compatibility layer."
+          label={t('customProvider.protocol.label')}
+          hint={t('customProvider.protocol.hint')}
           labelId={FIELD_IDS.protocolLabel}
           hintId={FIELD_IDS.protocolHint}
         >
@@ -192,13 +212,13 @@ export function CustomProviderForm({
           >
             <ProtocolButton
               active={protocol === 'openai'}
-              label="OpenAI compatible"
+              label={t('customProvider.protocol.openai')}
               onClick={() => setProtocol('openai')}
               disabled={formLocked}
             />
             <ProtocolButton
               active={protocol === 'anthropic'}
-              label="Anthropic compatible"
+              label={t('customProvider.protocol.anthropic')}
               onClick={() => setProtocol('anthropic')}
               disabled={formLocked}
             />
@@ -206,8 +226,8 @@ export function CustomProviderForm({
         </Field>
 
         <Field
-          label="Base URL"
-          hint="HTTPS only. Example: https://openrouter.ai/api/v1"
+          label={t('customProvider.baseUrl.label')}
+          hint={t('customProvider.baseUrl.hint')}
           inputId={FIELD_IDS.baseUrl}
           hintId={FIELD_IDS.baseUrlHint}
         >
@@ -225,8 +245,8 @@ export function CustomProviderForm({
         </Field>
 
         <Field
-          label="API key env var"
-          hint="Uppercase snake case, for SDK env injection."
+          label={t('customProvider.apiKeyEnv.label')}
+          hint={t('customProvider.apiKeyEnv.hint')}
           inputId={FIELD_IDS.apiKeyEnv}
           hintId={FIELD_IDS.apiKeyEnvHint}
         >
@@ -244,8 +264,8 @@ export function CustomProviderForm({
         </Field>
 
         <Field
-          label="Default model"
-          hint="Used when a session starts with this provider."
+          label={t('customProvider.defaultModel.label')}
+          hint={t('customProvider.defaultModel.hint')}
           inputId={FIELD_IDS.defaultModel}
           hintId={FIELD_IDS.defaultModelHint}
         >
@@ -263,8 +283,8 @@ export function CustomProviderForm({
         </Field>
 
         <Field
-          label="Model aliases"
-          hint="Optional comma-separated list for the picker."
+          label={t('customProvider.models.label')}
+          hint={t('customProvider.models.hint')}
           inputId={FIELD_IDS.models}
           hintId={FIELD_IDS.modelsHint}
         >
@@ -281,8 +301,8 @@ export function CustomProviderForm({
         </Field>
 
         <Field
-          label="API key"
-          hint="Optional, but recommended. The key is cleared from form state on submit."
+          label={t('customProvider.apiKey.label')}
+          hint={t('customProvider.apiKey.hint')}
           inputId={FIELD_IDS.apiKey}
           hintId={FIELD_IDS.apiKeyHint}
           className="lg:col-span-2"
@@ -299,7 +319,7 @@ export function CustomProviderForm({
                 type={revealKey ? 'text' : 'password'}
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder="Paste API key"
+                placeholder={t('customProvider.apiKey.placeholder')}
                 className={`${inputClass} pl-9 pr-3 font-mono`}
                 autoComplete="off"
                 disabled={formLocked}
@@ -311,8 +331,10 @@ export function CustomProviderForm({
               onClick={() => setRevealKey((v) => !v)}
               disabled={formLocked}
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border-default bg-surface-3 text-fg-muted hover:bg-hover-bg hover:text-fg-primary disabled:opacity-50"
-              aria-label={revealKey ? 'Hide API key' : 'Show API key'}
-              title={revealKey ? 'Hide API key' : 'Show API key'}
+              aria-label={
+                revealKey ? t('customProvider.hideApiKey') : t('customProvider.showApiKey')
+              }
+              title={revealKey ? t('customProvider.hideApiKey') : t('customProvider.showApiKey')}
             >
               {revealKey ? (
                 <EyeOff className="h-4 w-4" strokeWidth={1.8} aria-hidden />
@@ -334,20 +356,19 @@ export function CustomProviderForm({
         />
         <span className="min-w-0">
           <span className="block text-xs font-medium text-fg-primary">
-            Set as default after saving key
+            {t('customProvider.setDefault.title')}
           </span>
           <span className="mt-0.5 block text-[11px] leading-5 text-fg-muted">
             {hasDraftKey
-              ? 'New sessions will use this provider unless you choose another one from the picker.'
-              : 'Paste an API key to set it as default now. Env-only providers can be defaulted from the card after refresh.'}
+              ? t('customProvider.setDefault.withKey')
+              : t('customProvider.setDefault.noKey')}
           </span>
         </span>
       </label>
 
       {createdProviderId && (
         <div className="mt-3 rounded-lg border border-info/40 bg-info/10 px-3 py-2 text-xs leading-5 text-info">
-          Provider was created and refreshed into the list. Finish the API key or default setup from
-          its card below.
+          {t('customProvider.created')}
         </div>
       )}
 
@@ -370,7 +391,11 @@ export function CustomProviderForm({
           ) : (
             <Plus className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
           )}
-          {busy ? progressLabel(step) : createdProviderId ? 'Provider added' : 'Add provider'}
+          {busy
+            ? progressLabel(step, t)
+            : createdProviderId
+              ? t('customProvider.providerAdded')
+              : t('customProvider.addProvider')}
         </button>
         <button
           type="button"
@@ -378,12 +403,12 @@ export function CustomProviderForm({
           disabled={busy}
           className="inline-flex min-h-9 items-center justify-center rounded-lg border border-border-default bg-surface-3 px-4 text-xs text-fg-secondary hover:bg-hover-bg hover:text-fg-primary disabled:opacity-50"
         >
-          Cancel
+          {t('common.cancel')}
         </button>
         {!busy && valid && !createdProviderId && (
           <span className="inline-flex items-center gap-1.5 text-xs text-ok">
             <Check className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
-            Ready
+            {t('common.ready')}
           </span>
         )}
       </div>
@@ -391,11 +416,11 @@ export function CustomProviderForm({
   );
 }
 
-function progressLabel(step: 'idle' | 'provider' | 'key' | 'default'): string {
-  if (step === 'key') return 'Saving key';
-  if (step === 'default') return 'Setting default';
-  if (step === 'provider') return 'Creating provider';
-  return 'Adding';
+function progressLabel(step: 'idle' | 'provider' | 'key' | 'default', t: Translate): string {
+  if (step === 'key') return t('customProvider.progress.savingKey');
+  if (step === 'default') return t('customProvider.progress.settingDefault');
+  if (step === 'provider') return t('customProvider.progress.creatingProvider');
+  return t('customProvider.progress.adding');
 }
 
 function ProtocolButton({
@@ -445,23 +470,21 @@ function Field({
   readonly children: ReactNode;
 }): JSX.Element {
   const labelNode = inputId ? (
-    <label htmlFor={inputId} className="text-[11px] font-medium uppercase tracking-wide text-fg-muted">
+    <label
+      htmlFor={inputId}
+      className="text-[11px] font-medium uppercase tracking-wide text-fg-muted"
+    >
       {label}
     </label>
   ) : (
-    <span
-      id={labelId}
-      className="text-[11px] font-medium uppercase tracking-wide text-fg-muted"
-    >
+    <span id={labelId} className="text-[11px] font-medium uppercase tracking-wide text-fg-muted">
       {label}
     </span>
   );
 
   return (
     <div className={`block ${className ?? ''}`}>
-      <span className="flex items-baseline justify-between gap-2">
-        {labelNode}
-      </span>
+      <span className="flex items-baseline justify-between gap-2">{labelNode}</span>
       <span className="mt-1 block">{children}</span>
       <span id={hintId} className="mt-1 block text-[11px] leading-4 text-fg-muted">
         {hint}

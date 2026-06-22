@@ -312,8 +312,13 @@ export function CommandPaletteController(): JSX.Element | null {
         return;
       }
     };
+    const onOpen = (): void => setOpen(true);
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('kodax-space.open-command-palette', onOpen);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('kodax-space.open-command-palette', onOpen);
+    };
   }, []);
 
   return <CommandPalette open={open} onClose={handleClose} />;

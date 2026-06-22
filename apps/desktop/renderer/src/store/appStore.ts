@@ -275,6 +275,7 @@ interface AppState {
    * popout"。默认开;用户在 Preferences 里可关。持久化 localStorage。
    */
   smartPopoutEnabled: boolean;
+  nativeCompletionNotificationsEnabled: boolean;
   /**
    * v0.1.9 Step 7 — 用户手动拖动排过的项目顺序 (canonProjectRoot 形态)。
    *   - 空数组 = 没拖过,LeftSidebar 走原"lastUsedAt + current 排首"逻辑
@@ -446,6 +447,7 @@ interface AppState {
   setActivePopoutKind(kind: string | null): void;
   /** KX-I-02: 切 smart popout director 总开关。立即写 localStorage。 */
   setSmartPopoutEnabled(enabled: boolean): void;
+  setNativeCompletionNotificationsEnabled(enabled: boolean): void;
   /** KX-I-02: 标记某 (session, kind) 已被 promote 过(或用户主动开/关过),不再 auto。 */
   markPopoutPromoted(sessionId: string, kind: string): void;
   /**
@@ -699,6 +701,8 @@ export const useAppStore = create<AppState>((set) => ({
   activePopoutKind: null,
   // KX-I-02: smart director 默认 on。"0" 表示用户主动关过。
   smartPopoutEnabled: lsGet('kodax-space.smartPopoutEnabled') !== '0',
+  nativeCompletionNotificationsEnabled:
+    lsGet('kodax-space.nativeCompletionNotificationsEnabled') !== '0',
   promotedPopoutsBySession: {},
   projectOrder: readPersistedProjectOrder(),
   archivedProjectsExpanded: lsGet('kodax-space.archivedProjectsExpanded') === '1',
@@ -1299,6 +1303,11 @@ export const useAppStore = create<AppState>((set) => ({
   setSmartPopoutEnabled: (enabled) => {
     lsSet('kodax-space.smartPopoutEnabled', enabled ? '1' : '0');
     set({ smartPopoutEnabled: enabled });
+  },
+
+  setNativeCompletionNotificationsEnabled: (enabled) => {
+    lsSet('kodax-space.nativeCompletionNotificationsEnabled', enabled ? '1' : '0');
+    set({ nativeCompletionNotificationsEnabled: enabled });
   },
 
   markPopoutPromoted: (sessionId, kind) =>

@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { ArtifactWindow, parseArtifactHash } from './features/artifact/ArtifactWindow';
+import { I18nProvider } from './i18n/I18nProvider';
 import { installScrollbarAutoHide } from './lib/scrollbarAutoHide';
 // F054 视觉刷新：本地打包字体 (Electron 无网 + CSP)，不走 Google Fonts CDN。
 // Variable 字体单文件覆盖全字重；--ui / --mono 在 styles.css 指向它们。
@@ -44,6 +45,12 @@ const artifactParams = parseArtifactHash(window.location.hash);
 
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
-    {artifactParams ? <ArtifactWindow params={artifactParams} /> : <App />}
+    {artifactParams ? (
+      <ArtifactWindow params={artifactParams} />
+    ) : (
+      <I18nProvider>
+        <App />
+      </I18nProvider>
+    )}
   </React.StrictMode>,
 );
