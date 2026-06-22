@@ -150,23 +150,87 @@ jobs:
           find artifacts -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.blockmap' -o -name 'latest*.yml' \) -exec mv {} release/ \;
           ls -la release/
 
+      - name: Generate release notes from changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --force --tags --prune >/dev/null 2>&1 || true
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const cp = require('node:child_process');
+
+          const tag = process.env.GITHUB_REF_NAME || '';
+          const version = tag.replace(/^v/, '');
+          const repository = process.env.GITHUB_REPOSITORY || 'icetomoyo/KodaX-Space';
+
+          if (!/^v?\d+\.\d+\.\d+/.test(tag)) {
+            throw new Error(`Unsupported release tag: ${tag}`);
+          }
+
+          const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
+          const heading = new RegExp(`^## \\[${escapeRegExp(version)}\\][^\\n]*\\n`, 'm');
+          const match = heading.exec(changelog);
+
+          if (!match) {
+            throw new Error(`CHANGELOG.md does not contain a section for ${version}`);
+          }
+
+          const bodyStart = match.index + match[0].length;
+          const remainder = changelog.slice(bodyStart);
+          const nextHeading = remainder.search(/^## \[[^\]]+\]/m);
+          const releaseChangelog = (nextHeading >= 0 ? remainder.slice(0, nextHeading) : remainder).trim();
+
+          let previousTag = '';
+          try {
+            const tags = cp
+              .execSync('git tag --list "v[0-9]*" --sort=-v:refname', { encoding: 'utf8' })
+              .trim()
+              .split(/\r?\n/)
+              .filter(Boolean);
+            const currentIndex = tags.indexOf(tag);
+            previousTag = currentIndex >= 0 ? tags[currentIndex + 1] || '' : '';
+          } catch {
+            previousTag = '';
+          }
+
+          const fullChangelog = previousTag
+            ? `\n\n**Full Changelog**: https://github.com/${repository}/compare/${previousTag}...${tag}\n`
+            : '';
+
+          const notes = [
+            `# KodaX Space ${tag}`,
+            '',
+            releaseChangelog,
+            '',
+            '---',
+            '',
+            '## Installation Notes',
+            '',
+            '> **Unsigned installers:** first launch may trigger OS trust prompts.',
+            '',
+            '- Windows: SmartScreen -> click "More info" -> "Run anyway"',
+            '- macOS: Gatekeeper -> right-click -> Open -> confirm',
+            '- Linux: `chmod +x *.AppImage` then run; or `sudo dpkg -i *.deb`',
+            '',
+            'KodaX Space is a local-first tool for trusted users; installers remain unsigned for this release.',
+            '',
+            '## Verify Checksums',
+            '',
+            `SHA256 values are included in the uploaded \`latest*.yml\` electron-updater manifests.${fullChangelog}`,
+          ].join('\n');
+
+          fs.writeFileSync('release-notes.md', `${notes.trim()}\n`);
+          NODE
+
+          sed -n '1,120p' release-notes.md
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          # tag push → 正式 release（即便 unsigned，Body 仍标注 SmartScreen / Gatekeeper 提醒）
+          # tag push → 正式 release；Release body 优先展示 CHANGELOG，安装签名提示放在后置说明。
           # workflow_dispatch → 用户输入决定（默认 false）
           prerelease: ${{ github.event.inputs.mark_as_prerelease == 'true' }}
-          generate_release_notes: true
           files: release/*
-          body: |
-            ## KodaX Space ${{ github.ref_name }} (unsigned dev)
-
-            ⚠️ **Unsigned installers** — first launch will trigger:
-            - Windows: SmartScreen → click "More info" → "Run anyway"
-            - macOS: Gatekeeper → right-click → Open → confirm
-            - Linux: `chmod +x *.AppImage` then run; or `sudo dpkg -i *.deb`
-
-            KodaX Space 是自家 / 可信用户工具，installer 保持 unsigned。
-
-            ### Verify checksum
-            See SHA256 in `latest*.yml` (electron-updater manifest).
+          body_path: release-notes.md
