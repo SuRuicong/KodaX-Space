@@ -483,7 +483,7 @@ test('workflow push events update the sidebar and transcript through completion'
         latestMessage: 'workflow completed',
         resultSummary: `# Final workflow report\n\n${'All checks passed with a detailed paragraph. '.repeat(
           30,
-        )}\nTAIL_MARKER_VISIBLE_ONLY_WHEN_EXPANDED`,
+        )}\nTAIL_MARKER_VISIBLE_IN_FULL_REPORT`,
         items: [
           { id: 'p1', title: 'Collect changes', kind: 'phase', status: 'completed' },
           {
@@ -516,15 +516,19 @@ test('workflow push events update the sidebar and transcript through completion'
     await expect(
       sidebar.getByLabel('Workflow flow graph').getByLabel('phase status: running'),
     ).toHaveCount(0);
-    await expect(
-      stream.locator('[data-testid="system-notice"][data-notice-variant="workflow"]', {
+    const finalWorkflowNotice = stream.locator(
+      '[data-testid="system-notice"][data-notice-variant="workflow"]',
+      {
         hasText: '[workflow] completed: E2E Workflow Review',
-      }),
-    ).toBeVisible({ timeout: 5_000 });
+      },
+    );
+    await expect(finalWorkflowNotice).toBeVisible({ timeout: 5_000 });
+    await expect(finalWorkflowNotice).toHaveCount(1);
     await expect(stream).toContainText('# Final workflow report');
-    await expect(sidebar).not.toContainText('TAIL_MARKER_VISIBLE_ONLY_WHEN_EXPANDED');
-    await sidebar.getByTestId('workflow-summary-toggle').click();
-    await expect(sidebar).toContainText('TAIL_MARKER_VISIBLE_ONLY_WHEN_EXPANDED');
+    await expect(stream).toContainText('TAIL_MARKER_VISIBLE_IN_FULL_REPORT');
+    await expect(sidebar).not.toContainText('TAIL_MARKER_VISIBLE_IN_FULL_REPORT');
+    await sidebar.getByTestId('workflow-result-toggle').click();
+    await expect(sidebar).toContainText('TAIL_MARKER_VISIBLE_IN_FULL_REPORT');
   } finally {
     await space.close();
     await fs.rm(projectDir, { recursive: true, force: true }).catch(() => {});

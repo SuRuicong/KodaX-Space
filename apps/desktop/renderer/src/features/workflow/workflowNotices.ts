@@ -11,7 +11,6 @@ export interface WorkflowNoticeCandidate {
   readonly sentAt?: number;
 }
 
-const FINAL_REPORT_MAX = 1400;
 const AGENT_SUMMARY_MAX = 900;
 const ACTIVITY_MAX = 180;
 const PROGRESS_MAX = 260;
@@ -23,12 +22,13 @@ export function compactWorkflowText(value: string | undefined, max = ACTIVITY_MA
   return `${oneLine.slice(0, Math.max(0, max - 1))}...`;
 }
 
-function workflowBlockText(value: string | undefined, max: number): string {
+function workflowBlockText(value: string | undefined, max?: number): string {
   if (!value) return '';
   const text = value
     .replace(/\r\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+  if (max === undefined) return text;
   if (text.length <= max) return text;
   return `${text.slice(0, Math.max(0, max - 4)).trimEnd()}\n...`;
 }
@@ -119,7 +119,6 @@ function formatWorkflowFinishedNotice(
   const status = payload.snapshot.status;
   const detail = workflowBlockText(
     payload.snapshot.resultSummary ?? payload.snapshot.error ?? payload.message,
-    FINAL_REPORT_MAX,
   );
   const text = `[workflow] ${status}: ${name}${detail ? `\n${detail}` : ''}`;
   return {

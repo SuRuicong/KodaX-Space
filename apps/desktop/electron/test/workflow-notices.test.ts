@@ -82,6 +82,24 @@ test('workflow finished notice preserves readable markdown instead of one-line c
   );
 });
 
+test('workflow finished notice keeps full final report text', () => {
+  const repeated = 'All checks passed with detailed evidence.\n'.repeat(80);
+  const tail = 'TAIL_MARKER_VISIBLE_AFTER_LONG_REPORT';
+  const notices = formatWorkflowEventNotices(
+    event({
+      type: 'workflow_finished',
+      snapshot: run({
+        status: 'completed',
+        resultSummary: `# Final report\n\n${repeated}${tail}`,
+      }),
+    }),
+  );
+
+  assert.equal(notices.length, 1);
+  assert.ok(notices[0]?.text.includes(tail));
+  assert.ok(!notices[0]?.text.endsWith('\n...'));
+});
+
 test('restored workflow runs hydrate child summaries and final report notices', () => {
   const notices = formatWorkflowRunRestoreNotices(
     run({

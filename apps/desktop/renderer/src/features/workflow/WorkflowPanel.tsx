@@ -454,7 +454,7 @@ function WorkflowRunCard({
       {run.status === 'failed' && run.error && (
         <div className="mt-1 text-[11px] text-danger break-words">{run.error}</div>
       )}
-      {run.resultSummary && isTerminal && (
+      {run.resultSummary && isTerminal && run.status !== 'completed' && (
         <WorkflowSummaryView summary={run.resultSummary} variant={variant} />
       )}
 
