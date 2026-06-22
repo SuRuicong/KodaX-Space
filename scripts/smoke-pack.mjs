@@ -10,7 +10,7 @@
 //
 // 这层 smoke 抓的是 build 配置漂移：忘了 bundle main.js / files glob 把 dist 排除 / 误塞超大依赖。
 
-import { promises as fs } from 'node:fs';
+import { promises as fs, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -69,6 +69,13 @@ function keyringNativePatternForAsar(asarPath) {
     return /keyring\.darwin-(universal|x64|arm64)\.node$/;
   }
   if (normalizedPath.includes('/mac/')) {
+    // electron-builder may use out/mac for a single-arch mac build regardless
+    // of the target arch. The DMG artifact name is the reliable release signal.
+    const macArtifacts = safeReadOutEntries().filter((name) => /\.dmg$/i.test(name));
+    const hasArm64Dmg = macArtifacts.some((name) => /-arm64\.dmg$/i.test(name));
+    const hasX64Dmg = macArtifacts.some((name) => /-x64\.dmg$/i.test(name));
+    if (hasArm64Dmg && !hasX64Dmg) return /keyring\.darwin-arm64\.node$/;
+    if (hasX64Dmg && !hasArm64Dmg) return /keyring\.darwin-x64\.node$/;
     return /keyring\.darwin-x64\.node$/;
   }
 
@@ -89,6 +96,14 @@ function keyringNativePatternForAsar(asarPath) {
     if (process.arch === 'riscv64') return /keyring\.linux-riscv64-gnu\.node$/;
   }
   return /keyring\..+\.node$/;
+}
+
+function safeReadOutEntries() {
+  try {
+    return readdirSync(outDir);
+  } catch {
+    return [];
+  }
 }
 
 async function findInstaller() {
