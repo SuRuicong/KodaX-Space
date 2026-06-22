@@ -54,7 +54,8 @@ This release closes the post-v0.1.19 continuity lane: Space now exposes KodaX SD
 
 - `kodax sessions dedupe` remains CLI-only for now; desktop exposure is deferred until session hygiene/doctor UX.
 - 0.7.53 extension/MCP resume-state preservation is tracked under F090 rather than expanded into v0.1.20 scope.
-- v0.1.21 planning lane now targets F103 Pinned Runtime Summary; the previous v0.1.21-v0.1.24 planned 0.1.x features move to v0.1.31-v0.1.34.
+- v0.1.21-v0.1.25 are intentionally left open for patch-only releases before the next planned feature lane.
+- v0.1.26 planning lane now targets F103 Pinned Runtime Summary; the previous v0.1.26-v0.1.29 planned 0.1.x features move to v0.1.36-v0.1.39.
 
 ### Verified
 

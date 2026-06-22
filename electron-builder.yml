@@ -23,6 +23,10 @@ files:
   - 'dist-electron/**/*'
   - 'apps/desktop/dist/**/*'
   - 'packages/*/dist/**/*'
+  # Runtime-loaded native keychain module. The Electron main bundle imports this
+  # dynamically, so electron-builder will not discover it from static imports.
+  - 'node_modules/@napi-rs/keyring/**/*'
+  - 'node_modules/@napi-rs/keyring-*/**/*'
   - 'package.json'
   - '!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,HISTORY.md,LICENSE,license,*.d.ts.map}'
   - '!**/node_modules/.cache/**'
@@ -51,6 +55,7 @@ asar: true
 # node-pty (F011) 还需要 conpty/winpty 的辅助二进制 (.exe/.dll) 在 fs 可读位置
 asarUnpack:
   - '**/*.node'
+  - '**/node_modules/@napi-rs/keyring-*/**'
   - '**/node_modules/node-pty/**'
 
 afterPack: scripts/after-pack-win-rcedit.cjs
@@ -65,7 +70,7 @@ mac:
   # 不签名（FEATURE_027 已 drop）
   identity: null
   hardenedRuntime: false
-  icon: resources/icon.png  # electron-builder 自动从 PNG 生成 icns
+  icon: resources/icon.png # electron-builder 自动从 PNG 生成 icns
   artifactName: '${productName}-${version}-${arch}.${ext}'
 
 win:
@@ -80,7 +85,7 @@ win:
   # afterPack hook edits only the main exe resources so Windows process/task
   # lists show KodaX Space instead of Electron without pulling winCodeSign.
   signAndEditExecutable: false
-  icon: resources/icon.png  # electron-builder 自动从 PNG 生成 ico（256x256+）
+  icon: resources/icon.png # electron-builder 自动从 PNG 生成 ico（256x256+）
   # ⚠️ artifactName 不放在 win 顶层 —— 否则 nsis / portable 两个 target 共用同名 → 产物互相覆盖。
   # 每个 target 块各自指定 artifactName。
 

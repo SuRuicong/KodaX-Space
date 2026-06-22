@@ -28,6 +28,69 @@ function ok(msg) {
   console.log(`[smoke-pack] OK: ${msg}`);
 }
 
+async function pathExists(targetPath) {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function listFilesRecursive(dir) {
+  const out = [];
+  const stack = [dir];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    let entries;
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+      } else if (entry.isFile()) {
+        out.push(fullPath);
+      }
+    }
+  }
+  return out;
+}
+
+function keyringNativePatternForAsar(asarPath) {
+  const normalizedPath = asarPath.replace(/\\/g, '/');
+  if (normalizedPath.includes('/mac-arm64/')) {
+    return /keyring\.darwin-arm64\.node$/;
+  }
+  if (normalizedPath.includes('/mac-universal/')) {
+    return /keyring\.darwin-(universal|x64|arm64)\.node$/;
+  }
+  if (normalizedPath.includes('/mac/')) {
+    return /keyring\.darwin-x64\.node$/;
+  }
+
+  if (process.platform === 'win32') {
+    if (process.arch === 'x64') return /keyring\.win32-x64-msvc\.node$/;
+    if (process.arch === 'arm64') return /keyring\.win32-arm64-msvc\.node$/;
+    if (process.arch === 'ia32') return /keyring\.win32-ia32-msvc\.node$/;
+  }
+  if (process.platform === 'darwin') {
+    if (process.arch === 'x64') return /keyring\.darwin-x64\.node$/;
+    if (process.arch === 'arm64') return /keyring\.darwin-arm64\.node$/;
+    return /keyring\.darwin-(universal|x64|arm64)\.node$/;
+  }
+  if (process.platform === 'linux') {
+    if (process.arch === 'x64') return /keyring\.linux-x64-(gnu|musl)\.node$/;
+    if (process.arch === 'arm64') return /keyring\.linux-arm64-(gnu|musl)\.node$/;
+    if (process.arch === 'arm') return /keyring\.linux-arm-gnueabihf\.node$/;
+    if (process.arch === 'riscv64') return /keyring\.linux-riscv64-gnu\.node$/;
+  }
+  return /keyring\..+\.node$/;
+}
+
 async function findInstaller() {
   let entries;
   try {
@@ -36,8 +99,8 @@ async function findInstaller() {
     fail(`out/ directory not found: ${err.message}`);
   }
   // 平台对应：Win .exe / mac .dmg / Linux .AppImage (future)
-  const candidates = entries.filter((name) =>
-    /\.(exe|dmg|AppImage|deb|zip)$/i.test(name) && !/^builder-/.test(name),
+  const candidates = entries.filter(
+    (name) => /\.(exe|dmg|AppImage|deb|zip)$/i.test(name) && !/^builder-/.test(name),
   );
   if (candidates.length === 0) {
     fail(`no installer artifact in out/ (entries: ${entries.join(', ') || 'empty'})`);
@@ -54,7 +117,7 @@ async function checkSize(installerPath) {
   ok(`${path.basename(installerPath)} = ${mb} MB (< 200 MB cap)`);
 }
 
-async function checkAsarContents() {
+async function findAsarPaths() {
   // electron-builder 把 app.asar 放在不同位置：
   //   Win unpacked:   out/win-unpacked/resources/app.asar
   //   mac unpacked:   out/mac/KodaX Space.app/Contents/Resources/app.asar
@@ -67,19 +130,17 @@ async function checkAsarContents() {
     path.join(outDir, 'mac-universal', 'KodaX Space.app', 'Contents', 'Resources', 'app.asar'),
     path.join(outDir, 'linux-unpacked', 'resources', 'app.asar'),
   ];
-  let asarPath = null;
+  const asarPaths = [];
   for (const candidate of candidates) {
-    try {
-      await fs.access(candidate);
-      asarPath = candidate;
-      break;
-    } catch {
-      // try next
-    }
+    if (await pathExists(candidate)) asarPaths.push(candidate);
   }
-  if (!asarPath) {
+  if (asarPaths.length === 0) {
     fail(`app.asar not found in any expected location (checked: ${candidates.join(', ')})`);
   }
+  return asarPaths;
+}
+
+async function checkAsarContents(asarPath) {
   ok(`app.asar located at ${asarPath}`);
 
   // 用 @electron/asar 的程序化 API 列内容——避免 spawn .cmd 的 Windows EUNKNOWN 坑
@@ -91,7 +152,12 @@ async function checkAsarContents() {
     files = list;
   } catch (err) {
     // fallback：尝试 spawn asar CLI（shell: true on Windows for .cmd 兼容）
-    const asarBin = path.join(rootDir, 'node_modules', '.bin', process.platform === 'win32' ? 'asar.cmd' : 'asar');
+    const asarBin = path.join(
+      rootDir,
+      'node_modules',
+      '.bin',
+      process.platform === 'win32' ? 'asar.cmd' : 'asar',
+    );
     const result = spawnSync(asarBin, ['list', asarPath], {
       encoding: 'utf-8',
       shell: process.platform === 'win32',
@@ -119,17 +185,62 @@ async function checkAsarContents() {
     ok(`asar contains ${req}`);
   }
 
-  // 运行时 doc/ 目录回归守卫（HARD FAIL）：
-  // electron-builder.yml 的 files glob 曾用 `doc`/`docs` 通配把任意同名目录删掉，误伤 yaml 的
-  // dist/doc/（运行时代码：composer.js `require('../doc/directives.js')`）→ 打包后 SDK 加载即崩、
-  // 主进程不创建窗口。若 yaml 作为独立 node_modules 包被打进 asar（compose/composer.js 在），
-  // 其 dist/doc/directives.js 必须同在。（当 SDK 把 yaml bundle 进 chunk 时整包不在 asar，自动跳过。）
-  const yamlComposer = normalized.some((f) => /\/node_modules\/yaml\/dist\/compose\/composer\.js$/.test(f));
+  // Runtime dependency guards: fail the package smoke when dynamic/native
+  // modules needed at app startup are missing from asar or app.asar.unpacked.
+  // Keyring is loaded dynamically by the packaged main process; keep a hard
+  // smoke guard so provider keys do not silently fall back to memory storage.
+  const keyringRequired = [
+    '/node_modules/@napi-rs/keyring/keytar.js',
+    '/node_modules/@napi-rs/keyring/index.js',
+    '/node_modules/@napi-rs/keyring/package.json',
+  ];
+  for (const req of keyringRequired) {
+    if (!normalized.some((f) => f === req || f.endsWith(req))) {
+      fail(
+        `keychain runtime missing from asar: ${req}. ` +
+          'Packaged provider keys will fall back to memory only.',
+      );
+    }
+    ok(`asar contains ${req}`);
+  }
+
+  const nativePattern = keyringNativePatternForAsar(asarPath);
+  const hasKeyringNativeInAsar = normalized.some(
+    (f) => /\/node_modules\/@napi-rs\/keyring-[^/]+\/.+\.node$/.test(f) && nativePattern.test(f),
+  );
+  const unpackedDir = `${asarPath}.unpacked`;
+  const unpackedFiles = (await pathExists(unpackedDir))
+    ? (await listFilesRecursive(unpackedDir)).map((f) => f.replace(/\\/g, '/'))
+    : [];
+  const hasKeyringNativeUnpacked = unpackedFiles.some(
+    (f) => /\/node_modules\/@napi-rs\/keyring-[^/]+\/.+\.node$/.test(f) && nativePattern.test(f),
+  );
+  if (!hasKeyringNativeInAsar && !hasKeyringNativeUnpacked) {
+    fail(
+      `current-platform @napi-rs/keyring native binding missing (expected ${nativePattern}). ` +
+        'Packaged provider keys will fall back to memory only.',
+    );
+  }
+  if (!hasKeyringNativeUnpacked) {
+    fail(
+      `@napi-rs/keyring native binding is present but not unpacked from asar (expected ${nativePattern}). ` +
+        'Native .node modules must live under app.asar.unpacked.',
+    );
+  }
+  ok('@napi-rs/keyring native binding present in app.asar.unpacked');
+
+  // yaml's dist/doc files are runtime code. A previous files glob stripped this
+  // directory from node_modules and broke packaged startup.
+  const yamlComposer = normalized.some((f) =>
+    /\/node_modules\/yaml\/dist\/compose\/composer\.js$/.test(f),
+  );
   if (yamlComposer) {
-    const yamlDoc = normalized.some((f) => /\/node_modules\/yaml\/dist\/doc\/directives\.js$/.test(f));
+    const yamlDoc = normalized.some((f) =>
+      /\/node_modules\/yaml\/dist\/doc\/directives\.js$/.test(f),
+    );
     if (!yamlDoc) {
       fail(
-        "yaml packed but yaml/dist/doc/directives.js missing — runtime doc/ stripped. " +
+        'yaml packed but yaml/dist/doc/directives.js missing — runtime doc/ stripped. ' +
           'Check electron-builder.yml files globs do not exclude **/doc/** under node_modules.',
       );
     }
@@ -140,7 +251,9 @@ async function checkAsarContents() {
   // 注意：doc/docs/test/example 这类目录现在是“故意保留”的（可能是包的运行时代码），不再当泄漏报警。
   const leaks = normalized.filter((f) => /\/(__tests__|__mocks__)\//.test(f));
   if (leaks.length > 0) {
-    console.warn(`[smoke-pack] WARN: ${leaks.length} __tests__/__mocks__ paths leaked into asar (first 5):`);
+    console.warn(
+      `[smoke-pack] WARN: ${leaks.length} __tests__/__mocks__ paths leaked into asar (first 5):`,
+    );
     leaks.slice(0, 5).forEach((f) => console.warn(`  - ${f}`));
   } else {
     ok('no __tests__/__mocks__ leaked into asar');
@@ -152,7 +265,9 @@ async function main() {
   for (const installer of installers) {
     await checkSize(installer);
   }
-  await checkAsarContents();
+  for (const asarPath of await findAsarPaths()) {
+    await checkAsarContents(asarPath);
+  }
   console.log('\n[smoke-pack] all checks passed');
 }
 
