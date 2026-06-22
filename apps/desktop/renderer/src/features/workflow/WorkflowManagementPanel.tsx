@@ -398,8 +398,27 @@ function RunDetail({
         />
       </DetailHeader>
       <WorkflowPanel runs={[run]} variant="full" hideRunHeader defaultDetailsOpen={false} />
+      {run.status === 'completed' && run.resultSummary ? (
+        <RunResultSummary summary={run.resultSummary} />
+      ) : null}
       <HistoryBlock runs={relatedRuns} selectedRunId={run.runId} onSelectRun={onSelectRun} />
     </div>
+  );
+}
+
+function RunResultSummary({ summary }: { readonly summary: string }): JSX.Element {
+  return (
+    <section className="rounded-md border border-border-default/60 bg-surface-2/45 p-2">
+      <div className="mb-1 text-[10px] font-mono uppercase tracking-wider text-fg-faint">
+        Final summary
+      </div>
+      <pre
+        className="max-h-40 overflow-auto whitespace-pre-wrap break-words text-[11px] text-fg-secondary"
+        data-testid="workflow-management-result-summary"
+      >
+        {summary}
+      </pre>
+    </section>
   );
 }
 

@@ -2,7 +2,7 @@
 
 > Provider-neutral, local-first AI agent desktop client — KodaX 生态桌面客户端
 
-[![status](https://img.shields.io/badge/status-released-green)]() [![license](https://img.shields.io/badge/license-Apache--2.0-blue)]() [![version](https://img.shields.io/badge/version-0.1.20-blue)]()
+[![status](https://img.shields.io/badge/status-released-green)]() [![license](https://img.shields.io/badge/license-Apache--2.0-blue)]() [![version](https://img.shields.io/badge/version-0.1.21-blue)]()
 
 KodaX Space 是 [KodaX](../KodaX) 生态的 Electron 桌面客户端。对标 Anthropic Claude Desktop 中的 Claude Code，Provider 中立、开源、本地优先（[ADR-004](docs/ADR/ADR-004-panel-model.md)）。
 
@@ -75,6 +75,21 @@ KodaX-Space/
 
 ## Status
 
+**v0.1.21 - Patch lane release** (2026-06-22 released)
+
+This patch keeps the v0.1.20 capability baseline and fixes release-critical issues around workflow transcript recovery, Settings CI stability, packaged keychain runtime files, and Windows zipped download fallbacks. See [CHANGELOG.md](CHANGELOG.md) and [docs/features/v0.1.21.md](docs/features/v0.1.21.md).
+
+### v0.1.21 Patch Highlights
+
+| Area                  | Summary                                                                                         |
+| --------------------- | ----------------------------------------------------------------------------------------------- |
+| **Workflow recovery** | Restored child summaries/final reports after reload and shows recovered summaries in workflow history. |
+| **Transcript polish** | Workflow completion notices keep readable markdown and expose footer copy/time affordances.      |
+| **Settings CI**       | Stabilized Settings e2e selectors across localized desktops and ambiguous labels.                |
+| **Packaging**         | Included `@napi-rs/keyring` native runtime files and packaged keychain smoke guards.             |
+| **Release artifacts** | Windows releases include zipped setup/portable fallbacks for unsigned `.exe` download blocking.  |
+| **Planning**          | `v0.1.21` ships as patch-only; `v0.1.22-v0.1.25` remain patch lanes before F103 at `v0.1.26`.     |
+
 **v0.1.20 — Capability catch-up + Display Language MVP ✅**（2026-06-22 released）
 
 本版本在 v0.1.19 应急维护基线上收口 KodaX 0.7.53 消费、workflow 可视化/恢复、Space-side handoff receiver、Quick Ask 连续性、Repointel 诊断和中/英显示语言 MVP。详见 [CHANGELOG.md](CHANGELOG.md) 和 [docs/features/v0.1.20.md](docs/features/v0.1.20.md)。
@@ -96,6 +111,7 @@ KodaX-Space/
 
 | Version | Theme                                                            | Date       |
 | ------- | ---------------------------------------------------------------- | ---------- |
+| v0.1.21 | Patch lane: workflow recovery + release artifact resilience      | 2026-06-22 |
 | v0.1.20 | Capability catch-up + Display Language MVP                       | 2026-06-22 |
 | v0.1.19 | Session cancellation/history fix + popout recovery               | 2026-06-18 |
 | v0.1.18 | KodaX CLI custom provider bridge                                 | 2026-06-17 |

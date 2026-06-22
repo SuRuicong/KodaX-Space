@@ -12,6 +12,36 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 > v0.1.7 内容 (F011/F023/F024/F026/F038) 跟 v0.1.8 一起发。GitHub Releases 顶部仍是 v0.1.5，
 > 0.1.7 这条 section 留作历史记录、git log 引用入口。
 
+## [0.1.21] - 2026-06-22
+
+### Theme
+
+**Patch lane release: workflow transcript recovery, release artifact resilience, and patch-lane reset.**
+
+This patch release keeps the v0.1.20 feature baseline intact while fixing the highest-risk post-release issues found in workflow transcript recovery, Settings e2e stability, packaged keychain inclusion, and Windows release artifact fallbacks. It also formally opens the v0.1.21 patch lane and keeps planned feature work deferred to v0.1.26+.
+
+### Fixed
+
+- **Workflow transcript restore notices** - Restored completed workflow child summaries and final reports into the transcript after renderer reload, without turning workflow notices into user-message bubbles.
+- **Workflow final report rendering** - Preserved readable markdown in workflow completion notices and kept final reports visible instead of collapsing them into one-line summaries.
+- **Workflow manager history details** - Restored completed workflow runs now show their final summary directly in the manager detail pane before users expand the durable artifact body.
+- **Workflow notice affordances** - Added stable footer controls/timestamps for workflow system notices so copied/restored workflow messages behave like other transcript entries.
+- **Settings modal e2e stability** - Stabilized Settings tests with scoped selectors, a dedicated settings button test id, English e2e fixture language, and a more specific "Close settings" accessibility label.
+- **Packaged keychain runtime** - Included `@napi-rs/keyring` and its native bindings in Electron packaging, unpacked native `.node` modules correctly, and extended packaged smoke checks to fail if keychain runtime files are missing.
+- **Windows release downloads** - Added zipped Windows release fallbacks so users can download `Setup.zip` / `Portable.zip` when direct unsigned `.exe` downloads are blocked.
+
+### Changed
+
+- **Version alignment** - Root, desktop, IPC schema, UI kit, lockfile, and `space.version` capability contract are aligned to `0.1.21` / `space-v0.1.21`.
+- **Release notes pipeline** - Release notes now prioritize the matching `CHANGELOG.md` section, so tag-triggered GitHub Releases publish the curated changelog first.
+- **Patch reserve planning** - `v0.1.21` ships as the first patch-only release; `v0.1.22-v0.1.25` remain reserved for patch-only releases, F103 Pinned Runtime Summary moves to `v0.1.26`, and planned 0.1.x feature lanes move to `v0.1.36-v0.1.39`.
+
+### Verified
+
+- `npm run typecheck`
+- `npm run build:smoke`
+- `npm run e2e:run -- tests/e2e/settings-modal.spec.ts tests/e2e/settings-modal-interactions.spec.ts tests/e2e/workflow-events.spec.ts`
+
 ## [0.1.20] - 2026-06-22
 
 ### Theme
