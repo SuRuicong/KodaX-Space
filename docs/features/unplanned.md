@@ -1,7 +1,7 @@
 # F067 — LiveCanvas Artifact Sandbox 重新集成（交互 React tier）
 
 > Status: **Blocked**（blocked on LiveCanvas 包结构稳定）
-> Category: New · Priority: Medium · Version: v0.2.3
+> Category: New · Priority: Medium · Version: v0.2.5
 > 关联记忆：`livecanvas_artifact_plan`、`recharts_v3_and_lc_sandbox_bridge_block`
 
 ## 背景：为什么先被移除（2026-06-17）
@@ -64,7 +64,7 @@ Schema：`artifactSandboxInfoChannel` + `ArtifactSandboxInfo` 类型 + `channels
 
 # F069 — Electron 主进程统一日志（Logger）工程
 
-> Status: **Planned** · Category: Internal · Priority: Low · Version: v0.1.39
+> Status: **Planned** · Category: Internal · Priority: Low · Version: v0.1.34
 > 来源：500-error history-scramble 修复的 code-review LOW-3 技术债（2026-06-18）
 > 关联：OC-10（主进程日志 secret 脱敏）、OC-04（per-run 日志轮转）、OC-05（debug 日志 ZIP 导出）
 
