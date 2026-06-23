@@ -26,6 +26,7 @@ import { useEffect, useRef } from 'react';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 import { Caret } from '../components/Caret.js';
+import { Portal } from '../components/Portal.js';
 
 interface SessionContextMenuProps {
   readonly session: SessionMeta;
@@ -150,44 +151,46 @@ export function SessionContextMenu({
   const top = Math.min(y, VIEWPORT_H - MENU_H - 8);
 
   return (
-    <div
-      ref={ref}
-      className="fixed bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 text-xs z-[100] min-w-[12rem]"
-      style={{ left, top }}
-      role="menu"
-    >
-      <MenuRow label="Open in" hint="" disabled chevron tip="v0.1.x" />
-      <Divider />
-      <MenuRow
-        label="Pin"
-        hint="P"
-        onClick={() => {
-          toggleFlag(session.sessionId, 'pinned');
-          onClose();
-        }}
-      />
-      <MenuRow
-        label="Mark as unread"
-        hint="U"
-        onClick={() => {
-          toggleFlag(session.sessionId, 'unread');
-          onClose();
-        }}
-      />
-      <MenuRow label="Rename" hint="R" onClick={onStartRename} />
-      <MenuRow label="Fork" hint="F" onClick={() => void onFork()} />
-      <MenuRow label="Move to group" hint="" disabled chevron tip="v0.1.x" />
-      <MenuRow
-        label="Archive"
-        hint="A"
-        onClick={() => {
-          toggleFlag(session.sessionId, 'archived');
-          onClose();
-        }}
-      />
-      <Divider />
-      <MenuRow label="Delete" hint="D" onClick={() => void onDelete()} danger />
-    </div>
+    <Portal>
+      <div
+        ref={ref}
+        className="fixed bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 text-xs z-[100] min-w-[12rem]"
+        style={{ left, top }}
+        role="menu"
+      >
+        <MenuRow label="Open in" hint="" disabled chevron tip="v0.1.x" />
+        <Divider />
+        <MenuRow
+          label="Pin"
+          hint="P"
+          onClick={() => {
+            toggleFlag(session.sessionId, 'pinned');
+            onClose();
+          }}
+        />
+        <MenuRow
+          label="Mark as unread"
+          hint="U"
+          onClick={() => {
+            toggleFlag(session.sessionId, 'unread');
+            onClose();
+          }}
+        />
+        <MenuRow label="Rename" hint="R" onClick={onStartRename} />
+        <MenuRow label="Fork" hint="F" onClick={() => void onFork()} />
+        <MenuRow label="Move to group" hint="" disabled chevron tip="v0.1.x" />
+        <MenuRow
+          label="Archive"
+          hint="A"
+          onClick={() => {
+            toggleFlag(session.sessionId, 'archived');
+            onClose();
+          }}
+        />
+        <Divider />
+        <MenuRow label="Delete" hint="D" onClick={() => void onDelete()} danger />
+      </div>
+    </Portal>
   );
 }
 

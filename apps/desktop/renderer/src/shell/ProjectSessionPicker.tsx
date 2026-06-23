@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 import { createMatcher } from '../lib/fuzzy.js';
+import { Portal } from '../components/Portal.js';
 
 interface ProjectSessionPickerProps {
   readonly projectName: string;
@@ -80,6 +81,12 @@ export function ProjectSessionPicker({
     setActiveIdx(0);
   }, [query]);
 
+  // autoFocus 的兜底：portal 化后 native autoFocus 在某些开启路径(mousedown 期)可能被抑制，
+  // 挂载后显式 focus 一次，保证 picker 一出现就能直接打字。
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
   // 自动滚 active 项到可见
   useEffect(() => {
     const list = listRef.current;
@@ -121,98 +128,100 @@ export function ProjectSessionPicker({
   }, [filtered, activeIdx, onSelect, onClose]);
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-start justify-center pt-24 bg-black/40 backdrop-blur-sm"
-      onClick={onClose}
-      // v0.1.10 fix: window-level keydown 在某些状态下可能被其他 modal 抢走或卸载竞争,
-      // 直接给 overlay 容器加 div 级 onKeyDown 兜底 — 用户在 picker 内部按 Esc 永远 work。
-      // tabIndex 让 div 可接收 keyboard event (即便用户点 list 让 input 失焦也行)。
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          e.stopPropagation();
-          onClose();
-        }
-      }}
-      tabIndex={-1}
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Sessions in ${projectName}`}
-    >
+    <Portal>
       <div
-        className="bg-surface border border-border-default rounded-lg shadow-2xl w-[560px] max-w-[90vw] max-h-[70vh] flex flex-col overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
+        className="fixed inset-0 z-[60] flex items-start justify-center pt-24 bg-black/40 backdrop-blur-sm"
+        onClick={onClose}
+        // v0.1.10 fix: window-level keydown 在某些状态下可能被其他 modal 抢走或卸载竞争,
+        // 直接给 overlay 容器加 div 级 onKeyDown 兜底 — 用户在 picker 内部按 Esc 永远 work。
+        // tabIndex 让 div 可接收 keyboard event (即便用户点 list 让 input 失焦也行)。
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            onClose();
+          }
+        }}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Sessions in ${projectName}`}
       >
-        <div className="border-b border-border-default px-3 py-2 flex items-center gap-2">
-          <span className="text-xs text-fg-muted truncate">Sessions in</span>
-          <span
-            className="text-[12px] text-fg-primary font-semibold truncate flex-1"
-            title={projectName}
-          >
-            {projectName}
-          </span>
-          <span className="text-[11px] text-fg-muted font-mono">{sessions.length}</span>
-        </div>
-        <div className="border-b border-border-default px-3 py-2">
-          <input
-            ref={inputRef}
-            autoFocus
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter by title…"
-            className="w-full bg-transparent text-fg-primary placeholder:text-fg-faint outline-none text-sm"
-            aria-label="Session filter query"
-          />
-        </div>
-        <ul ref={listRef} className="overflow-y-auto flex-1 text-[12px]">
-          {filtered.length === 0 ? (
-            <li className="px-3 py-4 text-fg-muted text-center">No matches</li>
-          ) : (
-            filtered.map(({ session }, idx) => {
-              const isActive = idx === activeIdx;
-              const isCurrent = session.sessionId === currentSessionId;
-              return (
-                <li key={session.sessionId} data-idx={idx}>
-                  <button
-                    type="button"
-                    onMouseEnter={() => setActiveIdx(idx)}
-                    onClick={() => {
-                      onSelect(session.sessionId);
-                      onClose();
-                    }}
-                    className={`w-full text-left px-3 py-1.5 flex items-center gap-2 ${
-                      isActive
-                        ? 'bg-surface-3 text-fg-primary'
-                        : 'text-fg-secondary hover:bg-hover-bg'
-                    }`}
-                  >
-                    {isCurrent && (
-                      <span className="text-ok text-[11px]" aria-hidden>
-                        ●
-                      </span>
-                    )}
-                    <span className="truncate flex-1" title={session.title || session.sessionId}>
-                      {session.title || session.sessionId.slice(0, 8)}
-                    </span>
-                    <span
-                      className="text-[11px] text-fg-muted font-mono flex-shrink-0"
-                      title={new Date(session.lastActivityAt).toLocaleString()}
+        <div
+          className="bg-surface border border-border-default rounded-lg shadow-2xl w-[560px] max-w-[90vw] max-h-[70vh] flex flex-col overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="border-b border-border-default px-3 py-2 flex items-center gap-2">
+            <span className="text-xs text-fg-muted truncate">Sessions in</span>
+            <span
+              className="text-[12px] text-fg-primary font-semibold truncate flex-1"
+              title={projectName}
+            >
+              {projectName}
+            </span>
+            <span className="text-[11px] text-fg-muted font-mono">{sessions.length}</span>
+          </div>
+          <div className="border-b border-border-default px-3 py-2">
+            <input
+              ref={inputRef}
+              autoFocus
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter by title…"
+              className="w-full bg-transparent text-fg-primary placeholder:text-fg-faint outline-none text-sm"
+              aria-label="Session filter query"
+            />
+          </div>
+          <ul ref={listRef} className="overflow-y-auto flex-1 text-[12px]">
+            {filtered.length === 0 ? (
+              <li className="px-3 py-4 text-fg-muted text-center">No matches</li>
+            ) : (
+              filtered.map(({ session }, idx) => {
+                const isActive = idx === activeIdx;
+                const isCurrent = session.sessionId === currentSessionId;
+                return (
+                  <li key={session.sessionId} data-idx={idx}>
+                    <button
+                      type="button"
+                      onMouseEnter={() => setActiveIdx(idx)}
+                      onClick={() => {
+                        onSelect(session.sessionId);
+                        onClose();
+                      }}
+                      className={`w-full text-left px-3 py-1.5 flex items-center gap-2 ${
+                        isActive
+                          ? 'bg-surface-3 text-fg-primary'
+                          : 'text-fg-secondary hover:bg-hover-bg'
+                      }`}
                     >
-                      {formatAgo(session.lastActivityAt, now)}
-                    </span>
-                  </button>
-                </li>
-              );
-            })
-          )}
-        </ul>
-        <div className="border-t border-border-default px-3 py-1.5 text-[11px] text-fg-muted flex gap-3">
-          <span>↑↓ navigate</span>
-          <span>Enter to open</span>
-          <span>Esc to close</span>
+                      {isCurrent && (
+                        <span className="text-ok text-[11px]" aria-hidden>
+                          ●
+                        </span>
+                      )}
+                      <span className="truncate flex-1" title={session.title || session.sessionId}>
+                        {session.title || session.sessionId.slice(0, 8)}
+                      </span>
+                      <span
+                        className="text-[11px] text-fg-muted font-mono flex-shrink-0"
+                        title={new Date(session.lastActivityAt).toLocaleString()}
+                      >
+                        {formatAgo(session.lastActivityAt, now)}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+          <div className="border-t border-border-default px-3 py-1.5 text-[11px] text-fg-muted flex gap-3">
+            <span>↑↓ navigate</span>
+            <span>Enter to open</span>
+            <span>Esc to close</span>
+          </div>
         </div>
       </div>
-    </div>
+    </Portal>
   );
 }

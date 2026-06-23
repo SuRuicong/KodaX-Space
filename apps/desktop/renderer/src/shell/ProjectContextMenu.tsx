@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { Project } from '@kodax-space/space-ipc-schema';
 import { pushToast } from '../store/toastStore.js';
+import { Portal } from '../components/Portal.js';
 
 interface ProjectContextMenuProps {
   readonly project: Project;
@@ -112,29 +113,31 @@ export function ProjectContextMenu({
   const top = Math.min(y, window.innerHeight - 110);
 
   return (
-    <div
-      ref={ref}
-      // z-[100] 对齐 SessionContextMenu (一致 z-stack 减少未来万一双 menu 同屏时的层级 bug)
-      className="fixed z-[100] min-w-[180px] bg-surface border border-border-default rounded shadow-2xl text-xs py-1"
-      style={{ left, top }}
-      role="menu"
-      aria-label={`${project.name} actions`}
-    >
-      <MenuRow
-        label="Rename"
-        hint="R"
-        onClick={() => {
-          onStartRename();
-        }}
-      />
-      <MenuRow
-        label={isArchived ? 'Unarchive' : 'Archive'}
-        hint="A"
-        onClick={() => void onToggleArchive()}
-      />
-      <div className="my-1 border-t border-border-default/60" />
-      <MenuRow label="Remove from Space" hint="D" danger onClick={() => void onRemove()} />
-    </div>
+    <Portal>
+      <div
+        ref={ref}
+        // z-[100] 对齐 SessionContextMenu (一致 z-stack 减少未来万一双 menu 同屏时的层级 bug)
+        className="fixed z-[100] min-w-[180px] bg-surface border border-border-default rounded shadow-2xl text-xs py-1"
+        style={{ left, top }}
+        role="menu"
+        aria-label={`${project.name} actions`}
+      >
+        <MenuRow
+          label="Rename"
+          hint="R"
+          onClick={() => {
+            onStartRename();
+          }}
+        />
+        <MenuRow
+          label={isArchived ? 'Unarchive' : 'Archive'}
+          hint="A"
+          onClick={() => void onToggleArchive()}
+        />
+        <div className="my-1 border-t border-border-default/60" />
+        <MenuRow label="Remove from Space" hint="D" danger onClick={() => void onRemove()} />
+      </div>
+    </Portal>
   );
 }
 
