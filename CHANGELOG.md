@@ -12,6 +12,31 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 > v0.1.7 内容 (F011/F023/F024/F026/F038) 跟 v0.1.8 一起发。GitHub Releases 顶部仍是 v0.1.5，
 > 0.1.7 这条 section 留作历史记录、git log 引用入口。
 
+## [0.1.23] - 2026-06-24
+
+### Theme
+
+**Durable runtime preferences, KodaX 0.7.54 SDK catch-up, and composer file references — with a green CI baseline restored.**
+
+This release makes the Plan / Accept edits / Auto selector a durable Space preference, brings Space in line with KodaX SDK 0.7.54, adds drag-and-drop file references to the composer, and folds in the review/hardening pass. CI (typecheck + unit + cross-platform e2e) is green again after a long red stretch.
+
+### Added
+
+- **Runtime defaults and mode persistence (F106)** - Plan / Accept edits / Auto and the Auto engine now persist as Space-owned runtime defaults; resumed sessions prefer a per-session runtime sidecar, then Space defaults, then a read-only `~/.kodax/config.json` fallback, then safe built-ins. A main-process resolver owns precedence and exposes value sources for diagnostics.
+- **KodaX 0.7.54 SDK catch-up (F107)** - Dependency + GLM 5.2/4.7 refresh, learning inbox and ledger slash commands (`/learn pending|ledger|diff|approve|reject`, `/skill|workflow|memory pending`), session recovery preview (`/recover candidate|prompt|seed`), opt-in SDK extension discovery/runtime (`/extensions sdk [load]`), a Space extensions manual topic, and completed-turn learning lifecycle wiring.
+- **Composer dropped file references (F108)** - Dropping files into the composer inserts safe `@relative/path` (in-project) or `file://` (external) references with removable chips; PNG/JPEG/WEBP also attach as inline image artifacts.
+
+### Fixed
+
+- **Mode selector responsiveness** - The bottom mode selector no longer holds its busy lock across the global-default persistence IPC, so rapid Shift+Tab cycling through Plan / Accept edits / Auto stays responsive.
+- **Session runtime sidecar safety** - Per-session sidecar writes are serialized per session with unique temp files, reject colon session ids (Windows ADS), and preserve still-valid runtime fields when one field is invalid.
+- **SDK extension runtime disposal** - Extension runtimes dedupe disposal via a per-runtime guard, avoiding double-dispose races on invalidation.
+- **MCPB storage migration** - The legacy `~/.kodax-space` → KodaX-home migration copies to a temp dir and atomically renames into place, re-validating the destination stays inside the extract base.
+- **Provider key rename hygiene** - Renaming a custom provider moves its key transactionally with rollback, and provider error messages no longer echo caller-supplied ids.
+- **Session scope guards** - Sends and slash commands assert the expected project/surface so a stale renderer cannot drive a session in the wrong project after a switch.
+- **Composer dropped-image dedup** - Dropped images no longer produce both a `file://` reference and an inline image artifact for the same file.
+- **Continuous integration** - Restored a fully green CI baseline (typecheck + unit tests + Windows/Linux e2e).
+
 ## [0.1.22] - 2026-06-22
 
 ### Theme

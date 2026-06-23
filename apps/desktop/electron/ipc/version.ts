@@ -95,7 +95,7 @@ export function registerVersionChannel(): void {
       platform,
       kodaxSdkVersion: readKodaxSdkVersion(),
       kodaxDependencySpec: readKodaxDependencySpec(),
-      capabilityContract: 'space-v0.1.22',
+      capabilityContract: 'space-v0.1.23',
       capabilities: buildCapabilityLedger(),
     };
   });
