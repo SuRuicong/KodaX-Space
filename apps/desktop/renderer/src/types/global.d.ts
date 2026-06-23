@@ -1,8 +1,6 @@
 // Global types injected by Electron preload (contextBridge).
-// 这是 renderer 唯一允许"看到 electron"的接口面。
-//
-// FEATURE_002：invoke / on 现在是 channel-typed——传错 channel 名直接 ts 报错。
-
+// This is the renderer's only Electron-facing surface.
+// FEATURE_002: invoke / on are channel-typed.
 import type {
   InvokeChannelName,
   PushChannelName,
@@ -11,13 +9,26 @@ import type {
   IpcResult,
 } from '@kodax-space/space-ipc-schema';
 
+type BridgePlatform =
+  | 'aix'
+  | 'android'
+  | 'darwin'
+  | 'freebsd'
+  | 'haiku'
+  | 'linux'
+  | 'openbsd'
+  | 'sunos'
+  | 'win32'
+  | 'cygwin'
+  | 'netbsd';
+
 export {};
 
 declare global {
   interface KodaXSpaceBridge {
     /**
-     * Renderer → main 请求-响应。永远返回 envelope：调用方用 `result.ok` 区分。
-     * Channel 名不在 schema 中会 ts 报错；运行时 preload 也会兜底拒绝。
+     * Renderer-to-main request/response. Always returns an envelope.
+     * Schema-unknown channels fail at type-check time and at preload runtime.
      */
     invoke<C extends InvokeChannelName>(
       channel: C,
@@ -25,19 +36,22 @@ declare global {
     ): Promise<IpcResult<ChannelOutput<C>>>;
 
     /**
-     * Main → renderer push 事件订阅。返回 unsubscribe 函数。
-     * payload 按对应 channel 的 zod schema 推导成强类型。
+     * Subscribe to main-to-renderer push events and return an unsubscribe.
+     * Payloads are inferred from each channel's zod schema.
      */
     on<C extends PushChannelName>(
       channel: C,
       listener: (payload: import('@kodax-space/space-ipc-schema').PushPayload<C>) => void,
     ): () => void;
 
-    platform: NodeJS.Platform;
+    platform: BridgePlatform;
+
+    /** Resolve the OS path for a File supplied by a user drag/drop action. */
+    getPathForFile(file: File): string | null;
 
     /**
-     * 浏览器式整窗缩放（Chromium webFrame zoom）。get/set 缩放系数（1 = 100%）。
-     * Ctrl+滚轮 / Ctrl+± / Ctrl+0 的交互与持久化在 renderer 的 ZoomController 里。
+     * Chromium whole-window zoom factor (1 = 100%).
+     * Gestures and persistence live in the renderer ZoomController.
      */
     zoom: {
       get(): number;
