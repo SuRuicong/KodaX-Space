@@ -575,6 +575,11 @@ Affected components:
 - `apps/desktop/electron/mcp/kodax-user-config-loader.ts`
 - `apps/desktop/electron/ipc/mcp.ts`
 - `apps/desktop/electron/ipc/mcpb.ts`
+- `apps/desktop/electron/mcp/manager.ts`
+- `apps/desktop/renderer/src/shell/popouts/McpPanel.tsx`
+- `apps/desktop/renderer/src/shell/BottomBar.tsx`
+- `packages/space-ipc-schema/src/channels/mcp.ts`
+- `packages/space-ipc-schema/test/mcp.test.ts`
 
 #### Root Cause
 
@@ -591,6 +596,7 @@ Implemented per-session SDK extension runtime wiring:
 - `RealKodaXSession` now lazily creates and caches this runtime before building `KodaXOptions`, passes it as `options.extensionRuntime`, and disposes it when the session is disposed.
 - MCP reload and MCP bundle install/uninstall invalidate cached session runtimes via a SDK extension config generation, so existing sessions rebuild their MCP runtime on the next turn.
 - If config generation changes while a runtime is still initializing, the stale runtime is disposed and the current turn retries once against the new generation.
+- The MCP popout lifecycle manager now supports an optional projectRoot scope, so project-level servers can be listed, started, stopped, inspected, and queried for tools instead of only appearing in discover output.
 - `/extensions sdk load` active runtimes are now replaced through the helper, disposing the previous Space-owned active runtime before installing a new one.
 - Filesystem extension loading remains controlled by `KODAX_SPACE_ENABLE_SDK_EXTENSIONS`; configured MCP servers are always considered.
 
@@ -615,10 +621,12 @@ Tests added:
 - `createSpaceSdkExtensionRuntime replaces and disposes active runtimes only when requested`
 - `invalidateSpaceSdkExtensionRuntimes increments generation and disposes active runtime`
 - `createSpaceSdkExtensionRuntime loads filesystem extensions only when env-enabled`
+- `mcp lifecycle inputs accept optional projectRoot scope`
 
 Verification:
 
 - `node --test --import tsx/esm electron/test/sdk-extensions.test.ts electron/test/host.test.ts electron/test/host-try-resume.test.ts electron/test/slash-builtin.test.ts electron/test/mcp-config-reader.test.ts` from `apps/desktop` passed: 95/95.
+- `node --test --import tsx/esm packages/space-ipc-schema/test/mcp.test.ts` passed: 9/9.
 - `npm run typecheck` passed.
 
 ### 009: Space per-session follow-up queue removed SDK mid-turn queue-query insertion
@@ -681,6 +689,8 @@ Files changed:
 - `apps/desktop/electron/test/queue.test.ts`
 - `apps/desktop/electron/test/composeMessages.test.ts`
 - `packages/space-ipc-schema/test/session.test.ts`
+- `apps/desktop/electron/test/slash-ipc.test.ts`
+- `packages/space-ipc-schema/test/slash.test.ts`
 
 Tests added/updated:
 

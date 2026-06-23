@@ -6,6 +6,12 @@ import {
   invokeChannels,
   INVOKE_CHANNEL_NAMES,
   mcpDiscoverChannel,
+  mcpLogsChannel,
+  mcpReloadChannel,
+  mcpServersChannel,
+  mcpStartChannel,
+  mcpStopChannel,
+  mcpToolsChannel,
 } from '../src/index.js';
 
 test('mcp.discover channel is registered', () => {
@@ -17,6 +23,20 @@ test('mcp.discover input requires projectRoot', () => {
   assert.equal(mcpDiscoverChannel.input.safeParse({ projectRoot: 'C:\\proj' }).success, true);
   assert.equal(mcpDiscoverChannel.input.safeParse({}).success, false);
   assert.equal(mcpDiscoverChannel.input.safeParse({ projectRoot: '' }).success, false);
+});
+
+test('mcp lifecycle inputs accept optional projectRoot scope', () => {
+  assert.equal(mcpServersChannel.input.safeParse(undefined).success, true);
+  assert.equal(mcpServersChannel.input.safeParse({ projectRoot: 'C:/proj' }).success, true);
+  assert.equal(mcpServersChannel.input.safeParse({ projectRoot: '' }).success, false);
+
+  const scopedServer = { serverId: 'gitnexus', projectRoot: 'C:/proj' };
+  assert.equal(mcpStartChannel.input.safeParse(scopedServer).success, true);
+  assert.equal(mcpStopChannel.input.safeParse(scopedServer).success, true);
+  assert.equal(mcpLogsChannel.input.safeParse(scopedServer).success, true);
+  assert.equal(mcpToolsChannel.input.safeParse({ ...scopedServer, forceRefresh: true }).success, true);
+  assert.equal(mcpReloadChannel.input.safeParse(undefined).success, true);
+  assert.equal(mcpReloadChannel.input.safeParse({ projectRoot: 'C:/proj' }).success, true);
 });
 
 test('mcp.discover output accepts stdio + http transports', () => {

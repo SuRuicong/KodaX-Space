@@ -1228,7 +1228,10 @@ export function BottomBar(): JSX.Element {
       } else {
         lines.push('  skills: skipped (no project)');
       }
-      const mcp = await window.kodaxSpace.invoke('mcp.reload', undefined);
+      const mcp = await window.kodaxSpace.invoke(
+        'mcp.reload',
+        currentProjectPath ? { projectRoot: currentProjectPath } : undefined,
+      );
       lines.push(
         mcp.ok
           ? `  mcp: ${mcp.data.ok ? 'ok' : 'not reloaded'} (${mcp.data.serverCount} server(s))`
@@ -1275,7 +1278,10 @@ export function BottomBar(): JSX.Element {
         return;
       }
       if (args[0]?.toLowerCase() === 'refresh') {
-        const reload = await window.kodaxSpace.invoke('mcp.reload', undefined);
+        const reload = await window.kodaxSpace.invoke(
+          'mcp.reload',
+          currentProjectPath ? { projectRoot: currentProjectPath } : undefined,
+        );
         if (!reload.ok) {
           appendUserMessage(
             sessionId,
@@ -1284,7 +1290,10 @@ export function BottomBar(): JSX.Element {
           return;
         }
       }
-      const r = await window.kodaxSpace.invoke('mcp.servers', undefined);
+      const r = await window.kodaxSpace.invoke(
+        'mcp.servers',
+        currentProjectPath ? { projectRoot: currentProjectPath } : undefined,
+      );
       if (!r.ok) {
         appendUserMessage(sessionId, `[mcp] servers failed: ${r.error?.message ?? 'unknown'}`);
         return;

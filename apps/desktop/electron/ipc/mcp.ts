@@ -33,13 +33,17 @@ function projectStatus(s: import('@kodax-ai/kodax/mcp').McpServerStatus): McpSer
   };
 }
 
+function managerOptions(input?: { readonly projectRoot?: string }): { readonly projectRoot?: string } | undefined {
+  return input?.projectRoot ? { projectRoot: input.projectRoot } : undefined;
+}
+
 export function registerMcpChannels(): void {
   registerChannel('mcp.discover', async (input) => {
     return discoverMcpServers({ projectRoot: input.projectRoot });
   });
 
-  registerChannel('mcp.servers', async () => {
-    const manager = await getMcpManager();
+  registerChannel('mcp.servers', async (input) => {
+    const manager = await getMcpManager(managerOptions(input));
     const list = manager.listServers();
     // schema cap is 128
     const projected = list.slice(0, 128).map(projectStatus);
@@ -47,19 +51,19 @@ export function registerMcpChannels(): void {
   });
 
   registerChannel('mcp.start', async (input) => {
-    const manager = await getMcpManager();
+    const manager = await getMcpManager(managerOptions(input));
     const status = await manager.startServer(input.serverId);
     return { status: projectStatus(status) };
   });
 
   registerChannel('mcp.stop', async (input) => {
-    const manager = await getMcpManager();
+    const manager = await getMcpManager(managerOptions(input));
     const status = await manager.stopServer(input.serverId);
     return { status: projectStatus(status) };
   });
 
   registerChannel('mcp.logs', async (input) => {
-    const manager = await getMcpManager();
+    const manager = await getMcpManager(managerOptions(input));
     const logs = manager.getServerLogs(input.serverId);
     return {
       serverId: logs.serverId,
@@ -71,7 +75,7 @@ export function registerMcpChannels(): void {
   });
 
   registerChannel('mcp.tools', async (input) => {
-    const manager = await getMcpManager();
+    const manager = await getMcpManager(managerOptions(input));
     const list = await manager.listTools(input.serverId, {
       forceRefresh: input.forceRefresh,
     });
@@ -87,14 +91,14 @@ export function registerMcpChannels(): void {
     };
   });
 
-  registerChannel('mcp.reload', async () => {
+  registerChannel('mcp.reload', async (input) => {
     await reloadMcpManager();
     await invalidateSpaceSdkExtensionRuntimes().catch((err) => {
       console.warn('[mcp] SDK extension runtime invalidation after reload failed:', err instanceof Error ? err.message : err);
     });
     // reload 后 lazy: 调一次 listServers 拿当前 count
     try {
-      const manager = await getMcpManager();
+      const manager = await getMcpManager(managerOptions(input));
       const count = manager.listServers().length;
       return { ok: true, serverCount: Math.min(count, 128) };
     } catch {

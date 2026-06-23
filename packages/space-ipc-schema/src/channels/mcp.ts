@@ -83,6 +83,11 @@ const mcpRuntimeStatusSchema = z.enum(['idle', 'connecting', 'ready', 'error', '
 // 对齐 SDK McpConnectMode (config.d.ts:9)
 const mcpConnectModeSchema = z.enum(['lazy', 'prewarm', 'disabled']);
 
+const mcpManagerScopeInputSchema = z.object({
+  /** Optional current project root; when present, lifecycle APIs include project-level MCP config. */
+  projectRoot: z.string().min(1).max(4096).optional(),
+});
+
 const mcpServerStatusSchema = z.object({
   serverId: z.string().min(1).max(128),
   connect: mcpConnectModeSchema,
@@ -104,7 +109,7 @@ const mcpServerStatusSchema = z.object({
 export const mcpServersChannel = {
   name: 'mcp.servers',
   direction: 'invoke',
-  input: z.undefined().optional(),
+  input: mcpManagerScopeInputSchema.optional(),
   output: z.object({
     servers: z.array(mcpServerStatusSchema).max(128),
   }),
@@ -112,12 +117,14 @@ export const mcpServersChannel = {
 
 // ---- Invoke: mcp.start ----
 // 强制启动 (lazy server 显式连接, prewarm 重新跑 prewarm 流程)。返回 post-start status。
+const mcpServerLifecycleInputSchema = mcpManagerScopeInputSchema.extend({
+  serverId: z.string().min(1).max(128),
+});
+
 export const mcpStartChannel = {
   name: 'mcp.start',
   direction: 'invoke',
-  input: z.object({
-    serverId: z.string().min(1).max(128),
-  }),
+  input: mcpServerLifecycleInputSchema,
   output: z.object({
     status: mcpServerStatusSchema,
   }),
@@ -128,9 +135,7 @@ export const mcpStartChannel = {
 export const mcpStopChannel = {
   name: 'mcp.stop',
   direction: 'invoke',
-  input: z.object({
-    serverId: z.string().min(1).max(128),
-  }),
+  input: mcpServerLifecycleInputSchema,
   output: z.object({
     status: mcpServerStatusSchema,
   }),
@@ -141,9 +146,7 @@ export const mcpStopChannel = {
 export const mcpLogsChannel = {
   name: 'mcp.logs',
   direction: 'invoke',
-  input: z.object({
-    serverId: z.string().min(1).max(128),
-  }),
+  input: mcpServerLifecycleInputSchema,
   output: z.object({
     serverId: z.string().min(1).max(128),
     connect: mcpConnectModeSchema,
@@ -162,14 +165,15 @@ const mcpToolDescriptorSchema = z.object({
   description: z.string().max(4096).optional(),
 });
 
+const mcpToolsInputSchema = mcpServerLifecycleInputSchema.extend({
+  /** true forces a catalog refresh instead of using cached tool descriptors. */
+  forceRefresh: z.boolean().optional(),
+});
+
 export const mcpToolsChannel = {
   name: 'mcp.tools',
   direction: 'invoke',
-  input: z.object({
-    serverId: z.string().min(1).max(128),
-    /** true → 跳过 catalog 缓存, 强制重新连接刷新 */
-    forceRefresh: z.boolean().optional(),
-  }),
+  input: mcpToolsInputSchema,
   output: z.object({
     tools: z.array(mcpToolDescriptorSchema).max(1024),
     cachedAt: z.string().max(64).optional(),
@@ -181,7 +185,7 @@ export const mcpToolsChannel = {
 export const mcpReloadChannel = {
   name: 'mcp.reload',
   direction: 'invoke',
-  input: z.undefined().optional(),
+  input: mcpManagerScopeInputSchema.optional(),
   output: z.object({
     ok: z.boolean(),
     /** Reload 后服务器数 (用 listServers 数过)。0 = config 里没 mcpServers 或全 disabled */

@@ -87,6 +87,7 @@ export function McpPanel(): JSX.Element {
   const [diagState, setDiagState] = useState<Record<string, DiagSnapshot | 'loading' | 'error'>>(
     {},
   );
+  const mcpScope = currentProjectPath ? { projectRoot: currentProjectPath } : undefined;
 
   async function refresh(): Promise<void> {
     if (!window.kodaxSpace) return;
@@ -96,7 +97,7 @@ export function McpPanel(): JSX.Element {
       // 并发拉 servers (lifecycle status) + discover (config 投影)。两者独立: 没启动过的 server
       // discover 出现但 statusList 缺 — UI 用 meta 补 command 等展示。
       const [statusR, discoverR] = await Promise.all([
-        window.kodaxSpace.invoke('mcp.servers', undefined),
+        window.kodaxSpace.invoke('mcp.servers', mcpScope),
         currentProjectPath
           ? window.kodaxSpace.invoke('mcp.discover', { projectRoot: currentProjectPath })
           : Promise.resolve(null),
@@ -176,9 +177,13 @@ export function McpPanel(): JSX.Element {
     if (!window.kodaxSpace) return;
     setBusyServer(serverId);
     try {
-      const r = await window.kodaxSpace.invoke('mcp.start', { serverId });
+      const r = await window.kodaxSpace.invoke('mcp.start', { serverId, ...mcpScope });
       if (r.ok) {
-        setStatusList((cur) => cur.map((s) => (s.serverId === serverId ? r.data.status : s)));
+        setStatusList((cur) =>
+          cur.some((s) => s.serverId === serverId)
+            ? cur.map((s) => (s.serverId === serverId ? r.data.status : s))
+            : [...cur, r.data.status],
+        );
       } else {
         setTopErr(`start ${serverId}: ${r.error?.message ?? 'failed'}`);
       }
@@ -191,9 +196,13 @@ export function McpPanel(): JSX.Element {
     if (!window.kodaxSpace) return;
     setBusyServer(serverId);
     try {
-      const r = await window.kodaxSpace.invoke('mcp.stop', { serverId });
+      const r = await window.kodaxSpace.invoke('mcp.stop', { serverId, ...mcpScope });
       if (r.ok) {
-        setStatusList((cur) => cur.map((s) => (s.serverId === serverId ? r.data.status : s)));
+        setStatusList((cur) =>
+          cur.some((s) => s.serverId === serverId)
+            ? cur.map((s) => (s.serverId === serverId ? r.data.status : s))
+            : [...cur, r.data.status],
+        );
       } else {
         setTopErr(`stop ${serverId}: ${r.error?.message ?? 'failed'}`);
       }
@@ -207,7 +216,7 @@ export function McpPanel(): JSX.Element {
     setLoading(true);
     setTopErr(null);
     try {
-      const r = await window.kodaxSpace.invoke('mcp.reload', undefined);
+      const r = await window.kodaxSpace.invoke('mcp.reload', mcpScope);
       if (!r.ok) {
         setTopErr(`reload failed`);
       }
@@ -234,7 +243,7 @@ export function McpPanel(): JSX.Element {
       return;
     }
     setExpandedTools((cur) => ({ ...cur, [serverId]: 'loading' }));
-    const r = await window.kodaxSpace.invoke('mcp.tools', { serverId });
+    const r = await window.kodaxSpace.invoke('mcp.tools', { serverId, ...mcpScope });
     // setter form 防 stale closure;另外若用户在 in-flight 期再次点击 toggle (上面 noop 已挡)
     // 或 reload (mcp.reload → 我们不清 expandedTools,但下次 IPC 结果仍是新 manager 的),
     // 这里照写最新结果即可。
@@ -265,7 +274,7 @@ export function McpPanel(): JSX.Element {
       return;
     }
     setDiagState((cur) => ({ ...cur, [serverId]: 'loading' }));
-    const r = await window.kodaxSpace.invoke('mcp.logs', { serverId });
+    const r = await window.kodaxSpace.invoke('mcp.logs', { serverId, ...mcpScope });
     setDiagState((cur) => {
       if (cur[serverId] !== 'loading') return cur; // 中间用户切其它 server / unmount
       if (!r.ok) return { ...cur, [serverId]: 'error' };
