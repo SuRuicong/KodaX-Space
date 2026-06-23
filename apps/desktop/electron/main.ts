@@ -47,6 +47,7 @@ import { workflowPolicyStore } from './kodax/workflow-policy.js';
 import { registerArtifactWindowChannel } from './artifact/artifact-window.js';
 import { installNavigationGuards } from './window/navigation-guards.js';
 import { cleanupOrphanKodaxSpaceDirWithLog } from './kodax/cleanup-orphan-kodax-space.js';
+import { migrateLegacyMcpbStorage } from './mcpb/registry.js';
 import { getPtyHost } from './terminal/ptyHost.js';
 import { settingsStore } from './settings/store.js';
 import { setRendererTarget } from './ipc/push.js';
@@ -389,6 +390,14 @@ app.whenReady().then(async () => {
   // v0.1.10 chore: best-effort 清理早期残留的 ~/.kodax_space 孤儿目录。
   // fire-and-forget,never throws,不阻塞 UI 启动;详见 cleanup-orphan-kodax-space.ts。
   void cleanupOrphanKodaxSpaceDirWithLog();
+  const mcpbMigration = await migrateLegacyMcpbStorage();
+  if (mcpbMigration.kind === 'migrated') {
+    console.log(
+      `[startup] Migrated ${mcpbMigration.migrated} MCP bundle(s) to ~/.kodax/mcpb (${mcpbMigration.registered} registered).`,
+    );
+  } else if (mcpbMigration.kind === 'error') {
+    console.warn(`[startup] MCP bundle migration skipped: ${mcpbMigration.message}`);
+  }
 
   // IPC handlers 必须在窗口创建前注册——否则 renderer 启动后立刻调 invoke 会撞上 "No handler registered"
   registerVersionChannel();

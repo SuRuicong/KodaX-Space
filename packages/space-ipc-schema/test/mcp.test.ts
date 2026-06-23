@@ -86,7 +86,7 @@ test('mcp.discover output accepts source="mcpb" (v0.1.4 installed bundles)', () 
         name: 'filesystem',
         transport: 'stdio' as const,
         command: 'node',
-        args: ['/home/u/.kodax-space/mcpb/filesystem@1.0.0/index.js'],
+        args: ['/home/u/.kodax/mcpb/extensions/filesystem@1.0.0/index.js'],
         envCount: 0,
         source: 'mcpb' as const,
       },

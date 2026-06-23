@@ -19,12 +19,15 @@ import {
   addOrReplace,
   removeByExtensionId,
   buildExtensionFromManifest,
+  syncEntryToKodaxMcp,
+  removeEntryFromKodaxMcp,
   toExternal,
   getExtractBase,
   getTmpBase,
   isInsideExtractBase,
   type InternalMcpbEntry,
 } from '../mcpb/registry.js';
+import { reloadMcpManager } from '../mcp/manager.js';
 
 async function pushChanged(): Promise<void> {
   const reg = await readRegistry();
@@ -51,7 +54,38 @@ async function safeRmInstallDir(installDir: string, label: string): Promise<void
 async function installFromPath(filePath: string): Promise<InternalMcpbEntry> {
   const installed = await installMcpb(filePath, getExtractBase(), getTmpBase());
   const entry = buildExtensionFromManifest(installed.manifest, installed.installDir);
-  const { displacedInstallDir } = await addOrReplace(entry);
+  const { displacedInstallDir, displacedEntry } = await addOrReplace(entry);
+  const sync = await syncEntryToKodaxMcp(entry, { overwrite: true });
+  if (sync.kind !== 'registered' && sync.kind !== 'already-current') {
+    let rolledBackRegistry = false;
+    if (displacedEntry) {
+      try {
+        await addOrReplace(displacedEntry);
+        rolledBackRegistry = true;
+      } catch (err) {
+        console.warn('[mcpb] failed to restore displaced registry entry:', err instanceof Error ? err.message : err);
+      }
+    } else {
+      try {
+        await removeByExtensionId(entry.extensionId);
+        rolledBackRegistry = true;
+      } catch (err) {
+        console.warn('[mcpb] failed to rollback failed install registry entry:', err instanceof Error ? err.message : err);
+      }
+    }
+    const failedInstallDirIsStillReferenced =
+      displacedEntry !== undefined &&
+      path.resolve(displacedEntry.installDir) === path.resolve(entry.installDir);
+    if (rolledBackRegistry && !failedInstallDirIsStillReferenced) {
+      await safeRmInstallDir(entry.installDir, 'failed install');
+    }
+    const reason = sync.kind === 'error' ? sync.message : 'an existing MCP server was not overwritten';
+    throw new Error(`Failed to register MCP server in ~/.kodax/config.json: ${reason}`);
+  } else if (sync.kind === 'registered') {
+    await reloadMcpManager().catch((err) => {
+      console.warn('[mcpb] MCP manager reload after install failed:', err instanceof Error ? err.message : err);
+    });
+  }
   if (displacedInstallDir) {
     await safeRmInstallDir(displacedInstallDir, 'displaced (upgrade)');
   }
@@ -96,15 +130,14 @@ export async function installMcpbFromOsHandoff(rawPath: string): Promise<void> {
   if (filePath.length === 0) return;
   const ext = path.extname(filePath).toLowerCase();
   if (ext !== '.mcpb' && ext !== '.dxt') {
-    // 不是 mcpb 类，OS 路由错了；不通知（用户不该看到莫名其妙的弹窗）
+    // Ignore unrelated file associations without notifying the user.
     console.warn(`[mcpb] OS handoff: ignoring non-mcpb file ${filePath}`);
     return;
   }
   try {
     // security review LOW-3：OS 触发的安装不能 silent —— drive-by download +
-    // 双击的攻击向量真实存在（VS Code / JetBrains 都加 confirmation prompt）。
-    // 先 readManifestOnly 拿 display name / author / version 让用户看到要装的是啥，
-    // 再 dialog.showMessageBox 二次确认。Cancel 即静默 return（不通知，无声跳过）。
+    // OS-triggered installs must be confirmed because the file can come from a
+    // double-click or file association outside the renderer UI.
     let manifestDisplayName: string;
     let manifestVersion: string;
     let manifestAuthor: string | undefined;
@@ -206,6 +239,18 @@ export function registerMcpbChannels(): void {
   registerChannel('mcpb.uninstall', async (input) => {
     const res = await removeByExtensionId(input.extensionId);
     if (!res.removed) return { ok: false };
+    if (res.entry) {
+      const removedMcp = await removeEntryFromKodaxMcp(res.entry);
+      if (removedMcp.kind === 'removed') {
+        await reloadMcpManager().catch((err) => {
+          console.warn('[mcpb] MCP manager reload after uninstall failed:', err instanceof Error ? err.message : err);
+        });
+      } else if (removedMcp.kind === 'skipped-changed') {
+        console.warn('[mcpb] leaving ~/.kodax/config.json MCP server because it no longer matches the installed bundle');
+      } else if (removedMcp.kind === 'error') {
+        console.warn(`[mcpb] failed to remove MCP server from ~/.kodax/config.json: ${removedMcp.message}`);
+      }
+    }
     if (res.installDir) {
       await safeRmInstallDir(res.installDir, 'uninstall');
     }

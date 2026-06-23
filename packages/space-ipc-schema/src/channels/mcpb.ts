@@ -1,13 +1,13 @@
 // .mcpb (Desktop Extension) bundle install channels — F021 (v0.1.3)
 //
 // Anthropic 的 .mcpb / .dxt 格式：zip 包含 manifest.json + server 文件，main 解压到
-// ~/.kodax-space/mcpb/<name>-<version>/ 然后让 Space MCP discovery 把它当一个用户
+// ~/.kodax/mcpb/extensions/<name>-<version>/ 然后让 Space MCP discovery 把它当一个用户
 // 配置的 MCP server。
 //
 // 安全（详 docs/ADR/ADR-???）：
 //   - 解压前用 zip-slip 检测每个 entry path（'..' / 绝对路径 / Windows drive 字母）
 //   - manifest 走严格 zod schema，未知字段忽略但必需字段缺失立即 reject
-//   - server.command / args 不直接 exec，写到 ~/.kodax-space/mcpb-extensions.json
+//   - server.command / args 不直接 exec，写到 ~/.kodax/mcpb/registry.json
 //     然后由 Space 的 MCP manager 启动（与用户手配的 server 同 sandbox）
 //   - filePath 入参不校验 path normalization —— main 端 IPC handler 用 path.resolve
 //     + 拒绝 traversal

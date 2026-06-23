@@ -30,7 +30,7 @@ const mcpServerMetaSchema = z.object({
    *   - 'global'  ~/.kodax/config.json（KodaX CLI / 用户手配）
    *   - 'project' ${projectRoot}/.kodax/config.json（per-project 覆盖）
    *   - 'mcpb'    v0.1.4：通过 mcpb.install 装的 .mcpb / .dxt 扩展包
-   *               （registry 在 ~/.kodax-space/mcpb-extensions.json）
+   *               （registry 在 ~/.kodax/mcpb/registry.json）
    *
    * UI badge 据此显示来源（"Global" / "Project" / "Extension"），让用户能区分
    * "我手配的 global server" vs "Space 装的 extension"。
