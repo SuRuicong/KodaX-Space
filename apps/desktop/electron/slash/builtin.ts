@@ -19,9 +19,23 @@ import type {
   AgentMode,
   WorkflowRunT,
 } from '@kodax-space/space-ipc-schema';
-import type { SlashCommandDef } from './registry.js';
+import type {
+  ReviewableLearningProposal,
+  SkillTrustRecord,
+  SkillUsageRecord,
+  StoredLearningApprovalResult,
+  StoredLearningProposal,
+} from '@kodax-ai/kodax/agent';
+import type { SlashCommandDef, SlashHandlerContext, SlashHandlerResult } from './registry.js';
 import { kodaxHost } from '../kodax/host.js';
 import { workflowController, type LaunchSession, type SavedWorkflowLite } from '../kodax/workflow-controller.js';
+import { loadPersistedSession } from '../kodax/session-store.js';
+import {
+  createSpaceSdkExtensionRuntime,
+  discoverSpaceSdkExtensions,
+  getSpaceSdkExtensionDiagnostics,
+  loadSpaceSdkCoding,
+} from '../kodax/sdk-extensions.js';
 import { loadKodaxCustomProviders, registerKodaxCustomProviders } from '../kodax/user-config.js';
 import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
@@ -62,6 +76,454 @@ function nextAgentMode(current: AgentMode): AgentMode {
 function compactSlashMessage(message: string, max = 1900): string {
   if (message.length <= max) return message;
   return `${message.slice(0, max - 12)}\n... truncated`;
+}
+type AgentSdkModule = typeof import('@kodax-ai/kodax/agent');
+let agentSdkModule: Promise<AgentSdkModule> | null = null;
+
+function loadAgentSdk(): Promise<AgentSdkModule> {
+  agentSdkModule ??= import('@kodax-ai/kodax/agent');
+  return agentSdkModule;
+}
+
+type LearningFilter = 'all' | 'skill' | 'workflow' | 'memory';
+
+const LEARNING_FILTER_LABEL: Record<LearningFilter, string> = {
+  all: 'learning proposals',
+  skill: 'skill learning proposals',
+  workflow: 'workflow learning handoffs',
+  memory: 'memory learning handoffs',
+};
+
+function learningHelp(): string {
+  return [
+    'Usage:',
+    '  /learn pending',
+    '  /learn diff <proposal-id>',
+    '  /learn approve <proposal-id> [--ack-impact]',
+    '  /learn reject <proposal-id> [reason]',
+    '  /skill pending',
+    '  /workflow pending',
+    '  /memory pending',
+  ].join('\n');
+}
+
+function truncateLearningText(value: string | undefined, max = 160): string {
+  const normalized = (value ?? '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return '(none)';
+  if (normalized.length <= max) return normalized;
+  return `${normalized.slice(0, Math.max(0, max - 14))} ... truncated`;
+}
+
+function truncateLearningBlock(value: string, max = 700): string {
+  if (value.length <= max) return value;
+  return `${value.slice(0, Math.max(0, max - 14))}\n... truncated`;
+}
+
+function learningKindLabel(proposal: ReviewableLearningProposal): string {
+  switch (proposal.destination) {
+    case 'skill_patch':
+      return 'skill patch';
+    case 'skill_create':
+      return 'skill create';
+    case 'workflow_handoff':
+      return 'workflow handoff';
+    case 'memdir_handoff':
+      return 'memory handoff';
+    case 'reasoning_handoff':
+      return 'reasoning handoff';
+  }
+}
+
+function learningProposalMatchesFilter(entry: StoredLearningProposal, filter: LearningFilter): boolean {
+  if (filter === 'all') return true;
+  const destination = entry.proposal.destination;
+  if (filter === 'skill') return destination === 'skill_patch' || destination === 'skill_create';
+  if (filter === 'workflow') return destination === 'workflow_handoff';
+  return destination === 'memdir_handoff';
+}
+
+function formatConsumerImpact(impact: { readonly workflowCapsules: readonly string[]; readonly savedWorkflows: readonly string[]; readonly constructedAgents: readonly string[]; readonly promptReferences: readonly string[]; readonly action: string }): string {
+  const details = [
+    impact.workflowCapsules.length ? `workflow capsules: ${impact.workflowCapsules.length}` : '',
+    impact.savedWorkflows.length ? `saved workflows: ${impact.savedWorkflows.length}` : '',
+    impact.constructedAgents.length ? `constructed agents: ${impact.constructedAgents.length}` : '',
+    impact.promptReferences.length ? `prompt references: ${impact.promptReferences.length}` : '',
+  ].filter(Boolean);
+  return `${impact.action}${details.length ? ` (${details.join(', ')})` : ''}`;
+}
+
+function formatLearningProposalSummary(entry: StoredLearningProposal): string {
+  const proposal = entry.proposal;
+  const lines = [
+    `${entry.proposalId}  ${entry.status}  ${learningKindLabel(proposal)}`,
+    `  Created: ${entry.createdAt}`,
+  ];
+
+  switch (proposal.destination) {
+    case 'skill_patch':
+    case 'skill_create':
+      lines.push(
+        `  Skill: ${proposal.skillName}`,
+        `  Change: ${truncateLearningText(proposal.changeSummary)}`,
+        `  Trigger: ${truncateLearningText(proposal.trigger, 120)}`,
+        `  Confidence: ${Math.round(proposal.confidence * 100)}%`,
+      );
+      break;
+    case 'workflow_handoff':
+      lines.push(
+        `  Action: ${proposal.suggestedAction}; risk: ${proposal.risk}`,
+        `  Why workflow: ${truncateLearningText(proposal.whyWorkflowNotSkill)}`,
+        `  Impact: ${formatConsumerImpact(proposal.consumerImpact)}`,
+      );
+      break;
+    case 'memdir_handoff':
+      lines.push(
+        `  Memory: ${proposal.memoryKind}`,
+        `  Body: ${truncateLearningText(proposal.body)}`,
+      );
+      break;
+    case 'reasoning_handoff':
+      lines.push(
+        `  Title: ${proposal.title}`,
+        `  Body: ${truncateLearningText(proposal.body)}`,
+      );
+      break;
+  }
+
+  if (entry.applyPlan?.kind === 'skill') {
+    lines.push(`  Apply plan: ${entry.applyPlan.changes.length} skill file change(s)`);
+  } else {
+    lines.push('  Apply plan: handoff only');
+  }
+  if (entry.rejectedReason) lines.push(`  Rejected reason: ${truncateLearningText(entry.rejectedReason)}`);
+  return lines.join('\n');
+}
+
+async function resolveLearningStoreForSession(sessionId: string): Promise<
+  | { readonly ok: true; readonly storePath: string }
+  | { readonly ok: false; readonly message: string }
+> {
+  const session = kodaxHost.get(sessionId);
+  if (!session) return { ok: false, message: `session not found: ${sessionId}` };
+  const sdk = await loadAgentSdk();
+  return { ok: true, storePath: sdk.resolveLearningProposalStore(session.projectRoot) };
+}
+
+function selectLearningProposal(entries: readonly StoredLearningProposal[], target: string):
+  | { readonly ok: true; readonly entry: StoredLearningProposal }
+  | { readonly ok: false; readonly message: string } {
+  const normalized = target.trim().toLowerCase();
+  if (!normalized) return { ok: false, message: 'proposal id is required' };
+  const exact = entries.find((entry) => entry.proposalId.toLowerCase() === normalized);
+  if (exact) return { ok: true, entry: exact };
+  const matches = entries.filter((entry) => entry.proposalId.toLowerCase().startsWith(normalized));
+  if (matches.length === 1) return { ok: true, entry: matches[0]! };
+  if (matches.length > 1) {
+    return { ok: false, message: `ambiguous proposal id '${target}': ${matches.map((entry) => entry.proposalId).join(', ')}` };
+  }
+  return { ok: false, message: `learning proposal not found: ${target}` };
+}
+
+async function handleLearningPending(ctx: SlashHandlerContext, filter: LearningFilter): Promise<SlashHandlerResult> {
+  const resolved = await resolveLearningStoreForSession(ctx.sessionId);
+  if (!resolved.ok) return resolved;
+  const sdk = await loadAgentSdk();
+  const result = await sdk.readLearningProposalStore(resolved.storePath);
+  const pending = result.proposals
+    .filter((entry) => entry.status === 'pending' && learningProposalMatchesFilter(entry, filter))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const lines = pending.length
+    ? [`Pending ${LEARNING_FILTER_LABEL[filter]}: ${pending.length}`, ...pending.map(formatLearningProposalSummary)]
+    : [`No pending ${LEARNING_FILTER_LABEL[filter]} for this project.`];
+  if (result.warnings.length) lines.push('Warnings:', ...result.warnings.map((warning) => `  ${warning}`));
+  if (pending.length) {
+    lines.push('Next: /learn diff <proposal-id>, /learn approve <proposal-id> [--ack-impact], or /learn reject <proposal-id> [reason].');
+  }
+  return { ok: true, message: compactSlashMessage(lines.join('\n\n')), echo: true };
+}
+
+function formatSkillUsageRecord(record: SkillUsageRecord): string {
+  return [
+    `${record.skillName} (${record.source})`,
+    `  views=${record.views} invokes=${record.invokes} patchProposals=${record.patchProposals} patchApplies=${record.patchApplies}`,
+    `  first=${record.firstEventAt} last=${record.lastEventAt}`,
+  ].join('\n');
+}
+
+function formatSkillTrustRecord(record: SkillTrustRecord): string {
+  return [
+    `${record.skillName} (${record.source})  ${record.state}`,
+    `  ownership=${record.ownership} createdByAgent=${record.createdByAgent} updated=${record.updatedAt}`,
+    record.reason ? `  reason=${record.reason}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+async function handleLearningLedger(ctx: SlashHandlerContext): Promise<SlashHandlerResult> {
+  const session = kodaxHost.get(ctx.sessionId);
+  if (!session) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+  const sdk = await loadAgentSdk();
+  const usagePath = sdk.resolveSkillUsageLedger(session.projectRoot);
+  const trustPath = sdk.resolveSkillTrustLedger(session.projectRoot);
+  const [usage, trust] = await Promise.all([
+    sdk.readSkillUsageLedger(usagePath),
+    sdk.readSkillTrustLedger(trustPath),
+  ]);
+  const usageRecords = usage.records
+    .slice()
+    .sort((a, b) => b.lastEventAt.localeCompare(a.lastEventAt))
+    .slice(0, 10);
+  const trustRecords = trust.records
+    .slice()
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, 10);
+  const lines = [
+    'Skill learning ledgers',
+    `Project: ${session.projectRoot}`,
+    `Usage ledger: ${usage.records.length} record(s) at ${usagePath}`,
+    `Trust ledger: ${trust.records.length} record(s) at ${trustPath}`,
+    '',
+    'Recent usage:',
+    ...(usageRecords.length ? usageRecords.map(formatSkillUsageRecord) : ['  (none)']),
+    '',
+    'Trust records:',
+    ...(trustRecords.length ? trustRecords.map(formatSkillTrustRecord) : ['  (none)']),
+  ];
+  if (usage.warnings.length || trust.warnings.length) {
+    lines.push('', 'Warnings:', ...usage.warnings.map((warning) => `  usage: ${warning}`), ...trust.warnings.map((warning) => `  trust: ${warning}`));
+  }
+  return { ok: true, message: compactSlashMessage(lines.join('\n'), 3200), echo: true };
+}
+
+function formatLearningDiff(entry: StoredLearningProposal): string {
+  const lines = ['Learning proposal:', formatLearningProposalSummary(entry)];
+  if (entry.applyPlan?.kind !== 'skill') {
+    lines.push('', 'No direct apply plan. Approving this records the SDK handoff state; downstream workflow, memory, or reasoning work still needs its dedicated surface.');
+    return lines.join('\n');
+  }
+
+  const plan = entry.applyPlan;
+  lines.push(
+    '',
+    `Apply plan: ${plan.kind}`,
+    `Skill root: ${plan.skillRoot}`,
+    `Governance: ${plan.governance.action}/${plan.governance.ownership} from ${plan.governance.source}`,
+  );
+  for (const change of plan.changes) {
+    if (change.kind === 'write') {
+      lines.push('', `--- write ${change.relativePath} (${change.content.length} chars)`, truncateLearningBlock(change.content));
+    } else {
+      lines.push('', `--- delete ${change.relativePath}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function formatLearningApproval(entry: StoredLearningProposal, result: StoredLearningApprovalResult): string {
+  switch (result.status) {
+    case 'approved_applied':
+      return [
+        `Approved and applied ${entry.proposalId}.`,
+        result.changedPaths.length ? `Changed: ${result.changedPaths.join(', ')}` : '',
+        result.snapshotPath ? `Snapshot: ${result.snapshotPath}` : '',
+      ].filter(Boolean).join('\n');
+    case 'approved_already_applied':
+      return [
+        `Approved ${entry.proposalId}; changes were already applied.`,
+        result.changedPaths.length ? `Changed: ${result.changedPaths.join(', ')}` : '',
+        result.snapshotPath ? `Snapshot: ${result.snapshotPath}` : '',
+      ].filter(Boolean).join('\n');
+    case 'approved_handoff':
+      return `Approved ${entry.proposalId}; handoff recorded.`;
+    case 'blocked_not_pending':
+      return `Cannot approve ${entry.proposalId}; current status is ${result.reviewStatus}.`;
+    case 'blocked_missing_apply_plan':
+      return `Cannot apply ${entry.proposalId}; this proposal has no safe apply plan.`;
+    case 'blocked_snapshot_conflict':
+      return `Cannot apply ${entry.proposalId}; snapshot conflict at ${result.relativePath}. Snapshot: ${result.snapshotPath}`;
+    case 'blocked_consumer_impact':
+      return [
+        `Approval blocked for ${entry.proposalId} by consumer impact: ${formatConsumerImpact(result.impact)}.`,
+        `Review /learn diff ${entry.proposalId}; rerun /learn approve ${entry.proposalId} --ack-impact only after checking downstream consumers.`,
+      ].join('\n');
+  }
+}
+
+async function handleLearningDiff(ctx: SlashHandlerContext): Promise<SlashHandlerResult> {
+  const target = ctx.args[1];
+  if (!target) return { ok: false, message: learningHelp() };
+  const resolved = await resolveLearningStoreForSession(ctx.sessionId);
+  if (!resolved.ok) return resolved;
+  const sdk = await loadAgentSdk();
+  const result = await sdk.readLearningProposalStore(resolved.storePath);
+  const selected = selectLearningProposal(result.proposals, target);
+  if (!selected.ok) return { ok: false, message: selected.message };
+  return { ok: true, message: compactSlashMessage(formatLearningDiff(selected.entry)), echo: true };
+}
+
+async function handleLearningApprove(ctx: SlashHandlerContext): Promise<SlashHandlerResult> {
+  const acknowledgeImpact = ctx.args.includes('--ack-impact');
+  const target = ctx.args.slice(1).find((arg) => arg !== '--ack-impact');
+  if (!target) return { ok: false, message: learningHelp() };
+  const resolved = await resolveLearningStoreForSession(ctx.sessionId);
+  if (!resolved.ok) return resolved;
+  const sdk = await loadAgentSdk();
+  const store = await sdk.readLearningProposalStore(resolved.storePath);
+  const selected = selectLearningProposal(store.proposals, target);
+  if (!selected.ok) return { ok: false, message: selected.message };
+  const approval = await sdk.approveStoredLearningProposal(resolved.storePath, selected.entry, { acknowledgeImpact });
+  return { ok: approval.status.startsWith('approved_'), message: formatLearningApproval(selected.entry, approval), echo: true };
+}
+
+async function handleLearningReject(ctx: SlashHandlerContext): Promise<SlashHandlerResult> {
+  const target = ctx.args[1];
+  if (!target) return { ok: false, message: learningHelp() };
+  const resolved = await resolveLearningStoreForSession(ctx.sessionId);
+  if (!resolved.ok) return resolved;
+  const sdk = await loadAgentSdk();
+  const store = await sdk.readLearningProposalStore(resolved.storePath);
+  const selected = selectLearningProposal(store.proposals, target);
+  if (!selected.ok) return { ok: false, message: selected.message };
+  if (selected.entry.status !== 'pending') {
+    return { ok: false, message: `Cannot reject ${selected.entry.proposalId}; current status is ${selected.entry.status}.` };
+  }
+  const reason = ctx.args.slice(2).join(' ').trim();
+  const updated = await sdk.updateLearningProposalStatus(resolved.storePath, selected.entry.proposalId, 'rejected', {
+    ...(reason ? { rejectedReason: reason } : {}),
+  });
+  return { ok: true, message: `Rejected ${updated.proposalId}${reason ? `: ${reason}` : '.'}`, echo: true };
+}
+
+async function handleLearningCommand(ctx: SlashHandlerContext): Promise<SlashHandlerResult> {
+  const sub = ctx.args[0]?.toLowerCase();
+  if (!sub || sub === 'pending' || sub === 'list' || sub === 'ls') return handleLearningPending(ctx, 'all');
+  if (sub === 'ledger' || sub === 'ledgers') return handleLearningLedger(ctx);
+  if (sub === 'skill' || sub === 'skills') return handleLearningPending(ctx, 'skill');
+  if (sub === 'workflow' || sub === 'workflows') return handleLearningPending(ctx, 'workflow');
+  if (sub === 'memory' || sub === 'memories') return handleLearningPending(ctx, 'memory');
+  if (sub === 'diff' || sub === 'show') return handleLearningDiff(ctx);
+  if (sub === 'approve') return handleLearningApprove(ctx);
+  if (sub === 'reject') return handleLearningReject(ctx);
+  if (sub === 'help' || sub === '--help' || sub === '-h') return { ok: true, message: learningHelp(), echo: true };
+  return { ok: false, message: learningHelp() };
+}
+
+function formatSdkExtensionDiagnostics(diag: Awaited<ReturnType<typeof getSpaceSdkExtensionDiagnostics>>): string[] {
+  if (!diag) return ['Runtime: inactive'];
+  return [
+    'Runtime: active',
+    `Loaded extensions: ${diag.loadedExtensions.length}`,
+    `Capability providers: ${diag.capabilityProviders.length}`,
+    `Commands: ${diag.commands.length}`,
+    `Tools: ${diag.tools.length}`,
+    `Hooks: ${diag.hooks.length}`,
+    `Failures: ${diag.failures.length}`,
+    ...(diag.failures.length
+      ? ['Recent failures:', ...diag.failures.slice(0, 5).map((failure) => `  - ${failure.stage} ${failure.target}: ${failure.message}`)]
+      : []),
+  ];
+}
+
+async function handleSdkExtensionsCommand(ctx: SlashHandlerContext): Promise<SlashHandlerResult> {
+  const session = kodaxHost.get(ctx.sessionId);
+  if (!session) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+  const action = ctx.args[1]?.toLowerCase();
+  const shouldLoad = action === 'load' || action === 'enable' || action === 'activate';
+  const loaded = shouldLoad
+    ? await createSpaceSdkExtensionRuntime({ projectRoot: session.projectRoot, setActive: true }, { env: { ...process.env, KODAX_SPACE_ENABLE_SDK_EXTENSIONS: '1' } })
+    : undefined;
+  const discovery = loaded?.discovery ?? await discoverSpaceSdkExtensions();
+  const diagnostics = loaded?.diagnostics ?? await getSpaceSdkExtensionDiagnostics();
+  const lines = [
+    'SDK extension discovery',
+    `Default dir: ${discovery.defaultDirectory}`,
+    `Discovered: ${discovery.paths.length}`,
+    ...(discovery.paths.length ? discovery.paths.slice(0, 12).map((p) => `  - ${p}`) : ['  (none)']),
+    ...(discovery.paths.length > 12 ? [`  ... ${discovery.paths.length - 12} more`] : []),
+    ...(discovery.skipped.length
+      ? ['', 'Skipped:', ...discovery.skipped.slice(0, 8).map((entry) => `  - ${entry.path}: ${entry.reason} (${entry.message})`)]
+      : []),
+    '',
+    ...formatSdkExtensionDiagnostics(diagnostics),
+  ];
+  if (!shouldLoad && !diagnostics) {
+    lines.push('', 'Load explicitly with /extensions sdk load, or set KODAX_SPACE_ENABLE_SDK_EXTENSIONS=1 before launching Space.');
+  }
+  return { ok: true, message: compactSlashMessage(lines.join('\n'), 3200), echo: true };
+}
+
+function recoveryHelp(): string {
+  return [
+    'Usage:',
+    '  /recover seed [reason]',
+    '  /recover prompt [reason]',
+    '  /recover candidate <message-count> <error text>',
+  ].join('\n');
+}
+
+function extractMessageText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  let text = '';
+  for (const block of content) {
+    if (!block || typeof block !== 'object') continue;
+    const candidate = block as { type?: unknown; text?: unknown; thinking?: unknown };
+    if (candidate.type === 'text' && typeof candidate.text === 'string') text += candidate.text;
+    if (candidate.type === 'thinking' && typeof candidate.thinking === 'string') text += candidate.thinking;
+  }
+  return text;
+}
+
+async function handleRecoveryCommand(ctx: SlashHandlerContext): Promise<SlashHandlerResult> {
+  const session = kodaxHost.get(ctx.sessionId);
+  if (!session) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+  const sub = ctx.args[0]?.toLowerCase() ?? 'seed';
+  if (sub === 'help' || sub === '--help' || sub === '-h') return { ok: true, message: recoveryHelp(), echo: true };
+  if (sub === 'prompt') {
+    const agent = await loadAgentSdk();
+    const prompt = agent.normalizeRecoveryPrompt(ctx.args.slice(1).join(' ').trim() || undefined);
+    return { ok: true, message: prompt, echo: true };
+  }
+  if (sub === 'candidate') {
+    const count = Number(ctx.args[1]);
+    const errorText = ctx.args.slice(2).join(' ').trim();
+    if (!Number.isInteger(count) || count < 0 || !errorText) return { ok: false, message: recoveryHelp() };
+    const coding = await loadSpaceSdkCoding();
+    const candidate = coding.isSessionRecoveryCandidateError(new Error(errorText), count);
+    return { ok: true, message: `Recovery candidate: ${candidate ? 'yes' : 'no'} (messageCount=${count})`, echo: true };
+  }
+  if (sub !== 'seed') return { ok: false, message: recoveryHelp() };
+  const data = await loadPersistedSession(ctx.sessionId);
+  if (!data || !Array.isArray(data.messages) || data.messages.length === 0) {
+    return { ok: false, message: 'No persisted transcript is available for this session yet. Send a turn first, then retry /recover seed.' };
+  }
+  const agent = await loadAgentSdk();
+  const reason = ctx.args.slice(1).join(' ').trim();
+  const seed = agent.buildRecoverySeed({
+    sourceSessionId: ctx.sessionId,
+    messages: data.messages,
+    ...(data.lineage ? { lineage: data.lineage } : {}),
+    ...(data.artifactLedger ? { artifactLedger: data.artifactLedger } : {}),
+    ...(reason ? { reason } : {}),
+  });
+  const roleCounts = seed.messages.reduce<Record<string, number>>((acc, msg) => {
+    acc[msg.role] = (acc[msg.role] ?? 0) + 1;
+    return acc;
+  }, {});
+  const firstUser = data.messages.find((msg) => msg.role === 'user');
+  const lastAssistant = [...data.messages].reverse().find((msg) => msg.role === 'assistant');
+  const lines = [
+    'Recovery seed preview',
+    `Session: ${ctx.sessionId}`,
+    `Source messages: ${data.messages.length}; seed messages: ${seed.messages.length}`,
+    `Seed title: ${seed.title}`,
+    `Roles: ${Object.entries(roleCounts).map(([role, count]) => `${role}=${count}`).join(', ') || '(none)'}`,
+    firstUser ? `First user: ${truncateLearningText(extractMessageText(firstUser.content), 180)}` : '',
+    lastAssistant ? `Last assistant: ${truncateLearningText(extractMessageText(lastAssistant.content), 180)}` : '',
+    '',
+    'Summary:',
+    truncateLearningBlock(seed.summary, 900),
+  ].filter(Boolean);
+  return { ok: true, message: compactSlashMessage(lines.join('\n'), 3200), echo: true };
 }
 
 function isFinalWorkflowStatus(status: WorkflowRunT['status']): boolean {
@@ -119,7 +581,7 @@ type WorkflowInvocation =
 const DEFAULT_WORKFLOW_RUNS_LIMIT = 20;
 const DEFAULT_WORKFLOW_PRUNE_KEEP = 50;
 const MAX_WORKFLOW_RUNS_LIMIT = 200;
-const WORKFLOW_ARG_HINT = 'help | list | runs [--all|--limit N] | show [runId] | pause <runId> | resume <runId> | stop [runId] | delete [--force] [--run|--saved] <runId|savedName> | prune --dry-run|--keep N|--older-than Nd | rerun <runId|savedName> [args] | save <runId> <name> | rename <runId|alias|savedName> <newName> | revise [--replace] <runId|alias|savedName> <change> | create <request> | <name> [args]';
+const WORKFLOW_ARG_HINT = 'pending | help | list | runs [--all|--limit N] | show [runId] | pause <runId> | resume <runId> | stop [runId] | delete [--force] [--run|--saved] <runId|savedName> | prune --dry-run|--keep N|--older-than Nd | rerun <runId|savedName> [args] | save <runId> <name> | rename <runId|alias|savedName> <newName> | revise [--replace] <runId|alias|savedName> <change> | create <request> | <name> [args]';
 
 function parseWorkflowInvocation(args: readonly string[]): WorkflowInvocation {
   const first = args[0]?.toLowerCase();
@@ -265,6 +727,7 @@ function parseWorkflowPruneOptions(args: readonly string[]): {
 function workflowHelp(): string {
   return [
     'Usage:',
+    '  /workflow pending',
     '  /workflow help',
     '  /workflow list',
     '  /workflow runs [--all|--limit N]',
@@ -803,6 +1266,8 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
       const session = kodaxHost.get(ctx.sessionId);
       const launchSession = sessionToLaunchSession(session);
       if (!session || !launchSession) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+
+      if (ctx.args[0]?.toLowerCase() === 'pending') return handleLearningPending(ctx, 'workflow');
 
       const invocation = parseWorkflowInvocation(ctx.args);
 
@@ -1453,6 +1918,13 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
   },
 
   {
+    name: 'learn',
+    description: 'Review SDK learning proposals for this project',
+    argsHint: 'pending|ledger|diff <id>|approve <id> [--ack-impact]|reject <id> [reason]',
+    source: 'builtin',
+    handler: handleLearningCommand,
+  },
+  {
     name: 'exit',
     aliases: ['quit', 'q', 'bye'],
     description: 'Close the KodaX Space window',
@@ -1507,10 +1979,16 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
     name: 'extensions',
     aliases: ['ext'],
     description: 'Show configured MCP/plugin extensions',
+    argsHint: '[sdk [load]|status]',
     source: 'builtin',
     handler: async (ctx) => {
       if (!kodaxHost.get(ctx.sessionId)) {
         return { ok: false, message: `session not found: ${ctx.sessionId}` };
+      }
+      const sub = ctx.args[0]?.toLowerCase();
+      if (sub === 'sdk' || sub === 'discover' || sub === 'discovery') return handleSdkExtensionsCommand(ctx);
+      if (sub && sub !== 'status' && sub !== 'refresh') {
+        return { ok: false, message: 'Usage: /extensions [status|refresh|sdk [load]]' };
       }
       return shellAction('show-extensions');
     },
@@ -1531,6 +2009,15 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
       }
       return shellAction('show-mcp');
     },
+  },
+
+  {
+    name: 'recover',
+    aliases: ['recovery'],
+    description: 'Preview SDK session recovery for the current transcript',
+    argsHint: 'seed [reason]|prompt [reason]|candidate <count> <error>',
+    source: 'builtin',
+    handler: handleRecoveryCommand,
   },
 
   {
@@ -1611,11 +2098,14 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
   {
     name: 'skills',
     description: 'List available skills',
+    argsHint: '[pending|ledger]',
     source: 'builtin',
     handler: async (ctx) => {
       if (!kodaxHost.get(ctx.sessionId)) {
         return { ok: false, message: `session not found: ${ctx.sessionId}` };
       }
+      if (ctx.args[0]?.toLowerCase() === 'pending') return handleLearningPending(ctx, 'skill');
+      if (ctx.args[0]?.toLowerCase() === 'ledger') return handleLearningLedger(ctx);
       return shellAction('list-skills');
     },
   },
@@ -1623,12 +2113,14 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
   {
     name: 'skill',
     description: 'List skills; invoke a skill with /skill:<name> [args]',
-    argsHint: '[:name] [args]',
+    argsHint: '[pending|ledger|:name] [args]',
     source: 'builtin',
     handler: async (ctx) => {
       if (!kodaxHost.get(ctx.sessionId)) {
         return { ok: false, message: `session not found: ${ctx.sessionId}` };
       }
+      if (ctx.args[0]?.toLowerCase() === 'pending') return handleLearningPending(ctx, 'skill');
+      if (ctx.args[0]?.toLowerCase() === 'ledger') return handleLearningLedger(ctx);
       return shellAction('list-skills');
     },
   },
@@ -1636,13 +2128,13 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
   {
     name: 'memory',
     description: 'Show loaded AGENTS.md files (global + project)',
-    argsHint: '[list|rebuild|open|help]',
+    argsHint: '[pending|list|rebuild|open|help]',
     source: 'builtin',
     handler: async (ctx) => {
       if (!kodaxHost.get(ctx.sessionId)) {
         return { ok: false, message: `session not found: ${ctx.sessionId}` };
       }
-      // renderer 调 session.agentsMd 拉清单
+      if (ctx.args[0]?.toLowerCase() === 'pending') return handleLearningPending(ctx, 'memory');
       return { ok: true, message: '__action__:show-memory', echo: false };
     },
   },

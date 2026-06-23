@@ -26,6 +26,7 @@
 import { useEffect, useState } from 'react';
 import type { ProviderInfo, SessionMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
+import { pushToast } from '../store/toastStore.js';
 import { resolveActiveModel } from './resolveActiveModel.js';
 
 type ReasoningMode = SessionMeta['reasoningMode'];
@@ -89,9 +90,7 @@ export function ModelEffortSelector(): JSX.Element {
     kodaxDefaultsProvider: kodaxDefaults?.provider,
     kodaxDefaultsModel: kodaxDefaults?.model,
   });
-  const runtimeModel = session
-    ? (session.model ?? activeProvider?.defaultModel ?? '—')
-    : undefined;
+  const runtimeModel = session ? (session.model ?? activeProvider?.defaultModel ?? '—') : undefined;
   const activeModel = runtimeModel ?? preferredModel;
   const activeEffort: ReasoningMode =
     session?.reasoningMode ?? pendingReasoningMode ?? kodaxDefaults?.reasoningMode ?? 'auto';
@@ -160,7 +159,7 @@ export function ModelEffortSelector(): JSX.Element {
   async function pickEffort(mode: ReasoningMode): Promise<void> {
     if (busy) return;
     setBusy(true);
-    // 不论有没有 session，都更新 pending — 持久化作下次默认
+    // Always update pending as the user's next-session preference.
     setPendingReasoningMode(mode);
     try {
       if (session && window.kodaxSpace) {
@@ -170,6 +169,14 @@ export function ModelEffortSelector(): JSX.Element {
         });
         if (r.ok) upsertSession({ ...session, reasoningMode: mode });
       }
+      if (window.kodaxSpace) {
+        const r = await window.kodaxSpace.invoke('settings.setRuntimeDefaults', {
+          runtimeDefaults: { reasoningMode: mode },
+        });
+        if (!r.ok) pushToast(r.error?.message ?? 'Failed to save runtime defaults', 'error');
+      }
+    } catch (err) {
+      pushToast(err instanceof Error ? err.message : 'Failed to save runtime defaults', 'error');
     } finally {
       setBusy(false);
     }

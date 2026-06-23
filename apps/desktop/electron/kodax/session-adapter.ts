@@ -14,7 +14,7 @@
 //   KodaXEvents.onStreamEnd      → emit({ kind:'session_complete', ... })
 //   (catch in agent.run)         → emit({ kind:'session_error',  ... })
 
-import type { AgentMode, AutoModeEngine, InputArtifact, PermissionDecision, PermissionMode, SessionEvent, Surface } from '@kodax-space/space-ipc-schema';
+import type { AgentMode, AutoModeEngine, InputArtifact, PermissionDecision, PermissionMode, SessionEvent, SessionSendQueueMode, Surface } from '@kodax-space/space-ipc-schema';
 
 export type PermissionRequestFn = (req: {
   readonly toolId: string;
@@ -41,13 +41,19 @@ export type SessionCreateOptions = {
 /**
  * send() ACK returned to IPC callers.
  *   - { queued: false }                A run was started immediately.
- *   - { queued: true, queueId: '...' } The prompt was accepted into Space's
- *                                      per-session follow-up queue.
+ *   - { queued: true, queueId: '...', queueMode }
+ *                                      The prompt was accepted into the requested
+ *                                      follow-up queue mode.
  */
 export interface SendResult {
   readonly queued: boolean;
   readonly queueId?: string;
+  readonly queueMode?: SessionSendQueueMode;
 }
+
+export type SendOptions = {
+  readonly queueMode?: SessionSendQueueMode;
+};
 
 export interface ManagedSession {
   readonly sessionId: string;
@@ -124,9 +130,10 @@ export interface ManagedSession {
    *
    * 并发约束：同一 session 在 send 进行中（即上一次 send 启动的事件流还没 emit
    * session_complete / session_error）不允许再 send——策略由实现选：
-   *   - queue: Real adapter stores follow-up prompts in Space's per-session
-   *            queue and returns `{ queued: true, queueId }`. The same session
-   *            starts the next queued prompt after the current turn settles.
+   *   - queue: Real adapter stores follow-up prompts in the SDK queue with
+   *            Space session ownership and returns `{ queued: true, queueId }`.
+   *            KodaX may drain it mid-turn; Space falls back to the next run
+   *            after settle if no safe drain point appears.
    *   - reject: throw; IPC handler returns a HANDLER_ERROR envelope (Mock uses this).
    *
    * @throws 同步抛 / Promise reject：session 已 disposed、或拒绝并发
@@ -137,7 +144,7 @@ export interface ManagedSession {
    * buildPromptMessageContent 会把每张 image 拼成 multimodal content block。
    * 未传时行为等同于"纯文本 prompt"，跟 v0.1.8 之前一致。
    */
-  send(prompt: string, artifacts?: readonly InputArtifact[]): Promise<SendResult>;
+  send(prompt: string, artifacts?: readonly InputArtifact[], options?: SendOptions): Promise<SendResult>;
 
   /**
    * 中断当前正在跑的 send。

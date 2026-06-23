@@ -30,6 +30,7 @@ test('load backfills languageMode for older settings files', async () => {
 
   assert.equal(loaded.defaultWorkspace, path.join(tmpDir, 'workspace'));
   assert.equal(loaded.languageMode, 'system');
+  assert.deepEqual(loaded.runtimeDefaults, {});
 });
 
 test('setLanguageMode persists without changing defaultWorkspace', async () => {
@@ -44,4 +45,32 @@ test('setLanguageMode persists without changing defaultWorkspace', async () => {
   const reloaded = await new SettingsStore(settingsFile, tmpDir).load();
   assert.equal(reloaded.defaultWorkspace, workspace);
   assert.equal(reloaded.languageMode, 'en-US');
+});
+
+test('setRuntimeDefaults merges and persists runtime defaults', async () => {
+  const workspace = path.join(tmpDir, 'workspace');
+  const store = new SettingsStore(settingsFile, tmpDir);
+  await store.setDefaultWorkspace(workspace);
+
+  const first = await store.setRuntimeDefaults({
+    permissionMode: 'auto',
+    autoModeEngine: 'rules',
+  });
+  assert.deepEqual(first.runtimeDefaults, {
+    permissionMode: 'auto',
+    autoModeEngine: 'rules',
+  });
+
+  const merged = await store.setRuntimeDefaults({ reasoningMode: 'deep', agentMode: 'sa' });
+  assert.deepEqual(merged.runtimeDefaults, {
+    permissionMode: 'auto',
+    autoModeEngine: 'rules',
+    reasoningMode: 'deep',
+    agentMode: 'sa',
+  });
+
+  const reloaded = await new SettingsStore(settingsFile, tmpDir).load();
+  assert.equal(reloaded.version, 2);
+  assert.equal(reloaded.defaultWorkspace, workspace);
+  assert.deepEqual(reloaded.runtimeDefaults, merged.runtimeDefaults);
 });

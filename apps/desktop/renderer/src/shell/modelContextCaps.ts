@@ -28,10 +28,12 @@ const RULES: readonly CapRule[] = [
   { match: /^kimi-for-coding/, cap: 256_000 },
   // Qwen 3.5 — 1M
   { match: /^qwen3\.5/, cap: 1_000_000 },
-  // GLM-5 系列 — 200k (BigModel / Zhipu Coding Plan 同款上下文)
-  { match: /^glm-5/, cap: 200_000 },
-  // GLM-4.7 — 128k
-  { match: /^glm-4\.7/, cap: 128_000 },
+  // GLM-5.2 (Zhipu Coding Plan) - 1M; keep this before the broader GLM-5 fallback.
+  { match: /^glm-5\.2$/, cap: 1_000_000 },
+  // GLM-5 / GLM-5.1 / GLM-5 Turbo - 200k fallback.
+  { match: /^glm-5(?:$|\.1$|-turbo$)/, cap: 200_000 },
+  // GLM-4.7 - 200k.
+  { match: /^glm-4\.7$/, cap: 200_000 },
   // MiniMax M 系列 (M2 / M2.7 / M3，ark-coding + minimax-coding) — 1M
   // 2026-06-09 SDK ark-coding 阵容 catch-up：新增 MiniMax-M3、移除 minimax-latest，
   // 故 match 从 /^MiniMax-M2/ 放宽到 /^MiniMax-M/ 覆盖 M3 及后续，并删掉死规则 minimax-latest。

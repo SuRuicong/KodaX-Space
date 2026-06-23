@@ -128,35 +128,59 @@ function isHttpsBaseUrl(value: string): boolean {
   }
 }
 
-const providerAddCustomInputSchema = z
-  .object({
-    displayName: z.string().min(1).max(128),
-    protocol: z.enum(['anthropic', 'openai']),
-    baseUrl: z.string().min(1).max(512),
-    skipBaseUrlValidation: z.boolean().optional(),
-    apiKeyEnv: z
-      .string()
-      .min(1)
-      .max(128)
-      .regex(/^[A-Z_][A-Z0-9_]{0,127}$/, { message: 'apiKeyEnv must be uppercase snake_case' }),
-    defaultModel: z.string().min(1).max(128),
-    models: z.array(z.string().min(1).max(128)).max(64).optional(),
-  })
-  .superRefine((value, ctx) => {
-    if (value.skipBaseUrlValidation === true) return;
-    if (isHttpsBaseUrl(value.baseUrl)) return;
+const customProviderConfigInputSchema = z.object({
+  displayName: z.string().min(1).max(128),
+  protocol: z.enum(['anthropic', 'openai']),
+  baseUrl: z.string().min(1).max(512),
+  skipBaseUrlValidation: z.boolean().optional(),
+  apiKeyEnv: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(/^[A-Z_][A-Z0-9_]{0,127}$/, { message: 'apiKeyEnv must be uppercase snake_case' }),
+  defaultModel: z.string().min(1).max(128),
+  models: z.array(z.string().min(1).max(128)).max(64).optional(),
+});
 
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['baseUrl'],
-      message: 'baseUrl must use https:// unless URL validation is skipped',
-    });
+function validateCustomProviderBaseUrl(
+  value: { readonly baseUrl: string; readonly skipBaseUrlValidation?: boolean },
+  ctx: z.RefinementCtx,
+): void {
+  if (value.skipBaseUrlValidation === true) return;
+  if (isHttpsBaseUrl(value.baseUrl)) return;
+
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ['baseUrl'],
+    message: 'baseUrl must use https:// unless URL validation is skipped',
   });
+}
+
+const providerAddCustomInputSchema = customProviderConfigInputSchema.superRefine(
+  validateCustomProviderBaseUrl,
+);
+
+const providerUpdateCustomInputSchema = customProviderConfigInputSchema
+  .extend({
+    providerId: z.string().min(1).max(64),
+  })
+  .superRefine(validateCustomProviderBaseUrl);
 
 export const providerAddCustomChannel = {
   name: 'provider.addCustom',
   direction: 'invoke',
   input: providerAddCustomInputSchema,
+  output: z.object({
+    ok: z.boolean(),
+    providerId: z.string().min(1).max(64),
+  }),
+} as const;
+
+// --- Invoke: provider.updateCustom ---
+export const providerUpdateCustomChannel = {
+  name: 'provider.updateCustom',
+  direction: 'invoke',
+  input: providerUpdateCustomInputSchema,
   output: z.object({
     ok: z.boolean(),
     providerId: z.string().min(1).max(64),
@@ -174,7 +198,6 @@ export const providerRemoveCustomChannel = {
     ok: z.boolean(),
   }),
 } as const;
-
 // --- Invoke: provider.modelContextWindow ---
 //
 // SDK-driven 上下文窗口查询。替代 renderer 端 modelContextCaps.ts 的硬编码表。

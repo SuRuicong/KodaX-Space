@@ -48,6 +48,15 @@ export interface KodaxConfigCustomProvider {
   readonly models?: readonly string[];
 }
 
+export interface KodaxConfigCustomProviderUpdate {
+  readonly displayName: string;
+  readonly protocol: 'anthropic' | 'openai';
+  readonly baseUrl: string;
+  readonly skipBaseUrlValidation?: boolean;
+  readonly apiKeyEnv: string;
+  readonly defaultModel: string;
+  readonly models?: readonly string[];
+}
 export interface SpaceCustomProviderForSdk {
   readonly id: string;
   readonly protocol: 'anthropic' | 'openai';
@@ -61,6 +70,8 @@ export interface SpaceCustomProviderForSdk {
 export interface KodaxUserConfigImpl {
   /** SDK loadConfig — 返回完整 config 对象（main 端使用） */
   readonly loadConfig: () => SdkLoadConfigReturn;
+  /** SDK saveConfig — 写回 ~/.kodax/config.json */
+  readonly saveConfig?: (config: SdkLoadConfigReturn) => void;
   /** SDK registerConfiguredCustomProviders — 注册到运行时 LLM registry */
   readonly registerCustomProviders: (config: { customProviders?: SdkCustomProviderConfig[] }) => void;
 }
@@ -80,6 +91,12 @@ const DEFAULT_IMPL: KodaxUserConfigImpl = {
       return {};
     }
     return sdkModuleCache.loadConfig();
+  },
+  saveConfig: (config) => {
+    if (sdkModuleCache === null) {
+      throw new Error('SDK root module is not loaded');
+    }
+    sdkModuleCache.saveConfig(config);
   },
   registerCustomProviders: (config) => {
     if (sdkModuleCache === null) {
@@ -223,8 +240,54 @@ export async function loadKodaxCustomProviders(): Promise<readonly KodaxConfigCu
   return normalizeKodaxConfigCustomProviders(raw.customProviders);
 }
 
+export async function updateKodaxConfigCustomProvider(
+  providerId: string,
+  update: KodaxConfigCustomProviderUpdate,
+): Promise<{ readonly updated: boolean; readonly providerId: string }> {
+  const raw = await loadWritableKodaxConfig();
+  const providers = Array.isArray(raw.customProviders) ? [...raw.customProviders] : [];
+  const index = providers.findIndex((provider) => providerName(provider) === providerId);
+  if (index < 0) return { updated: false, providerId };
+
+  const nextProviderId = update.displayName.trim();
+  if (!isSafeProviderId(nextProviderId)) {
+    throw new Error('KodaX config custom provider name must be a safe provider id');
+  }
+  const duplicateConfigProvider = providers.some(
+    (provider, providerIndex) =>
+      providerIndex !== index && providerName(provider) === nextProviderId,
+  );
+  if (duplicateConfigProvider) {
+    throw new Error(`KodaX config custom provider name already exists: ${nextProviderId}`);
+  }
+
+  providers[index] = customProviderUpdateToSdk(nextProviderId, update);
+  const nextConfig = {
+    ...raw,
+    provider: raw.provider === providerId ? nextProviderId : raw.provider,
+    customProviders: providers,
+  };
+  saveWritableKodaxConfig(nextConfig);
+  return { updated: true, providerId: nextProviderId };
+}
+
+export async function removeKodaxConfigCustomProvider(providerId: string): Promise<boolean> {
+  const raw = await loadWritableKodaxConfig();
+  const providers = Array.isArray(raw.customProviders) ? [...raw.customProviders] : [];
+  const nextProviders = providers.filter((provider) => providerName(provider) !== providerId);
+  if (nextProviders.length === providers.length) return false;
+
+  const nextConfig = {
+    ...raw,
+    provider: raw.provider === providerId ? undefined : raw.provider,
+    customProviders: nextProviders,
+  };
+  saveWritableKodaxConfig(nextConfig);
+  return true;
+}
 export async function registerKodaxCustomProviders(
   spaceCustomProviders: readonly SpaceCustomProviderForSdk[] = [],
+  options: { readonly force?: boolean } = {},
 ): Promise<void> {
   if (activeImpl === DEFAULT_IMPL && sdkModuleCache === null) {
     try {
@@ -259,7 +322,7 @@ export async function registerKodaxCustomProviders(
   }
 
   const customProviders = [...mergedByName.values()];
-  if (customProviders.length === 0) return;
+  if (customProviders.length === 0 && options.force !== true) return;
 
   try {
     activeImpl.registerCustomProviders({ customProviders });
@@ -383,6 +446,40 @@ function normalizeSpaceCustomProviderForSdk(
   });
 }
 
+async function loadWritableKodaxConfig(): Promise<SdkLoadConfigReturn> {
+  if (activeImpl === DEFAULT_IMPL && sdkModuleCache === null) {
+    await loadSdkRootModule();
+  }
+  return activeImpl.loadConfig();
+}
+
+function saveWritableKodaxConfig(config: SdkLoadConfigReturn): void {
+  if (!activeImpl.saveConfig) {
+    throw new Error('KodaX config writer unavailable');
+  }
+  activeImpl.saveConfig(config);
+  invalidateUserDefaultsCache();
+}
+
+function customProviderUpdateToSdk(
+  providerId: string,
+  update: KodaxConfigCustomProviderUpdate,
+): SdkCustomProviderConfig {
+  return spaceCustomProviderToSdk({
+    id: providerId,
+    protocol: update.protocol,
+    baseUrl: update.baseUrl,
+    skipBaseUrlValidation: update.skipBaseUrlValidation,
+    apiKeyEnv: update.apiKeyEnv,
+    defaultModel: update.defaultModel,
+    models: update.models,
+  });
+}
+
+function providerName(provider: SdkCustomProviderConfig): string | undefined {
+  const name = (provider as unknown as { readonly name?: unknown }).name;
+  return typeof name === 'string' ? name : undefined;
+}
 function normalizeModelList(models: unknown): readonly string[] | undefined {
   if (!Array.isArray(models)) return undefined;
   const seen = new Set<string>();

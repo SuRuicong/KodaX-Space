@@ -27,10 +27,7 @@ test('resolveSessionCreateInputs prefers configured pending provider over defaul
   const out = resolveSessionCreateInputs({
     projectRoot: '/repo',
     providers: [
-      provider('pending-provider', true, 'pending-default', [
-        'pending-default',
-        'pending-fast',
-      ]),
+      provider('pending-provider', true, 'pending-default', ['pending-default', 'pending-fast']),
       provider('space-default', true, 'space-default-model'),
       provider('kodax-default', true, 'kodax-default-model'),
     ],
@@ -45,6 +42,7 @@ test('resolveSessionCreateInputs prefers configured pending provider over defaul
     pendingProviderId: 'pending-provider',
     pendingReasoningMode: 'quick',
     pendingPermissionMode: 'accept-edits',
+    pendingAutoModeEngine: 'rules',
     pendingAgentMode: 'sa',
     pendingModel: 'pending-fast',
   });
@@ -53,7 +51,14 @@ test('resolveSessionCreateInputs prefers configured pending provider over defaul
   assert.equal(out.model, 'pending-fast');
   assert.equal(out.reasoningMode, 'quick');
   assert.equal(out.permissionMode, 'accept-edits');
+  assert.equal(out.autoModeEngine, 'rules');
   assert.equal(out.agentMode, 'sa');
+  assert.deepEqual(out.runtimeOverrides, {
+    reasoningMode: 'quick',
+    permissionMode: 'accept-edits',
+    autoModeEngine: 'rules',
+    agentMode: 'sa',
+  });
 });
 
 test('resolveSessionCreateInputs skips unconfigured candidates and avoids mock fallback when possible', () => {
@@ -75,6 +80,7 @@ test('resolveSessionCreateInputs skips unconfigured candidates and avoids mock f
     pendingProviderId: 'pending-provider',
     pendingReasoningMode: null,
     pendingPermissionMode: null,
+    pendingAutoModeEngine: null,
     pendingAgentMode: null,
     pendingModel: 'kodax-default-model',
   });
@@ -83,7 +89,9 @@ test('resolveSessionCreateInputs skips unconfigured candidates and avoids mock f
   assert.equal(out.model, 'real-default');
   assert.equal(out.reasoningMode, 'auto');
   assert.equal(out.permissionMode, 'accept-edits');
+  assert.equal(out.autoModeEngine, 'llm');
   assert.equal(out.agentMode, 'ama');
+  assert.deepEqual(out.runtimeOverrides, {});
 });
 
 test('resolveSessionCreateInputs ignores stale pending model from another provider', () => {
@@ -101,6 +109,7 @@ test('resolveSessionCreateInputs ignores stale pending model from another provid
     pendingProviderId: null,
     pendingReasoningMode: null,
     pendingPermissionMode: null,
+    pendingAutoModeEngine: null,
     pendingAgentMode: null,
     pendingModel: 'other-model',
   });

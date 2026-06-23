@@ -7,12 +7,29 @@
 //   - settings.setDefaultWorkspace { path } → 改默认 workspace + ensureExists 一次
 
 import { z } from 'zod';
+import {
+  agentModeSchema,
+  autoModeEngineSchema,
+  permissionModeSchema,
+  reasoningModeSchema,
+} from './session.js';
 
 export const supportedLocaleSchema = z.enum(['zh-CN', 'en-US']);
 export type SupportedLocaleT = z.infer<typeof supportedLocaleSchema>;
 
 export const languageModeSchema = z.enum(['system', 'zh-CN', 'en-US']);
 export type LanguageModeT = z.infer<typeof languageModeSchema>;
+
+const spaceRuntimeDefaultsSchema = z
+  .object({
+    permissionMode: permissionModeSchema.optional(),
+    autoModeEngine: autoModeEngineSchema.optional(),
+    reasoningMode: reasoningModeSchema.optional(),
+    agentMode: agentModeSchema.optional(),
+  })
+  .strict();
+
+export type SpaceRuntimeDefaultsT = z.infer<typeof spaceRuntimeDefaultsSchema>;
 
 export function resolveEffectiveLocale(
   languageMode: LanguageModeT,
@@ -42,6 +59,7 @@ const spaceSettingsSchema = z.object({
   languageMode: languageModeSchema,
   effectiveLocale: supportedLocaleSchema,
   preferredSystemLanguages: z.array(z.string().min(1).max(128)),
+  runtimeDefaults: spaceRuntimeDefaultsSchema.default({}),
 });
 
 export type SpaceSettingsT = z.infer<typeof spaceSettingsSchema>;
@@ -67,6 +85,15 @@ export const settingsSetLanguageModeChannel = {
   direction: 'invoke',
   input: z.object({
     languageMode: languageModeSchema,
+  }),
+  output: spaceSettingsSchema,
+} as const;
+
+export const settingsSetRuntimeDefaultsChannel = {
+  name: 'settings.setRuntimeDefaults',
+  direction: 'invoke',
+  input: z.object({
+    runtimeDefaults: spaceRuntimeDefaultsSchema.partial().strict(),
   }),
   output: spaceSettingsSchema,
 } as const;

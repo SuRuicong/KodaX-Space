@@ -98,9 +98,15 @@ import { bootstrapAutoMode } from './auto-mode-bootstrap.js';
 import { computeToolBlockReason, isPartnerToolAllowed } from './partner-tools.js';
 import { ensureCreateArtifactToolRegistered } from '../artifact/create-artifact-tool.js';
 import { withArtifactContext } from '../artifact/run-context.js';
+import { runWithSessionQueueScope } from './session-queue-guard.js';
 import { getSessionStorageHandle } from './session-store.js';
 import { wrapSdkError } from './sdk-errors.js';
 import { buildSkillsPrompt } from './skills-prompt.js';
+import {
+  createSpaceSdkExtensionRuntime,
+  getSpaceSdkExtensionConfigGeneration,
+  type SpaceSdkExtensionRuntimeHandle,
+} from './sdk-extensions.js';
 import { SPACE_MANUAL_TOPICS, SPACE_PRODUCT_NAME } from './space-manual-topics.js';
 import { workflowPolicyStore } from './workflow-policy.js';
 import { pushToRenderer } from '../ipc/push.js';
@@ -108,6 +114,7 @@ import { childRunId, buildChildActivity } from './workflow-activity.js';
 import type {
   ManagedSession,
   PermissionRequestFn,
+  SendOptions,
   SendResult,
   SessionCreateOptions,
 } from './session-adapter.js';
@@ -175,6 +182,9 @@ export class RealKodaXSession implements ManagedSession {
   private readonly requestPermission: PermissionRequestFn;
   private currentAbort: AbortController | null = null;
   private disposed = false;
+  private extensionRuntimeHandle: SpaceSdkExtensionRuntimeHandle | undefined = undefined;
+  private extensionRuntimeLoad: Promise<SpaceSdkExtensionRuntimeHandle | undefined> | null = null;
+  private extensionRuntimeGeneration: number | null = null;
 
   constructor(opts: SessionCreateOptions) {
     this.sessionId = opts.sessionId;
@@ -198,26 +208,25 @@ export class RealKodaXSession implements ManagedSession {
     return this.currentAbort !== null;
   }
 
-  async send(prompt: string, artifacts?: readonly InputArtifact[]): Promise<SendResult> {
+  async send(prompt: string, artifacts?: readonly InputArtifact[], options?: SendOptions): Promise<SendResult> {
     if (this.disposed) {
       throw new Error(`[real-session ${this.sessionId}] already disposed`);
     }
 
-    // Follow-up prompts are queued by Space per session and are started after
-    // the current turn settles. The SDK main-thread MessageQueue is
-    // process-global, so it cannot safely carry desktop session follow-ups
-    // while multiple Space sessions are running concurrently.
+    // Follow-up prompts are queued explicitly: interrupt goes into the SDK
+    // main-thread queue for safe mid-turn drains, while after-turn stays in
+    // Space's per-session queue until this turn settles.
     if (this.currentAbort) {
       if (artifacts && artifacts.length > 0) {
         throw new Error(
           'Cannot attach images while a turn is running; wait for the current response to finish, then paste again.',
         );
       }
-      const queueId = await enqueueUserPrompt(this.sessionId, prompt);
+      const queueMode = options?.queueMode ?? 'interrupt';
+      const queueId = await enqueueUserPrompt(this.sessionId, prompt, queueMode);
       this.lastActivityAt = Date.now();
-      return { queued: true, queueId };
+      return { queued: true, queueId, queueMode };
     }
-
     this.startRun(prompt, artifacts);
     return { queued: false };
   }
@@ -242,6 +251,64 @@ export class RealKodaXSession implements ManagedSession {
     this.startRun(nextPrompt);
   }
 
+  private async ensureExtensionRuntime(retryStale = true): Promise<SpaceSdkExtensionRuntimeHandle | undefined> {
+    const generation = getSpaceSdkExtensionConfigGeneration();
+    if (this.extensionRuntimeGeneration !== null && this.extensionRuntimeGeneration !== generation) {
+      await this.disposeExtensionRuntime();
+    }
+    if (this.extensionRuntimeHandle !== undefined) return this.extensionRuntimeHandle;
+    if (this.extensionRuntimeLoad === null) {
+      this.extensionRuntimeGeneration = generation;
+      this.extensionRuntimeLoad = createSpaceSdkExtensionRuntime({ projectRoot: this.projectRoot })
+        .then(async (handle) => {
+          if (this.disposed || this.extensionRuntimeGeneration !== generation) {
+            if (handle !== undefined) {
+              await handle.runtime.dispose().catch((err) => {
+                console.warn(
+                  `[real-session ${this.sessionId}] SDK extension runtime dispose after late init failed:`,
+                  err instanceof Error ? err.message : err,
+                );
+              });
+            }
+            this.extensionRuntimeHandle = undefined;
+            this.extensionRuntimeLoad = null;
+            this.extensionRuntimeGeneration = null;
+            if (!this.disposed && retryStale) {
+              return this.ensureExtensionRuntime(false);
+            }
+            return undefined;
+          }
+          this.extensionRuntimeHandle = handle;
+          return handle;
+        })
+        .catch((err) => {
+          this.extensionRuntimeLoad = null;
+          this.extensionRuntimeGeneration = null;
+          console.warn(
+            `[real-session ${this.sessionId}] SDK extension runtime unavailable:`,
+            err instanceof Error ? err.message : err,
+          );
+          return undefined;
+        });
+    }
+    return this.extensionRuntimeLoad;
+  }
+
+  private async disposeExtensionRuntime(): Promise<void> {
+    const pending = this.extensionRuntimeLoad;
+    const handle =
+      this.extensionRuntimeHandle ?? (pending ? await pending.catch(() => undefined) : undefined);
+    this.extensionRuntimeHandle = undefined;
+    this.extensionRuntimeLoad = null;
+    this.extensionRuntimeGeneration = null;
+    await handle?.runtime.dispose().catch((err) => {
+      console.warn(
+        `[real-session ${this.sessionId}] SDK extension runtime dispose failed:`,
+        err instanceof Error ? err.message : err,
+      );
+    });
+  }
+
   async cancel(): Promise<void> {
     if (this.currentAbort) {
       this.currentAbort.abort();
@@ -263,6 +330,7 @@ export class RealKodaXSession implements ManagedSession {
       console.warn(`[real-session ${this.sessionId}] queue drain on dispose failed:`,
         err instanceof Error ? err.message : err);
     });
+    await this.disposeExtensionRuntime();
   }
 
   /**
@@ -954,6 +1022,7 @@ export class RealKodaXSession implements ManagedSession {
     // 字段——KodaX prompt builder 同样会跳过 skills-addendum section。
     // 失败完全静默（buildSkillsPrompt 内部 catch 并返空串），不阻塞主对话回路。
     const skillsPrompt = await buildSkillsPrompt(this.projectRoot);
+    const extensionRuntimeHandle = await this.ensureExtensionRuntime();
 
     const options: KodaXOptions = {
       provider: this.provider,
@@ -964,6 +1033,9 @@ export class RealKodaXSession implements ManagedSession {
       ...(this.model !== undefined ? { model: this.model } : {}),
       ...(this.thinking !== undefined ? { thinking: this.thinking } : {}),
       events,
+      ...(extensionRuntimeHandle !== undefined
+        ? { extensionRuntime: extensionRuntimeHandle.runtime }
+        : {}),
       abortSignal: signal,
       // scope: 'user' 让 SDK FileSessionStorage 把 session 当成用户对话面板的
       // first-class session 落盘。storage 是 SDK 当前要求的字段——不传则
@@ -1038,7 +1110,7 @@ export class RealKodaXSession implements ManagedSession {
       // create_artifact tool handler (global registration) knows which
       // session/surface to attribute to (ALS — concurrency-safe across sessions).
       await withArtifactContext({ sessionId: sid, surface: this.surface, projectRoot: this.projectRoot }, () =>
-        sdk.runManagedTask(options, prompt),
+        runWithSessionQueueScope(sid, () => sdk.runManagedTask(options, prompt)),
       );
       // SA 路径（agentMode='sa'）错误时 onError 触发但 Promise **resolve**（success:false），
       // 不 throw——外层 catch 不会跑。所以这里 await 之后补发暂存的错误。

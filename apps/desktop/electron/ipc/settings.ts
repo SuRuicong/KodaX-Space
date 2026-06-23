@@ -25,6 +25,7 @@ function getPreferredSystemLanguages(): string[] {
 function toSettingsOutput(settings: {
   readonly defaultWorkspace: string;
   readonly languageMode: SpaceSettingsT['languageMode'];
+  readonly runtimeDefaults?: SpaceSettingsT['runtimeDefaults'];
 }): SpaceSettingsT {
   const preferredSystemLanguages = getPreferredSystemLanguages();
   return {
@@ -32,6 +33,7 @@ function toSettingsOutput(settings: {
     languageMode: settings.languageMode,
     effectiveLocale: resolveEffectiveLocale(settings.languageMode, preferredSystemLanguages),
     preferredSystemLanguages,
+    runtimeDefaults: settings.runtimeDefaults ?? {},
   };
 }
 
@@ -51,6 +53,11 @@ export function registerSettingsChannels(): void {
 
   registerChannel('settings.setLanguageMode', async ({ languageMode }) => {
     const next = await settingsStore.setLanguageMode(languageMode);
+    return toSettingsOutput(next);
+  });
+
+  registerChannel('settings.setRuntimeDefaults', async ({ runtimeDefaults }) => {
+    const next = await settingsStore.setRuntimeDefaults(runtimeDefaults);
     return toSettingsOutput(next);
   });
 }

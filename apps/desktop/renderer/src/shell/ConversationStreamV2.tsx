@@ -32,7 +32,7 @@ import { ActivitySpinner, useIsStreaming } from './ActivitySpinner.js';
 import { Caret } from '../components/Caret.js';
 import { Reveal } from '../components/Reveal.js';
 import { Collapse } from '../components/Collapse.js';
-import { ArrowDown, FileOutput, Maximize2 } from 'lucide-react';
+import { ChevronDown, FileOutput, Maximize2 } from 'lucide-react';
 // 聚合后的 view-only message kind —— 两层折叠对齐 Claude Desktop "Ran 6 commands ⌄":
 //
 //   ▸ Ran 6 commands · 12s              ← 外层 cluster (此处折叠 = 默认)
@@ -674,8 +674,11 @@ export function ConversationStreamV2(): JSX.Element {
         </div>
       )}
 
-      {/* 跳到底：极简圆形箭头。外层 div 负责居中定位（transform），内层 button 的 .ix-pop
-          悬停缩放不会和居中 translate 打架。 */}
+      {/* 跳到底：对标 Codex —— 悬浮圆形 chevron。用 surface-4（float 浮层级：浅色纯白 / 深色提亮灰）
+          + .lift 柔影，明确浮在对话流之上，深浅两色都清晰可见（旧用 surface-3 在深色里几乎隐形）。
+          chevron 用 2.5 描边补足「细 V 不够显眼」；hover 时 outline 微光环（用 outline 不用 ring，
+          避免和 .lift 的 box-shadow 抢同一属性、hover 反而丢掉浮影）。
+          外层 div 负责居中定位，内层 button 的 .ix-pop 悬停缩放不和居中 translate 打架。 */}
       {showJumpToBottom && (
         <div className="reveal-marker absolute bottom-4 left-1/2 -ml-4 z-10">
           <button
@@ -683,9 +686,9 @@ export function ConversationStreamV2(): JSX.Element {
             onClick={jumpToBottom}
             aria-label="Jump to bottom"
             title="Jump to bottom"
-            className="ix-pop w-8 h-8 rounded-full flex items-center justify-center bg-surface-3/95 border border-border-default lift text-fg-secondary hover:text-fg-primary"
+            className="ix-pop w-8 h-8 rounded-full flex items-center justify-center bg-surface-4 border border-border-default lift text-fg-secondary hover:text-fg-primary hover:outline hover:outline-2 hover:outline-offset-2 hover:outline-border-strong"
           >
-            <ArrowDown className="w-4 h-4" strokeWidth={2} aria-hidden />
+            <ChevronDown className="w-4 h-4" strokeWidth={2.5} aria-hidden />
           </button>
         </div>
       )}

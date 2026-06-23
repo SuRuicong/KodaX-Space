@@ -1,6 +1,6 @@
 # Known Issues
 
-Last Updated: 2026-06-22 17:24
+Last Updated: 2026-06-23
 
 ## Issue Index
 
@@ -13,6 +13,8 @@ Last Updated: 2026-06-22 17:24
 | 005 | Low | Resolved | Context window indicator could keep the previous model cap while the new model cap was loading | v0.1.21 | 2026-06-22 |
 | 006 | Medium | Open | Persisted SDK session summaries do not expose exact historical runtime model metadata | pre-v0.1.21 | 2026-06-22 |
 | 007 | High | Resolved | SDK main-thread follow-up owner guard did not protect already-running concurrent sessions | v0.1.21 | 2026-06-22 |
+| 008 | High | Resolved | Real KodaX sessions did not register configured MCP capability provider | v0.1.x | 2026-06-23 |
+| 009 | High | Resolved | Space per-session follow-up queue removed SDK mid-turn queue-query insertion | v0.1.21 | 2026-06-23 |
 
 ## Issue Details
 
@@ -538,12 +540,171 @@ Tests added:
 - `drainQueueForSession clears only that session`
 - `queue depth is enforced per session, not globally`
 
+### 008: Real KodaX sessions did not register configured MCP capability provider
+
+- Priority: High
+- Status: Resolved
+- Introduced: v0.1.x
+- Fixed: v0.1.22
+- Created: 2026-06-23
+- Resolution Date: 2026-06-23
+
+#### Original Problem
+
+Current behavior:
+
+- KodaX Space could show MCP servers in the MCP popout because the popout owns a separate `McpManager`.
+- The actual `RealKodaXSession` agent runtime did not create a SDK extension runtime and did not call `registerConfiguredMcpCapabilityProvider()` for `~/.kodax/config.json` `mcpServers`.
+- As a result, agent turns could miss `mcp_search`, `mcp_read_resource`, `mcp_call`, and related MCP capabilities even though the same config worked in KodaX CLI.
+
+Expected behavior:
+
+- Each real Space session should provide the KodaX SDK with an extension runtime containing the configured MCP capability provider.
+- MCP reverse capabilities should expose the current Space project root, matching the CLI/ACP host contract.
+- Filesystem extension discovery remains opt-in behind `KODAX_SPACE_ENABLE_SDK_EXTENSIONS`; configured MCP servers are not env-gated.
+
+#### Context
+
+Affected components:
+
+- `apps/desktop/electron/kodax/sdk-extensions.ts`
+- `apps/desktop/electron/kodax/real-session.ts`
+- `apps/desktop/electron/test/sdk-extensions.test.ts`
+- `apps/desktop/electron/slash/builtin.ts`
+- `apps/desktop/electron/mcp/kodax-user-config-loader.ts`
+- `apps/desktop/electron/ipc/mcp.ts`
+- `apps/desktop/electron/ipc/mcpb.ts`
+
+#### Root Cause
+
+Space had MCP lifecycle wiring for the UI popout, but that manager is intentionally not shared with the SDK agent runtime. The real session path called `runManagedTask()` without an `extensionRuntime`, so SDK capability lookup had no MCP provider. A preliminary `sdk-extensions.ts` module existed but only loaded filesystem extensions and was not connected to `RealKodaXSession`.
+
+#### Resolution
+
+Implemented per-session SDK extension runtime wiring:
+
+- `createSpaceSdkExtensionRuntime()` now checks KodaX `mcpServers`, creates a SDK extension runtime when MCP is configured, registers `registerConfiguredMcpCapabilityProvider()`, and injects `buildMcpReverseCapabilities({ cwd: projectRoot, enableElicitation: true })`.
+- The helper merges global `~/.kodax/config.json` MCP servers with project-level `${projectRoot}/.kodax/config.json` MCP servers, preserving raw SDK config fields and letting project config override by server name.
+- Project-level MCP remains usable even if global config loading fails; malformed individual server entries are ignored instead of crashing runtime creation.
+- The helper returns `undefined` without loading the SDK when neither MCP nor env-enabled filesystem extensions are present.
+- `RealKodaXSession` now lazily creates and caches this runtime before building `KodaXOptions`, passes it as `options.extensionRuntime`, and disposes it when the session is disposed.
+- MCP reload and MCP bundle install/uninstall invalidate cached session runtimes via a SDK extension config generation, so existing sessions rebuild their MCP runtime on the next turn.
+- If config generation changes while a runtime is still initializing, the stale runtime is disposed and the current turn retries once against the new generation.
+- `/extensions sdk load` active runtimes are now replaced through the helper, disposing the previous Space-owned active runtime before installing a new one.
+- Filesystem extension loading remains controlled by `KODAX_SPACE_ENABLE_SDK_EXTENSIONS`; configured MCP servers are always considered.
+
+Files changed:
+
+- `apps/desktop/electron/kodax/sdk-extensions.ts`
+- `apps/desktop/electron/kodax/real-session.ts`
+- `apps/desktop/electron/test/sdk-extensions.test.ts`
+- `apps/desktop/electron/slash/builtin.ts`
+- `apps/desktop/electron/mcp/kodax-user-config-loader.ts`
+- `apps/desktop/electron/ipc/mcp.ts`
+- `apps/desktop/electron/ipc/mcpb.ts`
+
+Tests added:
+
+- `sdkExtensionsEnabledByEnv accepts common truthy values only`
+- `hasEnabledMcpServers ignores missing, disabled, and malformed servers`
+- `loadKodaxProjectMcpServers reads raw project-level MCP config`
+- `createSpaceSdkExtensionRuntime returns undefined without MCP or enabled filesystem extensions`
+- `createSpaceSdkExtensionRuntime registers configured MCP provider with project roots`
+- `createSpaceSdkExtensionRuntime disposes runtime when MCP provider registration fails`
+- `createSpaceSdkExtensionRuntime replaces and disposes active runtimes only when requested`
+- `invalidateSpaceSdkExtensionRuntimes increments generation and disposes active runtime`
+- `createSpaceSdkExtensionRuntime loads filesystem extensions only when env-enabled`
+
+Verification:
+
+- `node --test --import tsx/esm electron/test/sdk-extensions.test.ts electron/test/host.test.ts electron/test/host-try-resume.test.ts electron/test/slash-builtin.test.ts electron/test/mcp-config-reader.test.ts` from `apps/desktop` passed: 95/95.
+- `npm run typecheck` passed.
+
+### 009: Space per-session follow-up queue removed SDK mid-turn queue-query insertion
+
+- Priority: High
+- Status: Resolved
+- Introduced: v0.1.21
+- Fixed: v0.1.22
+- Created: 2026-06-23
+- Resolution Date: 2026-06-23
+
+#### Original Problem
+
+Current behavior:
+
+- Issue 007 moved Space follow-up prompts out of the SDK main-thread `MessageQueue` into a Space-owned per-session queue.
+- That fixed the cross-session drain race, but it also removed KodaX's native mid-turn `queue-query` insertion path for Space follow-up prompts.
+- A prompt sent while a Space session was running could only start after the current run settled, even when the SDK had a safe mid-turn drain point.
+
+Expected behavior:
+
+- Space should support both follow-up semantics while a session is running:
+  - `interrupt`: enter the SDK main-thread queue so KodaX can inject at the next safe mid-turn boundary.
+  - `after-turn`: stay in a Space-owned per-session queue and run only after the current turn settles.
+- The composer should expose the choice directly: `Enter` defaults to `interrupt`; `Ctrl+Enter` / `Cmd+Enter` selects `after-turn`; `Shift+Enter` remains newline.
+- Prompts in either mode must be owned by the Space session that queued them.
+- A different already-running Space session must not be able to drain another session's prompt.
+- If an interrupt prompt is not consumed by a SDK mid-turn drain before settle, Space should still run it as the next prompt for the same session.
+
+#### Root Cause
+
+Space previously treated follow-up queueing as a single backend policy. The SDK process-global main-thread queue enabled mid-turn insertion but needed a Space session ownership layer; the Space-owned per-session queue had ownership but bypassed SDK mid-turn drains. Users need both behaviors, so the mode must be explicit at the UI/IPC boundary instead of being guessed by the backend.
+
+#### Resolution
+
+Implemented explicit queue modes across renderer, IPC, and main-process queue handling:
+
+- Added `session.send.queueMode` with default `interrupt` and queued ACK `queueMode` in the IPC schema.
+- The composer now maps `Enter` to `interrupt` and `Ctrl+Enter` / `Cmd+Enter` to `after-turn`; send button remains default interrupt.
+- `RealKodaXSession.send()` forwards the requested mode when a turn is already running and rejects image attachments during an active turn as before.
+- `interrupt` prompts enqueue into the SDK main-thread queue with `agentId === undefined`, preserving KodaX mid-turn drain behavior.
+- `after-turn` prompts enqueue into a Space-owned per-session queue and are only started after the current turn settles.
+- `RealKodaXSession` wraps each `sdk.runManagedTask()` call in an `AsyncLocalStorage` queue scope keyed by Space `sessionId`, so SDK `dequeue` / `peek` / `count` / `has` calls cannot consume another Space session's owner-tagged interrupt prompt.
+- `dequeueNextUserPromptForSession()` compares both modes with a monotonic Space receive order so fallback execution remains stable even when prompts are queued in the same millisecond.
+- Queue IPC snapshots include both SDK interrupt prompts and Space after-turn prompts, and renderer payloads remain content-clamped for schema safety.
+- Conversation history composition treats a later `session_start` as a new user-turn boundary, so interrupt-queued prompts cannot inherit prior stream output while waiting for a terminal event.
+- Cancel/dispose drains both queues for the affected session only.
+
+Files changed:
+
+- `packages/space-ipc-schema/src/channels/session.ts`
+- `apps/desktop/electron/ipc/session.ts`
+- `apps/desktop/electron/ipc/queue.ts`
+- `apps/desktop/electron/kodax/session-queue-guard.ts`
+- `apps/desktop/electron/kodax/session-adapter.ts`
+- `apps/desktop/electron/kodax/real-session.ts`
+- `apps/desktop/electron/kodax/mock-session.ts`
+- `apps/desktop/renderer/src/shell/BottomBar.tsx`
+- `apps/desktop/renderer/src/features/session/composeMessages.ts`
+- `apps/desktop/electron/test/queue.test.ts`
+- `apps/desktop/electron/test/composeMessages.test.ts`
+- `packages/space-ipc-schema/test/session.test.ts`
+
+Tests added/updated:
+
+- `enqueueUserPrompt enters SDK main-thread queue but drains only its owner session`
+- `after-turn follow-up stays out of the SDK queue until session settles`
+- `after-turn prompts are invisible to SDK mid-turn drains`
+- `session queue scope lets SDK mid-turn drain only the current session prompt`
+- `drainQueueForSession clears only that session across both queues`
+- `queue IPC preview clamps large prompts while preserving raw prompt`
+- `queue depth is enforced per session across both queue modes, not globally`
+- `session_start can split an interrupt-queued user turn before terminal event`
+- `session.send queueMode defaults to interrupt and accepts after-turn`
+- `session.send queued output may include queueMode`
+
+Verification:
+
+- `node --test --import tsx/esm electron/test/queue.test.ts electron/test/composeMessages.test.ts electron/test/app-store-cancel-event.test.ts electron/test/host.test.ts electron/test/host-try-resume.test.ts electron/test/session-setters.test.ts` from `apps/desktop` passed: 71/71.
+- `node --test --import tsx/esm test/session.test.ts` from `packages/space-ipc-schema` passed: 46/46.
+- `npm run typecheck` passed.
 ## Summary
 
-- Total: 7
+- Total: 9
 - Open: 1
-- Resolved: 6
-- High: 4
+- Resolved: 8
+- High: 6
 - Medium: 2
 - Low: 1
 - Next to resolve: 006

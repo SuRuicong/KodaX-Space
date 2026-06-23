@@ -160,9 +160,9 @@ v0.1.21 是为补丁发布预留出的第一条 patch lane，不新增 planned f
 
 当前覆盖范围是高频 chrome：菜单栏、Settings、左侧栏、右侧栏标题、Provider 设置、常用弹窗/Toast。模型回复、工具输出、文件内容、路径、provider/model 名不会被翻译。
 
-### 4.2 KodaX 0.7.53 host events
+### 4.2 KodaX 0.7.53+ host events
 
-Space 已消费 KodaX 0.7.53 的两个新 host event：
+Space 已消费 KodaX 0.7.53+ 的两个 host event：
 
 - `onSidecarMessage` → `sidecar_message`：verifier revise/blocked 信息会作为系统提示进入会话。
 - `onTodoDriftWarning` → `todo_drift_warning`：在没有进行中 todo 时启动工作，会出现 session-scoped 通知。

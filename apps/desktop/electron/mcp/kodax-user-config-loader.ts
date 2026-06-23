@@ -1,16 +1,21 @@
-// 拿 KodaX user config 的 mcpServers (~/.kodax/config.json) — 给 McpManager 用
+import { promises as fsp } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+// Loads KodaX MCP config for McpManager and the SDK extension runtime.
 //
-// 跟 mcp/config-reader.ts 是不同的入口: 那个返回 Space McpServerMeta[] 给 mcp.discover IPC
-// 投影展示用,丢弃 env value; 这里返回**原汁原味的 SDK McpServersConfig**,因为 McpManager
-// 真要起子进程 / 连 sse,需要 command / args / env / url / headers 全套。
+// This differs from mcp/config-reader.ts: that path returns projected McpServerMeta[]
+// for mcp.discover and strips env values. This path returns raw SDK McpServersConfig,
+// preserving command / args / env / url / headers so transports can actually start.
 //
-// 路径与 SDK 一致: ~/.kodax/config.json (从 KodaX root export 的 loadConfig);
-// 不读 project-level — McpManager 当前只接全局配置,project-level 留 v0.1.x+。
+// loadKodaxUserConfig() follows the SDK global path: ~/.kodax/config.json.
+// loadKodaxMcpServersForProject() additionally merges project .kodax/config.json for agent runtime.
 
 type SdkRootModule = typeof import('@kodax-ai/kodax');
 type McpServersConfig = NonNullable<ReturnType<SdkRootModule['loadConfig']>['mcpServers']>;
 
 let sdkRootCache: SdkRootModule | null = null;
+const MAX_PROJECT_CONFIG_BYTES = 1_048_576;
 
 /** lazy 加载 KodaX root module — loadConfig() 在那里,fast-path cached after first call。*/
 async function loadSdkRoot(): Promise<SdkRootModule> {
@@ -30,4 +35,57 @@ export async function loadKodaxUserConfig(): Promise<McpServersConfig | undefine
   const ms = raw.mcpServers;
   if (!ms || typeof ms !== 'object') return undefined;
   return ms as McpServersConfig;
+}
+
+
+export async function loadKodaxProjectMcpServers(
+  projectRoot: string,
+): Promise<McpServersConfig | undefined> {
+  if (!path.isAbsolute(projectRoot)) return undefined;
+
+  const projectPath = path.join(projectRoot, '.kodax', 'config.json');
+  const globalPath = path.join(os.homedir(), '.kodax', 'config.json');
+  if (path.resolve(projectPath) === path.resolve(globalPath)) return undefined;
+
+  let text: string;
+  try {
+    const stat = await fsp.stat(projectPath);
+    if (!stat.isFile() || stat.size > MAX_PROJECT_CONFIG_BYTES) return undefined;
+    text = await fsp.readFile(projectPath, 'utf8');
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return undefined;
+    throw err;
+  }
+
+  const parsed = JSON.parse(text) as unknown;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+  const mcpServers = (parsed as Record<string, unknown>).mcpServers;
+  if (!mcpServers || typeof mcpServers !== 'object' || Array.isArray(mcpServers)) return undefined;
+  return mcpServers as McpServersConfig;
+}
+
+export async function loadKodaxMcpServersForProject(
+  projectRoot: string,
+): Promise<McpServersConfig | undefined> {
+  const [globalServers, projectServers] = await Promise.all([
+    loadKodaxUserConfig().catch((err) => {
+      console.warn(
+        '[kodax-user-config] global MCP config ignored:',
+        err instanceof Error ? err.message : err,
+      );
+      return undefined;
+    }),
+    loadKodaxProjectMcpServers(projectRoot).catch((err) => {
+      console.warn(
+        '[kodax-user-config] project MCP config ignored:',
+        err instanceof Error ? err.message : err,
+      );
+      return undefined;
+    }),
+  ]);
+
+  if (!globalServers) return projectServers;
+  if (!projectServers) return globalServers;
+  return { ...globalServers, ...projectServers } as McpServersConfig;
 }

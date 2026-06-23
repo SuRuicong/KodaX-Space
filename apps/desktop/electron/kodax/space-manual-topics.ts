@@ -405,6 +405,23 @@ export const SPACE_MANUAL_TOPICS: readonly KodaXManualTopicInput[] = [
     nextTopics: ['commands', 'troubleshooting'],
   },
   {
+    id: 'extensions',
+    title: 'Extensions and MCP integrations',
+    summary: 'Use /extensions for Space MCP status, /extensions sdk for SDK filesystem extension discovery, and explicit opt-in loading for extension runtime.',
+    body: [
+      'KodaX Space exposes two extension surfaces:',
+      '',
+      '1. MCP integrations: /extensions or /mcp opens the Space MCP panel and lists configured MCP servers/tools.',
+      '2. SDK filesystem extensions: /extensions sdk shows the SDK default extension directory, discovered entrypoints, skipped entries, and active runtime diagnostics.',
+      '',
+      'SDK extension code is not loaded automatically by default. To load discovered SDK extensions for the current Space process, run /extensions sdk load. To load them automatically before each agent turn, launch Space with KODAX_SPACE_ENABLE_SDK_EXTENSIONS=1.',
+      '',
+      'The default safe behavior is discovery-only. Loading extensions executes user-installed extension code, so use explicit opt-in for trusted extension directories.',
+    ].join('\n'),
+    aliases: ['extensions', 'extension', 'plugin', 'plugins', 'MCPB', 'mcpb', 'sdk extensions', '/extensions', '/mcp', '扩展', '插件'],
+    nextTopics: ['commands', 'permissions', 'troubleshooting'],
+  },
+  {
     id: 'troubleshooting',
     title: 'Troubleshooting',
     summary: '日志 ~/.kodax/space/logs/; 卡死走 Help → Open logs; Reset state 重置 UI.',

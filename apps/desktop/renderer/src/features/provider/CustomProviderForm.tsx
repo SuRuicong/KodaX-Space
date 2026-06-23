@@ -1,24 +1,35 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
-import { Check, Eye, EyeOff, KeyRound, Loader2, Plus, Server } from 'lucide-react';
+import { Check, Eye, EyeOff, KeyRound, Loader2, Plus, Save, Server } from 'lucide-react';
+import type { ProviderInfo } from '@kodax-space/space-ipc-schema';
 import { useI18n } from '../../i18n/I18nProvider.js';
 import type { MessageKey } from '../../i18n/messages.js';
 
 interface CustomProviderFormProps {
-  readonly onAdded: (providerId: string) => Promise<void>;
-  readonly onPartialAdded: (providerId: string) => Promise<void>;
+  readonly provider?: ProviderInfo;
+  readonly onAdded?: (providerId: string) => Promise<void>;
+  readonly onPartialAdded?: (providerId: string) => Promise<void>;
+  readonly onSaved?: (providerId: string) => Promise<void>;
+  readonly onPartialSaved?: (providerId: string) => Promise<void>;
   readonly onCancel: () => void;
 }
-
 type CustomProtocol = 'openai' | 'anthropic';
 type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
+function providerProtocol(provider: ProviderInfo | undefined): CustomProtocol {
+  return provider?.protocol === 'anthropic' ? 'anthropic' : 'openai';
+}
+
+function providerModelsCsv(provider: ProviderInfo | undefined): string {
+  return (provider?.models ?? []).join(', ');
+}
 const FIELD_IDS = {
   displayName: 'custom-provider-display-name',
   displayNameHint: 'custom-provider-display-name-hint',
@@ -39,22 +50,30 @@ const FIELD_IDS = {
 } as const;
 
 export function CustomProviderForm({
+  provider,
   onAdded,
   onPartialAdded,
+  onSaved,
+  onPartialSaved,
   onCancel,
 }: CustomProviderFormProps): JSX.Element {
   const { t } = useI18n();
   const mountedRef = useRef(true);
-  const [displayName, setDisplayName] = useState('');
-  const [protocol, setProtocol] = useState<CustomProtocol>('openai');
-  const [baseUrl, setBaseUrl] = useState('');
-  const [skipBaseUrlValidation, setSkipBaseUrlValidation] = useState(false);
-  const [apiKeyEnv, setApiKeyEnv] = useState('');
-  const [defaultModel, setDefaultModel] = useState('');
-  const [modelsCsv, setModelsCsv] = useState('');
+  const isEditing = provider !== undefined;
+  const initialProtocol = useMemo(() => providerProtocol(provider), [provider]);
+  const initialModelsCsv = useMemo(() => providerModelsCsv(provider), [provider]);
+  const [displayName, setDisplayName] = useState(provider?.displayName ?? '');
+  const [protocol, setProtocol] = useState<CustomProtocol>(initialProtocol);
+  const [baseUrl, setBaseUrl] = useState(provider?.baseUrl ?? '');
+  const [skipBaseUrlValidation, setSkipBaseUrlValidation] = useState(
+    provider?.skipBaseUrlValidation ?? false,
+  );
+  const [apiKeyEnv, setApiKeyEnv] = useState(provider?.apiKeyEnv ?? '');
+  const [defaultModel, setDefaultModel] = useState(provider?.defaultModel ?? '');
+  const [modelsCsv, setModelsCsv] = useState(initialModelsCsv);
   const [apiKey, setApiKey] = useState('');
   const [revealKey, setRevealKey] = useState(false);
-  const [setAsDefault, setSetAsDefault] = useState(true);
+  const [setAsDefault, setSetAsDefault] = useState(!isEditing);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [step, setStep] = useState<'idle' | 'provider' | 'key' | 'default'>('idle');
@@ -84,8 +103,7 @@ export function CustomProviderForm({
         .split(',')
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
-
-      const result = await window.kodaxSpace.invoke('provider.addCustom', {
+      const config = {
         displayName: displayName.trim(),
         protocol,
         baseUrl: baseUrl.trim(),
@@ -93,7 +111,43 @@ export function CustomProviderForm({
         apiKeyEnv: apiKeyEnv.trim(),
         defaultModel: defaultModel.trim(),
         models: models.length > 0 ? models : undefined,
-      });
+      };
+
+      if (isEditing) {
+        if (!provider) return;
+        const result = await window.kodaxSpace.invoke('provider.updateCustom', {
+          providerId: provider.id,
+          ...config,
+        });
+        if (!result.ok) {
+          setErr(`${result.error.code}: ${result.error.message}`);
+          return;
+        }
+
+        const providerId = result.data.providerId;
+        if (submittedKey.length > 0) {
+          setStep('key');
+          const keyResult = await window.kodaxSpace.invoke('provider.setKey', {
+            providerId,
+            apiKey: submittedKey,
+          });
+          if (!keyResult.ok) {
+            await onPartialSaved?.(providerId);
+            setErr(
+              t('customProvider.error.updateKeyNotSaved', {
+                code: keyResult.error.code,
+                message: keyResult.error.message,
+              }),
+            );
+            return;
+          }
+        }
+
+        await onSaved?.(providerId);
+        return;
+      }
+
+      const result = await window.kodaxSpace.invoke('provider.addCustom', config);
 
       if (!result.ok) {
         setErr(`${result.error.code}: ${result.error.message}`);
@@ -110,7 +164,7 @@ export function CustomProviderForm({
         });
         if (!keyResult.ok) {
           setCreatedProviderId(providerId);
-          await onPartialAdded(providerId);
+          await onPartialAdded?.(providerId);
           setErr(
             t('customProvider.error.keyNotSaved', {
               code: keyResult.error.code,
@@ -126,7 +180,7 @@ export function CustomProviderForm({
         const defaultResult = await window.kodaxSpace.invoke('provider.setDefault', { providerId });
         if (!defaultResult.ok) {
           setCreatedProviderId(providerId);
-          await onPartialAdded(providerId);
+          await onPartialAdded?.(providerId);
           setErr(
             t('customProvider.error.defaultNotSet', {
               code: defaultResult.error.code,
@@ -137,7 +191,7 @@ export function CustomProviderForm({
         }
       }
 
-      await onAdded(providerId);
+      await onAdded?.(providerId);
     } catch (e2) {
       if (mountedRef.current) setErr(e2 instanceof Error ? e2.message : String(e2));
     } finally {
@@ -147,7 +201,6 @@ export function CustomProviderForm({
       }
     }
   }
-
   function handleKeyDown(e: KeyboardEvent<HTMLFormElement>): void {
     if (e.key !== 'Escape') return;
     e.preventDefault();
@@ -175,9 +228,11 @@ export function CustomProviderForm({
           <Server className="h-4 w-4" strokeWidth={1.8} aria-hidden />
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold text-fg-primary">{t('customProvider.title')}</h3>
+          <h3 className="text-sm font-semibold text-fg-primary">
+            {isEditing ? t('customProvider.editTitle') : t('customProvider.title')}
+          </h3>
           <p className="mt-0.5 text-xs leading-5 text-fg-muted">
-            {t('customProvider.description')}
+            {isEditing ? t('customProvider.editDescription') : t('customProvider.description')}
           </p>
         </div>
       </div>
@@ -332,7 +387,7 @@ export function CustomProviderForm({
 
         <Field
           label={t('customProvider.apiKey.label')}
-          hint={t('customProvider.apiKey.hint')}
+          hint={isEditing ? t('customProvider.apiKey.editHint') : t('customProvider.apiKey.hint')}
           inputId={FIELD_IDS.apiKey}
           hintId={FIELD_IDS.apiKeyHint}
           className="lg:col-span-2"
@@ -376,32 +431,33 @@ export function CustomProviderForm({
         </Field>
       </div>
 
-      <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-border-default bg-surface/70 px-3 py-3">
-        <input
-          type="checkbox"
-          checked={setAsDefault && hasDraftKey}
-          onChange={(e) => setSetAsDefault(e.target.checked)}
-          className="mt-1 h-4 w-4 accent-accent"
-          disabled={formLocked || !hasDraftKey}
-        />
-        <span className="min-w-0">
-          <span className="block text-xs font-medium text-fg-primary">
-            {t('customProvider.setDefault.title')}
+      {!isEditing && (
+        <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-border-default bg-surface/70 px-3 py-3">
+          <input
+            type="checkbox"
+            checked={setAsDefault && hasDraftKey}
+            onChange={(e) => setSetAsDefault(e.target.checked)}
+            className="mt-1 h-4 w-4 accent-accent"
+            disabled={formLocked || !hasDraftKey}
+          />
+          <span className="min-w-0">
+            <span className="block text-xs font-medium text-fg-primary">
+              {t('customProvider.setDefault.title')}
+            </span>
+            <span className="mt-0.5 block text-[11px] leading-5 text-fg-muted">
+              {hasDraftKey
+                ? t('customProvider.setDefault.withKey')
+                : t('customProvider.setDefault.noKey')}
+            </span>
           </span>
-          <span className="mt-0.5 block text-[11px] leading-5 text-fg-muted">
-            {hasDraftKey
-              ? t('customProvider.setDefault.withKey')
-              : t('customProvider.setDefault.noKey')}
-          </span>
-        </span>
-      </label>
+        </label>
+      )}
 
-      {createdProviderId && (
+      {createdProviderId && !isEditing && (
         <div className="mt-3 rounded-lg border border-info/40 bg-info/10 px-3 py-2 text-xs leading-5 text-info">
           {t('customProvider.created')}
         </div>
       )}
-
       {err && (
         <div className="mt-3 rounded-lg border border-danger/40 bg-danger/12 px-3 py-2 text-xs text-danger">
           {err}
@@ -415,17 +471,20 @@ export function CustomProviderForm({
           className="btn-accent inline-flex min-h-9 items-center justify-center gap-2 rounded-lg px-4 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
         >
           {busy ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} aria-hidden />
-          ) : createdProviderId ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} aria-hidden />          ) : createdProviderId ? (
             <Check className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
+          ) : isEditing ? (
+            <Save className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
           ) : (
             <Plus className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
           )}
           {busy
-            ? progressLabel(step, t)
+            ? progressLabel(step, t, isEditing)
             : createdProviderId
               ? t('customProvider.providerAdded')
-              : t('customProvider.addProvider')}
+              : isEditing
+                ? t('customProvider.updateProvider')
+                : t('customProvider.addProvider')}
         </button>
         <button
           type="button"
@@ -446,10 +505,18 @@ export function CustomProviderForm({
   );
 }
 
-function progressLabel(step: 'idle' | 'provider' | 'key' | 'default', t: Translate): string {
+function progressLabel(
+  step: 'idle' | 'provider' | 'key' | 'default',
+  t: Translate,
+  isEditing: boolean,
+): string {
   if (step === 'key') return t('customProvider.progress.savingKey');
   if (step === 'default') return t('customProvider.progress.settingDefault');
-  if (step === 'provider') return t('customProvider.progress.creatingProvider');
+  if (step === 'provider') {
+    return isEditing
+      ? t('customProvider.progress.updatingProvider')
+      : t('customProvider.progress.creatingProvider');
+  }
   return t('customProvider.progress.adding');
 }
 

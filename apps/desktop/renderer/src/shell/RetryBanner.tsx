@@ -13,8 +13,8 @@
 // 状态保鲜 (来自 events 流尾扫): 倒序找最近 retry_after,如果之后有 iteration_start 就不显示
 // (KodaX 已经恢复正常 retry 后继续了)。
 
-import { useEffect, useRef, useState } from 'react';
-import { Timer, RotateCw } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { RotateCw, Timer, X } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 
@@ -72,12 +72,49 @@ function findActiveBannerRaw(events: readonly SessionEvent[]): BannerRaw | null 
   return null;
 }
 
+interface BannerDismissButtonProps {
+  readonly tone: 'warning' | 'run';
+  readonly onDismiss: () => void;
+  readonly side: number;
+}
+
+function BannerDismissButton({ tone, onDismiss, side }: BannerDismissButtonProps): JSX.Element {
+  const toneClass =
+    tone === 'warning'
+      ? 'text-warn/80 hover:bg-warn/20 hover:text-warn'
+      : 'text-run/80 hover:bg-run/20 hover:text-run';
+
+  return (
+    <button
+      type="button"
+      onClick={onDismiss}
+      className={[
+        'absolute right-0 top-1/2 inline-flex -translate-y-1/2 items-center justify-center',
+        'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-current',
+        toneClass,
+      ].join(' ')}
+      style={{ width: side, height: side }}
+      title="Dismiss"
+      aria-label="Dismiss retry notice"
+    >
+      <X className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+    </button>
+  );
+}
+
 export function RetryBanner(): JSX.Element | null {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const events = useAppStore((s) =>
     currentSessionId ? (s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS) : EMPTY_EVENTS,
   );
   const raw = findActiveBannerRaw(events);
+  const bannerRootRef = useRef<HTMLDivElement | null>(null);
+  const [dismissedBannerKey, setDismissedBannerKey] = useState<string | null>(null);
+  const [dismissSide, setDismissSide] = useState(24);
+  const bannerKey =
+    raw && raw.eventIdx !== undefined
+      ? `${currentSessionId ?? 'global'}:${raw.kind}:${raw.eventIdx}`
+      : null;
 
   // 锁住 retryAt: 用 ref 记 (sessionId, eventIdx, waitMs) → 真实壁钟。renderer 每个 tick
   // 重渲染时若 (sessionId, eventIdx) 仍是同一条,直接复用 stored retryAt,否则按当前
@@ -110,7 +147,42 @@ export function RetryBanner(): JSX.Element | null {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raw?.kind, retryAt]);
 
-  if (!raw) return null;
+  useLayoutEffect(() => {
+    const row = bannerRootRef.current;
+    if (!row || !raw) return;
+
+    const updateDismissSide = (): void => {
+      const next = Math.max(24, Math.ceil(row.getBoundingClientRect().height));
+      setDismissSide((prev) => (prev === next ? prev : next));
+    };
+
+    updateDismissSide();
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(updateDismissSide);
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [bannerKey, raw?.provider, raw?.reason, raw?.recoveryAction]);
+
+  useEffect(() => {
+    if (bannerKey === null || dismissedBannerKey === bannerKey) return undefined;
+
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (bannerRootRef.current?.contains(target)) return;
+      setDismissedBannerKey(bannerKey);
+    };
+
+    window.addEventListener('pointerdown', onPointerDown, true);
+    return () => window.removeEventListener('pointerdown', onPointerDown, true);
+  }, [bannerKey, dismissedBannerKey]);
+
+  const dismissActiveBanner = (): void => {
+    if (bannerKey !== null) setDismissedBannerKey(bannerKey);
+  };
+
+  if (!raw || (bannerKey !== null && dismissedBannerKey === bannerKey)) return null;
   const banner = { ...raw, retryAt };
 
   // retry: 倒计时 + 描述
@@ -120,10 +192,12 @@ export function RetryBanner(): JSX.Element | null {
     const reasonLabel = banner.reason === 'rate-limit' ? 'Rate-limited' : 'Provider overloaded';
     return (
       <div
+        ref={bannerRootRef}
         className={[
-          'px-3 py-1 text-xs flex items-center gap-2 border-t border-b font-mono',
+          'relative pl-3 py-1 text-xs flex items-center gap-2 border-t border-b font-mono',
           'text-warn bg-warn/15 border-warn/40',
         ].join(' ')}
+        style={{ paddingRight: dismissSide }}
         role="status"
         aria-live="polite"
       >
@@ -135,6 +209,7 @@ export function RetryBanner(): JSX.Element | null {
         <span className="text-warn/80 dark:text-warn/60 ml-auto">
           attempt {banner.attempt}/{banner.maxAttempts}
         </span>
+        <BannerDismissButton tone="warning" onDismiss={dismissActiveBanner} side={dismissSide} />
       </div>
     );
   }
@@ -142,11 +217,13 @@ export function RetryBanner(): JSX.Element | null {
   // recovery: 显示 recovery action + attempt
   return (
     <div
+      ref={bannerRootRef}
       className={[
-        'px-3 py-1 text-xs flex items-center gap-2 border-t border-b font-mono',
+        'relative pl-3 py-1 text-xs flex items-center gap-2 border-t border-b font-mono',
         'text-run bg-run/15 border-run/40',
         'dark:text-run/90 dark:bg-run/15 dark:border-run/30',
       ].join(' ')}
+      style={{ paddingRight: dismissSide }}
       role="status"
       aria-live="polite"
     >
@@ -155,6 +232,7 @@ export function RetryBanner(): JSX.Element | null {
       <span className="text-run/80 dark:text-run/60 ml-auto">
         attempt {banner.attempt}/{banner.maxAttempts}
       </span>
+      <BannerDismissButton tone="run" onDismiss={dismissActiveBanner} side={dismissSide} />
     </div>
   );
 }

@@ -126,6 +126,18 @@ export class ProviderConfigStore {
     return id;
   }
 
+  async updateCustom(id: string, p: Omit<CustomProvider, 'id' | 'createdAt'>): Promise<boolean> {
+    if (isBuiltinId(id)) return false;
+    let updated = false;
+    await this.mutateCustom((providers) =>
+      providers.map((provider) => {
+        if (provider.id !== id) return provider;
+        updated = true;
+        return { ...p, id: provider.id, createdAt: provider.createdAt };
+      }),
+    );
+    return updated;
+  }
   async removeCustom(id: string): Promise<boolean> {
     if (isBuiltinId(id)) return false; // built-in 不可删
     let removed = false;

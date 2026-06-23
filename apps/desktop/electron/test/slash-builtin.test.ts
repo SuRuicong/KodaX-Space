@@ -12,6 +12,10 @@
 
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import type { SkillLearningProposal, WorkflowLearningHandoff } from '@kodax-ai/kodax/agent';
 import { kodaxHost } from '../kodax/host.js';
 import { setUserConfigImpl, type KodaxUserConfigImpl } from '../kodax/user-config.js';
 import { setRendererTarget } from '../ipc/push.js';
@@ -24,9 +28,13 @@ import {
 import { BUILTIN_SLASH_COMMANDS, clearSlashGoalForSession } from '../slash/builtin.js';
 
 let captured: Array<{ channel: string; payload: unknown }>;
+let tempProjectRoots: string[];
+let originalKodaxHome: string | undefined;
 
 beforeEach(async () => {
   captured = [];
+  tempProjectRoots = [];
+  originalKodaxHome = process.env.KODAX_HOME;
   setRendererTarget(() => ({
     send: (channel: string, payload: unknown) => captured.push({ channel, payload }),
     isDestroyed: () => false,
@@ -42,6 +50,10 @@ afterEach(async () => {
   setRendererTarget(() => null);
   setUserConfigImpl(null);
   await kodaxHost.disposeAll();
+  if (originalKodaxHome === undefined) delete process.env.KODAX_HOME;
+  else process.env.KODAX_HOME = originalKodaxHome;
+  await Promise.all(tempProjectRoots.map((dir) => rm(dir, { recursive: true, force: true })));
+  tempProjectRoots = [];
   _resetSlashRegistryForTesting();
 });
 
@@ -59,6 +71,59 @@ function mockUserConfig(config: Record<string, unknown>): void {
   setUserConfigImpl(impl);
 }
 
+async function createLearningSession(): Promise<{ readonly sessionId: string; readonly projectRoot: string }> {
+  const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'kodax-space-learn-'));
+  tempProjectRoots.push(projectRoot);
+  process.env.KODAX_HOME = path.join(projectRoot, '.kodax-home');
+  const { sessionId } = kodaxHost.createSession({ projectRoot, provider: 'mock' });
+  return { sessionId, projectRoot };
+}
+
+function makeSkillLearningProposal(proposalId = 'learn-skill-1'): SkillLearningProposal {
+  return {
+    destination: 'skill_patch',
+    proposalId,
+    origin: 'background_learning',
+    userLabel: 'method_guide',
+    skillName: 'demo-skill',
+    whyDurable: 'The project repeatedly asks for this checkout guardrail.',
+    trigger: 'When changing desktop slash commands, add targeted node:test coverage.',
+    changeSummary: 'Document the slash-command coverage pattern for future changes.',
+    sourceTraceIds: ['trace-skill'],
+    confidence: 0.92,
+  };
+}
+
+function makeWorkflowLearningProposal(proposalId = 'learn-workflow-1'): WorkflowLearningHandoff {
+  return {
+    destination: 'workflow_handoff',
+    proposalId,
+    origin: 'background_learning',
+    userLabel: 'runnable_workflow',
+    evidenceRunIds: ['run-learning-1'],
+    sourceTraceIds: ['trace-workflow'],
+    suggestedAction: 'save_from_run',
+    whyWorkflowNotSkill: 'The behavior spans planning, implementation, and verification steps.',
+    requiredWorkflowEvidence: ['A completed run with tests and docs updates.'],
+    risk: 'medium',
+    consumerImpact: {
+      workflowCapsules: [],
+      savedWorkflows: [],
+      constructedAgents: [],
+      promptReferences: [],
+      action: 'none',
+    },
+    appliedByF224: false,
+  };
+}
+
+async function seedLearningProposal(projectRoot: string, proposal: SkillLearningProposal | WorkflowLearningHandoff) {
+  const sdk = await import('@kodax-ai/kodax/agent');
+  const storePath = sdk.resolveLearningProposalStore(projectRoot);
+  const entry = await sdk.upsertLearningProposal(storePath, proposal);
+  return { storePath, entry };
+}
+
 test('listSlashCommands returns all builtin commands in alpha order', () => {
   const cmds = listSlashCommands().map((c) => c.name);
   // 持续随 KodaX SDK 暴露新命令而增长——做集合包含断言，而不锁死完整数量
@@ -66,8 +131,8 @@ test('listSlashCommands returns all builtin commands in alpha order', () => {
   const required = new Set([
     'agent-mode', 'auto', 'auto-denials', 'auto-engine', 'clear', 'compact', 'copy', 'cost',
     'delete', 'doctor', 'exit', 'extensions', 'fallback', 'fork', 'goal', 'help', 'history',
-    'load', 'mcp', 'memory', 'mode', 'model', 'new', 'paste', 'provider', 'reasoning',
-    'reload', 'repointel', 'review', 'rewind', 'save', 'sessions', 'skill', 'skills',
+    'learn', 'load', 'mcp', 'memory', 'mode', 'model', 'new', 'paste', 'provider', 'reasoning',
+    'recover', 'reload', 'repointel', 'review', 'rewind', 'save', 'sessions', 'skill', 'skills',
     'stall-log', 'status', 'thinking', 'verifier-log', 'workflow',
   ]);
   const sorted = cmds.slice().sort();
@@ -399,6 +464,104 @@ test('/agent-mode toggle cycles AMA -> AMAW -> SA', async () => {
   assert.equal(kodaxHost.get(sessionId)?.agentMode, 'sa');
 });
 
+test('/learn pending lists SDK learning proposals', async () => {
+  const { sessionId, projectRoot } = await createLearningSession();
+  await seedLearningProposal(projectRoot, makeSkillLearningProposal());
+
+  const result = await runCmd('learn', sessionId, ['pending']);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.echo, true);
+  assert.ok(result.message?.includes('learn-skill-1'));
+  assert.ok(result.message?.includes('demo-skill'));
+});
+
+test('/learn diff and reject operate on SDK learning proposals', async () => {
+  const { sessionId, projectRoot } = await createLearningSession();
+  const { storePath } = await seedLearningProposal(projectRoot, makeSkillLearningProposal('learn-reject-1'));
+
+  const diff = await runCmd('learn', sessionId, ['diff', 'learn-reject-1']);
+  assert.equal(diff.ok, true);
+  assert.ok(diff.message?.includes('learn-reject-1'));
+  assert.ok(diff.message?.includes('No direct apply plan'));
+
+  const rejected = await runCmd('learn', sessionId, ['reject', 'learn-reject-1', 'not', 'durable']);
+  assert.equal(rejected.ok, true);
+  assert.ok(rejected.message?.includes('Rejected learn-reject-1'));
+
+  const sdk = await import('@kodax-ai/kodax/agent');
+  const store = await sdk.readLearningProposalStore(storePath);
+  const entry = store.proposals.find((proposal) => proposal.proposalId === 'learn-reject-1');
+  assert.equal(entry?.status, 'rejected');
+  assert.equal(entry?.rejectedReason, 'not durable');
+});
+
+test('/skill pending and /workflow pending filter learning proposals', async () => {
+  const { sessionId, projectRoot } = await createLearningSession();
+  await seedLearningProposal(projectRoot, makeSkillLearningProposal('learn-skill-filter'));
+  await seedLearningProposal(projectRoot, makeWorkflowLearningProposal('learn-workflow-filter'));
+
+  const skillPending = await runCmd('skill', sessionId, ['pending']);
+  assert.equal(skillPending.ok, true);
+  assert.ok(skillPending.message?.includes('learn-skill-filter'));
+  assert.equal(skillPending.message?.includes('learn-workflow-filter'), false);
+
+  const workflowPending = await runCmd('workflow', sessionId, ['pending']);
+  assert.equal(workflowPending.ok, true);
+  assert.ok(workflowPending.message?.includes('learn-workflow-filter'));
+  assert.equal(workflowPending.message?.includes('learn-skill-filter'), false);
+});
+
+test('/learn ledger and /skill ledger read SDK skill ledgers', async () => {
+  const { sessionId, projectRoot } = await createLearningSession();
+  const sdk = await import('@kodax-ai/kodax/agent');
+  await sdk.recordSkillUsage(sdk.resolveSkillUsageLedger(projectRoot), {
+    skillName: 'demo-skill',
+    source: 'project',
+    event: 'invoke',
+  });
+  const trusted = await sdk.updateSkillTrustLedger(sdk.resolveSkillTrustLedger(projectRoot), {
+    skillName: 'demo-skill',
+    source: 'project',
+    ownership: 'background_created',
+    origin: 'background_learning',
+    state: 'trusted',
+    reason: 'approved in slash test',
+  });
+  assert.equal(trusted.updated, true);
+
+  const result = await runCmd('learn', sessionId, ['ledger']);
+  assert.equal(result.ok, true);
+  assert.ok(result.message?.includes('Skill learning ledgers'));
+  assert.ok(result.message?.includes('demo-skill'));
+  assert.ok(result.message?.includes('invokes=1'));
+  assert.ok(result.message?.includes('trusted'));
+
+  const alias = await runCmd('skill', sessionId, ['ledger']);
+  assert.equal(alias.ok, true);
+  assert.ok(alias.message?.includes('demo-skill'));
+});
+
+test('/extensions sdk reports SDK extension discovery without loading by default', async () => {
+  const { sessionId } = await createLearningSession();
+
+  const result = await runCmd('extensions', sessionId, ['sdk']);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.echo, true);
+  assert.ok(result.message?.includes('SDK extension discovery'));
+  assert.ok(result.message?.includes('Runtime: inactive'));
+});
+
+test('/recover candidate uses SDK recovery classifier', async () => {
+  const { sessionId } = await createLearningSession();
+
+  const result = await runCmd('recover', sessionId, ['candidate', '8', 'context length exceeded']);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.echo, true);
+  assert.ok(result.message?.includes('Recovery candidate:'));
+});
 test('/workflow runs works before workflow manager init', async () => {
   const { sessionId } = kodaxHost.createSession({
     projectRoot: 'C:\\tmp\\proj',

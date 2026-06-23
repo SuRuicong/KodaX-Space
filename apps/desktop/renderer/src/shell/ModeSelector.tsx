@@ -51,8 +51,11 @@ export function ModeSelector(): JSX.Element {
   const sessions = useAppStore((s) => s.sessions);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const upsertSession = useAppStore((s) => s.upsertSession);
+  const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
   const pendingPermissionMode = useAppStore((s) => s.pendingPermissionMode);
+  const pendingAutoModeEngine = useAppStore((s) => s.pendingAutoModeEngine);
   const setPendingPermissionMode = useAppStore((s) => s.setPendingPermissionMode);
+  const setPendingAutoModeEngine = useAppStore((s) => s.setPendingAutoModeEngine);
   const session = sessions.find((x) => x.sessionId === currentSessionId);
 
   const [open, setOpen] = useState(false);
@@ -63,8 +66,11 @@ export function ModeSelector(): JSX.Element {
 
   // 有 session 走 session.permissionMode；无 session 走 pendingPermissionMode；fallback 'accept-edits'
   const current: PermissionMode =
-    session?.permissionMode ?? pendingPermissionMode ?? 'accept-edits';
-  const engine: AutoModeEngine = session?.autoModeEngine ?? 'llm';
+    session?.permissionMode ??
+    pendingPermissionMode ??
+    kodaxDefaults?.permissionMode ??
+    'accept-edits';
+  const engine: AutoModeEngine = session?.autoModeEngine ?? pendingAutoModeEngine ?? 'llm';
 
   // Ctrl+M 切换打开；数字键 1/2/3 切 mode；L/R 切 engine（auto 时）
   // Shift+Tab 循环 mode（对齐 KodaX TUI）。
@@ -97,15 +103,30 @@ export function ModeSelector(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, open, current]);
 
+  async function persistRuntimeDefaults(runtimeDefaults: {
+    readonly permissionMode?: PermissionMode;
+    readonly autoModeEngine?: AutoModeEngine;
+  }): Promise<void> {
+    if (!window.kodaxSpace) return;
+    try {
+      const r = await window.kodaxSpace.invoke('settings.setRuntimeDefaults', { runtimeDefaults });
+      if (!r.ok) {
+        pushToast(r.error?.message ?? 'Failed to save runtime defaults', 'error');
+      }
+    } catch (err) {
+      pushToast(err instanceof Error ? err.message : 'Failed to save runtime defaults', 'error');
+    }
+  }
+
   async function setMode(mode: PermissionMode): Promise<void> {
     if (busy || mode === current) return;
     setBusy(true);
     if (mode !== 'auto') setOpen(false);
-    // 不论有没有 session，都更新 pending 当作"用户首选"持久化 — 下次新 session 自动继承
+    // Always update pending as the user's next-session preference.
     setPendingPermissionMode(mode);
     try {
       if (session && window.kodaxSpace) {
-        // 乐观更新：先把 store 中 session.permissionMode 改了
+        // Optimistically update the current session first.
         upsertSession({ ...session, permissionMode: mode });
         const r = await window.kodaxSpace.invoke('session.setPermissionMode', {
           sessionId: session.sessionId,
@@ -113,11 +134,10 @@ export function ModeSelector(): JSX.Element {
         });
         if (!r.ok) {
           upsertSession({ ...session, permissionMode: current });
+          pushToast(r.error?.message ?? 'Failed to update current session mode', 'error');
         } else if (mode === 'auto' && current !== 'auto' && isStreaming) {
-          // v0.1.4 修复：原来 main 端在这种场景 push 一条 session_error event 来提示
-          // "guardrail 下一轮才生效"，但 session_error 会被 ActivitySpinner 当成
-          // session 结束信号，导致 spinner 立刻消失（实际 SDK 还在跑）。
-          // 改成 renderer 端 toast，不污染 event 流。
+          // Keep this as a toast instead of a session_error event; the current run
+          // continues under its existing permission flow until the next send.
           pushToast(
             'Auto mode guardrail will activate on the NEXT send. Current run continues with non-guardrail permission flow.',
             'info',
@@ -125,22 +145,29 @@ export function ModeSelector(): JSX.Element {
           );
         }
       }
+      await persistRuntimeDefaults({ permissionMode: mode });
     } finally {
       setBusy(false);
     }
   }
 
   async function setEngine(next: AutoModeEngine): Promise<void> {
-    if (!window.kodaxSpace || busy || !session || next === engine) return;
+    if (busy || next === engine) return;
     setBusy(true);
+    setPendingAutoModeEngine(next);
     try {
-      const r = await window.kodaxSpace.invoke('session.setAutoModeEngine', {
-        sessionId: session.sessionId,
-        engine: next,
-      });
-      if (r.ok) {
+      if (session && window.kodaxSpace) {
         upsertSession({ ...session, autoModeEngine: next });
+        const r = await window.kodaxSpace.invoke('session.setAutoModeEngine', {
+          sessionId: session.sessionId,
+          engine: next,
+        });
+        if (!r.ok) {
+          upsertSession({ ...session, autoModeEngine: engine });
+          pushToast(r.error?.message ?? 'Failed to update current auto engine', 'error');
+        }
       }
+      await persistRuntimeDefaults({ autoModeEngine: next });
     } finally {
       setBusy(false);
     }

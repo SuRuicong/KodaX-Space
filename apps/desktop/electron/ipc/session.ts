@@ -26,9 +26,15 @@ import {
 import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
 import { loadPersistedSession } from '../kodax/session-store.js';
+import { resolveRuntimeDefaults } from '../kodax/runtime-defaults.js';
+import { getSessionRuntimeStore } from '../kodax/session-runtime-store.js';
 import { assertArtifactPathInClipboardSandbox } from './clipboard.js';
 import { clearSlashGoalForSession } from '../slash/builtin.js';
-import type { AgentsFileMeta, SessionHistoryItem, SessionMeta } from '@kodax-space/space-ipc-schema';
+import type {
+  AgentsFileMeta,
+  SessionHistoryItem,
+  SessionMeta,
+} from '@kodax-space/space-ipc-schema';
 
 // SDK lazy + cached import — 跟其他 SDK 接入点 (agent.ts, queue.ts, catalog.ts) 同模式。
 // listRunningSessions handler 用; main 是 CJS,SDK subpath 是 ESM-only,必须动态 import 一次,
@@ -46,12 +52,11 @@ async function loadSdkSessionCached(): Promise<SdkSessionModule> {
 // 结构一致——加字段、改 scope enum 等都会立即编译报错，不让 schema/loader 漂移。
 // (双向 assignability：a→b 和 b→a 都必须成立，等同于结构等价。)
 // 用 export 让 tsc noUnusedLocals 不报错（type-only export 不影响 runtime）
-export type _AssertAgentsFileShapeEqual =
-  AgentsFile extends AgentsFileMeta
-    ? AgentsFileMeta extends AgentsFile
-      ? true
-      : never
-    : never;
+export type _AssertAgentsFileShapeEqual = AgentsFile extends AgentsFileMeta
+  ? AgentsFileMeta extends AgentsFile
+    ? true
+    : never
+  : never;
 
 /**
  * 校验 providerId 实际存在于 catalog / custom-providers / 是 'mock'。
@@ -78,18 +83,32 @@ export function registerSessionChannels(): void {
     const projectRoot = validateProjectRoot(input.projectRoot);
     await assertProviderExists(input.provider);
     await ensureCustomProviderRegistered(input.provider);
+    const runtimeDefaults = await resolveRuntimeDefaults({
+      explicit: {
+        reasoningMode: input.reasoningMode,
+        permissionMode: input.permissionMode,
+        autoModeEngine: input.autoModeEngine,
+        agentMode: input.agentMode,
+      },
+    });
     const { sessionId, createdAt } = kodaxHost.createSession({
       projectRoot,
       provider: input.provider,
       // 生效 model（renderer 用 resolveActiveModel 解析后带上）→ 让 SDK 应用 per-model 能力
       // （正确 contextWindow → 压缩窗口），修默认模型下过早压缩（2026-06-15 用户复报）。
       ...(input.model !== undefined ? { model: input.model } : {}),
-      reasoningMode: input.reasoningMode,
-      permissionMode: input.permissionMode,
-      autoModeEngine: input.autoModeEngine,
-      agentMode: input.agentMode,
+      reasoningMode: runtimeDefaults.reasoningMode,
+      permissionMode: runtimeDefaults.permissionMode,
+      autoModeEngine: runtimeDefaults.autoModeEngine,
+      agentMode: runtimeDefaults.agentMode,
       // F045: 工作面（Coder / Partner）。缺省 'code'。host 落盘成 SDK session tag。
       surface: input.surface,
+    });
+    await getSessionRuntimeStore().set(sessionId, {
+      reasoningMode: runtimeDefaults.reasoningMode,
+      permissionMode: runtimeDefaults.permissionMode,
+      autoModeEngine: runtimeDefaults.autoModeEngine,
+      agentMode: runtimeDefaults.agentMode,
     });
     // v0.1.6 cleanup: 用 ~/.kodax/config.json 的 thinking 默认值初始化新 session。
     // 不传 schema 改动——renderer 没必要知道 thinking 默认值，main 直接 fill 即可。
@@ -106,7 +125,14 @@ export function registerSessionChannels(): void {
         err instanceof Error ? err.message : err,
       );
     }
-    return { sessionId, createdAt };
+    return {
+      sessionId,
+      createdAt,
+      reasoningMode: runtimeDefaults.reasoningMode,
+      permissionMode: runtimeDefaults.permissionMode,
+      autoModeEngine: runtimeDefaults.autoModeEngine,
+      agentMode: runtimeDefaults.agentMode,
+    };
   });
 
   // session.send
@@ -129,9 +155,9 @@ export function registerSessionChannels(): void {
     // ensureTitle 已经在 host 里做"title === undefined 才填"的判断，重复调用安全。
     kodaxHost.ensureTitle(input.sessionId, input.prompt);
     // send 是 fire-and-forget——立刻 ACK，事件流通过 push 推
-    // send() returns { queued, queueId? }. If the turn is running, Real adapter
-    // stores the prompt in Space's per-session follow-up queue so the UI can show
-    // a queued acknowledgement instead of a HANDLER_ERROR.
+    // send() returns { queued, queueId?, queueMode? }. If the turn is running,
+    // Real adapter accepts the prompt into the requested queue mode so the UI
+    // can show a queued acknowledgement instead of a HANDLER_ERROR.
     // OC-31 v0.1.9: input.artifacts (image paste / drag-drop) 透传给 session.send，
     // real-session 把它塞进 KodaXOptions.context.inputArtifacts → SDK 拼 multimodal content。
     //
@@ -144,10 +170,12 @@ export function registerSessionChannels(): void {
         await assertArtifactPathInClipboardSandbox(input.sessionId, a.path);
       }
     }
-    const result = await session.send(input.prompt, input.artifacts);
+    const result = await session.send(input.prompt, input.artifacts, { queueMode: input.queueMode });
     return {
       accepted: true as const,
-      ...(result.queued ? { queued: true, queueId: result.queueId } : {}),
+      ...(result.queued
+        ? { queued: true, queueId: result.queueId, queueMode: result.queueMode }
+        : {}),
     };
   });
 
@@ -181,7 +209,10 @@ export function registerSessionChannels(): void {
     // 比较兜底）。
     // F045: surface 过滤透传给 host.listMerged（在合并 in-flight ∪ persisted 后统一 filter）。
     // 不传 = 全部（含历史无 tag 的，向后兼容）。Coder = surface!=='partner'，Partner = 'partner'。
-    const merged = await kodaxHost.listMerged({ projectRoot: projectFilter, surface: input?.surface });
+    const merged = await kodaxHost.listMerged({
+      projectRoot: projectFilter,
+      surface: input?.surface,
+    });
 
     // Persisted session 没有真运行时设置——磁盘上只 SDK lineage + gitRoot。先准备一份
     // user-defaults 兜底，给 sidebar UI 占位用（避免显示 "mock" 让用户以为整个 SDK 是 mock）。
@@ -189,8 +220,6 @@ export function registerSessionChannels(): void {
     // 并行 await 两个 promise——它们彼此无依赖，并行版省一个 turn 调度 ms。
     // tryResume 路径走相同 resolution，两边对齐，避免 UI 一闪即变。
     let persistedProviderFallback = 'mock';
-    let persistedReasoningFallback: SessionMeta['reasoningMode'] = 'auto';
-    let persistedPermissionFallback: NonNullable<SessionMeta['permissionMode']> = 'accept-edits';
     const [udResult, providerLoadResult] = await Promise.allSettled([
       loadKodaxUserDefaults(),
       providerConfigStore.load(),
@@ -198,8 +227,6 @@ export function registerSessionChannels(): void {
     if (udResult.status === 'fulfilled') {
       const ud = udResult.value;
       if (ud.provider) persistedProviderFallback = ud.provider;
-      if (ud.reasoningMode) persistedReasoningFallback = ud.reasoningMode;
-      if (ud.permissionMode) persistedPermissionFallback = ud.permissionMode;
     }
     // Space defaultProviderId 优先级高于 KodaX user defaults——用户在 Space 设过默认 provider
     // 应该胜出；providerConfigStore.load 失败时保留 user-defaults / 'mock'。
@@ -230,60 +257,69 @@ export function registerSessionChannels(): void {
         return { item: m, sortKey: Number.isFinite(ts) ? ts : 0 };
       })
       .sort((a, b) => b.sortKey - a.sortKey);
-    const sessions: SessionMeta[] = withTs.map(({ item, sortKey }) => {
-      if (item.kind === 'in-flight') {
-        // in-flight 没有 msgCount 字段（ManagedSession 不跟用户消息计数），dashboard
-        // 用 sessions[].msgCount ?? userMessagesBuffer.length 双源 fallback。
-        // model 是用户 /model 设的值（undefined = provider 默认），透出去让 dashboard
-        // 能按真 model 维度做 Favorite model 统计。
+    const sessions: SessionMeta[] = await Promise.all(
+      withTs.map(async ({ item, sortKey }) => {
+        if (item.kind === 'in-flight') {
+          // in-flight 没有 msgCount 字段（ManagedSession 不跟用户消息计数），dashboard
+          // 用 sessions[].msgCount ?? userMessagesBuffer.length 双源 fallback。
+          // model 是用户 /model 设的值（undefined = provider 默认），透出去让 dashboard
+          // 能按真 model 维度做 Favorite model 统计。
+          return {
+            sessionId: item.sessionId,
+            projectRoot: item.projectRoot,
+            provider: item.provider,
+            reasoningMode: item.reasoningMode,
+            permissionMode: item.permissionMode,
+            autoModeEngine: item.autoModeEngine,
+            agentMode: item.agentMode,
+            surface: item.surface,
+            title: item.title,
+            createdAt: item.createdAt,
+            lastActivityAt: item.lastActivityAt,
+            parentSessionId: item.parentSessionId,
+            forkPointTurnIdx: item.forkPointTurnIdx,
+            model: item.model,
+          };
+        }
+        // persisted: 运行时设置用 user-default 占位（Space defaultProviderId →
+        // ~/.kodax/config.json → 'mock' 兜底）。tryResume 用同样链路 resolve，
+        // 保证 sidebar 显示和真激活后的运行时设置一致——不会出现"点开 historical
+        // session 看着是 mock，点了发消息后 BottomBar 突然跳到 deepseek-v4-pro"
+        // 的视觉跳变。
+        //
+        // msgCount 直接透传 SDK summary 给的值——这是 dashboard 重启后 Messages 数
+        // 正确的关键（无需扫 jsonl 内容，SDK 已经 fast-path 缓存了 summary）。
+        const runtimeDefaults = await resolveRuntimeDefaults({
+          sessionId: item.sessionId,
+          includeSessionSidecar: true,
+        });
         return {
           sessionId: item.sessionId,
-          projectRoot: item.projectRoot,
-          provider: item.provider,
-          reasoningMode: item.reasoningMode,
-          permissionMode: item.permissionMode,
-          autoModeEngine: item.autoModeEngine,
-          agentMode: item.agentMode,
+          projectRoot: item.projectRoot ?? '/',
+          provider: persistedProviderFallback,
+          reasoningMode: runtimeDefaults.reasoningMode,
+          permissionMode: runtimeDefaults.permissionMode,
+          autoModeEngine: runtimeDefaults.autoModeEngine,
+          agentMode: runtimeDefaults.agentMode,
+          // F045: 真值——来自 SDK summary.tag 反推（host.listMerged 已派生），非占位。
           surface: item.surface,
           title: item.title,
-          createdAt: item.createdAt,
-          lastActivityAt: item.lastActivityAt,
-          parentSessionId: item.parentSessionId,
-          forkPointTurnIdx: item.forkPointTurnIdx,
-          model: item.model,
+          createdAt: sortKey,
+          lastActivityAt: sortKey,
+          msgCount: item.msgCount,
         };
-      }
-      // persisted: 运行时设置用 user-default 占位（Space defaultProviderId →
-      // ~/.kodax/config.json → 'mock' 兜底）。tryResume 用同样链路 resolve，
-      // 保证 sidebar 显示和真激活后的运行时设置一致——不会出现"点开 historical
-      // session 看着是 mock，点了发消息后 BottomBar 突然跳到 deepseek-v4-pro"
-      // 的视觉跳变。
-      //
-      // msgCount 直接透传 SDK summary 给的值——这是 dashboard 重启后 Messages 数
-      // 正确的关键（无需扫 jsonl 内容，SDK 已经 fast-path 缓存了 summary）。
-      return {
-        sessionId: item.sessionId,
-        projectRoot: item.projectRoot ?? '/',
-        provider: persistedProviderFallback,
-        reasoningMode: persistedReasoningFallback,
-        permissionMode: persistedPermissionFallback,
-        autoModeEngine: 'llm',
-        agentMode: 'ama',
-        // F045: 真值——来自 SDK summary.tag 反推（host.listMerged 已派生），非占位。
-        surface: item.surface,
-        title: item.title,
-        createdAt: sortKey,
-        lastActivityAt: sortKey,
-        msgCount: item.msgCount,
-      };
-    });
+      }),
+    );
     return { sessions };
   });
 
   // session.delete
   registerChannel('session.delete', async (input) => {
     const deleted = await kodaxHost.delete(input.sessionId);
-    if (deleted) clearSlashGoalForSession(input.sessionId);
+    if (deleted) {
+      clearSlashGoalForSession(input.sessionId);
+      await getSessionRuntimeStore().delete(input.sessionId);
+    }
     return { deleted };
   });
 
@@ -294,8 +330,9 @@ export function registerSessionChannels(): void {
   });
 
   // session.setReasoningMode — F008
-  registerChannel('session.setReasoningMode', (input) => {
+  registerChannel('session.setReasoningMode', async (input) => {
     const ok = kodaxHost.setReasoningMode(input.sessionId, input.mode);
+    if (ok) await getSessionRuntimeStore().set(input.sessionId, { reasoningMode: input.mode });
     return { ok };
   });
 
@@ -310,24 +347,27 @@ export function registerSessionChannels(): void {
 
   // session.setPermissionMode — FEATURE_029 canonical 3 mode
   // 切 mode 立即生效（下次 tool call broker.request 走新 mode 短路）。
-  registerChannel('session.setPermissionMode', (input) => {
+  registerChannel('session.setPermissionMode', async (input) => {
     const ok = kodaxHost.setPermissionMode(input.sessionId, input.mode);
+    if (ok) await getSessionRuntimeStore().set(input.sessionId, { permissionMode: input.mode });
     return { ok };
   });
 
   // session.setAutoModeEngine — FEATURE_029
   // 切 auto mode 子档 engine ('llm' | 'rules')。即便当前 mode 不是 'auto' 也接受
   // (用户先选 engine 再切 auto 是合法路径)，下次进入 auto 时按新 engine bootstrap guardrail。
-  registerChannel('session.setAutoModeEngine', (input) => {
+  registerChannel('session.setAutoModeEngine', async (input) => {
     const ok = kodaxHost.setAutoModeEngine(input.sessionId, input.engine);
+    if (ok) await getSessionRuntimeStore().set(input.sessionId, { autoModeEngine: input.engine });
     return { ok };
   });
 
   // session.setAgentMode — 切 KodaX agent 形态 (AMA / AMAW / SA)。
   // AMA = 多 agent 协作（KodaX 默认）；SA = 单 agent 降级路径，接口并发受限时使用。
   // 切换不重启 in-flight session，下一条 prompt 走新形态。
-  registerChannel('session.setAgentMode', (input) => {
+  registerChannel('session.setAgentMode', async (input) => {
     const ok = kodaxHost.setAgentMode(input.sessionId, input.agentMode);
+    if (ok) await getSessionRuntimeStore().set(input.sessionId, { agentMode: input.agentMode });
     return { ok };
   });
 
@@ -499,7 +539,11 @@ export function registerSessionChannels(): void {
             thinkingBuf = '';
           }
         };
-        const blocks = Array.isArray(msg.content) ? msg.content : (typeof msg.content === 'string' ? [{ type: 'text', text: msg.content }] : []);
+        const blocks = Array.isArray(msg.content)
+          ? msg.content
+          : typeof msg.content === 'string'
+            ? [{ type: 'text', text: msg.content }]
+            : [];
         for (const block of blocks) {
           if (!block || typeof block !== 'object') continue;
           const t = (block as { type?: unknown }).type;
@@ -544,7 +588,8 @@ export function registerSessionChannels(): void {
 /** user message content 提取纯文本部分;若 content 是 string 直接返回;若是 blocks 数组取 type=='text'.
  *  tool_result blocks 不在这里出 — 它们在 history handler 第一步单独收集映射到 toolId。 */
 function extractUserText(content: unknown): string {
-  if (typeof content === 'string') return content.length > 256 * 1024 ? content.slice(0, 256 * 1024) + '\n…(truncated)' : content;
+  if (typeof content === 'string')
+    return content.length > 256 * 1024 ? content.slice(0, 256 * 1024) + '\n…(truncated)' : content;
   if (!Array.isArray(content)) return '';
   let text = '';
   for (const block of content) {

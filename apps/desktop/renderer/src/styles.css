@@ -489,7 +489,7 @@ html.q-balanced {
   --glass-alpha: 0.55;
   --glass-sat: 1.5;
   --depth: 1;
-  --aurora-opacity: 0.6;
+  --aurora-opacity: 0.64; /* 静止三团极光，略提存在感（静止不增成本）。 */
 }
 html.q-full {
   --glass-blur: 28px;
@@ -747,7 +747,6 @@ html:not(.dark).q-full .center-pane {
   position: absolute;
   border-radius: 50%;
   filter: blur(110px);
-  will-change: transform;
   mix-blend-mode: screen;
 }
 html:not(.dark) .aurora-blob {
@@ -760,7 +759,6 @@ html:not(.dark) .aurora-blob {
   left: 0%;
   top: -10%;
   background: radial-gradient(circle, rgba(245, 181, 68, 0.55), transparent 66%);
-  animation: aurora-drift1 40s var(--ease) infinite;
 }
 .aurora-b2 {
   width: 44vw;
@@ -768,7 +766,34 @@ html:not(.dark) .aurora-blob {
   right: -2%;
   bottom: -12%;
   background: radial-gradient(circle, rgba(120, 150, 255, 0.6), transparent 66%);
+}
+/* 第三团柔紫：中部偏下，给静止极光更有层次。静止 → 零额外开销（均衡/全特效都显）。 */
+.aurora-b3 {
+  width: 38vw;
+  height: 38vw;
+  left: 30%;
+  bottom: -18%;
+  background: radial-gradient(circle, rgba(178, 132, 232, 0.4), transparent 66%);
+}
+/* 🔴 性能核心：极光「漂移动画」只在「全特效」档开。
+   transform 动画会让其上方所有 backdrop-filter 玻璃面板每帧重新采样 + 重新模糊
+   （核显最贵的合成操作）。均衡档因此让极光保持静止 → 玻璃模糊结果可被缓存复用，
+   鼠标移动不再触发整屏 backdrop 重算，空闲与移动开销同时塌缩。 */
+html.q-full .aurora-b1 {
+  animation: aurora-drift1 40s var(--ease) infinite;
+  will-change: transform;
+}
+html.q-full .aurora-b2 {
   animation: aurora-drift2 48s var(--ease) infinite;
+  will-change: transform;
+}
+html.q-full .aurora-b3 {
+  animation: aurora-drift1 60s var(--ease) infinite reverse;
+  will-change: transform;
+}
+/* 窗口失焦 / 隐藏 → 暂停漂移，绝不在后台抢占共享 GPU（根治「别的程序输入法变卡」）。 */
+.aurora-layer.is-paused .aurora-blob {
+  animation-play-state: paused;
 }
 @keyframes aurora-drift1 {
   0%,

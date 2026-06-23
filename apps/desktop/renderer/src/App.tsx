@@ -19,7 +19,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Folder, Settings } from 'lucide-react';
-import type { SpaceVersionOutput } from '@kodax-space/space-ipc-schema';
+import type { SpaceRuntimeDefaultsT, SpaceVersionOutput } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from './store/appStore.js';
 import { ProjectPicker } from './features/project/ProjectPicker.js';
 import { SessionList } from './features/session/SessionList.js';
@@ -70,6 +70,10 @@ export default function App(): JSX.Element {
   const dequeueAskUser = useAppStore((s) => s.dequeueAskUser);
   const setProviders = useAppStore((s) => s.setProviders);
   const setKodaxDefaults = useAppStore((s) => s.setKodaxDefaults);
+  const setPendingReasoningMode = useAppStore((s) => s.setPendingReasoningMode);
+  const setPendingPermissionMode = useAppStore((s) => s.setPendingPermissionMode);
+  const setPendingAutoModeEngine = useAppStore((s) => s.setPendingAutoModeEngine);
+  const setPendingAgentMode = useAppStore((s) => s.setPendingAgentMode);
   const setQueueState = useAppStore((s) => s.setQueueState);
   const upsertWorkflowRun = useAppStore((s) => s.upsertWorkflowRun);
   const seedWorkflowRuns = useAppStore((s) => s.seedWorkflowRuns);
@@ -108,6 +112,47 @@ export default function App(): JSX.Element {
         setKodaxDefaults(result.data);
       }
     });
+
+    // v0.1.23: hydrate Space-owned runtime defaults, then migrate old LS pending values once.
+    void bridge
+      .invoke('settings.get', {})
+      .then((result) => {
+        if (!result.ok) return;
+        const defaults = result.data.runtimeDefaults ?? {};
+        const state = useAppStore.getState();
+        const patch: Partial<SpaceRuntimeDefaultsT> = {};
+
+        if (defaults.reasoningMode !== undefined) setPendingReasoningMode(defaults.reasoningMode);
+        else if (state.pendingReasoningMode !== null)
+          patch.reasoningMode = state.pendingReasoningMode;
+
+        if (defaults.permissionMode !== undefined)
+          setPendingPermissionMode(defaults.permissionMode);
+        else if (state.pendingPermissionMode !== null)
+          patch.permissionMode = state.pendingPermissionMode;
+
+        if (defaults.autoModeEngine !== undefined)
+          setPendingAutoModeEngine(defaults.autoModeEngine);
+        else if (state.pendingAutoModeEngine !== null)
+          patch.autoModeEngine = state.pendingAutoModeEngine;
+
+        if (defaults.agentMode !== undefined) setPendingAgentMode(defaults.agentMode);
+        else if (state.pendingAgentMode !== null) patch.agentMode = state.pendingAgentMode;
+
+        if (Object.keys(patch).length === 0) return;
+        void bridge
+          .invoke('settings.setRuntimeDefaults', { runtimeDefaults: patch })
+          .then((saved) => {
+            if (!saved.ok) return;
+            const next = saved.data.runtimeDefaults ?? {};
+            if (next.reasoningMode !== undefined) setPendingReasoningMode(next.reasoningMode);
+            if (next.permissionMode !== undefined) setPendingPermissionMode(next.permissionMode);
+            if (next.autoModeEngine !== undefined) setPendingAutoModeEngine(next.autoModeEngine);
+            if (next.agentMode !== undefined) setPendingAgentMode(next.agentMode);
+          })
+          .catch(() => {});
+      })
+      .catch(() => {});
 
     // 启动期项目恢复 — 优先级：
     //   1. zustand store 已有 currentProjectPath（localStorage 持久化的 → store init 时就填上了）
@@ -175,8 +220,8 @@ export default function App(): JSX.Element {
       }),
     );
 
-    // Queue snapshot combines the SDK process-global MessageQueue with Space
-    // per-session follow-up prompts. Renderer reads/displays it; enqueue/dequeue
+    // Queue snapshot reads the SDK process-global MessageQueue. Space follow-up
+    // prompts live there too, with Electron-side session ownership guards; enqueue/dequeue
     // ownership stays in main/SDK.
     bridge.invoke('kodax.queueGet', {}).then((r) => {
       if (r.ok) setQueueState(r.data.messages, r.data.totalSize);
@@ -250,6 +295,10 @@ export default function App(): JSX.Element {
     dequeueAskUser,
     setProviders,
     setKodaxDefaults,
+    setPendingReasoningMode,
+    setPendingPermissionMode,
+    setPendingAutoModeEngine,
+    setPendingAgentMode,
     setQueueState,
     upsertWorkflowRun,
     seedWorkflowRuns,

@@ -14,9 +14,14 @@ import { setRendererTarget } from '../ipc/push.js';
 import { installSessionStoreMock, type MockSessionState } from './_helpers/session-store-mock.js';
 import { setUserConfigImpl, type KodaxUserConfigImpl } from '../kodax/user-config.js';
 import { providerConfigStore } from '../providers/config.js';
+import {
+  SessionRuntimeStore,
+  setSessionRuntimeStoreForTesting,
+} from '../kodax/session-runtime-store.js';
 
 let mockState: MockSessionState;
 let tmpDir = '';
+let runtimeStore: SessionRuntimeStore;
 
 beforeEach(async () => {
   mockState = installSessionStoreMock();
@@ -28,6 +33,8 @@ beforeEach(async () => {
   (providerConfigStore as any).spaceDir = tmpDir;
   (providerConfigStore as any).customFile = path.join(tmpDir, 'custom.json');
   (providerConfigStore as any).customDir = tmpDir;
+  runtimeStore = new SessionRuntimeStore(path.join(tmpDir, 'session-runtime'));
+  setSessionRuntimeStoreForTesting(runtimeStore);
   await kodaxHost.disposeAll();
   // 不需要真 push；测试只看 host.sessions Map 的状态变化
   setRendererTarget(() => null);
@@ -37,6 +44,7 @@ afterEach(async () => {
   await kodaxHost.disposeAll();
   setRendererTarget(() => null);
   setUserConfigImpl(null);
+  setSessionRuntimeStoreForTesting(null);
   mockState.reset();
   try {
     await fs.rm(tmpDir, { recursive: true, force: true });
@@ -142,7 +150,9 @@ test('tryResume registers Space custom default provider before rehydrating sessi
   assert.equal(ok, true);
   assert.equal(kodaxHost.get(id)?.provider, customId);
   assert.equal(registerCalls.length, 1);
-  const registeredNames = registerCalls[0]?.customProviders?.map((p) => (p as { name?: string }).name);
+  const registeredNames = registerCalls[0]?.customProviders?.map(
+    (p) => (p as { name?: string }).name,
+  );
   assert.deepEqual(registeredNames, [customId]);
 });
 
@@ -162,6 +172,27 @@ test('tryResume defaults surface to "code" for legacy untagged persisted session
   const ok = await kodaxHost.tryResume(id);
   assert.equal(ok, true);
   assert.equal(kodaxHost.get(id)?.surface, 'code');
+});
+
+test('tryResume restores runtime modes from the session sidecar before KodaX defaults', async () => {
+  mockUserConfig({ permissionMode: 'plan', reasoningMode: 'deep' });
+  const id = 's_runtime-sidecar';
+  mockState.seed(id, 'C:/proj/example', 'runtime sidecar');
+  await runtimeStore.set(id, {
+    permissionMode: 'auto',
+    autoModeEngine: 'rules',
+    reasoningMode: 'quick',
+    agentMode: 'sa',
+  });
+
+  const ok = await kodaxHost.tryResume(id);
+  assert.equal(ok, true);
+  const resumed = kodaxHost.get(id);
+  assert.ok(resumed);
+  assert.equal(resumed.permissionMode, 'auto');
+  assert.equal(resumed.autoModeEngine, 'rules');
+  assert.equal(resumed.reasoningMode, 'quick');
+  assert.equal(resumed.agentMode, 'sa');
 });
 
 test('tryResume bails out when persisted session lacks gitRoot', async () => {

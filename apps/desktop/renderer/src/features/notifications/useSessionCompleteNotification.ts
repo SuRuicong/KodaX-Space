@@ -133,6 +133,7 @@ async function maybeNotify(input: {
         : `Session failed: ${title} (${elapsedLabel})`,
     sessionId: input.sessionId,
     createdAt: now,
+    dismissOnOutsideInteraction: true,
   });
 
   if (!input.nativeEnabled || !window.kodaxSpace) return;

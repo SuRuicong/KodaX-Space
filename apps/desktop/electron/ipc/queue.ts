@@ -1,18 +1,27 @@
 // KodaX message queue IPC: query + subscribe.
 //
-// Space still exposes the SDK process-global MessageQueue for renderer
-// visibility, but user follow-up prompts are kept in a Space-owned per-session
-// queue. The SDK main-thread queue (`agentId === undefined`) is process-global,
-// so using it for desktop session follow-ups lets an already-running different
-// Space session drain the wrong prompt. Per-session local queues preserve
-// concurrent sessions while keeping queued prompts observable in the UI.
+// Space exposes KodaX's SDK process-global MessageQueue for renderer visibility.
+// Follow-up prompts support two explicit modes:
+// - interrupt: enqueue into the SDK queue so KodaX can drain at the next safe
+//   mid-turn boundary; owner guards keep desktop sessions isolated.
+// - after-turn: hold in a Space-owned per-session queue until the current turn
+//   settles, then start the next turn normally.
 import { registerChannel } from './register.js';
 import { pushToRenderer } from './push.js';
+import {
+  _resetSessionQueueGuardForTests,
+  countOwnedPromptsForSession,
+  dequeueOwnedPromptsForSession,
+  enqueueOwnedPrompt,
+  installSessionQueueGuard,
+  peekOwnedPromptsForSession,
+} from '../kodax/session-queue-guard.js';
 import type {
   QueuedMessageT,
   MessagePriorityT,
   MessageModeT,
   QueueEventKindT,
+  SessionSendQueueMode,
 } from '@kodax-space/space-ipc-schema';
 
 type AgentModule = typeof import('@kodax-ai/kodax/agent');
@@ -26,6 +35,17 @@ type QueueGetInput = {
   readonly limit?: number;
 };
 
+type SpaceQueuedPrompt = {
+  readonly id: string;
+  readonly priority: 'user';
+  readonly mode: 'prompt';
+  readonly agentId: string;
+  readonly content: string;
+  readonly enqueuedAt: number;
+  readonly order: number;
+  readonly queueMode: 'after-turn';
+};
+
 let agentModuleCache: AgentModule | null = null;
 async function loadAgent(): Promise<AgentModule> {
   if (agentModuleCache === null) {
@@ -36,42 +56,37 @@ async function loadAgent(): Promise<AgentModule> {
 
 async function loadQueue(): Promise<MessageQueue> {
   const agent = await loadAgent();
-  return agent.getMessageQueue();
+  const q = agent.getMessageQueue();
+  installSessionQueueGuard(q);
+  return q;
 }
 
 const MAX_QUEUE_DEPTH_PER_SESSION = 10;
 const QUEUE_CONTENT_SCHEMA_MAX = 32 * 1024;
 const TRUNCATED_SUFFIX = '\n[truncated]';
-let nextSpaceQueueSeq = 1;
 
-type SpaceQueuedPrompt = {
-  readonly id: string;
-  readonly priority: 'user';
-  readonly mode: 'prompt';
-  readonly agentId: string;
-  readonly content: string;
-  readonly enqueuedAt: number;
-};
+const afterTurnPromptQueues = new Map<string, SpaceQueuedPrompt[]>();
+const sdkPromptOrders = new Map<string, number>();
+let nextAfterTurnQueueSeq = 1;
+let nextQueueOrder = 1;
 
-const spacePromptQueues = new Map<string, SpaceQueuedPrompt[]>();
+function clampQueueContentForIpc(content: string): string {
+  if (content.length <= QUEUE_CONTENT_SCHEMA_MAX) return content;
+  return content.slice(0, QUEUE_CONTENT_SCHEMA_MAX - TRUNCATED_SUFFIX.length) + TRUNCATED_SUFFIX;
+}
 
 function projectMessage(m: QueuedMessage): QueuedMessageT {
   const proj: QueuedMessageT = {
     id: m.id,
     priority: m.priority as MessagePriorityT,
     mode: m.mode as MessageModeT,
-    content: m.content,
+    content: clampQueueContentForIpc(m.content),
     enqueuedAt: m.enqueuedAt,
   };
   if (m.agentId !== undefined) {
     return { ...proj, agentId: m.agentId };
   }
   return proj;
-}
-
-function clampQueueContentForIpc(content: string): string {
-  if (content.length <= QUEUE_CONTENT_SCHEMA_MAX) return content;
-  return content.slice(0, QUEUE_CONTENT_SCHEMA_MAX - TRUNCATED_SUFFIX.length) + TRUNCATED_SUFFIX;
 }
 
 function projectSpacePrompt(m: SpaceQueuedPrompt): QueuedMessageT {
@@ -85,29 +100,6 @@ function projectSpacePrompt(m: SpaceQueuedPrompt): QueuedMessageT {
   };
 }
 
-function getSdkSnapshotIfLoaded(): { messages: QueuedMessageT[]; totalSize: number } {
-  if (agentModuleCache === null) return { messages: [], totalSize: 0 };
-  const q = agentModuleCache.getMessageQueue();
-  return {
-    messages: q.getSnapshot().map(projectMessage),
-    totalSize: q.size(),
-  };
-}
-
-function getSpacePromptSnapshot(): QueuedMessageT[] {
-  const messages: QueuedMessageT[] = [];
-  for (const queue of spacePromptQueues.values()) {
-    messages.push(...queue.map(projectSpacePrompt));
-  }
-  return messages;
-}
-
-function getSpacePromptTotalSize(): number {
-  let total = 0;
-  for (const queue of spacePromptQueues.values()) total += queue.length;
-  return total;
-}
-
 function priorityWithinMax(priority: MessagePriorityT, maxPriority: MessagePriorityT): boolean {
   if (maxPriority === 'background') return true;
   return priority === 'user';
@@ -115,24 +107,43 @@ function priorityWithinMax(priority: MessagePriorityT, maxPriority: MessagePrior
 
 function filterProjectedMessages(
   messages: readonly QueuedMessageT[],
-  filter: QueueGetInput | undefined,
+  input: QueueGetInput | undefined,
 ): QueuedMessageT[] {
-  const maxPriority = filter?.maxPriority ?? 'background';
-  const filtered = messages.filter((message) => {
-    if (filter?.agentId !== undefined && message.agentId !== filter.agentId) return false;
-    if (!priorityWithinMax(message.priority, maxPriority)) return false;
-    if (filter?.mode !== undefined && message.mode !== filter.mode) return false;
-    return true;
+  const maxPriority = input?.maxPriority ?? 'background';
+  const filtered = messages.filter((m) => {
+    if (input?.agentId !== undefined && m.agentId !== input.agentId) return false;
+    if (input?.mode !== undefined && m.mode !== input.mode) return false;
+    return priorityWithinMax(m.priority, maxPriority);
   });
-  return filter?.limit !== undefined ? filtered.slice(0, filter.limit) : filtered;
+  return input?.limit !== undefined ? filtered.slice(0, input.limit) : filtered;
+}
+
+function getAfterTurnPromptSnapshot(): QueuedMessageT[] {
+  return Array.from(afterTurnPromptQueues.values()).flatMap((queue) => queue.map(projectSpacePrompt));
+}
+
+function getAfterTurnPromptTotalSize(): number {
+  let total = 0;
+  for (const queue of afterTurnPromptQueues.values()) total += queue.length;
+  return total;
+}
+
+function getSdkSnapshotIfLoaded(): { messages: QueuedMessageT[]; totalSize: number } {
+  if (agentModuleCache === null) return { messages: [], totalSize: 0 };
+  const q = agentModuleCache.getMessageQueue();
+  installSessionQueueGuard(q);
+  return {
+    messages: q.getSnapshot().map(projectMessage),
+    totalSize: q.size(),
+  };
 }
 
 function combinedSnapshot(): { messages: QueuedMessageT[]; totalSize: number } {
   const sdk = getSdkSnapshotIfLoaded();
-  const space = getSpacePromptSnapshot();
+  const afterTurn = getAfterTurnPromptSnapshot();
   return {
-    messages: [...sdk.messages, ...space],
-    totalSize: sdk.totalSize + space.length,
+    messages: [...sdk.messages, ...afterTurn],
+    totalSize: sdk.totalSize + afterTurn.length,
   };
 }
 
@@ -146,77 +157,116 @@ function emitQueueChanged(kind: QueueEventKindT, affected: QueuedMessageT[]): vo
   });
 }
 
-/**
- * Queue a follow-up user prompt for a single Space session.
- *
- * This intentionally does not enqueue into the SDK main-thread MessageQueue:
- * that SDK route is process-global and cannot distinguish Space desktop
- * sessions. RealKodaXSession consumes this queue when its current turn settles.
- */
-export async function enqueueUserPrompt(sessionId: string, content: string): Promise<string> {
-  const queue = spacePromptQueues.get(sessionId) ?? [];
-  if (queue.length >= MAX_QUEUE_DEPTH_PER_SESSION) {
-    throw new Error(
-      `Message queue full for session ${sessionId} (${queue.length} >= ${MAX_QUEUE_DEPTH_PER_SESSION}); ` +
-        'wait for the current turn to drain',
-    );
-  }
-
+function enqueueAfterTurnPrompt(sessionId: string, content: string): string {
   const message: SpaceQueuedPrompt = {
-    id: `space-msg-${nextSpaceQueueSeq++}`,
+    id: `space-after-turn-${nextAfterTurnQueueSeq++}`,
     priority: 'user',
     mode: 'prompt',
     agentId: sessionId,
     content,
     enqueuedAt: Date.now(),
+    order: nextQueueOrder++,
+    queueMode: 'after-turn',
   };
+  const queue = afterTurnPromptQueues.get(sessionId) ?? [];
   queue.push(message);
-  spacePromptQueues.set(sessionId, queue);
+  afterTurnPromptQueues.set(sessionId, queue);
   emitQueueChanged('enqueued', [projectSpacePrompt(message)]);
   return message.id;
 }
 
+function shiftAfterTurnPrompt(sessionId: string): SpaceQueuedPrompt | undefined {
+  const queue = afterTurnPromptQueues.get(sessionId);
+  if (!queue || queue.length === 0) return undefined;
+  const [message] = queue.splice(0, 1);
+  if (queue.length === 0) afterTurnPromptQueues.delete(sessionId);
+  if (message) emitQueueChanged('dequeued', [projectSpacePrompt(message)]);
+  return message;
+}
+
+/**
+ * Queue a follow-up user prompt for a single Space session.
+ *
+ * interrupt mode uses the SDK main-thread MessageQueue so KodaX can consume the
+ * prompt at a mid-turn drain boundary. after-turn mode stays in Space's
+ * per-session queue and is started only after the current turn settles.
+ */
+export async function enqueueUserPrompt(
+  sessionId: string,
+  content: string,
+  queueMode: SessionSendQueueMode = 'interrupt',
+): Promise<string> {
+  const q = await loadQueue();
+  const depth =
+    countOwnedPromptsForSession(q, sessionId) + (afterTurnPromptQueues.get(sessionId)?.length ?? 0);
+  if (depth >= MAX_QUEUE_DEPTH_PER_SESSION) {
+    throw new Error(
+      `Message queue full for session ${sessionId} (${depth} >= ${MAX_QUEUE_DEPTH_PER_SESSION}); ` +
+        'wait for the current turn to drain',
+    );
+  }
+
+  if (queueMode === 'after-turn') {
+    return enqueueAfterTurnPrompt(sessionId, content);
+  }
+
+  const queueId = enqueueOwnedPrompt(q, sessionId, content);
+  sdkPromptOrders.set(queueId, nextQueueOrder++);
+  return queueId;
+}
+
 /** Pop the next queued follow-up prompt for one Space session. */
 export function dequeueNextUserPromptForSession(sessionId: string): string | undefined {
-  const queue = spacePromptQueues.get(sessionId);
-  if (queue === undefined || queue.length === 0) return undefined;
+  const afterTurnPrompt = afterTurnPromptQueues.get(sessionId)?.[0];
+  const sdkPrompt =
+    agentModuleCache === null
+      ? undefined
+      : peekOwnedPromptsForSession(agentModuleCache.getMessageQueue(), sessionId)[0];
 
-  const [message] = queue.splice(0, 1);
-  if (queue.length === 0) {
-    spacePromptQueues.delete(sessionId);
+  const sdkOrder = sdkPrompt ? sdkPromptOrders.get(sdkPrompt.id) : undefined;
+  const afterTurnFirst =
+    afterTurnPrompt &&
+    (!sdkPrompt ||
+      (sdkOrder !== undefined
+        ? afterTurnPrompt.order <= sdkOrder
+        : afterTurnPrompt.enqueuedAt <= sdkPrompt.enqueuedAt));
+  if (afterTurnFirst) {
+    return shiftAfterTurnPrompt(sessionId)?.content;
   }
-  if (message !== undefined) {
-    emitQueueChanged('dequeued', [projectSpacePrompt(message)]);
-    return message.content;
-  }
-  return undefined;
+
+  if (!sdkPrompt || agentModuleCache === null) return undefined;
+  const q = agentModuleCache.getMessageQueue();
+  const [message] = dequeueOwnedPromptsForSession(q, sessionId, 1);
+  if (message) sdkPromptOrders.delete(message.id);
+  return message?.content;
 }
 
 /** Clear Space-owned queued user prompts when a session is cancelled/disposed. */
 export async function drainQueueForSession(sessionId: string): Promise<number> {
-  const drained = spacePromptQueues.get(sessionId);
-  if (drained === undefined || drained.length === 0) return 0;
-  spacePromptQueues.delete(sessionId);
-  emitQueueChanged('dequeued', drained.map(projectSpacePrompt));
-  return drained.length;
+  const q = await loadQueue();
+  const sdkDrained = dequeueOwnedPromptsForSession(q, sessionId);
+  for (const message of sdkDrained) sdkPromptOrders.delete(message.id);
+  const afterTurnDrained = afterTurnPromptQueues.get(sessionId) ?? [];
+  if (afterTurnDrained.length > 0) {
+    afterTurnPromptQueues.delete(sessionId);
+    emitQueueChanged('dequeued', afterTurnDrained.map(projectSpacePrompt));
+  }
+  return sdkDrained.length + afterTurnDrained.length;
 }
 
 export function registerQueueChannels(): void {
-  registerChannel('kodax.queueGet', async (input) => {
+  registerChannel('kodax.queueGet', async (input: QueueGetInput | undefined) => {
     const q = await loadQueue();
     const filter: import('@kodax-ai/kodax/agent').DequeueFilter = {
       agentId: input?.agentId,
       maxPriority: input?.maxPriority ?? 'background',
       mode: input?.mode,
-      limit: input?.limit,
     };
     const sdkMessages = q.peek(filter).map(projectMessage);
-    const spaceMessages = filterProjectedMessages(getSpacePromptSnapshot(), input);
-    const limit = input?.limit;
-    const messages = [...sdkMessages, ...spaceMessages];
+    const afterTurnMessages = getAfterTurnPromptSnapshot();
     return {
-      messages: limit !== undefined ? messages.slice(0, limit) : messages,
-      totalSize: q.size() + getSpacePromptTotalSize(),
+      messages: filterProjectedMessages([...sdkMessages, ...afterTurnMessages], input),
+      totalSize: q.size() + getAfterTurnPromptTotalSize(),
     };
   });
 }
@@ -228,6 +278,8 @@ export async function startQueueWatch(): Promise<() => void> {
     if (event.kind === 'enqueued') {
       affected = [projectMessage(event.message)];
     } else {
+      for (const message of event.messages) sdkPromptOrders.delete(message.id);
+      if (event.kind === 'cleared') sdkPromptOrders.clear();
       affected = event.messages.map(projectMessage);
     }
     emitQueueChanged(event.kind, affected);
@@ -236,7 +288,10 @@ export async function startQueueWatch(): Promise<() => void> {
 }
 
 export function _resetQueueStateForTests(): void {
-  nextSpaceQueueSeq = 1;
-  spacePromptQueues.clear();
+  _resetSessionQueueGuardForTests();
+  afterTurnPromptQueues.clear();
+  sdkPromptOrders.clear();
+  nextAfterTurnQueueSeq = 1;
+  nextQueueOrder = 1;
   agentModuleCache = null;
 }

@@ -11,6 +11,7 @@
 //
 // session 过滤: notice.sessionId 与 currentSessionId 不匹配且非全局 (undefined sessionId) 时不显示。
 
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../store/appStore.js';
 import type { Notification } from '../store/appStore.js';
 
@@ -27,38 +28,92 @@ const SEVERITY_ICON: Record<Notification['severity'], string> = {
   error: '✖',
 };
 
+interface NotificationRowProps {
+  readonly notification: Notification;
+  readonly onDismiss: (id: string) => void;
+}
+
+function NotificationRow({ notification, onDismiss }: NotificationRowProps): JSX.Element {
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  const [closeSide, setCloseSide] = useState(28);
+
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+
+    const updateCloseSide = (): void => {
+      const next = Math.max(24, Math.ceil(row.getBoundingClientRect().height));
+      setCloseSide((prev) => (prev === next ? prev : next));
+    };
+
+    updateCloseSide();
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(updateCloseSide);
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [notification.text]);
+
+  return (
+    <div
+      ref={rowRef}
+      className={`relative overflow-hidden pl-2 py-1 rounded border text-xs flex items-start gap-2 ${SEVERITY_BG[notification.severity]}`}
+      style={{ paddingRight: closeSide }}
+    >
+      <span aria-hidden className="mt-px">
+        {SEVERITY_ICON[notification.severity]}
+      </span>
+      <span className="flex-1 leading-snug">{notification.text}</span>
+      <button
+        type="button"
+        onClick={() => onDismiss(notification.id)}
+        className="absolute right-0 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-r text-base leading-none text-fg-muted hover:bg-surface-3 hover:text-fg-primary"
+        style={{ width: closeSide, height: closeSide }}
+        title="Dismiss"
+        aria-label="Dismiss notification"
+      >
+        {'\u00d7'}
+      </button>
+    </div>
+  );
+}
+
 export function NotificationsSurface(): JSX.Element | null {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const notifications = useAppStore((s) => s.notifications);
   const dismissNotification = useAppStore((s) => s.dismissNotification);
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
-  // 只显示: 全局通知 (sessionId 未设) 或 sessionId 匹配当前 session
-  const visible = notifications.filter(
-    (n) => n.sessionId === undefined || n.sessionId === currentSessionId,
+  // Visible: global notifications or notifications for the current session.
+  const visible = useMemo(
+    () =>
+      notifications.filter((n) => n.sessionId === undefined || n.sessionId === currentSessionId),
+    [currentSessionId, notifications],
   );
+  const dismissOnOutsideInteractionIds = useMemo(
+    () => visible.filter((n) => n.dismissOnOutsideInteraction).map((n) => n.id),
+    [visible],
+  );
+
+  useEffect(() => {
+    if (dismissOnOutsideInteractionIds.length === 0) return;
+
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (rootRef.current?.contains(target)) return;
+      for (const id of dismissOnOutsideInteractionIds) dismissNotification(id);
+    };
+
+    window.addEventListener('pointerdown', onPointerDown, true);
+    return () => window.removeEventListener('pointerdown', onPointerDown, true);
+  }, [dismissNotification, dismissOnOutsideInteractionIds]);
   if (visible.length === 0) return null;
 
   return (
-    <div className="px-3 space-y-1" role="region" aria-label="System notifications">
+    <div ref={rootRef} className="px-3 space-y-1" role="region" aria-label="System notifications">
       {visible.map((n) => (
-        <div
-          key={n.id}
-          className={`px-2 py-1 rounded border text-xs flex items-start gap-2 ${SEVERITY_BG[n.severity]}`}
-        >
-          <span aria-hidden className="mt-px">
-            {SEVERITY_ICON[n.severity]}
-          </span>
-          <span className="flex-1 leading-snug">{n.text}</span>
-          <button
-            type="button"
-            onClick={() => dismissNotification(n.id)}
-            className="text-fg-muted hover:text-fg-primary text-[12px] leading-none"
-            title="Dismiss"
-            aria-label="Dismiss notification"
-          >
-            ×
-          </button>
-        </div>
+        <NotificationRow key={n.id} notification={n} onDismiss={dismissNotification} />
       ))}
     </div>
   );

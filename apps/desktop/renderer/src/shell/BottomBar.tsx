@@ -31,6 +31,14 @@ const SLASH_ARGS_MAX = 20;
 
 const EMPTY_INPUT_HISTORY: readonly string[] = [];
 
+type QueueMode = 'interrupt' | 'after-turn';
+
+function queuedToastText(queueMode: QueueMode | undefined): string {
+  return queueMode === 'after-turn'
+    ? 'Queued - will run after the current turn'
+    : 'Queued - will join at the next safe point';
+}
+
 const TITLE_MAX_CHARS = 50;
 interface PendingImage {
   readonly path: string;
@@ -534,26 +542,24 @@ export function BottomBar(): JSX.Element {
       setErr('Open a folder first - Ctrl+O.');
       return null;
     }
-    const { provider, reasoningMode, permissionMode, autoModeEngine, agentMode, model } =
-      resolveSessionCreateInputs({
-        projectRoot: currentProjectPath,
-        providers,
-        defaultProviderId,
-        kodaxDefaults,
-        pendingProviderId,
-        pendingReasoningMode,
-        pendingPermissionMode,
-        pendingAutoModeEngine,
-        pendingAgentMode,
-        pendingModel,
-      });
+    const { provider, runtimeOverrides, model } = resolveSessionCreateInputs({
+      projectRoot: currentProjectPath,
+      providers,
+      defaultProviderId,
+      kodaxDefaults,
+      pendingProviderId,
+      pendingReasoningMode,
+      pendingPermissionMode,
+      pendingAutoModeEngine,
+      pendingAgentMode,
+      pendingModel,
+    });
     const result = await window.kodaxSpace.invoke('session.create', {
       projectRoot: currentProjectPath,
       provider,
-      reasoningMode,
-      permissionMode,
-      autoModeEngine,
-      agentMode,
+      ...(model ? { model } : {}),
+      ...runtimeOverrides,
+      surface: currentSurface,
     });
     if (!result.ok) {
       setErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'create failed'}`);
@@ -564,10 +570,10 @@ export function BottomBar(): JSX.Element {
       projectRoot: currentProjectPath,
       provider,
       ...(model ? { model } : {}),
-      reasoningMode,
-      permissionMode,
-      autoModeEngine,
-      agentMode,
+      reasoningMode: result.data.reasoningMode,
+      permissionMode: result.data.permissionMode,
+      autoModeEngine: result.data.autoModeEngine,
+      agentMode: result.data.agentMode,
       surface: currentSurface,
       title: undefined,
       createdAt: result.data.createdAt,
@@ -769,7 +775,12 @@ export function BottomBar(): JSX.Element {
       slashArgTrailingMode ||
       shouldOpenStaticSlashArgCompletion(trimmedPrompt));
 
-  async function execSlashOrSkill(sessionId: string, name: string, args: string[]): Promise<void> {
+  async function execSlashOrSkill(
+    sessionId: string,
+    name: string,
+    args: string[],
+    queueMode: QueueMode = 'interrupt',
+  ): Promise<void> {
     if (!window.kodaxSpace) {
       setErr('IPC unavailable');
       appendUserMessage(sessionId, '[slash] IPC unavailable');
@@ -804,7 +815,7 @@ export function BottomBar(): JSX.Element {
       }
       const { ok, message, echo, clearStream, unknownCommand } = result.data;
       if (unknownCommand) {
-        await invokeSkill(sessionId, name, args);
+        await invokeSkill(sessionId, name, args, queueMode);
         return;
       }
       if (ok && message?.startsWith('__action__:')) {
@@ -1477,7 +1488,12 @@ export function BottomBar(): JSX.Element {
     appendUserMessage(sessionId, `[unknown action: ${action}]`);
   }
 
-  async function invokeSkill(sessionId: string, name: string, args: string[]): Promise<void> {
+  async function invokeSkill(
+    sessionId: string,
+    name: string,
+    args: string[],
+    queueMode: QueueMode = 'interrupt',
+  ): Promise<void> {
     if (!window.kodaxSpace) return;
     const result = await window.kodaxSpace.invoke('skill.invoke', {
       sessionId,
@@ -1498,6 +1514,7 @@ export function BottomBar(): JSX.Element {
     const sendResult = await window.kodaxSpace.invoke('session.send', {
       sessionId,
       prompt: resolvedPrompt,
+      queueMode,
     });
     if (!sendResult.ok) {
       setPendingSend(sessionId, false);
@@ -1506,11 +1523,11 @@ export function BottomBar(): JSX.Element {
         `${sendResult.error?.code ?? 'ERR_UNKNOWN'}: ${sendResult.error?.message ?? 'unknown error'}`,
       );
     } else if (sendResult.data.queued) {
-      pushToast('Queued - will run after the current turn finishes', 'info');
+      pushToast(queuedToastText(sendResult.data.queueMode ?? queueMode), 'info');
     }
   }
 
-  async function handleSend(): Promise<void> {
+  async function handleSend(queueMode: QueueMode = 'interrupt'): Promise<void> {
     if (!window.kodaxSpace) return;
     const trimmed = prompt.trim();
     const fileRefPrompt = pendingFileRefs.map((file) => file.reference).join(' ');
@@ -1551,12 +1568,12 @@ export function BottomBar(): JSX.Element {
         setBusy(true);
         setErr(null);
         try {
-          await invokeSkill(sid, skillNamespaceMatch[1]!, args);
+          await invokeSkill(sid, skillNamespaceMatch[1]!, args, queueMode);
         } finally {
           setBusy(false);
         }
       } else {
-        await execSlashOrSkill(sid, token, args);
+        await execSlashOrSkill(sid, token, args, queueMode);
       }
       return;
     }
@@ -1604,6 +1621,7 @@ export function BottomBar(): JSX.Element {
       const result = await window.kodaxSpace.invoke('session.send', {
         sessionId: sid,
         prompt: promptForAI,
+        queueMode,
         ...(artifactsForSend ? { artifacts: artifactsForSend } : {}),
       });
       if (!result.ok) {
@@ -1621,9 +1639,9 @@ export function BottomBar(): JSX.Element {
           `${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`,
         );
       } else if (result.data.queued) {
-        // The turn is already running; main accepted the prompt into Space's
-        // per-session follow-up queue. Keep the current spinner and show a toast.
-        pushToast('Queued - will run after the current turn finishes', 'info');
+        // The turn is already running; main accepted the prompt into the requested
+        // queue mode. Keep the current spinner and show a toast.
+        pushToast(queuedToastText(result.data.queueMode ?? queueMode), 'info');
       }
     } finally {
       setBusy(false);
@@ -1682,8 +1700,9 @@ export function BottomBar(): JSX.Element {
         e.preventDefault();
         return;
       }
+      const queueMode: QueueMode = e.ctrlKey || e.metaKey ? 'after-turn' : 'interrupt';
       e.preventDefault();
-      void handleSend();
+      void handleSend(queueMode);
       return;
     }
 
@@ -1731,7 +1750,7 @@ export function BottomBar(): JSX.Element {
     !!currentProjectPath &&
     (prompt.trim().length > 0 || pendingImages.length > 0 || pendingFileRefs.length > 0);
   const sendButtonTitle = canSend
-    ? 'Send (Enter)'
+    ? 'Send / interrupt (Enter)'
     : !currentProjectPath
       ? 'Open a folder first'
       : busy
@@ -1950,7 +1969,7 @@ export function BottomBar(): JSX.Element {
           ) : (
             <button
               type="button"
-              onClick={() => void handleSend()}
+              onClick={() => void handleSend('interrupt')}
               disabled={!canSend}
               className={[
                 'ml-1 w-8 h-8 rounded-lg flex items-center justify-center disabled:cursor-not-allowed',

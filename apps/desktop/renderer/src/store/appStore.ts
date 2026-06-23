@@ -48,6 +48,7 @@ export interface Notification {
   readonly text: string;
   readonly sessionId?: string;
   readonly createdAt: number;
+  readonly dismissOnOutsideInteraction?: boolean;
 }
 
 /**
@@ -219,6 +220,7 @@ interface AppState {
   pendingProviderId: string | null;
   pendingReasoningMode: SessionMeta['reasoningMode'] | null;
   pendingPermissionMode: SessionMeta['permissionMode'] | null;
+  pendingAutoModeEngine: SessionMeta['autoModeEngine'] | null;
   /** Pending agent mode (AMA / AMAW / SA)。默认 'ama'；下次 session.create 时随入参传给 main。*/
   pendingAgentMode: SessionMeta['agentMode'] | null;
   /** Pending model — 用户在右下角 picker 选的 model 名 (provider.models 之一)。
@@ -313,9 +315,9 @@ interface AppState {
    */
   inputHistoryBySession: Readonly<Record<string, readonly string[]>>;
   /**
-   * Queue snapshot shown in the renderer (SDK process-global messages plus
-   * Space-owned per-session follow-up prompts). Main pushes updates via
-   * 'kodax.queueChanged'; renderer UI only reads these fields.
+   * Queue snapshot shown in the renderer. Space follow-up prompts live in the
+   * SDK process-global queue and are protected by Electron-side session owner
+   * guards. Main pushes updates via 'kodax.queueChanged'.
    */
   queueSnapshot: readonly QueuedMessageT[];
   queueTotalSize: number;
@@ -400,6 +402,7 @@ interface AppState {
   setPendingProviderId(id: string | null): void;
   setPendingReasoningMode(mode: SessionMeta['reasoningMode'] | null): void;
   setPendingPermissionMode(mode: SessionMeta['permissionMode'] | null): void;
+  setPendingAutoModeEngine(engine: SessionMeta['autoModeEngine'] | null): void;
   setPendingAgentMode(mode: SessionMeta['agentMode'] | null): void;
   setPendingModel(model: string | null): void;
   /** Session UX flags — 局部状态 (alpha.1 不持久化)。toggle 形 + 合并形 set 函数。*/
@@ -479,6 +482,7 @@ const LS_KEY_PROJECT = 'kodax-space.currentProjectPath';
 const LS_KEY_EXPANDED_PROJECTS = 'kodax-space.expandedProjects';
 const LS_KEY_PENDING_PERMISSION = 'kodax-space.pendingPermissionMode';
 const LS_KEY_PENDING_REASONING = 'kodax-space.pendingReasoningMode';
+const LS_KEY_PENDING_AUTO_ENGINE = 'kodax-space.pendingAutoModeEngine';
 const LS_KEY_PENDING_AGENT = 'kodax-space.pendingAgentMode';
 // pendingModel 是 provider-specific 字符串 (eg "anthropic/claude-opus-4-8")，
 // 不像 mode 是封闭 enum——用宽校验：非空 + 长度上限避免 LS 被改成异常长字符串。
@@ -488,6 +492,7 @@ const PENDING_MODEL_MAX_LEN = 256;
 // 持久化 pending* 模式时校验合法 enum 值，避免 LS 被改成非法值后崩 (typescript 编译期没法知道)
 const PERMISSION_MODE_VALUES = ['plan', 'accept-edits', 'auto'] as const;
 const REASONING_MODE_VALUES = ['off', 'auto', 'quick', 'balanced', 'deep'] as const;
+const AUTO_MODE_ENGINE_VALUES = ['llm', 'rules'] as const;
 const AGENT_MODE_VALUES = ['ama', 'amaw', 'sa'] as const;
 
 function readPersistedPermissionMode(): SessionMeta['permissionMode'] | null {
@@ -500,6 +505,12 @@ function readPersistedReasoningMode(): SessionMeta['reasoningMode'] | null {
   const v = lsGet(LS_KEY_PENDING_REASONING);
   return v !== null && (REASONING_MODE_VALUES as readonly string[]).includes(v)
     ? (v as SessionMeta['reasoningMode'])
+    : null;
+}
+function readPersistedAutoModeEngine(): SessionMeta['autoModeEngine'] | null {
+  const v = lsGet(LS_KEY_PENDING_AUTO_ENGINE);
+  return v !== null && (AUTO_MODE_ENGINE_VALUES as readonly string[]).includes(v)
+    ? (v as SessionMeta['autoModeEngine'])
     : null;
 }
 function readPersistedAgentMode(): SessionMeta['agentMode'] | null {
@@ -673,6 +684,7 @@ export const useAppStore = create<AppState>((set) => ({
   // 用户在 Settings / picker 切的值落 localStorage；新 session 创建时如不显式给值就用这个。
   pendingReasoningMode: readPersistedReasoningMode(),
   pendingPermissionMode: readPersistedPermissionMode(),
+  pendingAutoModeEngine: readPersistedAutoModeEngine(),
   pendingAgentMode: readPersistedAgentMode(),
   pendingModel: readPersistedModel(),
   sessionFlags: {},
@@ -1256,6 +1268,10 @@ export const useAppStore = create<AppState>((set) => ({
   setPendingPermissionMode: (mode) => {
     lsSet(LS_KEY_PENDING_PERMISSION, mode);
     set({ pendingPermissionMode: mode });
+  },
+  setPendingAutoModeEngine: (engine) => {
+    lsSet(LS_KEY_PENDING_AUTO_ENGINE, engine);
+    set({ pendingAutoModeEngine: engine });
   },
   setPendingAgentMode: (mode) => {
     lsSet(LS_KEY_PENDING_AGENT, mode);

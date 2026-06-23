@@ -99,6 +99,40 @@ test('addCustom persists provider with all fields', async () => {
   assert.deepEqual(list[0].models, ['claude-3', 'claude-3-haiku']);
 });
 
+test('updateCustom replaces editable fields while preserving id and createdAt', async () => {
+  const store = newStore();
+  await store.load();
+  const id = await store.addCustom({
+    displayName: 'Old GW',
+    protocol: 'openai',
+    baseUrl: 'https://old.example.com/v1',
+    apiKeyEnv: 'OLD_KEY',
+    defaultModel: 'old-model',
+    models: ['old-model'],
+  });
+  const createdAt = store.getCustom(id)?.createdAt;
+
+  assert.equal(
+    await store.updateCustom(id, {
+      displayName: 'New GW',
+      protocol: 'anthropic',
+      baseUrl: 'https://new.example.com/v1',
+      apiKeyEnv: 'NEW_KEY',
+      defaultModel: 'new-model',
+      models: ['new-model', 'new-alt'],
+    }),
+    true,
+  );
+
+  const updated = store.getCustom(id);
+  assert.equal(updated?.id, id);
+  assert.equal(updated?.createdAt, createdAt);
+  assert.equal(updated?.displayName, 'New GW');
+  assert.equal(updated?.protocol, 'anthropic');
+  assert.equal(updated?.baseUrl, 'https://new.example.com/v1');
+  assert.equal(updated?.apiKeyEnv, 'NEW_KEY');
+  assert.deepEqual(updated?.models, ['new-model', 'new-alt']);
+});
 test('removeCustom returns true for existing, false for missing', async () => {
   const store = newStore();
   await store.load();

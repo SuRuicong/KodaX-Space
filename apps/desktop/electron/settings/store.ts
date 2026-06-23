@@ -16,6 +16,7 @@ import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { z } from 'zod';
+import type { SpaceRuntimeDefaultsT } from '@kodax-space/space-ipc-schema';
 
 const execFileAsync = promisify(execFile);
 
@@ -24,15 +25,53 @@ import { getSpaceDataDir } from '../kodax/data-paths.js';
 const SPACE_DATA_DIR = getSpaceDataDir();
 const SETTINGS_FILE = path.join(SPACE_DATA_DIR, 'settings.json');
 
-const fileSchema = z.object({
+const runtimeDefaultsSchema = z
+  .object({
+    permissionMode: z.enum(['plan', 'accept-edits', 'auto']).optional(),
+    autoModeEngine: z.enum(['llm', 'rules']).optional(),
+    reasoningMode: z.enum(['off', 'auto', 'quick', 'balanced', 'deep']).optional(),
+    agentMode: z.enum(['ama', 'amaw', 'sa']).optional(),
+  })
+  .strict();
+
+const fileV1Schema = z.object({
   version: z.literal(1),
   defaultWorkspace: z.string().min(1).max(4096),
   languageMode: z.enum(['system', 'zh-CN', 'en-US']).default('system'),
 });
 
-export type SpaceSettings = z.infer<typeof fileSchema>;
+const fileV2Schema = z.object({
+  version: z.literal(2),
+  defaultWorkspace: z.string().min(1).max(4096),
+  languageMode: z.enum(['system', 'zh-CN', 'en-US']).default('system'),
+  runtimeDefaults: runtimeDefaultsSchema.default({}),
+});
+
+export type SpaceSettings = z.infer<typeof fileV2Schema>;
 
 const DEFAULT_WORKSPACE = path.join(os.homedir(), 'kodax_workspace');
+
+function normalizeSettings(raw: unknown): SpaceSettings | null {
+  const v2 = fileV2Schema.safeParse(raw);
+  if (v2.success) return v2.data;
+
+  const v1 = fileV1Schema.safeParse(raw);
+  if (v1.success) {
+    return {
+      version: 2,
+      defaultWorkspace: v1.data.defaultWorkspace,
+      languageMode: v1.data.languageMode,
+      runtimeDefaults: {},
+    };
+  }
+
+  return null;
+}
+
+function cleanRuntimeDefaults(defaults: SpaceRuntimeDefaultsT | undefined): SpaceRuntimeDefaultsT {
+  const parsed = runtimeDefaultsSchema.safeParse(defaults ?? {});
+  return parsed.success ? parsed.data : {};
+}
 
 export class SettingsStore {
   private cached: SpaceSettings | null = null;
@@ -44,13 +83,13 @@ export class SettingsStore {
   ) {}
 
   async load(): Promise<SpaceSettings> {
-    if (this.cached) return { ...this.cached };
+    if (this.cached) return { ...this.cached, runtimeDefaults: { ...this.cached.runtimeDefaults } };
     try {
       const raw = await fs.readFile(this.filePath, 'utf-8');
-      const parsed = fileSchema.safeParse(JSON.parse(raw));
-      if (parsed.success) {
-        this.cached = parsed.data;
-        return { ...this.cached };
+      const parsed = normalizeSettings(JSON.parse(raw));
+      if (parsed) {
+        this.cached = parsed;
+        return { ...this.cached, runtimeDefaults: { ...this.cached.runtimeDefaults } };
       }
       console.warn(`[SettingsStore] ${this.filePath} schema invalid, falling back to defaults`);
     } catch (err) {
@@ -60,8 +99,13 @@ export class SettingsStore {
       }
     }
     // Fallback
-    this.cached = { version: 1, defaultWorkspace: DEFAULT_WORKSPACE, languageMode: 'system' };
-    return { ...this.cached };
+    this.cached = {
+      version: 2,
+      defaultWorkspace: DEFAULT_WORKSPACE,
+      languageMode: 'system',
+      runtimeDefaults: {},
+    };
+    return { ...this.cached, runtimeDefaults: { ...this.cached.runtimeDefaults } };
   }
 
   /**
@@ -124,6 +168,18 @@ export class SettingsStore {
     return this.write(next);
   }
 
+  async setRuntimeDefaults(
+    runtimeDefaults: Partial<SpaceRuntimeDefaultsT>,
+  ): Promise<SpaceSettings> {
+    const cur = await this.load();
+    const nextDefaults = cleanRuntimeDefaults({
+      ...cur.runtimeDefaults,
+      ...runtimeDefaults,
+    });
+    const next: SpaceSettings = { ...cur, runtimeDefaults: nextDefaults };
+    return this.write(next);
+  }
+
   private async write(next: SpaceSettings): Promise<SpaceSettings> {
     this.cached = next;
     // serialize 写
@@ -134,7 +190,7 @@ export class SettingsStore {
       await fs.rename(tmp, this.filePath);
     });
     await this.writeLock;
-    return { ...next };
+    return { ...next, runtimeDefaults: { ...next.runtimeDefaults } };
   }
 }
 

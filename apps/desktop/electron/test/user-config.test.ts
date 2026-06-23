@@ -15,7 +15,9 @@ import {
   loadKodaxCustomProviders,
   loadKodaxUserDefaults,
   registerKodaxCustomProviders,
+  removeKodaxConfigCustomProvider,
   setUserConfigImpl,
+  updateKodaxConfigCustomProvider,
   type KodaxUserConfigImpl,
 } from '../kodax/user-config.js';
 
@@ -29,12 +31,18 @@ function mockUserConfig(
     registerCalls: Array<{ customProviders?: unknown[] }>;
     throwOnLoad: Error;
     throwOnRegister: Error;
+    saveCalls: unknown[];
   }> = {},
 ): void {
   const impl: KodaxUserConfigImpl = {
     loadConfig: (() => {
       if (hooks.throwOnLoad) throw hooks.throwOnLoad;
       return config;
+    }) as never,
+    saveConfig: ((next: Record<string, unknown>) => {
+      hooks.saveCalls?.push(next);
+      for (const key of Object.keys(config)) delete config[key];
+      Object.assign(config, next);
     }) as never,
     registerCustomProviders: ((cfg: { customProviders?: unknown[] }) => {
       if (hooks.throwOnRegister) throw hooks.throwOnRegister;
@@ -330,4 +338,115 @@ test('registerKodaxCustomProviders silent when registerCustomProviders throws af
   await registerKodaxCustomProviders();
   // calls 数组没 push (因为 throw 在 push 前)，但更重要是 await 完成不向上抛
   assert.equal(calls.length, 0);
+});
+test('updateKodaxConfigCustomProvider writes back custom provider and renames selected default', async () => {
+  const config: Record<string, unknown> = {
+    provider: 'sdk-custom',
+    model: 'keep-model',
+    customProviders: [
+      {
+        name: 'sdk-custom',
+        protocol: 'openai',
+        baseUrl: 'https://old.example.com/v1',
+        apiKeyEnv: 'OLD_API_KEY',
+        model: 'old-model',
+      },
+    ],
+  };
+  const saveCalls: unknown[] = [];
+  mockUserConfig(config, { saveCalls });
+
+  const result = await updateKodaxConfigCustomProvider('sdk-custom', {
+    displayName: 'sdk-renamed',
+    protocol: 'anthropic',
+    baseUrl: 'https://new.example.com/v1',
+    apiKeyEnv: 'NEW_API_KEY',
+    defaultModel: 'new-model',
+    models: ['new-model', 'new-alt'],
+  });
+
+  assert.deepEqual(result, { updated: true, providerId: 'sdk-renamed' });
+  assert.equal(saveCalls.length, 1);
+  assert.equal(config.provider, 'sdk-renamed');
+  assert.equal(config.model, 'keep-model');
+  assert.deepEqual(config.customProviders, [
+    {
+      name: 'sdk-renamed',
+      protocol: 'anthropic',
+      baseUrl: 'https://new.example.com/v1',
+      apiKeyEnv: 'NEW_API_KEY',
+      model: 'new-model',
+      models: ['new-model', 'new-alt'],
+    },
+  ]);
+});
+test('updateKodaxConfigCustomProvider rejects duplicate KodaX config provider names', async () => {
+  const config: Record<string, unknown> = {
+    customProviders: [
+      {
+        name: 'sdk-custom',
+        protocol: 'openai',
+        baseUrl: 'https://old.example.com/v1',
+        apiKeyEnv: 'OLD_API_KEY',
+        model: 'old-model',
+      },
+      {
+        name: 'existing-custom',
+        protocol: 'openai',
+        baseUrl: 'https://existing.example.com/v1',
+        apiKeyEnv: 'EXISTING_API_KEY',
+        model: 'existing-model',
+      },
+    ],
+  };
+  const saveCalls: unknown[] = [];
+  mockUserConfig(config, { saveCalls });
+
+  await assert.rejects(
+    () =>
+      updateKodaxConfigCustomProvider('sdk-custom', {
+        displayName: 'existing-custom',
+        protocol: 'openai',
+        baseUrl: 'https://new.example.com/v1',
+        apiKeyEnv: 'NEW_API_KEY',
+        defaultModel: 'new-model',
+      }),
+    /already exists/,
+  );
+  assert.equal(saveCalls.length, 0);
+});
+
+test('removeKodaxConfigCustomProvider writes back customProviders and clears selected default', async () => {
+  const config: Record<string, unknown> = {
+    provider: 'sdk-custom',
+    customProviders: [
+      {
+        name: 'sdk-custom',
+        protocol: 'openai',
+        baseUrl: 'https://old.example.com/v1',
+        apiKeyEnv: 'OLD_API_KEY',
+        model: 'old-model',
+      },
+      {
+        name: 'keep-custom',
+        protocol: 'openai',
+        baseUrl: 'https://keep.example.com/v1',
+        apiKeyEnv: 'KEEP_API_KEY',
+        model: 'keep-model',
+      },
+    ],
+  };
+  mockUserConfig(config);
+
+  assert.equal(await removeKodaxConfigCustomProvider('sdk-custom'), true);
+  assert.equal(config.provider, undefined);
+  assert.deepEqual(config.customProviders, [
+    {
+      name: 'keep-custom',
+      protocol: 'openai',
+      baseUrl: 'https://keep.example.com/v1',
+      apiKeyEnv: 'KEEP_API_KEY',
+      model: 'keep-model',
+    },
+  ]);
 });

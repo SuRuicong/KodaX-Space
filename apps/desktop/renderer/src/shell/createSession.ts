@@ -29,6 +29,7 @@ export interface CreateSessionInput {
   readonly pendingProviderId: string | null;
   readonly pendingReasoningMode: SessionMeta['reasoningMode'] | null;
   readonly pendingPermissionMode?: SessionMeta['permissionMode'] | null;
+  readonly pendingAutoModeEngine?: SessionMeta['autoModeEngine'] | null;
   readonly pendingAgentMode?: SessionMeta['agentMode'] | null;
   /** User's pending (next-session) model — persisted; validated against the resolved provider. */
   readonly pendingModel?: string | null;
@@ -38,7 +39,14 @@ export interface CreateSessionResolved {
   readonly provider: string;
   readonly reasoningMode: SessionMeta['reasoningMode'];
   readonly permissionMode: NonNullable<SessionMeta['permissionMode']>;
+  readonly autoModeEngine: NonNullable<SessionMeta['autoModeEngine']>;
   readonly agentMode: NonNullable<SessionMeta['agentMode']>;
+  readonly runtimeOverrides: {
+    readonly reasoningMode?: SessionMeta['reasoningMode'];
+    readonly permissionMode?: NonNullable<SessionMeta['permissionMode']>;
+    readonly autoModeEngine?: NonNullable<SessionMeta['autoModeEngine']>;
+    readonly agentMode?: NonNullable<SessionMeta['agentMode']>;
+  };
   /**
    * Effective model to create the session with. Resolved from the SAME source the
    * model picker shows (pending → kodaxDefaults → provider default). Passing it
@@ -52,7 +60,16 @@ export interface CreateSessionResolved {
 
 /** 仅做 provider / reasoning / permission 解析；不发 IPC。便于测试。 */
 export function resolveSessionCreateInputs(input: CreateSessionInput): CreateSessionResolved {
-  const { providers, defaultProviderId, kodaxDefaults, pendingProviderId, pendingReasoningMode, pendingPermissionMode, pendingAgentMode } = input;
+  const {
+    providers,
+    defaultProviderId,
+    kodaxDefaults,
+    pendingProviderId,
+    pendingReasoningMode,
+    pendingPermissionMode,
+    pendingAutoModeEngine,
+    pendingAgentMode,
+  } = input;
 
   // 候选链：pending → Space default → KodaX default
   const candidates: readonly (string | null)[] = [
@@ -77,8 +94,21 @@ export function resolveSessionCreateInputs(input: CreateSessionInput): CreateSes
 
   const reasoningMode = pendingReasoningMode ?? kodaxDefaults?.reasoningMode ?? 'auto';
   const permissionMode = pendingPermissionMode ?? kodaxDefaults?.permissionMode ?? 'accept-edits';
+  const autoModeEngine = pendingAutoModeEngine ?? 'llm';
   // Default 'ama' — KodaX SDK 默认也是这个；用户主动选 SA 走 fallback 路径
   const agentMode = pendingAgentMode ?? 'ama';
+  const runtimeOverrides = {
+    ...(pendingReasoningMode !== null ? { reasoningMode: pendingReasoningMode } : {}),
+    ...(pendingPermissionMode !== null && pendingPermissionMode !== undefined
+      ? { permissionMode: pendingPermissionMode }
+      : {}),
+    ...(pendingAutoModeEngine !== null && pendingAutoModeEngine !== undefined
+      ? { autoModeEngine: pendingAutoModeEngine }
+      : {}),
+    ...(pendingAgentMode !== null && pendingAgentMode !== undefined
+      ? { agentMode: pendingAgentMode }
+      : {}),
+  };
 
   // 解析生效 model（与 picker 同源），显式带上让 SDK 应用 per-model 能力。
   const activeProvider = providers.find((p) => p.id === provider);
@@ -93,5 +123,5 @@ export function resolveSessionCreateInputs(input: CreateSessionInput): CreateSes
   // resolveActiveModel 无解时返回 '—' 哨兵 — 别把它当真 model 传出去。
   const model = resolvedModel && resolvedModel !== '—' ? resolvedModel : undefined;
 
-  return { provider, reasoningMode, permissionMode, agentMode, model };
+  return { provider, reasoningMode, permissionMode, autoModeEngine, agentMode, runtimeOverrides, model };
 }

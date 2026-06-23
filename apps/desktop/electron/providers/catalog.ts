@@ -104,7 +104,7 @@ const SPACE_OVERRIDES: Record<string, SpaceOverride> = {
     displayName: 'Zhipu Coding Plan',
     protocol: 'anthropic',
     fallbackApiKeyEnv: 'ZHIPU_CODING_API_KEY',
-    fallbackDefaultModel: 'glm-5',
+    fallbackDefaultModel: 'glm-5.2',
   },
   'minimax-coding': {
     displayName: 'MiniMax Coding',

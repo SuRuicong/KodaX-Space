@@ -82,6 +82,7 @@ import {
   providerTestChannel,
   providerSetDefaultChannel,
   providerAddCustomChannel,
+  providerUpdateCustomChannel,
   providerRemoveCustomChannel,
   providerModelContextWindowChannel,
 } from './provider.js';
@@ -96,6 +97,7 @@ import {
   settingsGetChannel,
   settingsSetDefaultWorkspaceChannel,
   settingsSetLanguageModeChannel,
+  settingsSetRuntimeDefaultsChannel,
 } from './settings.js';
 import { notificationShowChannel, notificationClickedChannel } from './notification.js';
 import { updaterCheckChannel, updaterInstallChannel, updaterStatusChannel } from './updater.js';
@@ -206,6 +208,7 @@ export const invokeChannels = {
   [providerTestChannel.name]: providerTestChannel,
   [providerSetDefaultChannel.name]: providerSetDefaultChannel,
   [providerAddCustomChannel.name]: providerAddCustomChannel,
+  [providerUpdateCustomChannel.name]: providerUpdateCustomChannel,
   [providerRemoveCustomChannel.name]: providerRemoveCustomChannel,
   [providerModelContextWindowChannel.name]: providerModelContextWindowChannel,
   [filesTreeChannel.name]: filesTreeChannel,
@@ -216,6 +219,7 @@ export const invokeChannels = {
   [settingsGetChannel.name]: settingsGetChannel,
   [settingsSetDefaultWorkspaceChannel.name]: settingsSetDefaultWorkspaceChannel,
   [settingsSetLanguageModeChannel.name]: settingsSetLanguageModeChannel,
+  [settingsSetRuntimeDefaultsChannel.name]: settingsSetRuntimeDefaultsChannel,
   [notificationShowChannel.name]: notificationShowChannel,
   [updaterCheckChannel.name]: updaterCheckChannel,
   [updaterInstallChannel.name]: updaterInstallChannel,

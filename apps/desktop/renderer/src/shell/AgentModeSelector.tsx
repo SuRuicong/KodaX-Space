@@ -18,6 +18,7 @@
 import { useEffect, useState } from 'react';
 import type { AgentMode } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
+import { pushToast } from '../store/toastStore.js';
 
 const LABELS: Record<AgentMode, string> = {
   ama: 'AMA',
@@ -63,19 +64,27 @@ export function AgentModeSelector(): JSX.Element {
       return;
     }
     setBusy(true);
-    // 不论有没有 session，都更新 pending — 持久化作下次默认
+    // Always update pending as the user's next-session preference.
     setPendingAgentMode(mode);
     try {
       if (session && window.kodaxSpace) {
-        upsertSession({ ...session, agentMode: mode }); // 乐观更新
+        upsertSession({ ...session, agentMode: mode });
         const r = await window.kodaxSpace.invoke('session.setAgentMode', {
           sessionId: session.sessionId,
           agentMode: mode,
         });
         if (!r.ok) {
-          upsertSession({ ...session, agentMode: current }); // 回滚
+          upsertSession({ ...session, agentMode: current });
         }
       }
+      if (window.kodaxSpace) {
+        const r = await window.kodaxSpace.invoke('settings.setRuntimeDefaults', {
+          runtimeDefaults: { agentMode: mode },
+        });
+        if (!r.ok) pushToast(r.error?.message ?? 'Failed to save runtime defaults', 'error');
+      }
+    } catch (err) {
+      pushToast(err instanceof Error ? err.message : 'Failed to save runtime defaults', 'error');
     } finally {
       setBusy(false);
       setOpen(false);

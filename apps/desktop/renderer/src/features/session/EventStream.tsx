@@ -45,6 +45,7 @@ export function EventStream(): JSX.Element {
       const result = await window.kodaxSpace.invoke('session.send', {
         sessionId: currentSessionId,
         prompt: trimmed,
+        queueMode: 'interrupt',
       });
       if (!result.ok) setErr(`${result.error.code}: ${result.error.message}`);
     } finally {

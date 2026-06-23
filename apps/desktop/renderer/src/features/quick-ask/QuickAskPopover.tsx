@@ -44,6 +44,7 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
   const pendingProviderId = useAppStore((s) => s.pendingProviderId);
   const pendingModel = useAppStore((s) => s.pendingModel);
   const pendingReasoningMode = useAppStore((s) => s.pendingReasoningMode);
+  const pendingAutoModeEngine = useAppStore((s) => s.pendingAutoModeEngine);
   const pendingAgentMode = useAppStore((s) => s.pendingAgentMode);
   const upsertSession = useAppStore((s) => s.upsertSession);
   const setCurrentSession = useAppStore((s) => s.setCurrentSession);
@@ -112,6 +113,7 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
       pendingProviderId,
       pendingReasoningMode,
       pendingPermissionMode: 'plan',
+      pendingAutoModeEngine,
       pendingAgentMode,
       pendingModel,
     });
@@ -120,9 +122,7 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
       projectRoot: currentProjectPath,
       provider: resolved.provider,
       ...(resolved.model ? { model: resolved.model } : {}),
-      reasoningMode: resolved.reasoningMode,
-      permissionMode: resolved.permissionMode,
-      agentMode: resolved.agentMode,
+      ...resolved.runtimeOverrides,
       surface: 'code',
     });
     if (!createResult.ok) {
@@ -145,10 +145,10 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
       projectRoot: currentProjectPath,
       provider: resolved.provider,
       ...(resolved.model ? { model: resolved.model } : {}),
-      reasoningMode: resolved.reasoningMode,
-      permissionMode: resolved.permissionMode,
-      autoModeEngine: 'llm',
-      agentMode: resolved.agentMode,
+      reasoningMode: createResult.data.reasoningMode,
+      permissionMode: createResult.data.permissionMode,
+      autoModeEngine: createResult.data.autoModeEngine,
+      agentMode: createResult.data.agentMode,
       surface: 'code',
       title: 'Quick Ask',
       createdAt: createResult.data.createdAt,
@@ -166,6 +166,7 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
     const sendResult = await window.kodaxSpace.invoke('session.send', {
       sessionId,
       prompt: trimmed,
+      queueMode: 'interrupt',
     });
     if (!sendResult.ok) {
       unsubscribe();

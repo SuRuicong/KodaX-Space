@@ -11,6 +11,7 @@
 import { registerChannel } from './register.js';
 import { discoverMcpServers } from '../mcp/config-reader.js';
 import { getMcpManager, reloadMcpManager } from '../mcp/manager.js';
+import { invalidateSpaceSdkExtensionRuntimes } from '../kodax/sdk-extensions.js';
 import type {
   McpServerStatusT,
   McpRuntimeStatusT,
@@ -88,6 +89,9 @@ export function registerMcpChannels(): void {
 
   registerChannel('mcp.reload', async () => {
     await reloadMcpManager();
+    await invalidateSpaceSdkExtensionRuntimes().catch((err) => {
+      console.warn('[mcp] SDK extension runtime invalidation after reload failed:', err instanceof Error ? err.message : err);
+    });
     // reload 后 lazy: 调一次 listServers 拿当前 count
     try {
       const manager = await getMcpManager();

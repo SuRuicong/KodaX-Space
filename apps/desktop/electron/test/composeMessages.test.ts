@@ -212,6 +212,23 @@ test('two user messages with separate event segments: events route to correct us
   if (out[1].kind === 'assistant_text') assert.equal(out[1].text, 'reply1');
   if (out[3].kind === 'assistant_text') assert.equal(out[3].text, 'reply2');
 });
+test('session_start can split an interrupt-queued user turn before terminal event', () => {
+  const events: SessionEvent[] = [
+    { kind: 'session_start', sessionId: sid, provider: 'mock' },
+    { kind: 'text_delta', sessionId: sid, text: 'reply1' },
+    { kind: 'session_start', sessionId: sid, provider: 'mock' },
+    { kind: 'text_delta', sessionId: sid, text: 'reply2' },
+    { kind: 'session_complete', sessionId: sid },
+  ];
+  const out = composeMessages({
+    events,
+    userMessages: [userMsg('u1', 'q1', 1000), userMsg('u2', 'q2', 1001)],
+  });
+
+  assert.deepEqual(kindsOf(out), ['user', 'assistant_text', 'user', 'assistant_text']);
+  if (out[1].kind === 'assistant_text') assert.equal(out[1].text, 'reply1');
+  if (out[3].kind === 'assistant_text') assert.equal(out[3].text, 'reply2');
+});
 
 test('multi-terminal error sequence stays in its own turn (500-error history scramble regression)', () => {
   // 回归：SDK AMA 路径一次 500 错误会冒出 [session_error, session_complete, session_error]

@@ -28,6 +28,7 @@ import {
   type InternalMcpbEntry,
 } from '../mcpb/registry.js';
 import { reloadMcpManager } from '../mcp/manager.js';
+import { invalidateSpaceSdkExtensionRuntimes } from '../kodax/sdk-extensions.js';
 
 async function pushChanged(): Promise<void> {
   const reg = await readRegistry();
@@ -84,6 +85,9 @@ async function installFromPath(filePath: string): Promise<InternalMcpbEntry> {
   } else if (sync.kind === 'registered') {
     await reloadMcpManager().catch((err) => {
       console.warn('[mcpb] MCP manager reload after install failed:', err instanceof Error ? err.message : err);
+    });
+    await invalidateSpaceSdkExtensionRuntimes().catch((err) => {
+      console.warn('[mcpb] SDK extension runtime invalidation after install failed:', err instanceof Error ? err.message : err);
     });
   }
   if (displacedInstallDir) {
@@ -244,6 +248,9 @@ export function registerMcpbChannels(): void {
       if (removedMcp.kind === 'removed') {
         await reloadMcpManager().catch((err) => {
           console.warn('[mcpb] MCP manager reload after uninstall failed:', err instanceof Error ? err.message : err);
+        });
+        await invalidateSpaceSdkExtensionRuntimes().catch((err) => {
+          console.warn('[mcpb] SDK extension runtime invalidation after uninstall failed:', err instanceof Error ? err.message : err);
         });
       } else if (removedMcp.kind === 'skipped-changed') {
         console.warn('[mcpb] leaving ~/.kodax/config.json MCP server because it no longer matches the installed bundle');

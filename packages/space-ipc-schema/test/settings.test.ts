@@ -8,10 +8,16 @@ import {
   settingsGetChannel,
   settingsSetDefaultWorkspaceChannel,
   settingsSetLanguageModeChannel,
+  settingsSetRuntimeDefaultsChannel,
 } from '../src/index.js';
 
-test('settings language channels are registered', () => {
-  for (const name of ['settings.get', 'settings.setDefaultWorkspace', 'settings.setLanguageMode']) {
+test('settings channels are registered', () => {
+  for (const name of [
+    'settings.get',
+    'settings.setDefaultWorkspace',
+    'settings.setLanguageMode',
+    'settings.setRuntimeDefaults',
+  ]) {
     assert.ok(invokeChannels[name as keyof typeof invokeChannels], `${name} should be registered`);
     assert.ok(INVOKE_CHANNEL_NAMES.has(name));
   }
@@ -23,10 +29,43 @@ test('settings output includes language preference and effective locale', () => 
     languageMode: 'system',
     effectiveLocale: 'zh-CN',
     preferredSystemLanguages: ['zh-CN', 'en-US'],
+    runtimeDefaults: {
+      permissionMode: 'auto',
+      autoModeEngine: 'rules',
+      reasoningMode: 'deep',
+      agentMode: 'sa',
+    },
   };
   assert.equal(settingsGetChannel.output.safeParse(output).success, true);
   assert.equal(settingsSetDefaultWorkspaceChannel.output.safeParse(output).success, true);
   assert.equal(settingsSetLanguageModeChannel.output.safeParse(output).success, true);
+  assert.equal(settingsSetRuntimeDefaultsChannel.output.safeParse(output).success, true);
+});
+
+test('settings.setRuntimeDefaults accepts runtime defaults and rejects unknown keys', () => {
+  assert.equal(
+    settingsSetRuntimeDefaultsChannel.input.safeParse({
+      runtimeDefaults: {
+        permissionMode: 'plan',
+        autoModeEngine: 'rules',
+        reasoningMode: 'quick',
+        agentMode: 'amaw',
+      },
+    }).success,
+    true,
+  );
+  assert.equal(
+    settingsSetRuntimeDefaultsChannel.input.safeParse({
+      runtimeDefaults: { permissionMode: 'bypass-permissions' },
+    }).success,
+    false,
+  );
+  assert.equal(
+    settingsSetRuntimeDefaultsChannel.input.safeParse({
+      runtimeDefaults: { permissionMode: 'auto', extra: true },
+    }).success,
+    false,
+  );
 });
 
 test('settings.setLanguageMode accepts only supported language modes', () => {

@@ -150,6 +150,12 @@ export function composeMessages({
 function findSegmentEnd(events: readonly SessionEvent[], cursor: number): number {
   for (let i = cursor; i < events.length; i++) {
     const e = events[i];
+    // Interrupt queued prompts can begin a new logical turn before the
+    // previous turn emits a terminal event, so a later session_start is a
+    // segment boundary. The session_start at cursor still belongs here.
+    if (i > cursor && e.kind === 'session_start') {
+      return i;
+    }
     if (e.kind === 'session_complete' || e.kind === 'session_error') {
       // 防御性：把**紧跟的连续终止事件**一并并入本段，而不是只吃一个。
       // 单个用户轮次理论上只产一个终止事件，但 SDK AMA 错误路径曾一次冒出

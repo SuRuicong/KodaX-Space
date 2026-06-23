@@ -7,6 +7,7 @@ import {
   EyeOff,
   KeyRound,
   Loader2,
+  Pencil,
   ShieldCheck,
   Star,
   Trash2,
@@ -15,6 +16,7 @@ import {
 import type { ProviderInfo } from '@kodax-space/space-ipc-schema';
 import { useI18n } from '../../i18n/I18nProvider.js';
 import type { MessageKey } from '../../i18n/messages.js';
+import { CustomProviderForm } from './CustomProviderForm.js';
 
 interface ProviderCardProps {
   readonly provider: ProviderInfo;
@@ -32,6 +34,7 @@ type Translate = (key: MessageKey, vars?: Record<string, string | number>) => st
 export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.Element {
   const { t } = useI18n();
   const [editing, setEditing] = useState(false);
+  const [editingCustom, setEditingCustom] = useState(false);
   const [draft, setDraft] = useState('');
   const [reveal, setReveal] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -153,6 +156,10 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
         setErr(`${result.error.code}: ${result.error.message}`);
         return;
       }
+      if (!result.data.ok) {
+        setErr(t('provider.deleteFailed'));
+        return;
+      }
       await onChanged();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -219,7 +226,23 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
         {provider.baseUrl && <MetaRow label="URL" value={provider.baseUrl} />}
       </dl>
 
-      {editing ? (
+      {editingCustom && provider.isCustom ? (
+        <div className="mt-4">
+          <CustomProviderForm
+            provider={provider}
+            onSaved={async () => {
+              setEditingCustom(false);
+              setTest({ kind: 'idle' });
+              await onChanged();
+            }}
+            onPartialSaved={async () => {
+              setTest({ kind: 'idle' });
+              await onChanged();
+            }}
+            onCancel={() => setEditingCustom(false)}
+          />
+        </div>
+      ) : editing ? (
         <div className="mt-4 rounded-lg border border-info/40 bg-info/10 p-3">
           <label className="block text-[11px] font-medium uppercase tracking-wide text-fg-muted">
             {t('provider.apiKey')}
@@ -308,9 +331,30 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
         </div>
       ) : (
         <div className="mt-4 flex flex-wrap gap-2">
+          {provider.isCustom && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditingCustom(true);
+                setEditing(false);
+                setDraft('');
+                setReveal(false);
+                setTest({ kind: 'idle' });
+                setErr(null);
+              }}
+              disabled={busy}
+              className="inline-flex min-h-8 items-center justify-center gap-2 rounded-lg border border-border-default bg-surface-3 px-3 text-xs font-medium text-fg-primary hover:bg-hover-bg disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
+              {t('provider.edit')}
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => setEditing(true)}
+            onClick={() => {
+              setEditing(true);
+              setEditingCustom(false);
+            }}
             disabled={busy}
             className={[
               'inline-flex min-h-8 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50',

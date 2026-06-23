@@ -16,6 +16,7 @@ import type {
 import type {
   ManagedSession,
   PermissionRequestFn,
+  SendOptions,
   SendResult,
   SessionCreateOptions,
 } from './session-adapter.js';
@@ -171,7 +172,7 @@ export class MockKodaXSession implements ManagedSession {
 
   // OC-31 v0.1.9 — `artifacts` 在 mock 路径下被忽略。mock 只回放预录脚本，
   // 没法真把 image 喂给一个 LLM；保留参数让 ManagedSession 接口一致 & 单测可注入。
-  async send(prompt: string, _artifacts?: readonly InputArtifact[]): Promise<SendResult> {
+  async send(prompt: string, _artifacts?: readonly InputArtifact[], _options?: SendOptions): Promise<SendResult> {
     if (this.disposed) throw new Error(`[mock-session ${this.sessionId}] already disposed`);
     if (this.currentAbort) {
       // Mock does not model queued follow-up prompts; production uses

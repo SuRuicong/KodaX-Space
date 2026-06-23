@@ -85,6 +85,13 @@ test('apiKeyEnv values match KodaX upstream catalog (env var naming convention)'
   }
 });
 
+test('zhipu-coding catalog tracks KodaX 0.7.54 GLM lineup', () => {
+  const provider = getBuiltin('zhipu-coding');
+  assert.ok(provider);
+  assert.equal(provider.defaultModel, 'glm-5.2');
+  assert.deepEqual(provider.models, ['glm-5.2', 'glm-5-turbo', 'glm-4.7']);
+});
+
 test('getBuiltin returns undefined for unknown id', () => {
   assert.equal(getBuiltin('made-up-provider'), undefined);
 });

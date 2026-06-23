@@ -9,7 +9,8 @@
 import { z } from 'zod';
 
 // ---- Reasoning mode (镜像 @kodax-ai/llm 的 KodaXReasoningMode 闭集) ----
-const reasoningModeSchema = z.enum(['off', 'auto', 'quick', 'balanced', 'deep']);
+export const reasoningModeSchema = z.enum(['off', 'auto', 'quick', 'balanced', 'deep']);
+export type ReasoningMode = z.infer<typeof reasoningModeSchema>;
 
 // ---- Permission mode (FEATURE_029 / alpha.1) — 对齐 KodaX REPL canonical ----
 // 起因 + 决策记录见 docs/ADR/ADR-005-permission-mode-canonical.md
@@ -32,7 +33,7 @@ const reasoningModeSchema = z.enum(['off', 'auto', 'quick', 'balanced', 'deep'])
 // 注意：当前 desktop sessions 仅 in-memory (host Map)，**无持久化文件**，故未实现
 // migrateLegacyPermissionMode 迁移函数——zod 在 IPC 边界直接拒绝旧 enum 值。
 // 未来若 F033 引入 ~/.kodax/sessions/ 持久化加载，再补迁移函数 + 单测。
-const permissionModeSchema = z.enum(['plan', 'accept-edits', 'auto']);
+export const permissionModeSchema = z.enum(['plan', 'accept-edits', 'auto']);
 export type PermissionMode = z.infer<typeof permissionModeSchema>;
 
 // ---- Auto-mode engine 子档 (FEATURE_029) ----
@@ -42,7 +43,7 @@ export type PermissionMode = z.infer<typeof permissionModeSchema>;
 //   - 'rules' 走 ~/.kodax/auto-rules.jsonc + 内置 signals (file/bash/path) + AGENTS.md context
 //
 // 启动默认 'llm'；触发 denial threshold / circuit breaker → 自动 'rules'。
-const autoModeEngineSchema = z.enum(['llm', 'rules']);
+export const autoModeEngineSchema = z.enum(['llm', 'rules']);
 export type AutoModeEngine = z.infer<typeof autoModeEngineSchema>;
 
 // KodaX agent 形态:
@@ -50,7 +51,7 @@ export type AutoModeEngine = z.infer<typeof autoModeEngineSchema>;
 //   - 'amaw' = AMA with natural-language workflow activation
 //   - 'sa'  = Single Agent (单 agent loop，资源 / 并发受限时的 fallback)
 // SDK 默认是 'ama'；Space 显式持有该字段，让用户能在 UI 主动切换 / 降级。
-const agentModeSchema = z.enum(['ama', 'amaw', 'sa']);
+export const agentModeSchema = z.enum(['ama', 'amaw', 'sa']);
 export type AgentMode = z.infer<typeof agentModeSchema>;
 
 // ---- Surface (F045 Partner 批次地基) ----
@@ -162,7 +163,6 @@ const sessionMetaSchema = z.object({
   model: z.string().max(128).optional(),
 });
 
-
 // ---- Invoke: session.create ----
 export const sessionCreateChannel = {
   name: 'session.create',
@@ -188,6 +188,10 @@ export const sessionCreateChannel = {
   output: z.object({
     sessionId: z.string().min(1),
     createdAt: z.number().int().nonnegative(),
+    reasoningMode: reasoningModeSchema,
+    permissionMode: permissionModeSchema,
+    autoModeEngine: autoModeEngineSchema,
+    agentMode: agentModeSchema,
   }),
 } as const;
 
@@ -211,6 +215,9 @@ const inputArtifactSchema = z.object({
 });
 export type InputArtifact = z.infer<typeof inputArtifactSchema>;
 
+const sessionSendQueueModeSchema = z.enum(['interrupt', 'after-turn']);
+export type SessionSendQueueMode = z.infer<typeof sessionSendQueueModeSchema>;
+
 // ---- Invoke: session.send ----
 export const sessionSendChannel = {
   name: 'session.send',
@@ -220,18 +227,25 @@ export const sessionSendChannel = {
     prompt: z.string().min(1).max(MAX_PROMPT_BYTES),
     /** OC-31 v0.1.9 image paste/drag-drop. 上限 8 张/turn —— 防 DoS；UI 同步限制。 */
     artifacts: z.array(inputArtifactSchema).max(8).optional(),
+    /**
+     * Only matters when the session already has a running turn.
+     * - interrupt: enqueue into SDK main-thread queue for next safe mid-turn drain.
+     * - after-turn: hold in Space's per-session queue until the running turn settles.
+     */
+    queueMode: sessionSendQueueModeSchema.default('interrupt'),
   }),
   output: z.object({
     // 只是 ACK"已排进 session 队列"——真正结果走 session.event push
     accepted: z.literal(true),
     /**
      * When a turn is already running, RealKodaXSession accepts the prompt into
-     * Space's per-session follow-up queue instead of starting a new run.
-     * queued=true means the prompt is queued; queueId is the Space queue id.
+     * the requested queue mode instead of starting a concurrent run.
+     * queued=true means the prompt is queued; queueId identifies that queue item.
      * queued=false means a run was started immediately.
      */
     queued: z.boolean().optional(),
     queueId: z.string().min(1).max(128).optional(),
+    queueMode: sessionSendQueueModeSchema.optional(),
   }),
 } as const;
 
@@ -759,24 +773,23 @@ export const sessionEventChannel = {
       error: z.string(),
       /** OC-11 wrapSdkError 分类 —— renderer 据此决定 retry / open-settings 按钮。
        *  optional 保持向后兼容：旧 'cancelled' / guardrail 失败等仍可不带 category。*/
-      category: z.enum([
-        'rate_limit',
-        'auth',
-        'quota',
-        'network',
-        'model_unavailable',
-        'bad_request',
-        'server_error',
-        'cancelled',
-        'unknown',
-      ]).optional(),
+      category: z
+        .enum([
+          'rate_limit',
+          'auth',
+          'quota',
+          'network',
+          'model_unavailable',
+          'bad_request',
+          'server_error',
+          'cancelled',
+          'unknown',
+        ])
+        .optional(),
       /** 用户该做的下一步动作；renderer 据此渲染按钮。 */
-      action: z.enum([
-        'retry',
-        'open_provider_settings',
-        'check_network',
-        'change_model',
-      ]).optional(),
+      action: z
+        .enum(['retry', 'open_provider_settings', 'check_network', 'change_model'])
+        .optional(),
       retriable: z.boolean().optional(),
       /** OC-23 限流重试**到点 epoch 毫秒**（绝对时间戳，**非** delta）。
        *  Main 端 stamp = Date.now() + Retry-After header 等待毫秒；renderer 用
@@ -832,7 +845,7 @@ export const sessionEventChannel = {
       sessionId: z.string().min(1),
       items: z.array(todoItemSchema).max(200),
     }),
-    // ---- SDK 0.7.53 Sidecar / todo hygiene observability ----
+    // ---- SDK sidecar / todo hygiene observability ----
     z.object({
       kind: z.literal('sidecar_message'),
       sessionId: z.string().min(1),
@@ -864,7 +877,9 @@ export const sessionEventChannel = {
       kind: z.literal('auto_engine_change'),
       sessionId: z.string().min(1),
       engine: autoModeEngineSchema,
-      reason: z.enum(['manual', 'denial_threshold', 'circuit_breaker', 'bootstrap_failed']).optional(),
+      reason: z
+        .enum(['manual', 'denial_threshold', 'circuit_breaker', 'bootstrap_failed'])
+        .optional(),
       /** bootstrap_failed 时携带的失败原因文案（其他 reason 缺省）。展示在 NotificationsSurface。 */
       details: z.string().max(512).optional(),
     }),

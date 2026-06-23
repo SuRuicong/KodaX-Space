@@ -124,16 +124,65 @@ test('agentMode enum accepts AMA, AMAW, and SA only', () => {
   );
 });
 
-test('session.create output: requires sessionId + createdAt', () => {
-  assert.equal(sessionCreateChannel.output.safeParse({ sessionId: 's_1', createdAt: 0 }).success, true);
+test('session.create output includes resolved runtime settings', () => {
+  const output = {
+    sessionId: 's_1',
+    createdAt: 0,
+    reasoningMode: 'quick',
+    permissionMode: 'auto',
+    autoModeEngine: 'rules',
+    agentMode: 'sa',
+  };
+  assert.equal(sessionCreateChannel.output.safeParse(output).success, true);
+  assert.equal(sessionCreateChannel.output.safeParse({ sessionId: 's_1', createdAt: 0 }).success, false);
   assert.equal(sessionCreateChannel.output.safeParse({ sessionId: 's_1' }).success, false);
-  assert.equal(sessionCreateChannel.output.safeParse({ sessionId: 's_1', createdAt: -1 }).success, false);
+  assert.equal(sessionCreateChannel.output.safeParse({ ...output, createdAt: -1 }).success, false);
 });
 
 test('session.send output is { accepted: true } literal', () => {
   assert.equal(sessionSendChannel.output.safeParse({ accepted: true }).success, true);
   // accepted: false 不被允许——失败走 envelope error，不走业务 ack
   assert.equal(sessionSendChannel.output.safeParse({ accepted: false }).success, false);
+});
+test('session.send queueMode defaults to interrupt and accepts after-turn', () => {
+  const defaultResult = sessionSendChannel.input.safeParse({ sessionId: 's_1', prompt: 'hello' });
+  assert.equal(defaultResult.success, true);
+  if (defaultResult.success) {
+    assert.equal(defaultResult.data.queueMode, 'interrupt');
+  }
+
+  const afterTurnResult = sessionSendChannel.input.safeParse({
+    sessionId: 's_1',
+    prompt: 'hello',
+    queueMode: 'after-turn',
+  });
+  assert.equal(afterTurnResult.success, true);
+
+  assert.equal(
+    sessionSendChannel.input.safeParse({ sessionId: 's_1', prompt: 'hello', queueMode: 'later' }).success,
+    false,
+  );
+});
+
+test('session.send queued output may include queueMode', () => {
+  assert.equal(
+    sessionSendChannel.output.safeParse({
+      accepted: true,
+      queued: true,
+      queueId: 'space-after-turn-1',
+      queueMode: 'after-turn',
+    }).success,
+    true,
+  );
+  assert.equal(
+    sessionSendChannel.output.safeParse({
+      accepted: true,
+      queued: true,
+      queueId: 'q1',
+      queueMode: 'later',
+    }).success,
+    false,
+  );
 });
 
 test('session.cancel and session.delete have ok-style booleans', () => {

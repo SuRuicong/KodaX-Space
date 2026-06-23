@@ -15,7 +15,12 @@
 //     这里再额外保证：handler 自己写的 error message 不含 key 值
 
 import { registerChannel } from './register.js';
-import { loadKodaxCustomProviders, registerKodaxCustomProviders } from '../kodax/user-config.js';
+import {
+  loadKodaxCustomProviders,
+  registerKodaxCustomProviders,
+  removeKodaxConfigCustomProvider,
+  updateKodaxConfigCustomProvider,
+} from '../kodax/user-config.js';
 import { BUILTIN_PROVIDERS, isBuiltinId, getBuiltin, type BuiltinProvider } from '../providers/catalog.js';
 import { providerConfigStore, type CustomProvider } from '../providers/config.js';
 import {
@@ -208,7 +213,7 @@ async function resolveKnownProvider(id: string): Promise<KnownProvider | undefin
 
 async function refreshSdkCustomProviderRegistry(): Promise<void> {
   await providerConfigStore.load();
-  await registerKodaxCustomProviders(providerConfigStore.listCustom());
+  await registerKodaxCustomProviders(providerConfigStore.listCustom(), { force: true });
 }
 
 export function registerProviderChannels(): void {
@@ -381,9 +386,83 @@ export function registerProviderChannels(): void {
     return { ok: true, providerId: id };
   });
 
+  // provider.updateCustom
+  registerChannel('provider.updateCustom', async (input) => {
+    await providerConfigStore.load();
+
+    const urlCheck = validateBaseUrl(input.baseUrl, {
+      skipValidation: input.skipBaseUrlValidation === true,
+    });
+    if (!urlCheck.ok || !urlCheck.normalizedUrl) {
+      throw new Error(`baseUrl rejected: ${urlCheck.error}`);
+    }
+    const envErr = validateApiKeyEnv(input.apiKeyEnv);
+    if (envErr) throw new Error(envErr);
+
+    const update = {
+      displayName: input.displayName,
+      protocol: input.protocol,
+      baseUrl: urlCheck.normalizedUrl,
+      skipBaseUrlValidation: input.skipBaseUrlValidation === true ? true : undefined,
+      apiKeyEnv: input.apiKeyEnv,
+      defaultModel: input.defaultModel,
+      models: input.models,
+    };
+
+    let nextProviderId = input.providerId;
+    if (providerConfigStore.getCustom(input.providerId)) {
+      const updated = await providerConfigStore.updateCustom(input.providerId, update);
+      if (!updated) {
+        throw new Error(`unknown writable custom providerId: ${input.providerId}`);
+      }
+    } else {
+      const nextProviderIdCandidate = input.displayName.trim();
+      if (nextProviderIdCandidate !== input.providerId) {
+        if (isBuiltinId(nextProviderIdCandidate)) {
+          throw new Error(`custom providerId conflicts with built-in provider: ${nextProviderIdCandidate}`);
+        }
+        if (providerConfigStore.getCustom(nextProviderIdCandidate)) {
+          throw new Error(`custom providerId conflicts with an existing Space provider: ${nextProviderIdCandidate}`);
+        }
+        const collidingConfigProvider = (await loadKodaxCustomProviders()).some(
+          (provider) => provider.id === nextProviderIdCandidate && provider.id !== input.providerId,
+        );
+        if (collidingConfigProvider) {
+          throw new Error(`custom providerId conflicts with an existing KodaX config provider: ${nextProviderIdCandidate}`);
+        }
+      }
+
+      const updated = await updateKodaxConfigCustomProvider(input.providerId, update);
+      if (!updated.updated) {
+        throw new Error(`unknown writable custom providerId: ${input.providerId}`);
+      }
+      nextProviderId = updated.providerId;
+      if (nextProviderId !== input.providerId) {
+        const existingKey = await getKey(input.providerId);
+        if (existingKey) {
+          await setKey(nextProviderId, existingKey);
+          await deleteKey(input.providerId);
+        }
+        if (providerConfigStore.getDefaultProviderId() === input.providerId) {
+          await providerConfigStore.setDefault(nextProviderId);
+        }
+      }
+    }
+
+    await refreshSdkCustomProviderRegistry();
+    await injectAllKeysToEnv();
+    return { ok: true, providerId: nextProviderId };
+  });
   // provider.removeCustom
   registerChannel('provider.removeCustom', async (input) => {
-    const removed = await providerConfigStore.removeCustom(input.providerId);
+    await providerConfigStore.load();
+    let removed = await providerConfigStore.removeCustom(input.providerId);
+    if (!removed) {
+      removed = await removeKodaxConfigCustomProvider(input.providerId);
+      if (removed && providerConfigStore.getDefaultProviderId() === input.providerId) {
+        await providerConfigStore.clearDefault();
+      }
+    }
     if (removed) {
       // 删 custom 时同步删 keychain 中的 key
       await deleteKey(input.providerId);
@@ -394,7 +473,6 @@ export function registerProviderChannels(): void {
     }
     return { ok: removed };
   });
-
   // provider.modelContextWindow — SDK-driven 上下文窗口查询
   //
   // 替代之前 renderer 端 modelContextCaps.ts 的硬编码表。SDK runtime 用 resolveContextWindow

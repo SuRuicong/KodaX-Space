@@ -26,6 +26,8 @@ import {
   sdkTagToSurface,
 } from './session-store.js';
 import { loadKodaxUserDefaults, registerKodaxCustomProviders } from './user-config.js';
+import { resolveRuntimeDefaults } from './runtime-defaults.js';
+import { getSessionRuntimeStore } from './session-runtime-store.js';
 import { providerConfigStore } from '../providers/config.js';
 import { getBuiltin } from '../providers/catalog.js';
 import { cleanupClipboardForSession } from '../ipc/clipboard.js';
@@ -95,7 +97,10 @@ function modelBelongsToProvider(providerId: string, model: string): boolean {
 export function sanitizeTitle(input: string, maxLen: number): string {
   // 1. 剥控制字符 + RTL override + 零宽 + BOM
 
-  const stripped = input.replace(/[\x00-\x1f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, '');
+  const stripped = input.replace(
+    /[\x00-\x1f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g,
+    '',
+  );
 
   // 2. 折叠空白（\s 含 \t \n \r 等）
   const collapsed = stripped.replace(/\s+/g, ' ').trim();
@@ -258,14 +263,10 @@ class KodaXHost {
     // Resolve runtime defaults（best-effort；只读，不会改用户配置）
     let provider = 'mock';
     let configuredModel: string | undefined;
-    let reasoningMode: 'off' | 'auto' | 'quick' | 'balanced' | 'deep' = 'auto';
-    let permissionMode: import('@kodax-space/space-ipc-schema').PermissionMode = 'accept-edits';
     try {
       const ud = await loadKodaxUserDefaults();
       if (ud.provider) provider = ud.provider;
       if (ud.model) configuredModel = ud.model;
-      if (ud.reasoningMode) reasoningMode = ud.reasoningMode;
-      if (ud.permissionMode) permissionMode = ud.permissionMode;
     } catch {
       // 用 hard-coded defaults
     }
@@ -279,9 +280,14 @@ class KodaXHost {
     if (provider !== 'mock' && !getBuiltin(provider)) {
       await registerKodaxCustomProviders(providerConfigStore.listCustom());
     }
-    const model = configuredModel && modelBelongsToProvider(provider, configuredModel)
-      ? configuredModel
-      : undefined;
+    const runtimeDefaults = await resolveRuntimeDefaults({
+      sessionId,
+      includeSessionSidecar: true,
+    });
+    const model =
+      configuredModel && modelBelongsToProvider(provider, configuredModel)
+        ? configuredModel
+        : undefined;
     if (configuredModel && model === undefined) {
       console.warn(
         `[host.tryResume] ignoring configured model "${configuredModel}" because it does not belong to provider "${provider}"`,
@@ -294,8 +300,10 @@ class KodaXHost {
       projectRoot,
       provider,
       ...(model !== undefined ? { model } : {}),
-      reasoningMode,
-      permissionMode,
+      reasoningMode: runtimeDefaults.reasoningMode,
+      permissionMode: runtimeDefaults.permissionMode,
+      autoModeEngine: runtimeDefaults.autoModeEngine,
+      agentMode: runtimeDefaults.agentMode,
       // F045: 从持久化的 SDK session tag 反推 surface——否则重启后 resume 的 Partner
       // session 会被默认成 Coder，in-flight 项又因 dedup 优先覆盖 persisted 项，整段
       // resumed 生命周期都串面（code-review MEDIUM）。无 tag 的历史 session 归 'code'。
@@ -308,6 +316,12 @@ class KodaXHost {
       const persistedTitle = (data as { title?: string }).title;
       if (persistedTitle && reloaded.title === undefined) reloaded.title = persistedTitle;
     }
+    await getSessionRuntimeStore().set(sessionId, {
+      reasoningMode: runtimeDefaults.reasoningMode,
+      permissionMode: runtimeDefaults.permissionMode,
+      autoModeEngine: runtimeDefaults.autoModeEngine,
+      agentMode: runtimeDefaults.agentMode,
+    });
     return true;
   }
 
@@ -326,7 +340,10 @@ class KodaXHost {
    *
    * NEVER throws：SDK 函数本身 NEVER throws；本层不再包 try/catch。
    */
-  async listMerged(opts?: { projectRoot?: string; surface?: ManagedSession['surface'] }): Promise<ListMergedItem[]> {
+  async listMerged(opts?: {
+    projectRoot?: string;
+    surface?: ManagedSession['surface'];
+  }): Promise<ListMergedItem[]> {
     const inFlight = this.listInFlight();
     const inFlightIds = new Set(inFlight.map((s) => s.sessionId));
     const persisted = await listPersistedSessions({ projectRoot: opts?.projectRoot });
@@ -395,8 +412,10 @@ class KodaXHost {
       retriable: true,
     });
     const cancelPromise = s.cancel().catch((err) => {
-      console.warn(`[host.cancel] cancel ${sessionId} failed:`,
-        err instanceof Error ? err.message : err);
+      console.warn(
+        `[host.cancel] cancel ${sessionId} failed:`,
+        err instanceof Error ? err.message : err,
+      );
     });
     void cancelPromise;
     return true;

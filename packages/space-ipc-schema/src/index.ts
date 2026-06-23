@@ -76,11 +76,13 @@ export {
   type PermissionMode,
   type AutoModeEngine,
   type AgentMode,
+  type ReasoningMode,
   type Surface,
   type SessionMeta,
   type SessionEvent,
   type SessionEventKind,
   type InputArtifact,
+  type SessionSendQueueMode,
 } from './channels/session.js';
 
 export { clipboardSaveImageChannel, clipboardCleanupSessionChannel } from './channels/clipboard.js';
@@ -182,6 +184,7 @@ export {
   providerTestChannel,
   providerSetDefaultChannel,
   providerAddCustomChannel,
+  providerUpdateCustomChannel,
   providerRemoveCustomChannel,
   providerModelContextWindowChannel,
   type ProviderInfo,
@@ -205,10 +208,12 @@ export {
   settingsGetChannel,
   settingsSetDefaultWorkspaceChannel,
   settingsSetLanguageModeChannel,
+  settingsSetRuntimeDefaultsChannel,
   languageModeSchema,
   supportedLocaleSchema,
   resolveEffectiveLocale,
   type SpaceSettingsT,
+  type SpaceRuntimeDefaultsT,
   type LanguageModeT,
   type SupportedLocaleT,
 } from './channels/settings.js';

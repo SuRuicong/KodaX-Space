@@ -1,7 +1,7 @@
 // QueueIndicator - combined queue observability UI (v0.1.x)
 //
-// Shows a live snapshot of SDK process-global MessageQueue entries plus
-// Space-owned per-session follow-up prompts. Renderer state is fed by
+// Shows a live snapshot of SDK process-global MessageQueue entries, including
+// Space-owned follow-up prompts protected by per-session owner guards. Renderer state is fed by
 // App.tsx via 'kodax.queueChanged'; clicking the badge only reads the store.
 // Empty queues stay hidden so the toolbar does not reserve space.
 import { useState } from 'react';

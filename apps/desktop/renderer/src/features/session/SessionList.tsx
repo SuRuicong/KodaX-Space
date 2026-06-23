@@ -29,6 +29,9 @@ export function SessionList(): JSX.Element {
   const providers = useAppStore((s) => s.providers);
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
   const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
+  const pendingReasoningMode = useAppStore((s) => s.pendingReasoningMode);
+  const pendingPermissionMode = useAppStore((s) => s.pendingPermissionMode);
+  const pendingAutoModeEngine = useAppStore((s) => s.pendingAutoModeEngine);
   const pendingAgentMode = useAppStore((s) => s.pendingAgentMode);
   const [creating, setCreating] = useState<boolean>(false);
 
@@ -82,7 +85,9 @@ export function SessionList(): JSX.Element {
   const visibleSessions = useMemo(
     () =>
       currentProjectPath
-        ? sessions.filter((s) => sessionMatchesScope(s, { projectRoot: currentProjectPath, surface: currentSurface }))
+        ? sessions.filter((s) =>
+            sessionMatchesScope(s, { projectRoot: currentProjectPath, surface: currentSurface }),
+          )
         : [],
     [currentProjectPath, currentSurface, sessions],
   );
@@ -97,10 +102,13 @@ export function SessionList(): JSX.Element {
     const bridge = window.kodaxSpace;
     if (!bridge) return;
     setCreating(true);
-    // v0.1.6 cleanup: session 初值跟随 ~/.kodax/config.json（KodaX CLI 设过的话）
-    const reasoningMode = kodaxDefaults?.reasoningMode ?? 'auto';
-    const permissionMode = kodaxDefaults?.permissionMode ?? 'accept-edits';
-    const agentMode = pendingAgentMode ?? 'ama';
+    // Runtime modes are only sent when the user has a pending explicit choice.
+    const runtimeOverrides = {
+      ...(pendingReasoningMode !== null ? { reasoningMode: pendingReasoningMode } : {}),
+      ...(pendingPermissionMode !== null ? { permissionMode: pendingPermissionMode } : {}),
+      ...(pendingAutoModeEngine !== null ? { autoModeEngine: pendingAutoModeEngine } : {}),
+      ...(pendingAgentMode !== null ? { agentMode: pendingAgentMode } : {}),
+    };
     // 生效 model（与 picker 同源）：显式带上让 SDK 应用 per-model 能力（正确 contextWindow → 压缩窗口）。
     const activeProvider = providers.find((p) => p.id === provider);
     const resolvedModel = resolveActiveModel({
@@ -117,9 +125,7 @@ export function SessionList(): JSX.Element {
         projectRoot: currentProjectPath,
         provider,
         ...(model ? { model } : {}),
-        reasoningMode,
-        permissionMode,
-        agentMode,
+        ...runtimeOverrides,
         // F045: 新 session 归当前工作面；main 落盘成 SDK session tag。
         surface: currentSurface,
       });
@@ -134,10 +140,10 @@ export function SessionList(): JSX.Element {
         projectRoot: currentProjectPath,
         provider,
         ...(model ? { model } : {}),
-        reasoningMode,
-        permissionMode,
-        autoModeEngine: 'llm',
-        agentMode,
+        reasoningMode: result.data.reasoningMode,
+        permissionMode: result.data.permissionMode,
+        autoModeEngine: result.data.autoModeEngine,
+        agentMode: result.data.agentMode,
         surface: currentSurface,
         title: undefined,
         createdAt: result.data.createdAt,
@@ -326,7 +332,10 @@ async function refreshSessions(
   // F045: 按当前工作面拉，与分面列表一致（不传 surface 则回退全量，向后兼容）。
   const result = await bridge.invoke('session.list', { projectRoot, surface });
   if (result.ok) {
-    replaceSessionsForScope(result.data.sessions, surface === undefined ? { projectRoot } : { projectRoot, surface });
+    replaceSessionsForScope(
+      result.data.sessions,
+      surface === undefined ? { projectRoot } : { projectRoot, surface },
+    );
   }
 }
 
