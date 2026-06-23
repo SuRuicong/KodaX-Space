@@ -579,13 +579,16 @@ html:not(.dark) .glass::before {
 .glass.lit::after {
   opacity: 1;
 }
-/* 浅色玻璃：白色高光在浅底上几乎隐形 → 提高亮度让光泽可见 */
+/* 浅色玻璃：白光打在近白的玻璃面上没有对比 = 隐形（之前提白到 0.6 仍看不见）。
+   改用柔和浅蓝（与 aurora 冷色光斑 120 150 255 同色，呼应背景、更优雅）做光晕：
+   蓝在白面板上对比清晰 → 鼠标动态光晕显形。仍是同一层 ::after 渐变（z-index:-1，
+   在文字下方、pointer-events:none），低透明度不压文字；只换颜色不加图层/动画/backdrop → 零额外开销。 */
 html:not(.dark) .glass::after {
   background: radial-gradient(
-    300px circle at var(--mx, -999px) var(--my, -999px),
-    rgb(255 255 255 / 0.6),
-    rgb(255 255 255 / 0.2) 36%,
-    transparent 62%
+    320px circle at var(--mx, -999px) var(--my, -999px),
+    rgb(120 150 255 / 0.18),
+    rgb(120 150 255 / 0.07) 38%,
+    transparent 64%
   );
 }
 
@@ -931,7 +934,11 @@ html:not(.q-minimal) .notice-in {
     rgb(var(--warn) / 0.92) 310deg,
     rgb(var(--warn) / 0) 360deg
   );
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.7px));
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 2px),
+    #000 calc(100% - 1.7px)
+  );
   mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.7px));
   filter: drop-shadow(0 0 4px rgb(var(--warn) / 0.22));
   animation: ks-activity-spin 920ms linear infinite;
