@@ -64,7 +64,7 @@ interface WorkflowEventForTest {
 
 interface SessionListEnvelope {
   ok: boolean;
-  data?: { sessions?: Array<{ sessionId: string }> };
+  data?: { sessions?: Array<{ sessionId: string; projectRoot?: string }> };
 }
 
 async function launchSeededSpace(testId: string) {
@@ -119,6 +119,29 @@ async function getCurrentSessionId(space: SpaceInstance): Promise<string> {
   const sessionId = await readSessionId();
   if (!sessionId) throw new Error('Session was not created');
   return sessionId;
+}
+
+/**
+ * The active session's projectRoot — i.e. the project the app is actually on.
+ * Selecting/creating a session syncs `currentProjectPath` to this value, so persisted
+ * workflow runs must be seeded under THIS root (not the bare seeded dir) to belong to
+ * the current project in the workflow manager filter.
+ */
+async function getCurrentSessionProjectRoot(space: SpaceInstance): Promise<string> {
+  const projectRoot = await space.page.evaluate(async () => {
+    const bridge = (
+      window as unknown as {
+        kodaxSpace: {
+          invoke: (name: string, input: unknown) => Promise<SessionListEnvelope>;
+        };
+      }
+    ).kodaxSpace;
+    const result = await bridge.invoke('session.list', { surface: 'code' });
+    if (!result.ok) return null;
+    return result.data?.sessions?.[0]?.projectRoot ?? null;
+  });
+  if (!projectRoot) throw new Error('Session project root was not available');
+  return projectRoot;
 }
 
 async function emitWorkflowEvent(
@@ -553,8 +576,12 @@ test('workflow manager restores completed runs persisted on disk', async () => {
     );
 
     const sessionId = await getCurrentSessionId(space);
-    await writePersistedWorkflowRun(space, projectDir, sessionId);
-    await writeEventsOnlyWorkflowRun(space, projectDir);
+    // Seed runs under the project the app actually adopts (the active session's
+    // projectRoot). Selecting a session syncs currentProjectPath to it, so the bare
+    // seeded dir is no longer the current project; runs there would be filtered out.
+    const activeProjectRoot = await getCurrentSessionProjectRoot(space);
+    await writePersistedWorkflowRun(space, activeProjectRoot, sessionId);
+    await writeEventsOnlyWorkflowRun(space, activeProjectRoot);
 
     await space.page.getByRole('button', { name: 'Open workflow panel' }).click();
     const panel = space.page.getByTestId('workflow-management-panel');
