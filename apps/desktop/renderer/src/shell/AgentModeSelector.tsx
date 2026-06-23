@@ -49,11 +49,13 @@ export function AgentModeSelector(): JSX.Element {
   const sessions = useAppStore((s) => s.sessions);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const upsertSession = useAppStore((s) => s.upsertSession);
+  const runtimeDefaults = useAppStore((s) => s.runtimeDefaults);
   const pendingAgentMode = useAppStore((s) => s.pendingAgentMode);
   const setPendingAgentMode = useAppStore((s) => s.setPendingAgentMode);
+  const setRuntimeDefaults = useAppStore((s) => s.setRuntimeDefaults);
 
   const session = sessions.find((x) => x.sessionId === currentSessionId);
-  const current: AgentMode = session?.agentMode ?? pendingAgentMode ?? 'ama';
+  const current: AgentMode = session?.agentMode ?? pendingAgentMode ?? runtimeDefaults.agentMode ?? 'ama';
 
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -82,6 +84,7 @@ export function AgentModeSelector(): JSX.Element {
           runtimeDefaults: { agentMode: mode },
         });
         if (!r.ok) pushToast(r.error?.message ?? 'Failed to save runtime defaults', 'error');
+        else setRuntimeDefaults(r.data.runtimeDefaults ?? {});
       }
     } catch (err) {
       pushToast(err instanceof Error ? err.message : 'Failed to save runtime defaults', 'error');

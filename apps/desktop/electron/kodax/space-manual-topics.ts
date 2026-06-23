@@ -418,7 +418,7 @@ export const SPACE_MANUAL_TOPICS: readonly KodaXManualTopicInput[] = [
       '',
       'The default safe behavior is discovery-only. Loading extensions executes user-installed extension code, so use explicit opt-in for trusted extension directories.',
     ].join('\n'),
-    aliases: ['extensions', 'extension', 'plugin', 'plugins', 'MCPB', 'mcpb', 'sdk extensions', '/extensions', '/mcp', '扩展', '插件'],
+    aliases: ['extensions', 'extension', 'plugin', 'plugins', 'sdk extensions', '/extensions', '/mcp', '扩展', '插件'],
     nextTopics: ['commands', 'permissions', 'troubleshooting'],
   },
   {

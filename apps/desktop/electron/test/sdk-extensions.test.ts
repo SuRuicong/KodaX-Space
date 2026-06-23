@@ -147,6 +147,27 @@ test('loadKodaxProjectMcpServers reads raw project-level MCP config', async () =
   }
 });
 
+test('loadKodaxProjectMcpServers rejects invalid JSON with a sanitized error', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'kodax-project-mcp-invalid-'));
+  try {
+    await mkdir(path.join(root, '.kodax'), { recursive: true });
+    await writeFile(
+      path.join(root, '.kodax', 'config.json'),
+      '{ "mcpServers": secret-fragment }',
+      'utf8',
+    );
+
+    await assert.rejects(
+      () => loadKodaxProjectMcpServers(root),
+      (err: unknown) =>
+        err instanceof Error &&
+        err.message === 'project .kodax/config.json contains invalid JSON',
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('createSpaceSdkExtensionRuntime returns undefined without MCP or enabled filesystem extensions', async () => {
   let sdkLoaded = false;
   const handle = await createSpaceSdkExtensionRuntime(

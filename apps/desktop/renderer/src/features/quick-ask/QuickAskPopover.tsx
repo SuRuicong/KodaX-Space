@@ -41,6 +41,7 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
   const providers = useAppStore((s) => s.providers);
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
   const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
+  const runtimeDefaults = useAppStore((s) => s.runtimeDefaults);
   const pendingProviderId = useAppStore((s) => s.pendingProviderId);
   const pendingModel = useAppStore((s) => s.pendingModel);
   const pendingReasoningMode = useAppStore((s) => s.pendingReasoningMode);
@@ -110,6 +111,7 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
       providers,
       defaultProviderId,
       kodaxDefaults,
+      spaceRuntimeDefaults: runtimeDefaults,
       pendingProviderId,
       pendingReasoningMode,
       pendingPermissionMode: 'plan',

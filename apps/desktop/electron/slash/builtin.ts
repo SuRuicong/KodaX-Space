@@ -429,7 +429,7 @@ async function handleSdkExtensionsCommand(ctx: SlashHandlerContext): Promise<Sla
   const action = ctx.args[1]?.toLowerCase();
   const shouldLoad = action === 'load' || action === 'enable' || action === 'activate';
   const loaded = shouldLoad
-    ? await createSpaceSdkExtensionRuntime({ projectRoot: session.projectRoot, setActive: true }, { env: { ...process.env, KODAX_SPACE_ENABLE_SDK_EXTENSIONS: '1' } })
+    ? await createSpaceSdkExtensionRuntime({ projectRoot: session.projectRoot, setActive: true }, { env: { KODAX_SPACE_ENABLE_SDK_EXTENSIONS: '1' } })
     : undefined;
   const discovery = loaded?.discovery ?? await discoverSpaceSdkExtensions();
   const diagnostics = loaded?.diagnostics ?? await getSpaceSdkExtensionDiagnostics();

@@ -415,6 +415,7 @@ export function BottomBar(): JSX.Element {
   const providers = useAppStore((s) => s.providers);
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
   const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
+  const runtimeDefaults = useAppStore((s) => s.runtimeDefaults);
   const pendingProviderId = useAppStore((s) => s.pendingProviderId);
   const pendingModel = useAppStore((s) => s.pendingModel);
   const pendingReasoningMode = useAppStore((s) => s.pendingReasoningMode);
@@ -547,6 +548,7 @@ export function BottomBar(): JSX.Element {
       providers,
       defaultProviderId,
       kodaxDefaults,
+      spaceRuntimeDefaults: runtimeDefaults,
       pendingProviderId,
       pendingReasoningMode,
       pendingPermissionMode,
@@ -690,22 +692,21 @@ export function BottomBar(): JSX.Element {
     }
 
     setImageErr(null);
+    const imageFiles = files.filter(isSupportedInlineImage);
+    const referenceFiles = files.filter((file) => !isSupportedInlineImage(file));
     const room = Math.max(0, MAX_PENDING_FILE_REFS - pendingFileRefs.length);
-    if (room <= 0) {
-      setImageErr(`Max ${MAX_PENDING_FILE_REFS} file references per draft.`);
-      return;
-    }
-
-    const accepted = files.slice(0, room);
-    if (accepted.length < files.length) {
+    const acceptedRefs = referenceFiles.slice(0, room);
+    if (acceptedRefs.length < referenceFiles.length) {
       setImageErr(
-        `Added ${accepted.length} files. Max ${MAX_PENDING_FILE_REFS} file references per draft.`,
+        `Added ${acceptedRefs.length} files. Max ${MAX_PENDING_FILE_REFS} file references per draft.`,
       );
+    } else if (room <= 0 && referenceFiles.length > 0) {
+      setImageErr(`Max ${MAX_PENDING_FILE_REFS} file references per draft.`);
     }
 
     const refs: PendingFileRef[] = [];
     let unresolved = 0;
-    for (const file of accepted) {
+    for (const file of acceptedRefs) {
       const filePath = getDroppedFilePath(file);
       if (!filePath) {
         unresolved += 1;
@@ -731,7 +732,6 @@ export function BottomBar(): JSX.Element {
       );
     }
 
-    const imageFiles = accepted.filter(isSupportedInlineImage);
     if (imageFiles.length > 0) {
       await attachImages(imageFiles);
     }

@@ -339,7 +339,7 @@ export function registerProviderChannels(): void {
   registerChannel('provider.setDefault', async (input) => {
     const provider = await resolveKnownProvider(input.providerId);
     if (!provider) {
-      throw new Error(`unknown providerId: ${input.providerId}`);
+      throw new Error('unknown providerId');
     }
     const source = credentialSource(
       input.providerId,
@@ -413,7 +413,7 @@ export function registerProviderChannels(): void {
     if (providerConfigStore.getCustom(input.providerId)) {
       const updated = await providerConfigStore.updateCustom(input.providerId, update);
       if (!updated) {
-        throw new Error(`unknown writable custom providerId: ${input.providerId}`);
+        throw new Error('unknown writable custom providerId');
       }
     } else {
       const nextProviderIdCandidate = input.displayName.trim();
@@ -432,16 +432,37 @@ export function registerProviderChannels(): void {
         }
       }
 
-      const updated = await updateKodaxConfigCustomProvider(input.providerId, update);
-      if (!updated.updated) {
-        throw new Error(`unknown writable custom providerId: ${input.providerId}`);
+      const existingKey =
+        nextProviderIdCandidate !== input.providerId ? await getKey(input.providerId) : undefined;
+      let keyMoved = false;
+      if (existingKey) {
+        await setKey(nextProviderIdCandidate, existingKey);
+        const oldKeyRemoved = await deleteKey(input.providerId);
+        if (!oldKeyRemoved) {
+          await deleteKey(nextProviderIdCandidate).catch(() => undefined);
+          throw new Error('failed to remove old provider key during rename');
+        }
+        keyMoved = true;
+      }
+
+      let updated: Awaited<ReturnType<typeof updateKodaxConfigCustomProvider>>;
+      try {
+        updated = await updateKodaxConfigCustomProvider(input.providerId, update);
+        if (!updated.updated) {
+          throw new Error('unknown writable custom providerId');
+        }
+      } catch (err) {
+        if (keyMoved && existingKey) {
+          await setKey(input.providerId, existingKey).catch(() => undefined);
+          await deleteKey(nextProviderIdCandidate).catch(() => undefined);
+        }
+        throw err;
       }
       nextProviderId = updated.providerId;
       if (nextProviderId !== input.providerId) {
-        const existingKey = await getKey(input.providerId);
-        if (existingKey) {
+        if (keyMoved && nextProviderId !== nextProviderIdCandidate && existingKey) {
           await setKey(nextProviderId, existingKey);
-          await deleteKey(input.providerId);
+          await deleteKey(nextProviderIdCandidate).catch(() => undefined);
         }
         if (providerConfigStore.getDefaultProviderId() === input.providerId) {
           await providerConfigStore.setDefault(nextProviderId);

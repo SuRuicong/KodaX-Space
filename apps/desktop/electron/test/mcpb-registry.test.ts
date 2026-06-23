@@ -123,6 +123,28 @@ test('migrates legacy ~/.kodax-space registry into ~/.kodax/mcpb and registers M
   assert.equal(legacyExists, false);
 });
 
+test('migration replaces stale target install directory atomically', async () => {
+  const oldInstallDir = path.join(legacyHome, 'mcpb', 'filesystem@1.0.0');
+  await fs.mkdir(oldInstallDir, { recursive: true });
+  await fs.writeFile(path.join(oldInstallDir, 'index.js'), 'console.log("ok");');
+  const entry = makeEntry(oldInstallDir);
+  await fs.writeFile(
+    path.join(legacyHome, 'mcpb-extensions.json'),
+    JSON.stringify({ version: 1, extensions: [entry] }, null, 2),
+  );
+
+  const newInstallDir = path.join(kodaxDir, 'mcpb', 'extensions', 'filesystem@1.0.0');
+  await fs.mkdir(newInstallDir, { recursive: true });
+  await fs.writeFile(path.join(newInstallDir, 'stale.txt'), 'old partial copy');
+
+  const sync = fakeSync();
+  const result = await migrateLegacyMcpbStorage({ legacyHome, kodaxDir, syncDeps: sync.deps });
+
+  assert.equal(result.kind, 'migrated');
+  assert.equal(await fs.readFile(path.join(newInstallDir, 'index.js'), 'utf8'), 'console.log("ok");');
+  await assert.rejects(fs.stat(path.join(newInstallDir, 'stale.txt')));
+});
+
 test('migration does not overwrite an existing different KodaX MCP server', async () => {
   const oldInstallDir = path.join(legacyHome, 'mcpb', 'filesystem@1.0.0');
   await fs.mkdir(oldInstallDir, { recursive: true });
@@ -200,6 +222,7 @@ test('migration syncs already-migrated registry entries before legacy cleanup', 
   assert.ok(mcpConfigMatchesEntry(sync.store.filesystem, currentEntry));
   await assert.rejects(fs.stat(legacyHome));
 });
+
 test('missing legacy registry does not remove non-empty legacy storage', async () => {
   const orphanDir = path.join(legacyHome, 'mcpb', 'orphan@1.0.0');
   await fs.mkdir(orphanDir, { recursive: true });

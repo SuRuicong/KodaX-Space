@@ -5,6 +5,7 @@
 // Older Space builds used ~/.kodax-space; startup and first registry access
 // migrate that location best-effort.
 import { promises as fsp } from 'node:fs';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
@@ -177,6 +178,34 @@ async function ensureStorageDirs(paths = getMcpbStoragePaths()): Promise<void> {
   await fsp.mkdir(paths.tmpBase, { recursive: true, mode: 0o700 });
 }
 
+async function copyDirectoryAtomic(
+  sourceDir: string,
+  targetDir: string,
+  paths: McpbStoragePaths,
+): Promise<void> {
+  if (!isInsideBase(paths.extractBase, targetDir)) {
+    throw new Error('migration target outside extract base');
+  }
+  await fsp.mkdir(paths.tmpBase, { recursive: true, mode: 0o700 });
+  const safeName = path.basename(targetDir).replace(/[^A-Za-z0-9._-]/g, '_');
+  const tmpDir = path.join(
+    paths.tmpBase,
+    `migrate-${safeName}-${process.pid}-${crypto.randomBytes(4).toString('hex')}`,
+  );
+  try {
+    await fsp.cp(sourceDir, tmpDir, {
+      recursive: true,
+      force: true,
+      errorOnExist: false,
+    });
+    await fsp.mkdir(path.dirname(targetDir), { recursive: true, mode: 0o700 });
+    await fsp.rm(targetDir, { recursive: true, force: true });
+    await fsp.rename(tmpDir, targetDir);
+  } catch (err) {
+    await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+    throw err;
+  }
+}
 async function loadRegistryFile(
   registryPath: string,
   extractBase: string,
@@ -342,12 +371,7 @@ async function migrateLegacyMcpbStorageOnce(
         skippedMissingInstallDir++;
         continue;
       }
-      await fsp.mkdir(path.dirname(mapped.installDir), { recursive: true, mode: 0o700 });
-      await fsp.cp(legacyEntry.installDir, mapped.installDir, {
-        recursive: true,
-        force: true,
-        errorOnExist: false,
-      });
+      await copyDirectoryAtomic(legacyEntry.installDir, mapped.installDir, paths);
       nextExtensions.push(mapped);
       existingNames.add(mapped.name);
       migrated++;

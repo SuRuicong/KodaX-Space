@@ -70,6 +70,7 @@ export default function App(): JSX.Element {
   const dequeueAskUser = useAppStore((s) => s.dequeueAskUser);
   const setProviders = useAppStore((s) => s.setProviders);
   const setKodaxDefaults = useAppStore((s) => s.setKodaxDefaults);
+  const setRuntimeDefaults = useAppStore((s) => s.setRuntimeDefaults);
   const setPendingReasoningMode = useAppStore((s) => s.setPendingReasoningMode);
   const setPendingPermissionMode = useAppStore((s) => s.setPendingPermissionMode);
   const setPendingAutoModeEngine = useAppStore((s) => s.setPendingAutoModeEngine);
@@ -119,6 +120,7 @@ export default function App(): JSX.Element {
       .then((result) => {
         if (!result.ok) return;
         const defaults = result.data.runtimeDefaults ?? {};
+        setRuntimeDefaults(defaults);
         const state = useAppStore.getState();
         const patch: Partial<SpaceRuntimeDefaultsT> = {};
 
@@ -145,6 +147,7 @@ export default function App(): JSX.Element {
           .then((saved) => {
             if (!saved.ok) return;
             const next = saved.data.runtimeDefaults ?? {};
+            setRuntimeDefaults(next);
             if (next.reasoningMode !== undefined) setPendingReasoningMode(next.reasoningMode);
             if (next.permissionMode !== undefined) setPendingPermissionMode(next.permissionMode);
             if (next.autoModeEngine !== undefined) setPendingAutoModeEngine(next.autoModeEngine);

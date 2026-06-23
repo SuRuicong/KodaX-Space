@@ -37,6 +37,27 @@ export interface SpaceSdkExtensionRuntimeDeps {
 let sdkCodingModule: Promise<SdkCodingModule> | null = null;
 let extensionConfigGeneration = 0;
 let activeRuntimeSetBySpace: SpaceSdkExtensionRuntime | undefined = undefined;
+const runtimeDisposePromises = new WeakMap<object, Promise<void>>();
+
+async function disposeRuntimeOnce(
+  runtime: SpaceSdkExtensionRuntime,
+  context: string,
+): Promise<void> {
+  const runtimeKey = runtime as object;
+  const existing = runtimeDisposePromises.get(runtimeKey);
+  if (existing) {
+    await existing;
+    return;
+  }
+  const disposePromise = runtime.dispose().catch((err) => {
+    console.warn(
+      `[sdk-extensions] ${context} SDK extension runtime dispose failed:`,
+      err instanceof Error ? err.message : err,
+    );
+  });
+  runtimeDisposePromises.set(runtimeKey, disposePromise);
+  await disposePromise;
+}
 
 export function loadSpaceSdkCoding(): Promise<SdkCodingModule> {
   sdkCodingModule ??= import('@kodax-ai/kodax/coding');
@@ -76,12 +97,7 @@ async function replaceActiveSpaceRuntime(
     if (sdk.getActiveExtensionRuntime() === previous) {
       sdk.setActiveExtensionRuntime(null);
     }
-    await previous.dispose().catch((err) => {
-      console.warn(
-        '[sdk-extensions] previous active SDK extension runtime dispose failed:',
-        err instanceof Error ? err.message : err,
-      );
-    });
+    await disposeRuntimeOnce(previous, 'previous active');
   }
   sdk.setActiveExtensionRuntime(runtime);
   activeRuntimeSetBySpace = runtime;
@@ -97,12 +113,7 @@ export async function disposeActiveSpaceSdkExtensionRuntime(
   if (sdk.getActiveExtensionRuntime() === runtime) {
     sdk.setActiveExtensionRuntime(null);
   }
-  await runtime.dispose().catch((err) => {
-    console.warn(
-      '[sdk-extensions] active SDK extension runtime dispose failed:',
-      err instanceof Error ? err.message : err,
-    );
-  });
+  await disposeRuntimeOnce(runtime, 'active');
 }
 
 export async function invalidateSpaceSdkExtensionRuntimes(
@@ -186,7 +197,7 @@ export async function createSpaceSdkExtensionRuntime(
       mcpProviderRegistered,
     };
   } catch (err) {
-    await runtime.dispose().catch(() => undefined);
+    await disposeRuntimeOnce(runtime, 'failed initialization');
     throw err;
   }
 }

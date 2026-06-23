@@ -23,6 +23,7 @@ import type {
   WorkflowRunT,
   WorkflowEventPayload,
   WorkflowActivityPayload,
+  SpaceRuntimeDefaultsT,
 } from '@kodax-space/space-ipc-schema';
 import { canonProjectRoot as canonProjectRootShared } from '@kodax-space/space-ipc-schema';
 import {
@@ -131,6 +132,7 @@ interface AppState {
    * null = 还没拉到或 SDK loadConfig 失败；undefined 字段 = config 没设那项。
    */
   kodaxDefaults: KodaxUserDefaults | null;
+  runtimeDefaults: SpaceRuntimeDefaultsT;
   /**
    * Keychain backend 状态。'memory' 表示 key 仅在本进程内有效；
    * UI 应显著告警，否则用户以为配了 key 但重启就丢（review M1-sec）。
@@ -398,6 +400,7 @@ interface AppState {
   ): void;
   /** v0.1.6 cleanup: 启动期 main 推 kodax.getDefaults 结果进来。 */
   setKodaxDefaults(defaults: KodaxUserDefaults): void;
+  setRuntimeDefaults(defaults: SpaceRuntimeDefaultsT): void;
   /** 用户在无 session 时点 picker → 暂存到 pending；下次 session.create 优先用。*/
   setPendingProviderId(id: string | null): void;
   setPendingReasoningMode(mode: SessionMeta['reasoningMode'] | null): void;
@@ -664,6 +667,7 @@ export const useAppStore = create<AppState>((set) => ({
   defaultProviderId: null,
   keychainBackend: 'unknown',
   kodaxDefaults: null,
+  runtimeDefaults: {},
   workBudgetBySession: {},
   harnessProfileBySession: {},
   tokensBySession: {},
@@ -1259,6 +1263,7 @@ export const useAppStore = create<AppState>((set) => ({
     set({ providers, defaultProviderId, keychainBackend }),
 
   setKodaxDefaults: (defaults) => set({ kodaxDefaults: defaults }),
+  setRuntimeDefaults: (defaults) => set({ runtimeDefaults: { ...defaults } }),
 
   setPendingProviderId: (id) => set({ pendingProviderId: id }),
   setPendingReasoningMode: (mode) => {

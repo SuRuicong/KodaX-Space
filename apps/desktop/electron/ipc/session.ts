@@ -68,7 +68,7 @@ async function assertProviderExists(providerId: string): Promise<void> {
   await providerConfigStore.load();
   if (providerConfigStore.getCustom(providerId)) return;
   if ((await loadKodaxCustomProviders()).some((p) => p.id === providerId)) return;
-  throw new Error(`unknown providerId: ${providerId}`);
+  throw new Error('unknown providerId');
 }
 
 async function ensureCustomProviderRegistered(providerId: string): Promise<void> {

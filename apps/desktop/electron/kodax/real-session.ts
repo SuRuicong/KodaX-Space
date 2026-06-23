@@ -185,6 +185,7 @@ export class RealKodaXSession implements ManagedSession {
   private extensionRuntimeHandle: SpaceSdkExtensionRuntimeHandle | undefined = undefined;
   private extensionRuntimeLoad: Promise<SpaceSdkExtensionRuntimeHandle | undefined> | null = null;
   private extensionRuntimeGeneration: number | null = null;
+  private readonly extensionRuntimeDisposePromises = new WeakMap<object, Promise<void>>();
 
   constructor(opts: SessionCreateOptions) {
     this.sessionId = opts.sessionId;
@@ -263,12 +264,7 @@ export class RealKodaXSession implements ManagedSession {
         .then(async (handle) => {
           if (this.disposed || this.extensionRuntimeGeneration !== generation) {
             if (handle !== undefined) {
-              await handle.runtime.dispose().catch((err) => {
-                console.warn(
-                  `[real-session ${this.sessionId}] SDK extension runtime dispose after late init failed:`,
-                  err instanceof Error ? err.message : err,
-                );
-              });
+              await this.disposeExtensionRuntimeHandle(handle, 'after late init');
             }
             this.extensionRuntimeHandle = undefined;
             this.extensionRuntimeLoad = null;
@@ -294,6 +290,26 @@ export class RealKodaXSession implements ManagedSession {
     return this.extensionRuntimeLoad;
   }
 
+  private async disposeExtensionRuntimeHandle(
+    handle: SpaceSdkExtensionRuntimeHandle,
+    reason: string,
+  ): Promise<void> {
+    const runtimeKey = handle.runtime as object;
+    const existing = this.extensionRuntimeDisposePromises.get(runtimeKey);
+    if (existing) {
+      await existing;
+      return;
+    }
+    const disposePromise = handle.runtime.dispose().catch((err) => {
+      console.warn(
+        `[real-session ${this.sessionId}] SDK extension runtime dispose ${reason} failed:`,
+        err instanceof Error ? err.message : err,
+      );
+    });
+    this.extensionRuntimeDisposePromises.set(runtimeKey, disposePromise);
+    await disposePromise;
+  }
+
   private async disposeExtensionRuntime(): Promise<void> {
     const pending = this.extensionRuntimeLoad;
     const handle =
@@ -301,12 +317,9 @@ export class RealKodaXSession implements ManagedSession {
     this.extensionRuntimeHandle = undefined;
     this.extensionRuntimeLoad = null;
     this.extensionRuntimeGeneration = null;
-    await handle?.runtime.dispose().catch((err) => {
-      console.warn(
-        `[real-session ${this.sessionId}] SDK extension runtime dispose failed:`,
-        err instanceof Error ? err.message : err,
-      );
-    });
+    if (handle !== undefined) {
+      await this.disposeExtensionRuntimeHandle(handle, 'cleanup');
+    }
   }
 
   async cancel(): Promise<void> {

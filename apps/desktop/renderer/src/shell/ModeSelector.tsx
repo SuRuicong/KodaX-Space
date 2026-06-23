@@ -52,10 +52,12 @@ export function ModeSelector(): JSX.Element {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const upsertSession = useAppStore((s) => s.upsertSession);
   const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
+  const runtimeDefaults = useAppStore((s) => s.runtimeDefaults);
   const pendingPermissionMode = useAppStore((s) => s.pendingPermissionMode);
   const pendingAutoModeEngine = useAppStore((s) => s.pendingAutoModeEngine);
   const setPendingPermissionMode = useAppStore((s) => s.setPendingPermissionMode);
   const setPendingAutoModeEngine = useAppStore((s) => s.setPendingAutoModeEngine);
+  const setRuntimeDefaults = useAppStore((s) => s.setRuntimeDefaults);
   const session = sessions.find((x) => x.sessionId === currentSessionId);
 
   const [open, setOpen] = useState(false);
@@ -68,9 +70,11 @@ export function ModeSelector(): JSX.Element {
   const current: PermissionMode =
     session?.permissionMode ??
     pendingPermissionMode ??
+    runtimeDefaults.permissionMode ??
     kodaxDefaults?.permissionMode ??
     'accept-edits';
-  const engine: AutoModeEngine = session?.autoModeEngine ?? pendingAutoModeEngine ?? 'llm';
+  const engine: AutoModeEngine =
+    session?.autoModeEngine ?? pendingAutoModeEngine ?? runtimeDefaults.autoModeEngine ?? 'llm';
 
   // Ctrl+M 切换打开；数字键 1/2/3 切 mode；L/R 切 engine（auto 时）
   // Shift+Tab 循环 mode（对齐 KodaX TUI）。
@@ -112,6 +116,8 @@ export function ModeSelector(): JSX.Element {
       const r = await window.kodaxSpace.invoke('settings.setRuntimeDefaults', { runtimeDefaults });
       if (!r.ok) {
         pushToast(r.error?.message ?? 'Failed to save runtime defaults', 'error');
+      } else {
+        setRuntimeDefaults(r.data.runtimeDefaults ?? {});
       }
     } catch (err) {
       pushToast(err instanceof Error ? err.message : 'Failed to save runtime defaults', 'error');

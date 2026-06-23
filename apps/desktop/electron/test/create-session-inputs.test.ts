@@ -94,6 +94,39 @@ test('resolveSessionCreateInputs skips unconfigured candidates and avoids mock f
   assert.deepEqual(out.runtimeOverrides, {});
 });
 
+test('resolveSessionCreateInputs does not turn hydrated Space defaults into explicit create overrides', () => {
+  const out = resolveSessionCreateInputs({
+    projectRoot: '/repo',
+    providers: [provider('space-default', true, 'space-default-model')],
+    defaultProviderId: 'space-default',
+    kodaxDefaults: {
+      provider: 'space-default',
+      model: 'space-default-model',
+      reasoningMode: 'deep',
+      permissionMode: 'plan',
+      customProvidersCount: 0,
+    },
+    spaceRuntimeDefaults: {
+      reasoningMode: 'quick',
+      permissionMode: 'auto',
+      autoModeEngine: 'rules',
+      agentMode: 'sa',
+    },
+    pendingProviderId: null,
+    pendingReasoningMode: 'quick',
+    pendingPermissionMode: 'auto',
+    pendingAutoModeEngine: 'rules',
+    pendingAgentMode: 'sa',
+    pendingModel: null,
+  });
+
+  assert.equal(out.reasoningMode, 'quick');
+  assert.equal(out.permissionMode, 'auto');
+  assert.equal(out.autoModeEngine, 'rules');
+  assert.equal(out.agentMode, 'sa');
+  assert.deepEqual(out.runtimeOverrides, {});
+});
+
 test('resolveSessionCreateInputs ignores stale pending model from another provider', () => {
   const out = resolveSessionCreateInputs({
     projectRoot: '/repo',

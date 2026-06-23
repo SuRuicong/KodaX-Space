@@ -25,14 +25,14 @@ import { getSpaceDataDir } from '../kodax/data-paths.js';
 const SPACE_DATA_DIR = getSpaceDataDir();
 const SETTINGS_FILE = path.join(SPACE_DATA_DIR, 'settings.json');
 
-const runtimeDefaultsSchema = z
-  .object({
-    permissionMode: z.enum(['plan', 'accept-edits', 'auto']).optional(),
-    autoModeEngine: z.enum(['llm', 'rules']).optional(),
-    reasoningMode: z.enum(['off', 'auto', 'quick', 'balanced', 'deep']).optional(),
-    agentMode: z.enum(['ama', 'amaw', 'sa']).optional(),
-  })
-  .strict();
+const runtimeDefaultFieldSchemas = {
+  permissionMode: z.enum(['plan', 'accept-edits', 'auto']).optional(),
+  autoModeEngine: z.enum(['llm', 'rules']).optional(),
+  reasoningMode: z.enum(['off', 'auto', 'quick', 'balanced', 'deep']).optional(),
+  agentMode: z.enum(['ama', 'amaw', 'sa']).optional(),
+} as const;
+
+const runtimeDefaultsSchema = z.object(runtimeDefaultFieldSchemas).strict();
 
 const fileV1Schema = z.object({
   version: z.literal(1),
@@ -47,13 +47,27 @@ const fileV2Schema = z.object({
   runtimeDefaults: runtimeDefaultsSchema.default({}),
 });
 
+const fileV2LooseSchema = z.object({
+  version: z.literal(2),
+  defaultWorkspace: z.string().min(1).max(4096),
+  languageMode: z.enum(['system', 'zh-CN', 'en-US']).default('system'),
+  runtimeDefaults: z.unknown().optional(),
+});
+
 export type SpaceSettings = z.infer<typeof fileV2Schema>;
 
 const DEFAULT_WORKSPACE = path.join(os.homedir(), 'kodax_workspace');
 
 function normalizeSettings(raw: unknown): SpaceSettings | null {
-  const v2 = fileV2Schema.safeParse(raw);
-  if (v2.success) return v2.data;
+  const v2 = fileV2LooseSchema.safeParse(raw);
+  if (v2.success) {
+    return {
+      version: 2,
+      defaultWorkspace: v2.data.defaultWorkspace,
+      languageMode: v2.data.languageMode,
+      runtimeDefaults: cleanRuntimeDefaults(v2.data.runtimeDefaults),
+    };
+  }
 
   const v1 = fileV1Schema.safeParse(raw);
   if (v1.success) {
@@ -68,9 +82,29 @@ function normalizeSettings(raw: unknown): SpaceSettings | null {
   return null;
 }
 
-function cleanRuntimeDefaults(defaults: SpaceRuntimeDefaultsT | undefined): SpaceRuntimeDefaultsT {
-  const parsed = runtimeDefaultsSchema.safeParse(defaults ?? {});
-  return parsed.success ? parsed.data : {};
+function cleanRuntimeDefaults(defaults: unknown): SpaceRuntimeDefaultsT {
+  if (!defaults || typeof defaults !== 'object' || Array.isArray(defaults)) return {};
+  const raw = defaults as Record<string, unknown>;
+  const cleaned: SpaceRuntimeDefaultsT = {};
+
+  if (raw.permissionMode !== undefined) {
+    const parsed = runtimeDefaultFieldSchemas.permissionMode.safeParse(raw.permissionMode);
+    if (parsed.success) cleaned.permissionMode = parsed.data;
+  }
+  if (raw.autoModeEngine !== undefined) {
+    const parsed = runtimeDefaultFieldSchemas.autoModeEngine.safeParse(raw.autoModeEngine);
+    if (parsed.success) cleaned.autoModeEngine = parsed.data;
+  }
+  if (raw.reasoningMode !== undefined) {
+    const parsed = runtimeDefaultFieldSchemas.reasoningMode.safeParse(raw.reasoningMode);
+    if (parsed.success) cleaned.reasoningMode = parsed.data;
+  }
+  if (raw.agentMode !== undefined) {
+    const parsed = runtimeDefaultFieldSchemas.agentMode.safeParse(raw.agentMode);
+    if (parsed.success) cleaned.agentMode = parsed.data;
+  }
+
+  return cleaned;
 }
 
 export class SettingsStore {
@@ -172,10 +206,10 @@ export class SettingsStore {
     runtimeDefaults: Partial<SpaceRuntimeDefaultsT>,
   ): Promise<SpaceSettings> {
     const cur = await this.load();
-    const nextDefaults = cleanRuntimeDefaults({
-      ...cur.runtimeDefaults,
-      ...runtimeDefaults,
-    });
+    const nextDefaults = {
+      ...cleanRuntimeDefaults(cur.runtimeDefaults),
+      ...cleanRuntimeDefaults(runtimeDefaults),
+    };
     const next: SpaceSettings = { ...cur, runtimeDefaults: nextDefaults };
     return this.write(next);
   }

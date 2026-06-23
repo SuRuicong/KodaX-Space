@@ -14,9 +14,14 @@
 // 但若候选 provider !configured，会跳过它继续往下找——避免 "选了 ark-coding 但 ARK_API_KEY
 // 不在 env" 时 session.create 拿到不可用 provider 直接 fail。
 //
-// reasoningMode/permissionMode：同样 pending → kodaxDefaults → hardcoded fallback
+// Runtime modes: pending UI choice -> Space defaults -> KodaX defaults -> built-ins. Pending values matching Space defaults are not sent as explicit create overrides.
 
-import type { SessionMeta, ProviderInfo, KodaxUserDefaults } from '@kodax-space/space-ipc-schema';
+import type {
+  SessionMeta,
+  ProviderInfo,
+  KodaxUserDefaults,
+  SpaceRuntimeDefaultsT,
+} from '@kodax-space/space-ipc-schema';
 import { resolveActiveModel } from './resolveActiveModel.js';
 
 const MOCK_PROVIDER = 'mock';
@@ -26,6 +31,7 @@ export interface CreateSessionInput {
   readonly providers: readonly ProviderInfo[];
   readonly defaultProviderId: string | null;
   readonly kodaxDefaults: KodaxUserDefaults | null;
+  readonly spaceRuntimeDefaults?: SpaceRuntimeDefaultsT | null;
   readonly pendingProviderId: string | null;
   readonly pendingReasoningMode: SessionMeta['reasoningMode'] | null;
   readonly pendingPermissionMode?: SessionMeta['permissionMode'] | null;
@@ -59,11 +65,20 @@ export interface CreateSessionResolved {
 }
 
 /** 仅做 provider / reasoning / permission 解析；不发 IPC。便于测试。 */
+function pendingRuntimeOverride<T>(
+  pending: T | null | undefined,
+  spaceDefault: T | undefined,
+): T | undefined {
+  if (pending === null || pending === undefined) return undefined;
+  return pending === spaceDefault ? undefined : pending;
+}
+
 export function resolveSessionCreateInputs(input: CreateSessionInput): CreateSessionResolved {
   const {
     providers,
     defaultProviderId,
     kodaxDefaults,
+    spaceRuntimeDefaults,
     pendingProviderId,
     pendingReasoningMode,
     pendingPermissionMode,
@@ -92,22 +107,34 @@ export function resolveSessionCreateInputs(input: CreateSessionInput): CreateSes
     if (firstConfigured) provider = firstConfigured.id;
   }
 
-  const reasoningMode = pendingReasoningMode ?? kodaxDefaults?.reasoningMode ?? 'auto';
-  const permissionMode = pendingPermissionMode ?? kodaxDefaults?.permissionMode ?? 'accept-edits';
-  const autoModeEngine = pendingAutoModeEngine ?? 'llm';
-  // Default 'ama' — KodaX SDK 默认也是这个；用户主动选 SA 走 fallback 路径
-  const agentMode = pendingAgentMode ?? 'ama';
+  const reasoningMode =
+    pendingReasoningMode ?? spaceRuntimeDefaults?.reasoningMode ?? kodaxDefaults?.reasoningMode ?? 'auto';
+  const permissionMode =
+    pendingPermissionMode ??
+    spaceRuntimeDefaults?.permissionMode ??
+    kodaxDefaults?.permissionMode ??
+    'accept-edits';
+  const autoModeEngine = pendingAutoModeEngine ?? spaceRuntimeDefaults?.autoModeEngine ?? 'llm';
+  // Default 'ama' matches the SDK default; SA remains an explicit fallback.
+  const agentMode = pendingAgentMode ?? spaceRuntimeDefaults?.agentMode ?? 'ama';
+  const explicitReasoningMode = pendingRuntimeOverride(
+    pendingReasoningMode,
+    spaceRuntimeDefaults?.reasoningMode,
+  );
+  const explicitPermissionMode = pendingRuntimeOverride(
+    pendingPermissionMode,
+    spaceRuntimeDefaults?.permissionMode,
+  );
+  const explicitAutoModeEngine = pendingRuntimeOverride(
+    pendingAutoModeEngine,
+    spaceRuntimeDefaults?.autoModeEngine,
+  );
+  const explicitAgentMode = pendingRuntimeOverride(pendingAgentMode, spaceRuntimeDefaults?.agentMode);
   const runtimeOverrides = {
-    ...(pendingReasoningMode !== null ? { reasoningMode: pendingReasoningMode } : {}),
-    ...(pendingPermissionMode !== null && pendingPermissionMode !== undefined
-      ? { permissionMode: pendingPermissionMode }
-      : {}),
-    ...(pendingAutoModeEngine !== null && pendingAutoModeEngine !== undefined
-      ? { autoModeEngine: pendingAutoModeEngine }
-      : {}),
-    ...(pendingAgentMode !== null && pendingAgentMode !== undefined
-      ? { agentMode: pendingAgentMode }
-      : {}),
+    ...(explicitReasoningMode !== undefined ? { reasoningMode: explicitReasoningMode } : {}),
+    ...(explicitPermissionMode !== undefined ? { permissionMode: explicitPermissionMode } : {}),
+    ...(explicitAutoModeEngine !== undefined ? { autoModeEngine: explicitAutoModeEngine } : {}),
+    ...(explicitAgentMode !== undefined ? { agentMode: explicitAgentMode } : {}),
   };
 
   // 解析生效 model（与 picker 同源），显式带上让 SDK 应用 per-model 能力。

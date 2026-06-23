@@ -46,12 +46,14 @@ export function ModelEffortSelector(): JSX.Element {
   const providers = useAppStore((s) => s.providers);
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
   const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
+  const runtimeDefaults = useAppStore((s) => s.runtimeDefaults);
   const pendingProviderId = useAppStore((s) => s.pendingProviderId);
   const pendingReasoningMode = useAppStore((s) => s.pendingReasoningMode);
   const pendingModel = useAppStore((s) => s.pendingModel);
   const setPendingProviderId = useAppStore((s) => s.setPendingProviderId);
   const setPendingReasoningMode = useAppStore((s) => s.setPendingReasoningMode);
   const setPendingModel = useAppStore((s) => s.setPendingModel);
+  const setRuntimeDefaults = useAppStore((s) => s.setRuntimeDefaults);
   const upsertSession = useAppStore((s) => s.upsertSession);
 
   const session = sessions.find((x) => x.sessionId === currentSessionId);
@@ -93,7 +95,11 @@ export function ModelEffortSelector(): JSX.Element {
   const runtimeModel = session ? (session.model ?? activeProvider?.defaultModel ?? '—') : undefined;
   const activeModel = runtimeModel ?? preferredModel;
   const activeEffort: ReasoningMode =
-    session?.reasoningMode ?? pendingReasoningMode ?? kodaxDefaults?.reasoningMode ?? 'auto';
+    session?.reasoningMode ??
+    pendingReasoningMode ??
+    runtimeDefaults.reasoningMode ??
+    kodaxDefaults?.reasoningMode ??
+    'auto';
 
   // 右列正在预览的 provider — 打开时初始化为 active；用户左列点别的就更新 preview
   const previewProvider = providers.find((p) => p.id === (previewProviderId ?? activeProviderId));
@@ -174,6 +180,7 @@ export function ModelEffortSelector(): JSX.Element {
           runtimeDefaults: { reasoningMode: mode },
         });
         if (!r.ok) pushToast(r.error?.message ?? 'Failed to save runtime defaults', 'error');
+        else setRuntimeDefaults(r.data.runtimeDefaults ?? {});
       }
     } catch (err) {
       pushToast(err instanceof Error ? err.message : 'Failed to save runtime defaults', 'error');

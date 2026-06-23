@@ -46,3 +46,25 @@ test('SessionRuntimeStore ignores unsafe session ids', async () => {
   await store.set('../escape', { permissionMode: 'auto' });
   assert.equal(await store.read('../escape'), null);
 });
+
+test('SessionRuntimeStore serializes concurrent partial runtime writes', async () => {
+  await Promise.all([
+    store.set('s_runtime-concurrent', { permissionMode: 'auto' }),
+    store.set('s_runtime-concurrent', { autoModeEngine: 'rules' }),
+    store.set('s_runtime-concurrent', { reasoningMode: 'deep' }),
+    store.set('s_runtime-concurrent', { agentMode: 'sa' }),
+  ]);
+
+  assert.deepEqual(await store.read('s_runtime-concurrent'), {
+    permissionMode: 'auto',
+    autoModeEngine: 'rules',
+    reasoningMode: 'deep',
+    agentMode: 'sa',
+  });
+});
+
+test('SessionRuntimeStore rejects colon session ids to avoid Windows ADS paths', async () => {
+  await store.set('s:ads', { permissionMode: 'auto' });
+
+  assert.equal(await store.read('s:ads'), null);
+});

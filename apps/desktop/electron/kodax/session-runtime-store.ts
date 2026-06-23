@@ -1,4 +1,5 @@
 import { promises as fs } from 'node:fs';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { z } from 'zod';
 import type {
@@ -35,10 +36,12 @@ interface SessionRuntimeFile extends SessionRuntimeSettings {
 }
 
 function isSafeSessionId(sessionId: string): boolean {
-  return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(sessionId);
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(sessionId);
 }
 
 export class SessionRuntimeStore {
+  private readonly writeLocks = new Map<string, Promise<void>>();
+
   constructor(private readonly dir = path.join(getSpaceDataDir(), 'session-runtime')) {}
 
   private filePath(sessionId: string): string | null {
@@ -77,6 +80,14 @@ export class SessionRuntimeStore {
   async set(sessionId: string, patch: SessionRuntimeSettings): Promise<void> {
     const filePath = this.filePath(sessionId);
     if (!filePath) return;
+    await this.enqueueSessionWrite(sessionId, () => this.setUnlocked(sessionId, filePath, patch));
+  }
+
+  private async setUnlocked(
+    sessionId: string,
+    filePath: string,
+    patch: SessionRuntimeSettings,
+  ): Promise<void> {
     try {
       const previous = await this.read(sessionId);
       const merged = { ...(previous ?? {}), ...patch };
@@ -90,7 +101,7 @@ export class SessionRuntimeStore {
         updatedAt: new Date().toISOString(),
       };
       await fs.mkdir(this.dir, { recursive: true, mode: 0o700 });
-      const tmp = `${filePath}.tmp-${process.pid}`;
+      const tmp = `${filePath}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
       await fs.writeFile(tmp, JSON.stringify(next, null, 2), { encoding: 'utf-8', mode: 0o600 });
       try {
         await fs.rename(tmp, filePath);
@@ -115,12 +126,27 @@ export class SessionRuntimeStore {
   async delete(sessionId: string): Promise<void> {
     const filePath = this.filePath(sessionId);
     if (!filePath) return;
-    await fs.rm(filePath, { force: true }).catch((err: unknown) => {
-      console.warn(
-        `[SessionRuntimeStore] delete failed for ${sessionId}:`,
-        err instanceof Error ? err.message : err,
-      );
+    await this.enqueueSessionWrite(sessionId, async () => {
+      await fs.rm(filePath, { force: true }).catch((err: unknown) => {
+        console.warn(
+          `[SessionRuntimeStore] delete failed for ${sessionId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      });
     });
+  }
+
+  private async enqueueSessionWrite(sessionId: string, op: () => Promise<void>): Promise<void> {
+    const previous = this.writeLocks.get(sessionId) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(op);
+    this.writeLocks.set(sessionId, next);
+    try {
+      await next;
+    } finally {
+      if (this.writeLocks.get(sessionId) === next) {
+        this.writeLocks.delete(sessionId);
+      }
+    }
   }
 }
 

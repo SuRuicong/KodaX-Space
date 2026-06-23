@@ -169,8 +169,7 @@ function enqueueAfterTurnPrompt(sessionId: string, content: string): string {
     queueMode: 'after-turn',
   };
   const queue = afterTurnPromptQueues.get(sessionId) ?? [];
-  queue.push(message);
-  afterTurnPromptQueues.set(sessionId, queue);
+  afterTurnPromptQueues.set(sessionId, [...queue, message]);
   emitQueueChanged('enqueued', [projectSpacePrompt(message)]);
   return message.id;
 }
@@ -178,8 +177,9 @@ function enqueueAfterTurnPrompt(sessionId: string, content: string): string {
 function shiftAfterTurnPrompt(sessionId: string): SpaceQueuedPrompt | undefined {
   const queue = afterTurnPromptQueues.get(sessionId);
   if (!queue || queue.length === 0) return undefined;
-  const [message] = queue.splice(0, 1);
-  if (queue.length === 0) afterTurnPromptQueues.delete(sessionId);
+  const [message, ...rest] = queue;
+  if (rest.length === 0) afterTurnPromptQueues.delete(sessionId);
+  else afterTurnPromptQueues.set(sessionId, rest);
   if (message) emitQueueChanged('dequeued', [projectSpacePrompt(message)]);
   return message;
 }
@@ -279,7 +279,6 @@ export async function startQueueWatch(): Promise<() => void> {
       affected = [projectMessage(event.message)];
     } else {
       for (const message of event.messages) sdkPromptOrders.delete(message.id);
-      if (event.kind === 'cleared') sdkPromptOrders.clear();
       affected = event.messages.map(projectMessage);
     }
     emitQueueChanged(event.kind, affected);

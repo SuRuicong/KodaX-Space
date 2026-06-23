@@ -29,6 +29,7 @@ export function SessionList(): JSX.Element {
   const providers = useAppStore((s) => s.providers);
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
   const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
+  const runtimeDefaults = useAppStore((s) => s.runtimeDefaults);
   const pendingReasoningMode = useAppStore((s) => s.pendingReasoningMode);
   const pendingPermissionMode = useAppStore((s) => s.pendingPermissionMode);
   const pendingAutoModeEngine = useAppStore((s) => s.pendingAutoModeEngine);
@@ -104,10 +105,18 @@ export function SessionList(): JSX.Element {
     setCreating(true);
     // Runtime modes are only sent when the user has a pending explicit choice.
     const runtimeOverrides = {
-      ...(pendingReasoningMode !== null ? { reasoningMode: pendingReasoningMode } : {}),
-      ...(pendingPermissionMode !== null ? { permissionMode: pendingPermissionMode } : {}),
-      ...(pendingAutoModeEngine !== null ? { autoModeEngine: pendingAutoModeEngine } : {}),
-      ...(pendingAgentMode !== null ? { agentMode: pendingAgentMode } : {}),
+      ...(pendingReasoningMode !== null && pendingReasoningMode !== runtimeDefaults.reasoningMode
+        ? { reasoningMode: pendingReasoningMode }
+        : {}),
+      ...(pendingPermissionMode !== null && pendingPermissionMode !== runtimeDefaults.permissionMode
+        ? { permissionMode: pendingPermissionMode }
+        : {}),
+      ...(pendingAutoModeEngine !== null && pendingAutoModeEngine !== runtimeDefaults.autoModeEngine
+        ? { autoModeEngine: pendingAutoModeEngine }
+        : {}),
+      ...(pendingAgentMode !== null && pendingAgentMode !== runtimeDefaults.agentMode
+        ? { agentMode: pendingAgentMode }
+        : {}),
     };
     // 生效 model（与 picker 同源）：显式带上让 SDK 应用 per-model 能力（正确 contextWindow → 压缩窗口）。
     const activeProvider = providers.find((p) => p.id === provider);

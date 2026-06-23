@@ -74,3 +74,50 @@ test('setRuntimeDefaults merges and persists runtime defaults', async () => {
   assert.equal(reloaded.defaultWorkspace, workspace);
   assert.deepEqual(reloaded.runtimeDefaults, merged.runtimeDefaults);
 });
+
+test('load preserves valid runtime default fields when one field is invalid', async () => {
+  const workspace = path.join(tmpDir, 'workspace');
+  await fs.mkdir(tmpDir, { recursive: true });
+  await fs.writeFile(
+    settingsFile,
+    JSON.stringify(
+      {
+        version: 2,
+        defaultWorkspace: workspace,
+        languageMode: 'system',
+        runtimeDefaults: {
+          permissionMode: 'auto',
+          reasoningMode: 'turbo',
+          agentMode: 'sa',
+          extra: true,
+        },
+      },
+      null,
+      2,
+    ),
+    'utf-8',
+  );
+
+  const loaded = await new SettingsStore(settingsFile, tmpDir).load();
+
+  assert.deepEqual(loaded.runtimeDefaults, {
+    permissionMode: 'auto',
+    agentMode: 'sa',
+  });
+});
+
+test('setRuntimeDefaults ignores invalid patch fields without dropping existing values', async () => {
+  const store = new SettingsStore(settingsFile, tmpDir);
+  await store.setRuntimeDefaults({ permissionMode: 'auto', reasoningMode: 'quick' });
+
+  const next = await store.setRuntimeDefaults({
+    reasoningMode: 'turbo',
+    autoModeEngine: 'rules',
+  } as never);
+
+  assert.deepEqual(next.runtimeDefaults, {
+    permissionMode: 'auto',
+    reasoningMode: 'quick',
+    autoModeEngine: 'rules',
+  });
+});

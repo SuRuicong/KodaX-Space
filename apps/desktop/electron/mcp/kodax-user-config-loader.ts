@@ -58,7 +58,12 @@ export async function loadKodaxProjectMcpServers(
     throw err;
   }
 
-  const parsed = JSON.parse(text) as unknown;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text) as unknown;
+  } catch {
+    throw new Error('project .kodax/config.json contains invalid JSON');
+  }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
   const mcpServers = (parsed as Record<string, unknown>).mcpServers;
   if (!mcpServers || typeof mcpServers !== 'object' || Array.isArray(mcpServers)) return undefined;
