@@ -408,6 +408,7 @@ function credentialSourceLabel(source: CredentialSource, t: Translate): string {
   if (source === 'both') return t('provider.keySource.both');
   if (source === 'keychain') return t('provider.keySource.keychain');
   if (source === 'env') return t('provider.keySource.env');
+  if (source === 'runtime') return t('provider.keySource.runtime');
   return t('provider.keySource.none');
 }
 

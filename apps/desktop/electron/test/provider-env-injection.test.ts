@@ -17,6 +17,11 @@ import {
   _resetMemoryStoreForTesting,
 } from '../providers/keychain.js';
 import { BUILTIN_PROVIDERS } from '../providers/catalog.js';
+import {
+  _credentialSourceForTesting,
+  _restoreManagedEnvsForTesting,
+  _setManagedEnvForTesting,
+} from '../ipc/provider.js';
 
 // 保存原始 env，测试结束后还原——别污染同进程后续测试
 const originalEnv: Record<string, string | undefined> = {};
@@ -49,6 +54,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  _restoreManagedEnvsForTesting();
   restoreEnv();
   try {
     await fs.rm(tmpDir, { recursive: true, force: true });
@@ -79,6 +85,46 @@ test('related providers with distinct envs (kimi → KIMI_API_KEY, kimi-code →
   assert.ok(accounts.includes('kimi-code'));
   assert.equal(await getKey('kimi'), 'sk-kimi-1');
   assert.equal(await getKey('kimi-code'), 'sk-kimi-code-2');
+});
+
+test('managed keychain env injection is reported as keychain only', () => {
+  delete process.env.KIMI_CODE_API_KEY;
+  _setManagedEnvForTesting('KIMI_CODE_API_KEY', 'sk-managed');
+
+  assert.equal(
+    _credentialSourceForTesting('kimi-code', 'KIMI_CODE_API_KEY', new Set(['kimi-code'])),
+    'keychain',
+  );
+});
+
+test('managed env from a shared keychain account is reported as runtime', () => {
+  delete process.env.OPENAI_API_KEY;
+  _setManagedEnvForTesting('OPENAI_API_KEY', 'sk-managed');
+
+  assert.equal(
+    _credentialSourceForTesting('codex-cli', 'OPENAI_API_KEY', new Set(['openai'])),
+    'runtime',
+  );
+});
+
+test('external env-only provider is reported as env', () => {
+  process.env.KIMI_CODE_API_KEY = 'sk-external';
+
+  assert.equal(
+    _credentialSourceForTesting('kimi-code', 'KIMI_CODE_API_KEY', new Set()),
+    'env',
+  );
+});
+
+test('external env plus keychain provider is reported as both', () => {
+  process.env.KIMI_CODE_API_KEY = 'sk-external';
+  _setManagedEnvForTesting('KIMI_CODE_API_KEY', 'sk-managed');
+
+  assert.equal(process.env.KIMI_CODE_API_KEY, 'sk-managed');
+  assert.equal(
+    _credentialSourceForTesting('kimi-code', 'KIMI_CODE_API_KEY', new Set(['kimi-code'])),
+    'both',
+  );
 });
 
 test('removing kimi-code does not touch kimi key in keychain', async () => {

@@ -37,9 +37,19 @@ type ConfiguredSource = ProviderInfo['configuredSource'];
 const injectedEnvOriginals = new Map<string, string | undefined>();
 let injectAllKeysToEnvQueue: Promise<void> = Promise.resolve();
 
-function hasEnvKey(apiKeyEnv: string): boolean {
-  const v = process.env[apiKeyEnv];
+function hasNonEmptyEnvValue(v: string | undefined): boolean {
   return typeof v === 'string' && v.trim().length > 0;
+}
+
+function hasEnvKey(apiKeyEnv: string): boolean {
+  return hasNonEmptyEnvValue(process.env[apiKeyEnv]);
+}
+
+function hasExternalEnvKey(apiKeyEnv: string): boolean {
+  if (injectedEnvOriginals.has(apiKeyEnv)) {
+    return hasNonEmptyEnvValue(injectedEnvOriginals.get(apiKeyEnv));
+  }
+  return hasEnvKey(apiKeyEnv);
 }
 
 function credentialSource(
@@ -48,11 +58,28 @@ function credentialSource(
   keychainAccounts: ReadonlySet<string>,
 ): ConfiguredSource {
   const hasKeychain = keychainAccounts.has(providerId);
-  const hasEnv = hasEnvKey(apiKeyEnv);
+  const hasEnv = hasExternalEnvKey(apiKeyEnv);
   if (hasKeychain && hasEnv) return 'both';
   if (hasKeychain) return 'keychain';
   if (hasEnv) return 'env';
+  if (hasEnvKey(apiKeyEnv)) return 'runtime';
   return 'none';
+}
+
+export function _credentialSourceForTesting(
+  providerId: string,
+  apiKeyEnv: string,
+  keychainAccounts: ReadonlySet<string>,
+): ConfiguredSource {
+  return credentialSource(providerId, apiKeyEnv, keychainAccounts);
+}
+
+export function _setManagedEnvForTesting(apiKeyEnv: string, value: string): void {
+  setManagedEnv(apiKeyEnv, value);
+}
+
+export function _restoreManagedEnvsForTesting(): void {
+  restoreManagedEnvs();
 }
 
 function setManagedEnv(apiKeyEnv: string, value: string): void {

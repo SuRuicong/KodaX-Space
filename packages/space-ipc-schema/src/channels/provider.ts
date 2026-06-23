@@ -33,7 +33,7 @@ const providerInfoSchema = z.object({
   defaultModel: z.string().min(1).max(128),
   models: z.array(z.string().min(1).max(128)).max(64).optional(),
   configured: z.boolean(),
-  configuredSource: z.enum(['none', 'keychain', 'env', 'both']),
+  configuredSource: z.enum(['none', 'keychain', 'env', 'runtime', 'both']),
   isDefault: z.boolean(),
   isCustom: z.boolean(),
   // 自定义 provider 才有；built-in 走 SDK 内置 baseUrl
