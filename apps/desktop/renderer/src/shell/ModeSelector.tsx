@@ -151,7 +151,10 @@ export function ModeSelector(): JSX.Element {
           );
         }
       }
-      await persistRuntimeDefaults({ permissionMode: mode });
+      // Persist the global default best-effort WITHOUT holding the busy lock:
+      // awaiting this IPC kept busy=true across the round-trip, which dropped
+      // rapid Shift+Tab cycles (mode-toggle e2e S4 back-to-back presses).
+      void persistRuntimeDefaults({ permissionMode: mode });
     } finally {
       setBusy(false);
     }
@@ -173,7 +176,8 @@ export function ModeSelector(): JSX.Element {
           pushToast(r.error?.message ?? 'Failed to update current auto engine', 'error');
         }
       }
-      await persistRuntimeDefaults({ autoModeEngine: next });
+      // Best-effort global default; do not hold the busy lock on the IPC.
+      void persistRuntimeDefaults({ autoModeEngine: next });
     } finally {
       setBusy(false);
     }
