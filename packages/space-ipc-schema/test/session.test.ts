@@ -164,6 +164,36 @@ test('session.send queueMode defaults to interrupt and accepts after-turn', () =
   );
 });
 
+test('session.send accepts expected project and surface guard fields', () => {
+  const result = sessionSendChannel.input.safeParse({
+    sessionId: 's_1',
+    prompt: 'hello',
+    expectedProjectRoot: '/workspace/project-a',
+    expectedSurface: 'code',
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.expectedProjectRoot, '/workspace/project-a');
+    assert.equal(result.data.expectedSurface, 'code');
+  }
+
+  assert.equal(
+    sessionSendChannel.input.safeParse({
+      sessionId: 's_1',
+      prompt: 'hello',
+      expectedProjectRoot: '',
+    }).success,
+    false,
+  );
+  assert.equal(
+    sessionSendChannel.input.safeParse({
+      sessionId: 's_1',
+      prompt: 'hello',
+      expectedSurface: 'docs',
+    }).success,
+    false,
+  );
+});
 test('session.send queued output may include queueMode', () => {
   assert.equal(
     sessionSendChannel.output.safeParse({

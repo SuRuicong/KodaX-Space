@@ -69,6 +69,9 @@ export const slashExecChannel = {
     sessionId: z.string().min(1),
     name: slashCommandTokenSchema,
     args: z.array(z.string().max(2048)).max(20),
+    /** Optional renderer-side guardrail; main rejects if the session scope drifted. */
+    expectedProjectRoot: z.string().min(1).max(4096).optional(),
+    expectedSurface: z.enum(['code', 'partner']).optional(),
   }),
   output: z.object({
     ok: z.boolean(),

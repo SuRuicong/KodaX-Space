@@ -46,3 +46,38 @@ test('slash.exec still reports unknown commands without trying to require a sess
   assert.equal(result.unknownCommand, true);
   assert.match(result.message ?? '', /unknown command/);
 });
+test('slash.exec rejects known commands when expected project root does not match session', async () => {
+  const { sessionId } = kodaxHost.createSession({ projectRoot: 'C:/proj/a', provider: 'mock' });
+
+  await assert.rejects(
+    () =>
+      executeSlashCommand({
+        sessionId,
+        name: 'workflow',
+        args: ['help'],
+        expectedProjectRoot: 'C:/proj/b',
+        expectedSurface: 'code',
+      }),
+    /session\/project mismatch/,
+  );
+});
+
+test('slash.exec rejects known commands when expected surface does not match session', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:/proj/a',
+    provider: 'mock',
+    surface: 'code',
+  });
+
+  await assert.rejects(
+    () =>
+      executeSlashCommand({
+        sessionId,
+        name: 'workflow',
+        args: ['help'],
+        expectedProjectRoot: 'C:/proj/a',
+        expectedSurface: 'partner',
+      }),
+    /session\/surface mismatch/,
+  );
+});

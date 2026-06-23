@@ -25,3 +25,28 @@ test('slash.exec output rejects non-boolean unknownCommand', () => {
   const out = { ok: false, unknownCommand: 'yes' };
   assert.equal(slashExecChannel.output.safeParse(out).success, false);
 });
+
+test('slash.exec input accepts expected project and surface guard fields', () => {
+  const result = slashExecChannel.input.safeParse({
+    sessionId: 's_1',
+    name: 'model',
+    args: ['glm-5.2'],
+    expectedProjectRoot: '/workspace/project-a',
+    expectedSurface: 'code',
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.expectedProjectRoot, '/workspace/project-a');
+    assert.equal(result.data.expectedSurface, 'code');
+  }
+
+  assert.equal(
+    slashExecChannel.input.safeParse({
+      sessionId: 's_1',
+      name: 'model',
+      args: [],
+      expectedSurface: 'docs',
+    }).success,
+    false,
+  );
+});

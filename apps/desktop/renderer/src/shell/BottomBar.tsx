@@ -26,6 +26,7 @@ import { WorkflowWorkStrip } from './WorkflowWorkStrip.js';
 import { RetryBanner } from './RetryBanner.js';
 import { NotificationsSurface } from './NotificationsSurface.js';
 import { pushToast } from '../store/toastStore.js';
+import { sessionMatchesScope } from '../lib/sessionScope.js';
 
 const SLASH_ARGS_MAX = 20;
 
@@ -537,7 +538,22 @@ export function BottomBar(): JSX.Element {
   }, []);
 
   async function ensureSession(): Promise<string | null> {
-    if (currentSessionId) return currentSessionId;
+    if (currentSessionId) {
+      const activeSession = useAppStore
+        .getState()
+        .sessions.find((s) => s.sessionId === currentSessionId);
+      if (
+        currentProjectPath &&
+        activeSession &&
+        sessionMatchesScope(activeSession, {
+          projectRoot: currentProjectPath,
+          surface: currentSurface,
+        })
+      ) {
+        return currentSessionId;
+      }
+      setCurrentSession(null);
+    }
     if (!window.kodaxSpace) return null;
     if (!currentProjectPath) {
       setErr('Open a folder first - Ctrl+O.');
@@ -800,6 +816,8 @@ export function BottomBar(): JSX.Element {
         sessionId,
         name,
         args,
+        ...(currentProjectPath ? { expectedProjectRoot: currentProjectPath } : {}),
+        expectedSurface: currentSurface,
       });
       if (!result.ok) {
         if (optimisticWorkflow) {
@@ -1515,6 +1533,8 @@ export function BottomBar(): JSX.Element {
       sessionId,
       prompt: resolvedPrompt,
       queueMode,
+      ...(currentProjectPath ? { expectedProjectRoot: currentProjectPath } : {}),
+      expectedSurface: currentSurface,
     });
     if (!sendResult.ok) {
       setPendingSend(sessionId, false);
@@ -1622,6 +1642,8 @@ export function BottomBar(): JSX.Element {
         sessionId: sid,
         prompt: promptForAI,
         queueMode,
+        ...(currentProjectPath ? { expectedProjectRoot: currentProjectPath } : {}),
+        expectedSurface: currentSurface,
         ...(artifactsForSend ? { artifacts: artifactsForSend } : {}),
       });
       if (!result.ok) {

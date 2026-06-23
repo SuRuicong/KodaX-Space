@@ -15,6 +15,7 @@ Last Updated: 2026-06-23
 | 007 | High | Resolved | SDK main-thread follow-up owner guard did not protect already-running concurrent sessions | v0.1.21 | 2026-06-22 |
 | 008 | High | Resolved | Real KodaX sessions did not register configured MCP capability provider | v0.1.x | 2026-06-23 |
 | 009 | High | Resolved | Space per-session follow-up queue removed SDK mid-turn queue-query insertion | v0.1.21 | 2026-06-23 |
+| 010 | High | Resolved | Changing current project could keep a stale active session, so agent ran in the previous workspace | v0.1.x | 2026-06-23 |
 
 ## Issue Details
 
@@ -699,12 +700,87 @@ Verification:
 - `node --test --import tsx/esm electron/test/queue.test.ts electron/test/composeMessages.test.ts electron/test/app-store-cancel-event.test.ts electron/test/host.test.ts electron/test/host-try-resume.test.ts electron/test/session-setters.test.ts` from `apps/desktop` passed: 71/71.
 - `node --test --import tsx/esm test/session.test.ts` from `packages/space-ipc-schema` passed: 46/46.
 - `npm run typecheck` passed.
+
+### 010: Changing current project could keep a stale active session, so agent ran in the previous workspace
+
+- Priority: High
+- Status: Resolved
+- Introduced: v0.1.x
+- Fixed: v0.1.22
+- Created: 2026-06-23
+- Resolution Date: 2026-06-23
+
+#### Original Problem
+
+Current behavior:
+
+- The UI breadcrumb and bottom project chip can show the newly selected project, such as `88. Finance Management System`.
+- The active `currentSessionId` can still point at a session whose `projectRoot` is the previous default workspace, such as `/Users/vincegao/kodax_workspace`.
+- Sending a prompt then reuses that stale session, so the agent runs in the previous workspace and reports that the selected project appears empty.
+
+Expected behavior:
+
+- Changing the current project should not leave an active session from a different project attached to the composer.
+- Sending a prompt should reuse only a session that belongs to the displayed project and current surface; otherwise it should create a fresh session in the displayed project.
+
+#### Context
+
+Affected components:
+
+- `apps/desktop/renderer/src/store/appStore.ts`
+- `apps/desktop/renderer/src/shell/BottomBar.tsx`
+- `apps/desktop/renderer/src/features/quick-ask/QuickAskPopover.tsx`
+- `apps/desktop/renderer/src/features/session/EventStream.tsx`
+- `apps/desktop/electron/ipc/session.ts`
+- `apps/desktop/electron/ipc/slash.ts`
+- `packages/space-ipc-schema/src/channels/session.ts`
+- `packages/space-ipc-schema/src/channels/slash.ts`
+- `apps/desktop/electron/test/set-current-session-syncs-project.test.ts`
+- `apps/desktop/electron/test/session-send-scope.test.ts`
+- `packages/space-ipc-schema/test/session.test.ts`
+- `apps/desktop/electron/test/slash-ipc.test.ts`
+- `packages/space-ipc-schema/test/slash.test.ts`
+
+#### Root Cause
+
+`setCurrentProject(path)` updated only `currentProjectPath` and persisted the path to localStorage. It did not clear or validate `currentSessionId`. `BottomBar.ensureSession()` then trusted any non-null `currentSessionId` without checking whether that session's `projectRoot` matched `currentProjectPath`. This allowed the UI to compose a new project label with an old session runtime.
+
+#### Resolution
+
+Implemented project/session scope validation on both state transition and send:
+
+- `setCurrentProject()` now clears `currentSessionId` when switching to a project that does not match the active session's canonical `projectRoot`.
+- `setCurrentProject(null)` clears the active session as well as the project.
+- If the active session already belongs to the target project, the session is preserved.
+- `BottomBar.ensureSession()` now validates the active session with `sessionMatchesScope()` against the current project and surface before reusing it.
+- If the active session is stale or missing from renderer session metadata, the composer clears it and creates a new session scoped to the displayed project.
+- `session.send` and `slash.exec` now accept optional `expectedProjectRoot` and `expectedSurface` guard fields.
+- First-party renderer send and slash paths pass those guard fields from the displayed project/surface.
+- The main process rejects a send before title mutation or agent execution if the resolved session scope does not match the expected project/surface.
+
+Tests added:
+
+- `setCurrentProject clears currentSessionId when active session belongs to previous project`
+- `setCurrentProject keeps currentSessionId when active session already belongs to target project`
+- `assertSessionSendScope rejects stale project root`
+- `assertSessionSendScope rejects stale surface`
+- `session.send accepts expected project and surface guard fields`
+- `slash.exec rejects known commands when expected project root does not match session`
+- `slash.exec rejects known commands when expected surface does not match session`
+- `slash.exec input accepts expected project and surface guard fields`
+
+Verification:
+
+- `node --test --import tsx/esm electron/test/session-send-scope.test.ts electron/test/set-current-session-syncs-project.test.ts electron/test/slash-ipc.test.ts` from `apps/desktop` passed: 16/16.
+- `node --test --import tsx/esm test/session.test.ts test/slash.test.ts` from `packages/space-ipc-schema` passed: 51/51.
+- `npm run typecheck` passed.
+
 ## Summary
 
-- Total: 9
+- Total: 10
 - Open: 1
-- Resolved: 8
-- High: 6
+- Resolved: 9
+- High: 7
 - Medium: 2
 - Low: 1
 - Next to resolve: 006

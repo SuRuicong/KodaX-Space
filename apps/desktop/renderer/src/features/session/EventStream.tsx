@@ -33,7 +33,7 @@ export function EventStream(): JSX.Element {
   }
 
   async function handleSend(): Promise<void> {
-    if (!currentSessionId || !window.kodaxSpace) return;
+    if (!currentSessionId || !window.kodaxSpace || !session) return;
     const trimmed = prompt.trim();
     if (trimmed === '') return;
     setErr(null);
@@ -46,6 +46,8 @@ export function EventStream(): JSX.Element {
         sessionId: currentSessionId,
         prompt: trimmed,
         queueMode: 'interrupt',
+        expectedProjectRoot: session.projectRoot,
+        expectedSurface: session.surface,
       });
       if (!result.ok) setErr(`${result.error.code}: ${result.error.message}`);
     } finally {

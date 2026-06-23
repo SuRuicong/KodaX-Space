@@ -123,3 +123,33 @@ test('Windows-style path case difference still triggers project sync (canon比�
   // canon 应当把 trailing slash 抹掉 → 一致 → 不切
   assert.equal(s.currentProjectPath, '/proj/kodax-space/');
 });
+
+test('setCurrentProject clears currentSessionId when active session belongs to previous project', () => {
+  const oldSession = mkSession('sess-old', '/Users/vincegao/kodax_workspace');
+  useAppStore.setState({
+    sessions: [oldSession],
+    currentSessionId: 'sess-old',
+    currentProjectPath: '/Users/vincegao/kodax_workspace',
+  });
+
+  useAppStore.getState().setCurrentProject('/Users/vincegao/finance-management');
+
+  const s = useAppStore.getState();
+  assert.equal(s.currentProjectPath, '/Users/vincegao/finance-management');
+  assert.equal(s.currentSessionId, null);
+});
+
+test('setCurrentProject keeps currentSessionId when active session already belongs to target project', () => {
+  const session = mkSession('sess-current', '/Users/vincegao/finance-management');
+  useAppStore.setState({
+    sessions: [session],
+    currentSessionId: 'sess-current',
+    currentProjectPath: '/Users/vincegao/kodax_workspace',
+  });
+
+  useAppStore.getState().setCurrentProject('/Users/vincegao/finance-management');
+
+  const s = useAppStore.getState();
+  assert.equal(s.currentProjectPath, '/Users/vincegao/finance-management');
+  assert.equal(s.currentSessionId, 'sess-current');
+});

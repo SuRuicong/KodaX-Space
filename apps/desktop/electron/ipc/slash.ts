@@ -7,6 +7,7 @@ import { registerChannel } from './register.js';
 import { getSlashHandler, listSlashCommands, registerSlash } from '../slash/registry.js';
 import { BUILTIN_SLASH_COMMANDS } from '../slash/builtin.js';
 import { kodaxHost } from '../kodax/host.js';
+import { assertSessionSendScope } from './session.js';
 import type { ChannelInput, ChannelOutput } from '@kodax-space/space-ipc-schema';
 
 /**
@@ -41,6 +42,13 @@ export async function executeSlashCommand(input: SlashExecInput): Promise<SlashE
     };
   }
   await ensureSessionAvailableForSlash(input.sessionId);
+  const session = kodaxHost.get(input.sessionId);
+  if (session) {
+    assertSessionSendScope(session, {
+      expectedProjectRoot: input.expectedProjectRoot,
+      expectedSurface: input.expectedSurface,
+    });
+  }
   return handler.handler({
     sessionId: input.sessionId,
     args: input.args,

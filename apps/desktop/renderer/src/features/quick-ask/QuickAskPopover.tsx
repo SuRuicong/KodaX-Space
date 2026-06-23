@@ -169,6 +169,8 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
       sessionId,
       prompt: trimmed,
       queueMode: 'interrupt',
+      expectedProjectRoot: currentProjectPath,
+      expectedSurface: 'code',
     });
     if (!sendResult.ok) {
       unsubscribe();

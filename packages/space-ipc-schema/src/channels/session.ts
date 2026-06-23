@@ -227,6 +227,13 @@ export const sessionSendChannel = {
     prompt: z.string().min(1).max(MAX_PROMPT_BYTES),
     /** OC-31 v0.1.9 image paste/drag-drop. 上限 8 张/turn —— 防 DoS；UI 同步限制。 */
     artifacts: z.array(inputArtifactSchema).max(8).optional(),
+    /** Renderer-side guardrail: the main process rejects the send if the
+     * resolved session does not still belong to this displayed project.
+     * Optional for backward compatibility; not used as an authority source.
+     */
+    expectedProjectRoot: z.string().min(1).max(4096).optional(),
+    /** Same guardrail for Coder/Partner surface routing. */
+    expectedSurface: surfaceSchema.optional(),
     /**
      * Only matters when the session already has a running turn.
      * - interrupt: enqueue into SDK main-thread queue for next safe mid-turn drain.

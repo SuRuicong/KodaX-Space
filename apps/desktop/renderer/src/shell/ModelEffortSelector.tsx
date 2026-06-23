@@ -140,6 +140,8 @@ export function ModelEffortSelector(): JSX.Element {
             sessionId: session.sessionId,
             name: 'model',
             args: [modelArg],
+            expectedProjectRoot: session.projectRoot,
+            expectedSurface: session.surface,
           });
           if (!r.ok) {
             console.warn('[picker] /model failed:', r.error);

@@ -748,7 +748,28 @@ export const useAppStore = create<AppState>((set) => ({
     }),
   setCurrentProject: (path) => {
     lsSet(LS_KEY_PROJECT, path);
-    set({ currentProjectPath: path });
+    set((state) => {
+      if (path === null) {
+        return { currentProjectPath: null, currentSessionId: null };
+      }
+      const nextCanon = canonProjectRootShared(path, IS_WIN_RENDERER);
+      const currentCanon = state.currentProjectPath
+        ? canonProjectRootShared(state.currentProjectPath, IS_WIN_RENDERER)
+        : null;
+      if (currentCanon === nextCanon) return { currentProjectPath: path };
+
+      const currentSession =
+        state.currentSessionId !== null
+          ? state.sessions.find((s) => s.sessionId === state.currentSessionId)
+          : undefined;
+      const keepCurrentSession =
+        currentSession !== undefined &&
+        canonProjectRootShared(currentSession.projectRoot, IS_WIN_RENDERER) === nextCanon;
+      return {
+        currentProjectPath: path,
+        currentSessionId: keepCurrentSession ? state.currentSessionId : null,
+      };
+    });
   },
   setSessions: (sessions) => set({ sessions }),
   replaceSessionsForScope: (sessions, scope) =>

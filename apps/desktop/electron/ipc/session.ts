@@ -16,6 +16,30 @@ const IS_WIN_MAIN = process.platform === 'win32';
 function canonProjectRoot(p: string): string {
   return canonProjectRootShared(p, IS_WIN_MAIN);
 }
+
+export function assertSessionSendScope(
+  session: { readonly sessionId: string; readonly projectRoot: string; readonly surface?: SessionMeta['surface'] },
+  expected: {
+    readonly expectedProjectRoot?: string;
+    readonly expectedSurface?: SessionMeta['surface'];
+  },
+): void {
+  if (
+    expected.expectedProjectRoot !== undefined &&
+    canonProjectRoot(session.projectRoot) !== canonProjectRoot(expected.expectedProjectRoot)
+  ) {
+    throw new Error(
+      `session/project mismatch: session ${session.sessionId} is scoped to ${session.projectRoot}, not ${expected.expectedProjectRoot}`,
+    );
+  }
+
+  const actualSurface = session.surface ?? 'code';
+  if (expected.expectedSurface !== undefined && actualSurface !== expected.expectedSurface) {
+    throw new Error(
+      `session/surface mismatch: session ${session.sessionId} is scoped to ${actualSurface}, not ${expected.expectedSurface}`,
+    );
+  }
+}
 import { loadAgentsMd, type AgentsFile } from '../kodax/agents-md-loader.js';
 import { getKodaxDir } from '../kodax/data-paths.js';
 import {
@@ -153,6 +177,10 @@ export function registerSessionChannels(): void {
     }
     // 第一次 send 时自动给 session 起个临时标题（基于 prompt 头部）。
     // ensureTitle 已经在 host 里做"title === undefined 才填"的判断，重复调用安全。
+    assertSessionSendScope(session, {
+      expectedProjectRoot: input.expectedProjectRoot,
+      expectedSurface: input.expectedSurface,
+    });
     kodaxHost.ensureTitle(input.sessionId, input.prompt);
     // send 是 fire-and-forget——立刻 ACK，事件流通过 push 推
     // send() returns { queued, queueId?, queueMode? }. If the turn is running,
