@@ -221,6 +221,13 @@ export {
 export { notificationShowChannel, notificationClickedChannel } from './channels/notification.js';
 
 export {
+  windowActivityChannel,
+  windowActivityStateSchema,
+  type WindowActivityPayload,
+  type WindowActivityStateT,
+} from './channels/window.js';
+
+export {
   updaterCheckChannel,
   updaterInstallChannel,
   updaterStatusChannel,

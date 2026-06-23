@@ -46,6 +46,7 @@ import { workflowController } from './kodax/workflow-controller.js';
 import { workflowPolicyStore } from './kodax/workflow-policy.js';
 import { registerArtifactWindowChannel } from './artifact/artifact-window.js';
 import { installNavigationGuards } from './window/navigation-guards.js';
+import { installWindowActivityPublisher } from './window/activity.js';
 import { cleanupOrphanKodaxSpaceDirWithLog } from './kodax/cleanup-orphan-kodax-space.js';
 import { migrateLegacyMcpbStorage } from './mcpb/registry.js';
 import { getPtyHost } from './terminal/ptyHost.js';
@@ -184,11 +185,13 @@ function createMainWindow(): void {
       webSecurity: true,
       allowRunningInsecureContent: false,
       // Some Windows/GPU combinations throttle hidden windows enough that
-      // ready-to-show never fires. Keep first paint moving while show:false.
+      // ready-to-show never fires. Keep first paint moving while show:false,
+      // then restore Chromium's default background throttling after reveal.
       backgroundThrottling: false,
     },
   });
   mainWindow = win;
+  installWindowActivityPublisher(win);
 
   // 外链白名单 + in-page 导航锁定 —— 与 artifact 独立窗口共用同一套守卫（F059c），
   // 避免两处窗口的安全策略漂移。理由：renderer 终会渲染 LLM/MCP 产生的内容，必须
@@ -205,6 +208,7 @@ function createMainWindow(): void {
     if (windowShown || win.isDestroyed()) return;
     windowShown = true;
     win.show();
+    win.webContents.setBackgroundThrottling(true);
     console.info(`[main] main window shown via ${source}`);
   };
 

@@ -100,6 +100,7 @@ import {
   settingsSetRuntimeDefaultsChannel,
 } from './settings.js';
 import { notificationShowChannel, notificationClickedChannel } from './notification.js';
+import { windowActivityChannel } from './window.js';
 import { updaterCheckChannel, updaterInstallChannel, updaterStatusChannel } from './updater.js';
 import {
   mcpbInstallChannel,
@@ -269,6 +270,7 @@ export const pushChannels = {
   [askUserCancelledChannel.name]: askUserCancelledChannel,
   [kodaxQueueChangedChannel.name]: kodaxQueueChangedChannel,
   [notificationClickedChannel.name]: notificationClickedChannel,
+  [windowActivityChannel.name]: windowActivityChannel,
   [updaterStatusChannel.name]: updaterStatusChannel,
   [mcpbChangedChannel.name]: mcpbChangedChannel,
   [terminalOutputChannel.name]: terminalOutputChannel,

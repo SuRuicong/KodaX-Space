@@ -10,8 +10,10 @@
 // 性能护栏：漂移动画会让其上方 backdrop-filter 每帧重算，故仅 full 档开（见 styles.css）；
 // 且窗口失焦 / 隐藏时挂 .is-paused 暂停动画，绝不在后台抢占共享 GPU。
 
+import type { WindowActivityPayload } from '@kodax-space/space-ipc-schema';
 import { useEffect, useRef } from 'react';
 import { useAppStore } from '../store/appStore.js';
+import { isLocalDocumentActive, shouldPauseAurora } from './auroraActivity.js';
 
 export function GlassAurora(): JSX.Element | null {
   const quality = useAppStore((s) => s.visualQuality);
@@ -20,19 +22,31 @@ export function GlassAurora(): JSX.Element | null {
   // 窗口可见且聚焦时才让极光漂移；失焦 / 最小化 / 切后台一律暂停。
   // 仅 full 档有漂移动画需要暂停；balanced 静止、minimal 不渲染，都无需挂监听。
   useEffect(() => {
-    if (quality !== 'full') return undefined;
+    if (quality !== 'full') {
+      layerRef.current?.classList.remove('is-paused');
+      return undefined;
+    }
+
+    let activity: WindowActivityPayload | null = null;
     const sync = (): void => {
-      const active = document.visibilityState === 'visible' && document.hasFocus();
-      layerRef.current?.classList.toggle('is-paused', !active);
+      const paused = shouldPauseAurora(quality, activity, isLocalDocumentActive(document));
+      layerRef.current?.classList.toggle('is-paused', paused);
     };
+    const offWindowActivity = window.kodaxSpace?.on('window.activity', (payload) => {
+      activity = payload;
+      sync();
+    });
+
     sync();
     window.addEventListener('focus', sync);
     window.addEventListener('blur', sync);
     document.addEventListener('visibilitychange', sync);
     return () => {
+      offWindowActivity?.();
       window.removeEventListener('focus', sync);
       window.removeEventListener('blur', sync);
       document.removeEventListener('visibilitychange', sync);
+      layerRef.current?.classList.remove('is-paused');
     };
   }, [quality]);
 

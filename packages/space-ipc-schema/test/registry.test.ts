@@ -14,7 +14,9 @@ import {
   invokeChannels,
   pushChannels,
   INVOKE_CHANNEL_NAMES,
+  PUSH_CHANNEL_NAMES,
   getInvokeChannel,
+  getPushChannel,
   versionChannel,
   repointelStatusChannel,
   handoffListChannel,
@@ -53,6 +55,13 @@ test('INVOKE_CHANNEL_NAMES is derived from invokeChannels keys', () => {
   assert.equal(INVOKE_CHANNEL_NAMES.size, Object.keys(invokeChannels).length);
   for (const name of Object.keys(invokeChannels)) {
     assert.ok(INVOKE_CHANNEL_NAMES.has(name), `${name} should be in allowlist`);
+  }
+});
+
+test('PUSH_CHANNEL_NAMES is derived from pushChannels keys', () => {
+  assert.equal(PUSH_CHANNEL_NAMES.size, Object.keys(pushChannels).length);
+  for (const name of Object.keys(pushChannels)) {
+    assert.ok(PUSH_CHANNEL_NAMES.has(name), name + ' should be in allowlist');
   }
 });
 
@@ -229,6 +238,13 @@ test('getInvokeChannel: known channel returns definition', () => {
 test('getInvokeChannel: unknown channel returns undefined', () => {
   const def = getInvokeChannel('totally.bogus.channel');
   assert.equal(def, undefined);
+});
+
+test('getPushChannel: known and unknown channels resolve predictably', () => {
+  const def = getPushChannel('window.activity');
+  assert.ok(def);
+  assert.equal(def?.name, 'window.activity');
+  assert.equal(getPushChannel('totally.bogus.push'), undefined);
 });
 
 test('envelope ok() produces { ok: true, data }', () => {
