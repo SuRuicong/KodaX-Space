@@ -1,35 +1,20 @@
-// App — FEATURE_005 起的主壳层。
-//
-// 布局：
-//   ┌─── header ────────────────────────────────┐
-//   │ 左抽屉 (240px) │ EventStream (主区)          │
-//   │  ProjectPicker │  current session 标头        │
-//   │  SessionList   │  事件流                      │
-//   │                │  prompt 输入                 │
-//   └─── footer ────────────────────────────────┘
+// App — renderer bootstrap shell.
 //
 // 顶层负责：
 //   - 一次性订阅 push channel `session.event`，按 sessionId 路由进 store
-//   - 取 space.version 显示在 header
-//   - 渲染左抽屉 + 主区
+//   - 启动期拉取 version / providers / defaults / project 列表
+//   - 渲染新 Shell，以及仍需 hoist 到 App 层的 provider settings / quick ask overlay
 //
 // 不在这里：
 //   - 业务状态——全部 Zustand store
-//   - feature 逻辑——拆进 features/{project,session}/*
+//   - layout 结构——由 shell/* 接管
 
 import { useEffect, useRef, useState } from 'react';
-import { Folder, Settings } from 'lucide-react';
 import type { SpaceRuntimeDefaultsT, SpaceVersionOutput } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from './store/appStore.js';
-import { ProjectPicker } from './features/project/ProjectPicker.js';
-import { SessionList } from './features/session/SessionList.js';
-import { EventStream } from './features/session/EventStream.js';
-import { PermissionModal } from './features/permission/PermissionModal.js';
-import { AskUserModal } from './features/ask-user/AskUserModal.js';
 import { SettingsModal } from './features/settings/SettingsModal.js';
 import { QuickAskPopover } from './features/quick-ask/QuickAskPopover.js';
 import { useSessionCompleteNotification } from './features/notifications/useSessionCompleteNotification.js';
-import { FilePanel } from './features/code/FilePanel.js';
 import { Shell } from './shell/Shell.js';
 import {
   formatWorkflowActivityNotice,
@@ -37,13 +22,7 @@ import {
   formatWorkflowRunRestoreNotices,
 } from './features/workflow/workflowNotices.js';
 
-// alpha.1: Claude Desktop 风 shell 已成为默认 UI。
-// 修复了 React #185 无限渲染循环（ConversationStreamV2 / ContextWindowIndicator / SessionMenu 里
-// useAppStore selector `?? []` literal 每 render 新引用触发 zustand subscribe loop —— 改成 module-level
-// EMPTY_EVENTS / EMPTY_USER_MESSAGES 稳定引用）。VITE_USE_NEW_SHELL=0 显式回退到老 layout。
-// 注：init useEffect 在两种 shell 下都需要跑（拉 version / providers / 订阅事件流），所以保持在 App 顶层。
-const USE_NEW_SHELL = import.meta.env.VITE_USE_NEW_SHELL !== '0';
-
+// Shell owns the visible layout; App keeps process-wide bootstrapping and global listeners.
 const WORKFLOW_NOTICE_DEDUPE_LIMIT = 2000;
 const seenWorkflowNoticeKeys = new Set<string>();
 
@@ -60,7 +39,6 @@ function rememberWorkflowNoticeKey(key: string): boolean {
 export default function App(): JSX.Element {
   const [version, setVersion] = useState<SpaceVersionOutput | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [showFiles, setShowFiles] = useState(true);
   // F018 Quick Ask popover —— Cmd/Ctrl+K toggles
   const [showQuickAsk, setShowQuickAsk] = useState(false);
   const appendEvent = useAppStore((s) => s.appendEvent);
@@ -81,8 +59,6 @@ export default function App(): JSX.Element {
   const appendWorkflowActivity = useAppStore((s) => s.appendWorkflowActivity);
   const appendWorkflowNotice = useAppStore((s) => s.appendWorkflowNotice);
   const setRightSidebarOpen = useAppStore((s) => s.setRightSidebarOpen);
-  const providers = useAppStore((s) => s.providers);
-  const defaultProviderId = useAppStore((s) => s.defaultProviderId);
   const unsubsRef = useRef<Array<() => void>>([]);
 
   useEffect(() => {
@@ -298,6 +274,7 @@ export default function App(): JSX.Element {
     dequeueAskUser,
     setProviders,
     setKodaxDefaults,
+    setRuntimeDefaults,
     setPendingReasoningMode,
     setPendingPermissionMode,
     setPendingAutoModeEngine,
@@ -385,88 +362,14 @@ export default function App(): JSX.Element {
     };
   }, []);
 
-  const configuredCount = providers.filter((p) => p.configured).length;
-  const defaultProvider = providers.find((p) => p.id === defaultProviderId);
-
-  // alpha.1: 新 Shell 接管整个 layout，旧 layout 保留以 fallback 验证。
-  // Settings overlay 仍 hoist 在这里（Shell 内部不重复实现）。
-  //
-  // **注意 (F032 review)**：PermissionModal / AskUserModal 由 Shell 内部 mount，本分支 return
-  // 之前的代码不应当再 mount 一次——否则两套 modal 共享 store queue 会双重渲染 + 双重键盘
-  // 监听。下方 USE_NEW_SHELL=false 分支才走 root-level mount。
-  if (USE_NEW_SHELL) {
-    return (
-      <>
-        <Shell version={version} />
-        {showSettings && (
-          <SettingsModal initialTab="providers" onClose={() => setShowSettings(false)} />
-        )}
-        <QuickAskPopover open={showQuickAsk} onClose={() => setShowQuickAsk(false)} />
-      </>
-    );
-  }
-
+  // Settings overlay 仍 hoist 在这里；PermissionModal / AskUserModal 由 Shell 内部 mount。
   return (
-    <div className="h-screen flex flex-col bg-surface text-fg-primary">
-      <header className="border-b border-border-default px-4 py-2.5 flex items-center gap-3 flex-shrink-0">
-        <div className="w-2 h-2 rounded-full bg-ok" aria-hidden />
-        <h1 className="text-sm font-semibold">KodaX Space</h1>
-        <span className="text-xs text-fg-muted font-mono">v{version?.spaceVersion ?? '?.?.?'}</span>
-        <button
-          type="button"
-          onClick={() => setShowFiles((v) => !v)}
-          className={`ml-auto px-2 py-1 text-xs rounded border border-border-default flex items-center gap-1.5 ${
-            showFiles
-              ? 'bg-surface-3 text-fg-primary'
-              : 'bg-surface-2 text-fg-muted hover:bg-hover-bg'
-          }`}
-          title="Toggle file panel"
-        >
-          <Folder className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden />
-          <span>Files</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowSettings(true)}
-          className="px-2 py-1 text-xs rounded bg-surface-2 border border-border-default text-fg-secondary hover:bg-hover-bg flex items-center gap-1.5"
-          title="Provider settings"
-        >
-          <Settings className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden />
-          <span className="font-mono">
-            {defaultProvider
-              ? defaultProvider.displayName
-              : `${configuredCount}/${providers.length} providers`}
-          </span>
-        </button>
-        <span className="text-[11px] text-fg-faint font-mono">
-          {version
-            ? `electron ${version.electronVersion} · chromium ${version.chromeVersion}`
-            : 'loading…'}
-        </span>
-      </header>
-
-      <div className="flex-1 flex min-h-0">
-        <aside className="w-60 flex flex-col border-r border-border-default flex-shrink-0">
-          <ProjectPicker />
-          <SessionList />
-        </aside>
-        <EventStream />
-        {showFiles && <FilePanel />}
-      </div>
-
-      <footer className="border-t border-border-default px-4 py-1.5 text-[11px] text-fg-faint flex justify-between flex-shrink-0">
-        <span>
-          FEATURE_004 · Mock adapter · docs:{' '}
-          <code className="font-mono text-fg-muted">docs/HLD.md</code>
-        </span>
-        <span>{version?.platform ?? ''}</span>
-      </footer>
-
-      <PermissionModal />
-      <AskUserModal />
+    <>
+      <Shell version={version} />
       {showSettings && (
         <SettingsModal initialTab="providers" onClose={() => setShowSettings(false)} />
       )}
-    </div>
+      <QuickAskPopover open={showQuickAsk} onClose={() => setShowQuickAsk(false)} />
+    </>
   );
 }

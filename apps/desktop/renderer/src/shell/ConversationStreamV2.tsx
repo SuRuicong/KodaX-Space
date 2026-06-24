@@ -3,14 +3,24 @@
 // 跟 Claude Desktop 截图对齐的对话流：
 //   - 工具调用聚合为 "Ran N commands ›" 折叠行（默认折叠，点开看每个 tool 卡）
 //   - 用户气泡 / assistant markdown / system notice 复用原 bubbles
-//   - 滚动跟进逻辑复用 ConversationStream v1
+//   - 滚动跟进逻辑在本组件内维护 sticky-bottom / jump-to-bottom 状态
 //
 // 聚合规则：连续的 tool_call 折成一组；assistant_text(带正文) / user / system_notice 打断聚合。
 // normal/summary 视图下 thinking-only step 不打断（推理折进工具组）；thinking/verbose 视图下 thinking 独立成行。
 // 一组内 N >= 1 时显示 "Ran N commands ›"（N=1 时仍折叠，统一形态）。
 // 点击聚合行展开 = 显示组里每个 tool 的细节卡。
 
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type TouchEvent as ReactTouchEvent,
+  type WheelEvent as ReactWheelEvent,
+} from 'react';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import {
   useAppStore,
@@ -27,6 +37,14 @@ const EMPTY_EVENTS: readonly SessionEvent[] = [];
 const EMPTY_USER_MESSAGES: readonly UserMessage[] = [];
 const EMPTY_QUEUED_USER_MESSAGES: readonly QueuedUserMessage[] = [];
 const EMPTY_WORKFLOW_NOTICES: readonly WorkflowNoticeMessage[] = [];
+const PROGRAMMATIC_SCROLL_GUARD_MS = 400;
+const BOTTOM_DISTANCE_PX = 32;
+const JUMP_TO_BOTTOM_DISTANCE_PX = 100;
+const USER_SCROLL_INTENT_DELTA_PX = 4;
+
+function getDistanceFromBottom(el: HTMLDivElement): number {
+  return Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight);
+}
 import {
   AssistantBubble,
   SystemNotice,
@@ -338,6 +356,7 @@ export function ConversationStreamV2(): JSX.Element {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const wasAtBottomRef = useRef<boolean>(true);
+  const touchStartYRef = useRef<number | null>(null);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   // 每个 tool_group 的展开状态；默认折叠
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -467,10 +486,32 @@ export function ConversationStreamV2(): JSX.Element {
   // 时长：400ms 覆盖 jumpToBottom 的 `behavior:'smooth'` 动画 (~300ms) + 余量；
   //   ResizeObserver 阶段一般 16-50ms 也包在内。
   const lastProgrammaticScrollRef = useRef<number>(0);
-  const PROGRAMMATIC_SCROLL_GUARD_MS = 400;
 
   function markProgrammaticScroll(): void {
     lastProgrammaticScrollRef.current = performance.now();
+  }
+
+  function syncFollowStateFromScrollPosition(el: HTMLDivElement): void {
+    const distance = getDistanceFromBottom(el);
+    const atBottom = distance < BOTTOM_DISTANCE_PX;
+    wasAtBottomRef.current = atBottom;
+    setShowJumpToBottom(!atBottom && distance > JUMP_TO_BOTTOM_DISTANCE_PX);
+  }
+
+  function syncJumpButtonFromScrollPosition(el: HTMLDivElement): void {
+    setShowJumpToBottom(getDistanceFromBottom(el) > JUMP_TO_BOTTOM_DISTANCE_PX);
+  }
+
+  function disengageFollowForUserScrollIntent(el: HTMLDivElement): void {
+    wasAtBottomRef.current = false;
+    syncJumpButtonFromScrollPosition(el);
+  }
+
+  function syncFollowStateOnNextFrame(scroller: HTMLDivElement): void {
+    requestAnimationFrame(() => {
+      if (scrollRef.current !== scroller) return;
+      syncFollowStateFromScrollPosition(scroller);
+    });
   }
 
   function handleScroll(e: React.UIEvent<HTMLDivElement>): void {
@@ -478,11 +519,76 @@ export function ConversationStreamV2(): JSX.Element {
     // 不视为用户上滚
     if (performance.now() - lastProgrammaticScrollRef.current < PROGRAMMATIC_SCROLL_GUARD_MS)
       return;
-    const el = e.currentTarget;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const atBottom = distanceFromBottom < 32;
-    wasAtBottomRef.current = atBottom;
-    setShowJumpToBottom(!atBottom && distanceFromBottom > 100);
+    syncFollowStateFromScrollPosition(e.currentTarget);
+  }
+
+  function handleWheel(e: ReactWheelEvent<HTMLDivElement>): void {
+    const scroller = e.currentTarget;
+    const deltaY = e.deltaY;
+    const scrollTopBefore = scroller.scrollTop;
+
+    if (deltaY < 0 && scrollTopBefore > 0) {
+      disengageFollowForUserScrollIntent(scroller);
+    }
+
+    requestAnimationFrame(() => {
+      if (scrollRef.current !== scroller) return;
+      if (deltaY < 0) {
+        const movedUp = scroller.scrollTop < scrollTopBefore;
+        const leftBottom = getDistanceFromBottom(scroller) >= BOTTOM_DISTANCE_PX;
+        if (!movedUp && !leftBottom && scrollTopBefore <= 0) return;
+        disengageFollowForUserScrollIntent(scroller);
+      } else if (deltaY > 0) {
+        syncFollowStateFromScrollPosition(scroller);
+      }
+    });
+  }
+
+  function handleKeyDown(e: ReactKeyboardEvent<HTMLDivElement>): void {
+    const scroller = e.currentTarget;
+    switch (e.key) {
+      case 'ArrowUp':
+      case 'PageUp':
+      case 'Home':
+        disengageFollowForUserScrollIntent(scroller);
+        break;
+      case ' ':
+        if (e.shiftKey) disengageFollowForUserScrollIntent(scroller);
+        else syncFollowStateOnNextFrame(scroller);
+        break;
+      case 'ArrowDown':
+      case 'PageDown':
+      case 'End':
+        syncFollowStateOnNextFrame(scroller);
+        break;
+    }
+  }
+
+  function handlePointerDown(e: ReactPointerEvent<HTMLDivElement>): void {
+    const scroller = e.currentTarget;
+    const scrollbarWidth = scroller.offsetWidth - scroller.clientWidth;
+    if (scrollbarWidth <= 0) return;
+    const rect = scroller.getBoundingClientRect();
+    if (e.clientX >= rect.right - scrollbarWidth) {
+      disengageFollowForUserScrollIntent(scroller);
+    }
+  }
+
+  function handleTouchStart(e: ReactTouchEvent<HTMLDivElement>): void {
+    touchStartYRef.current = e.touches[0]?.clientY ?? null;
+  }
+
+  function handleTouchMove(e: ReactTouchEvent<HTMLDivElement>): void {
+    const scroller = e.currentTarget;
+    const startY = touchStartYRef.current;
+    const currentY = e.touches[0]?.clientY;
+    if (startY === null || currentY === undefined) return;
+    const deltaY = currentY - startY;
+    if (deltaY > USER_SCROLL_INTENT_DELTA_PX) {
+      disengageFollowForUserScrollIntent(scroller);
+    } else if (deltaY < -USER_SCROLL_INTENT_DELTA_PX) {
+      syncFollowStateOnNextFrame(scroller);
+    }
   }
 
   // ResizeObserver 是真正的 sticky-bottom 实现：
@@ -501,6 +607,9 @@ export function ConversationStreamV2(): JSX.Element {
       if (wasAtBottomRef.current) {
         markProgrammaticScroll();
         scroller.scrollTop = scroller.scrollHeight;
+        setShowJumpToBottom(false);
+      } else {
+        setShowJumpToBottom(getDistanceFromBottom(scroller) > JUMP_TO_BOTTOM_DISTANCE_PX);
       }
     });
     ro.observe(content);
@@ -520,6 +629,8 @@ export function ConversationStreamV2(): JSX.Element {
   function jumpToBottom(): void {
     if (!scrollRef.current) return;
     markProgrammaticScroll();
+    wasAtBottomRef.current = true;
+    setShowJumpToBottom(false);
     scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }
 
@@ -541,6 +652,11 @@ export function ConversationStreamV2(): JSX.Element {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
+        onWheelCapture={handleWheel}
+        onKeyDownCapture={handleKeyDown}
+        onPointerDownCapture={handlePointerDown}
+        onTouchStartCapture={handleTouchStart}
+        onTouchMoveCapture={handleTouchMove}
         className={`ix-zone h-full overflow-auto px-8 py-5 ${fontClass}`}
       >
         {/* 左右只留几个字符的 padding，不限宽 —— 用户反馈 max-w-3xl 在宽屏留太多空白。

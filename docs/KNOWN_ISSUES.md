@@ -16,7 +16,8 @@ Last Updated: 2026-06-24
 | 008 | High | Resolved | Real KodaX sessions did not register configured MCP capability provider | v0.1.x | 2026-06-23 |
 | 009 | High | Resolved | Space per-session follow-up queue removed SDK mid-turn queue-query insertion | v0.1.21 | 2026-06-23 |
 | 010 | High | Resolved | Changing current project could keep a stale active session, so agent ran in the previous workspace | v0.1.x | 2026-06-23 |
-| 011 | High | Resolved | Mid-turn interrupt prompts stayed visually above the spinner because SDK prompt-consumption events were not surfaced | v0.1.22 | 2026-06-24 |
+| 011 | Medium | Resolved | Streaming transcript auto-follow ignores upward wheel input and locks the view to the bottom | v0.1.23 | 2026-06-24 |
+| 012 | High | Resolved | Mid-turn interrupt prompts stayed visually above the spinner because SDK prompt-consumption events were not surfaced | v0.1.22 | 2026-06-24 |
 
 ## Issue Details
 
@@ -786,7 +787,121 @@ Verification:
 - `node --test --import tsx/esm test/session.test.ts test/slash.test.ts` from `packages/space-ipc-schema` passed: 51/51.
 - `npm run typecheck` passed.
 
-### 011: Mid-turn interrupt prompts stayed visually above the spinner because SDK prompt-consumption events were not surfaced
+### 011: Streaming transcript auto-follow ignores upward wheel input and locks the view to the bottom
+
+- Priority: Medium
+- Status: Resolved
+- Introduced: v0.1.23
+- Fixed: v0.1.23
+- Created: 2026-06-24
+- Resolution Date: 2026-06-24
+
+#### Original Problem
+
+Current behavior:
+
+- During streaming assistant output, scrolling upward with the mouse wheel can feel stuck or locked to the bottom.
+- The transcript briefly moves upward, then the next streamed content growth pulls it back down.
+- The jump-to-bottom button can appear late or inconsistently because the scroll handler may ignore the real user scroll event.
+
+Expected behavior:
+
+- If the user wheels upward while output is streaming, the transcript should stop auto-following immediately.
+- Auto-follow should resume only after the user scrolls back to the bottom or clicks the jump-to-bottom button.
+- Programmatic scroll events from sticky-bottom maintenance should still not be mistaken for user intent.
+
+Reproduction steps:
+
+1. Start a prompt that produces a long streaming response.
+2. Keep the transcript near the bottom while output is still growing.
+3. Wheel upward before streaming finishes.
+4. Observe that the view is pulled back to the bottom by subsequent streamed content.
+
+#### Context
+
+Affected components:
+
+- `apps/desktop/renderer/src/shell/ConversationStreamV2.tsx`
+- `apps/desktop/renderer/src/features/session/composeMessages.ts`
+- `apps/desktop/renderer/src/features/session/messages/Markdown.tsx`
+
+Observed evidence:
+
+- `ConversationStreamV2` stores the auto-follow gate in `wasAtBottomRef`.
+- `ResizeObserver` is the sticky-bottom executor: when content height changes and `wasAtBottomRef.current` is true, it marks a programmatic scroll and sets `scrollTop = scrollHeight`.
+- `handleScroll` is the only place that normally flips `wasAtBottomRef.current` to false when the user leaves the bottom.
+- `handleScroll` ignores every scroll event that occurs within `PROGRAMMATIC_SCROLL_GUARD_MS` after a programmatic scroll.
+- Streaming `text_delta` updates accumulate into the same assistant bubble, and markdown rendering produces a new growing DOM tree during streaming, so `ResizeObserver` can refresh the guard repeatedly.
+
+#### Root Cause
+
+The current guard is time-based. It assumes programmatic scrolls are short, isolated events, but streaming output can trigger repeated `ResizeObserver` callbacks faster than the 400ms guard window expires. While auto-follow is active, each callback refreshes `lastProgrammaticScrollRef`.
+
+A real upward wheel event during streaming can therefore reach `handleScroll` inside the refreshed guard window. The handler returns before updating `wasAtBottomRef.current`, so auto-follow remains enabled. The next content resize sees `wasAtBottomRef.current === true` and scrolls back to the bottom.
+
+#### Proposed Solution
+
+Use explicit user input events as the authoritative signal for scroll intent, while keeping the time guard for programmatic scroll race protection.
+
+Recommended repair sequence:
+
+1. Add a helper that computes bottom distance and updates `wasAtBottomRef` plus the jump button state.
+2. Add explicit user-input handlers on the transcript scroller.
+3. Treat upward wheel, upward keyboard navigation, touch movement toward older content, and scrollbar drag as explicit requests to leave the bottom, bypassing the time guard.
+4. Let downward wheel/keyboard/touch movement sync from the actual scroll position so reaching the bottom restores follow mode.
+5. Keep the existing programmatic scroll guard for scroll events caused by `ResizeObserver` or smooth scrolling.
+6. Make `jumpToBottom()` explicitly restore `wasAtBottomRef.current = true` and hide the jump button before starting the smooth scroll.
+
+#### Detailed Fix Plan
+
+| File | Change Summary | Reason | Expected Outcome | Risks | Tests |
+|---|---|---|---|---|---|
+| `apps/desktop/renderer/src/shell/ConversationStreamV2.tsx` | Add explicit user scroll-intent handling; keep programmatic guard for resize/smooth-scroll events; make jump-to-bottom explicitly re-enable follow mode | User scroll intent must not be swallowed by the time guard during streaming | Upward wheel/keyboard/touch/scrollbar intent immediately disables auto-follow; bottom/jump restores it | Trackpad momentum could send small mixed deltas; use upward movement as the decisive break signal and sync downward movement from actual position | `npm run typecheck`; manual/e2e smoke if needed |
+| `docs/KNOWN_ISSUES.md` | Track issue 011 through resolution | Preserve root cause and fix rationale | Future regressions can be compared against the documented behavior | Documentation drift if not updated after verification | Review final issue entry |
+
+Mandatory checklist:
+
+- [x] Expected outcome is clearly defined.
+- [x] No unrelated refactors.
+- [x] Existing sticky-bottom behavior remains active when the user is at the bottom.
+- [x] Existing programmatic scroll guard remains in place for the original ResizeObserver race.
+- [x] User upward scroll intent can break auto-follow even during streaming.
+- [x] Returning to the bottom or clicking jump-to-bottom restores auto-follow.
+
+#### Acceptance Criteria
+
+- While streaming, an upward wheel/keyboard/touch/scrollbar gesture immediately disables auto-follow.
+- After upward user scroll intent, subsequent streamed content growth does not reset `scrollTop` to the bottom.
+- Scrolling to the bottom re-enables auto-follow.
+- Clicking the jump-to-bottom button re-enables auto-follow and hides the button.
+- The previous programmatic-scroll race remains guarded.
+
+#### Resolution
+
+Implemented explicit user scroll-intent handling while preserving the existing programmatic scroll guard.
+
+Resolution details:
+
+- Added shared bottom-distance helpers in `ConversationStreamV2` so the scroll handler, user-intent handlers, and resize observer use the same thresholds.
+- Kept the 400ms programmatic scroll guard for `ResizeObserver` and smooth-scroll events, preserving the original OC-18 race fix.
+- Added `onWheelCapture` on the transcript scroller so upward wheel gestures immediately set `wasAtBottomRef.current = false` even if the following `scroll` event lands inside the programmatic guard window.
+- Added keyboard, touch, and scrollbar-pointer intent handlers so other explicit user attempts to browse upward also bypass the programmatic scroll guard.
+- Added next-frame position sync so downward user scroll gestures can restore auto-follow when the user reaches the bottom.
+- Updated the `ResizeObserver` non-follow path to keep the jump-to-bottom button visibility current as streaming content continues to grow.
+- Updated `jumpToBottom()` to explicitly restore `wasAtBottomRef.current = true` and hide the jump button before starting smooth scroll.
+
+Files changed:
+
+- `apps/desktop/renderer/src/shell/ConversationStreamV2.tsx`
+- `docs/KNOWN_ISSUES.md`
+
+Verification:
+
+- `npx eslint apps/desktop/renderer/src/shell/ConversationStreamV2.tsx` passed.
+- `npm run typecheck` passed.
+- `npm run build -w @kodax-space/desktop` passed. Vite reported existing large-chunk and dynamic-import warnings, but the renderer build completed successfully.
+
+### 012: Mid-turn interrupt prompts stayed visually above the spinner because SDK prompt-consumption events were not surfaced
 
 - Priority: High
 - Status: Resolved
@@ -902,10 +1017,10 @@ Verification:
 
 ## Summary
 
-- Total: 11
+- Total: 12
 - Open: 1
-- Resolved: 10
+- Resolved: 11
 - High: 8
-- Medium: 2
+- Medium: 3
 - Low: 1
 - Next to resolve: 006
