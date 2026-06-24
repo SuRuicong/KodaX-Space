@@ -218,6 +218,33 @@ export {
   type SupportedLocaleT,
 } from './channels/settings.js';
 
+export {
+  licenseBindingSchema,
+  licenseDisplayEditionSchema,
+  licenseEditionSchema,
+  licenseEnforcementSourceSchema,
+  licenseEntitlementEnvelopeSchema,
+  licenseEntitlementPayloadSchema,
+  licenseExportRequestChannel,
+  licenseFeatureIdSchema,
+  licenseGetStatusChannel,
+  licenseHasFeatureChannel,
+  licenseImportEntitlementChannel,
+  licenseKindSchema,
+  licenseRequireEntitlementChannel,
+  licenseRuntimeStatusSchema,
+  licenseStatusSchema,
+  type LicenseBindingT,
+  type LicenseDisplayEditionT,
+  type LicenseEditionT,
+  type LicenseEnforcementSourceT,
+  type LicenseEntitlementEnvelopeT,
+  type LicenseEntitlementPayloadT,
+  type LicenseKindT,
+  type LicenseRuntimeStatusT,
+  type LicenseStatusT,
+} from './channels/license.js';
+
 export { notificationShowChannel, notificationClickedChannel } from './channels/notification.js';
 
 export {

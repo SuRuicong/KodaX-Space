@@ -50,6 +50,10 @@ files:
 
 asar: true
 
+extraResources:
+  - from: resources/kodax-license-policy.json
+    to: kodax-license-policy.json
+
 # build:smoke 已经把 renderer + main 全 bundle 进 dist*。
 # native 模块（keytar 等）走 asarUnpack——asar 内 require .node 会失败
 # node-pty (F011) 还需要 conpty/winpty 的辅助二进制 (.exe/.dll) 在 fs 可读位置

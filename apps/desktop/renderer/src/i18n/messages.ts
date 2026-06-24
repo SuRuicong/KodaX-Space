@@ -58,6 +58,8 @@ export const messages = {
       'Workspace defaults, automation, language, and workflow behavior.',
     'settings.providers': 'Providers',
     'settings.providers.description': 'Models, API keys, default provider, and custom endpoints.',
+    'settings.license': 'License',
+    'settings.license.description': 'Community status and offline enterprise activation.',
     'settings.keySafety.title': 'Key safety',
     'settings.keySafety.description':
       'API keys are sent only to the Electron main process. The renderer sees configured state, never the secret value.',
@@ -314,6 +316,8 @@ export const messages = {
     'settings.preferences.description': '工作区默认值、自动化、语言和工作流行为。',
     'settings.providers': '服务商',
     'settings.providers.description': '模型、API Key、默认服务商和自定义端点。',
+    'settings.license': 'License',
+    'settings.license.description': 'Community status and offline enterprise activation.',
     'settings.keySafety.title': '密钥安全',
     'settings.keySafety.description':
       'API Key 只会发送给 Electron 主进程。渲染进程只看到配置状态，不会看到密钥值。',

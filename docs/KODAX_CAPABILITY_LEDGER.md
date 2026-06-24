@@ -1,6 +1,6 @@
 # KodaX Capability Ledger
 
-Last reviewed: 2026-06-23
+Last reviewed: 2026-06-24
 
 This file is the Space-side source of truth for capabilities that depend on the upstream KodaX SDK. It exists to keep desktop feature planning honest: a feature is either supported by the current SDK contract, partially implemented through an available event/API, planned on the Space side, or blocked until KodaX exposes a contract.
 
@@ -8,15 +8,15 @@ This file is the Space-side source of truth for capabilities that depend on the 
 
 | Component          | Current baseline                                   | Notes                                                                                            |
 | ------------------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| KodaX Space app    | 0.1.22                                             | Patch release baseline.                                                                          |
-| Desktop package    | 0.1.22                                             | `@kodax-space/desktop`.                                                                          |
-| IPC schema package | 0.1.22                                             | Aligned with app release baseline.                                                               |
-| UI kit package     | 0.1.22                                             | Aligned with app release baseline.                                                               |
-| KodaX SDK          | 0.7.54 installed, `^0.7.54` root and desktop specs | Keep this row aligned with `package.json`, `apps/desktop/package.json`, and `package-lock.json`. |
+| KodaX Space app    | 0.1.23                                             | Current released app baseline; 0.1.24 is the active planning lane.                                |
+| Desktop package    | 0.1.23                                             | `@kodax-space/desktop`.                                                                          |
+| IPC schema package | 0.1.23                                             | Aligned with app release baseline.                                                               |
+| UI kit package     | 0.1.23                                             | Aligned with app release baseline.                                                               |
+| KodaX SDK          | 0.7.55 installed, `^0.7.55` root and desktop specs | Keep this row aligned with `package.json`, `apps/desktop/package.json`, and `package-lock.json`. |
 
 ## Capability Contract
 
-Runtime IPC contract: `space-v0.1.22`
+Runtime IPC contract: `space-v0.1.23`
 
 `space.version` now exposes:
 

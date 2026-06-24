@@ -34,6 +34,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "node scripts/clean.mjs",
+    "license:sync-public-key": "node scripts/sync-license-public-key.mjs",
     "link:kodax": "node scripts/link-kodax.mjs",
     "unlink:kodax": "node scripts/link-kodax.mjs --unlink",
     "link:livecanvas": "node scripts/link-livecanvas.mjs",
@@ -46,7 +47,7 @@
     "smoke:boot": "node e2e/boot-smoke-packaged.mjs"
   },
   "dependencies": {
-    "@kodax-ai/kodax": "^0.7.54",
+    "@kodax-ai/kodax": "^0.7.55",
     "@napi-rs/keyring": "^1.3.0"
   },
   "devDependencies": {

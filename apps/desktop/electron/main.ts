@@ -34,6 +34,7 @@ import { autoActivateProvidersFromEnv } from './providers/auto-activate.js';
 import { registerFilesChannels } from './ipc/files.js';
 import { registerTitlebarChannels } from './ipc/titlebar.js';
 import { registerSettingsChannels } from './ipc/settings.js';
+import { registerLicenseChannels } from './ipc/license.js';
 import { registerNotificationChannels, setNotificationWindowGetter } from './ipc/notification.js';
 import { registerUpdaterChannels, initAutoUpdater } from './ipc/updater.js';
 import { registerMcpbChannels, installMcpbFromOsHandoff } from './ipc/mcpb.js';
@@ -431,6 +432,7 @@ app.whenReady().then(async () => {
   registerFilesChannels();
   registerTitlebarChannels();
   registerSettingsChannels();
+  registerLicenseChannels();
   // F020 native OS notification — renderer 调 notification.show 弹 OS 原生通知
   registerNotificationChannels();
   setNotificationWindowGetter(() => mainWindow && !mainWindow.isDestroyed() ? mainWindow : null);

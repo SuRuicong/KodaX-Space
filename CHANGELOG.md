@@ -12,6 +12,16 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 > v0.1.7 内容 (F011/F023/F024/F026/F038) 跟 v0.1.8 一起发。GitHub Releases 顶部仍是 v0.1.5，
 > 0.1.7 这条 section 留作历史记录、git log 引用入口。
 
+## [Unreleased]
+
+### Changed
+
+- **KodaX 0.7.55 SDK catch-up** - Root and desktop workspace dependencies now resolve `@kodax-ai/kodax` `^0.7.55`. This upstream release is a concurrency-safety hardening patch for same-directory sessions: per-session scratch isolation, owner-scoped managed-task checkpoints, per-process extension-store temp writes, and stricter runtime tool gating. Space already passes stable session ids into `runManagedTask`, so no additional host API wiring is required for the baseline integration.
+
+### Planning
+
+- **v0.1.24 lane** - The current 0.1.24 implementation target remains F105 customer timebox entitlement MVP: offline signed entitlement import/verification, managed-required mode, 30-day customer trial support, Settings/About/Diagnostics license status, and no license prompt for community/education/research/personal use.
+
 ## [0.1.23] - 2026-06-24
 
 ### Theme

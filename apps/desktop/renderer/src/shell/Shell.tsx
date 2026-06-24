@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import type {
   LanguageModeT,
+  LicenseStatusT,
   SpaceCapabilityStatus,
   SpaceVersionOutput,
 } from '@kodax-space/space-ipc-schema';
@@ -114,8 +115,22 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
   const [rightWidthDraft, setRightWidthDraft] = useState<number | null>(null);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [licenseStatus, setLicenseStatus] = useState<LicenseStatusT | null>(null);
   const leftWidth = leftWidthDraft ?? persistedLeftWidth;
   const rightWidth = rightWidthDraft ?? persistedRightWidth;
+
+  const refreshLicenseStatus = useCallback((): void => {
+    if (!window.kodaxSpace) return;
+    void window.kodaxSpace.invoke('license.getStatus', {}).then((result) => {
+      if (result.ok) setLicenseStatus(result.data);
+    });
+  }, []);
+
+  useEffect(() => {
+    refreshLicenseStatus();
+    window.addEventListener('kodax-space.license-changed', refreshLicenseStatus);
+    return () => window.removeEventListener('kodax-space.license-changed', refreshLicenseStatus);
+  }, [refreshLicenseStatus]);
 
   const openRightSidebarAtBalancedWidth = useCallback((): void => {
     const targetWidth = rightSidebarOpenWidth(leftSidebarOpen, leftWidth);
@@ -358,13 +373,26 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
           >
             <Info className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
             <span>v{version?.spaceVersion ?? '?.?.?'}</span>
+            {licenseStatus && (
+              <span
+                className={`rounded border px-1.5 py-0.5 font-sans text-[10px] ${licenseBadgeClass(
+                  licenseStatus.status,
+                )}`}
+              >
+                {licenseBadgeText(licenseStatus)}
+              </span>
+            )}
           </button>
           <HandoffInbox />
           <VisualQualityToggle />
           <ThemeToggle />
         </div>
         {diagnosticsOpen && (
-          <RuntimeDiagnostics version={version} onClose={() => setDiagnosticsOpen(false)} />
+          <RuntimeDiagnostics
+            version={version}
+            licenseStatus={licenseStatus}
+            onClose={() => setDiagnosticsOpen(false)}
+          />
         )}
       </div>
 
@@ -968,6 +996,7 @@ function AppMenuDropdown({ items, onClose }: AppMenuDropdownProps): JSX.Element 
 
 interface RuntimeDiagnosticsProps {
   readonly version: SpaceVersionOutput | null;
+  readonly licenseStatus: LicenseStatusT | null;
   readonly onClose: () => void;
 }
 
@@ -984,7 +1013,43 @@ function statusClass(status: SpaceCapabilityStatus): string {
   }
 }
 
-function RuntimeDiagnostics({ version, onClose }: RuntimeDiagnosticsProps): JSX.Element {
+function licenseBadgeText(status: LicenseStatusT): string {
+  if (status.status === 'licensed') {
+    if (status.edition === 'professional') return 'Professional';
+    if (status.edition === 'enterprise') return 'Enterprise';
+    return 'Licensed';
+  }
+  if (status.status === 'community') return 'Community';
+  if (status.status === 'required') return 'Required';
+  return status.status[0].toUpperCase() + status.status.slice(1);
+}
+
+function licenseBadgeClass(status: LicenseStatusT['status']): string {
+  if (status === 'licensed' || status === 'community') return 'border-ok/40 bg-ok/10 text-ok';
+  if (status === 'expired' || status === 'required' || status === 'degraded') {
+    return 'border-warn/40 bg-warn/10 text-warn';
+  }
+  return 'border-danger/40 bg-danger/10 text-danger';
+}
+
+function licenseDiagnosticsText(status: LicenseStatusT): string {
+  const parts = [licenseBadgeText(status)];
+  if (status.customer) parts.push(status.customer);
+  if (status.expiresAt) parts.push(`expires ${shortDate(status.expiresAt)}`);
+  return parts.join(' / ');
+}
+
+function shortDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toISOString().slice(0, 10);
+}
+
+function RuntimeDiagnostics({
+  version,
+  licenseStatus,
+  onClose,
+}: RuntimeDiagnosticsProps): JSX.Element {
   return (
     <div className="app-no-drag absolute right-3 top-8 z-50 w-[min(420px,calc(100vw-24px))] rounded-lg border border-border-default bg-surface/95 p-3 text-xs text-fg-secondary shadow-2xl backdrop-blur-xl">
       <div className="mb-2 flex items-start justify-between gap-3">
@@ -1007,6 +1072,8 @@ function RuntimeDiagnostics({ version, onClose }: RuntimeDiagnosticsProps): JSX.
       </div>
 
       <div className="mb-2 grid grid-cols-[96px_1fr] gap-x-2 gap-y-1 font-mono text-[11px]">
+        <span className="text-fg-faint">license</span>
+        <span>{licenseStatus ? licenseDiagnosticsText(licenseStatus) : 'loading'}</span>
         <span className="text-fg-faint">contract</span>
         <span>{version?.capabilityContract ?? 'loading'}</span>
         <span className="text-fg-faint">dependency</span>

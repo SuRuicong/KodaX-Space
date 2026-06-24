@@ -1,7 +1,9 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
+  type ChangeEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from 'react';
@@ -22,7 +24,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import type { LanguageModeT, ProviderInfo } from '@kodax-space/space-ipc-schema';
+import type { LanguageModeT, LicenseStatusT, ProviderInfo } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
 import { localeDisplayName, useI18n } from '../../i18n/I18nProvider.js';
 import type { MessageKey } from '../../i18n/messages.js';
@@ -31,7 +33,7 @@ import { ProviderCard } from '../provider/ProviderCard.js';
 import { CustomProviderForm } from '../provider/CustomProviderForm.js';
 import { WorkflowPolicySection } from '../workflow/WorkflowPolicySection.js';
 
-export type SettingsTab = 'providers' | 'preferences';
+export type SettingsTab = 'providers' | 'preferences' | 'license';
 
 interface SettingsModalProps {
   readonly initialTab?: SettingsTab;
@@ -57,6 +59,12 @@ const TABS: readonly SettingsTabMeta[] = [
     labelKey: 'settings.providers',
     descriptionKey: 'settings.providers.description',
     Icon: KeyRound,
+  },
+  {
+    id: 'license',
+    labelKey: 'settings.license',
+    descriptionKey: 'settings.license.description',
+    Icon: ShieldCheck,
   },
 ];
 
@@ -195,6 +203,15 @@ export function SettingsModal({
               className="h-full"
             >
               <ProvidersPanel />
+            </div>
+            <div
+              id="settings-panel-license"
+              role="tabpanel"
+              aria-labelledby="settings-tab-license"
+              hidden={tab !== 'license'}
+              className="h-full"
+            >
+              <LicensePanel />
             </div>
           </div>
         </section>
@@ -493,6 +510,227 @@ function NativeCompletionNotificationToggle(): JSX.Element {
       </span>
     </label>
   );
+}
+
+function LicensePanel(): JSX.Element {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [status, setStatus] = useState<LicenseStatusT | null>(null);
+  const [busy, setBusy] = useState<'refresh' | 'import' | 'export' | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function refresh(): Promise<void> {
+    if (!window.kodaxSpace) return;
+    setBusy((cur) => cur ?? 'refresh');
+    setErr(null);
+    try {
+      const result = await window.kodaxSpace.invoke('license.getStatus', {});
+      if (result.ok) setStatus(result.data);
+      else setErr(`${result.error.code}: ${result.error.message}`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function importLicense(e: ChangeEvent<HTMLInputElement>): Promise<void> {
+    const file = e.currentTarget.files?.[0] ?? null;
+    e.currentTarget.value = '';
+    if (!file || !window.kodaxSpace) return;
+
+    const filePath = window.kodaxSpace.getPathForFile(file);
+    if (!filePath) {
+      setErr('Could not resolve the selected license file path.');
+      return;
+    }
+
+    setBusy('import');
+    setErr(null);
+    setMessage(null);
+    try {
+      const result = await window.kodaxSpace.invoke('license.importEntitlement', { filePath });
+      if (!result.ok) {
+        setErr(`${result.error.code}: ${result.error.message}`);
+        return;
+      }
+      setStatus(result.data.status);
+      setMessage(result.data.message);
+      window.dispatchEvent(new Event('kodax-space.license-changed'));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function exportRequest(): Promise<void> {
+    if (!window.kodaxSpace) return;
+    setBusy('export');
+    setErr(null);
+    setMessage(null);
+    try {
+      const result = await window.kodaxSpace.invoke('license.exportRequest', {
+        requestedEdition: 'enterprise',
+      });
+      if (!result.ok) {
+        setErr(`${result.error.code}: ${result.error.message}`);
+        return;
+      }
+      setMessage(`Request exported: ${result.data.filePath}`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const statusText = status ? formatLicenseStatus(status) : 'Loading';
+  const statusClass = status ? licenseStatusClass(status.status) : 'text-fg-muted';
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-4 p-5">
+      <SettingsSection
+        title="License"
+        description="Community status and offline enterprise activation."
+        icon={ShieldCheck}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".kodax-license,application/json"
+          className="hidden"
+          onChange={(e) => void importLicense(e)}
+        />
+
+        <div className="space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className={`text-base font-semibold ${statusClass}`}>{statusText}</div>
+              <div className="mt-1 text-xs text-fg-muted">
+                {status?.customer ? `Licensed to ${status.customer}` : 'Community use'}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={busy !== null}
+                className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-border-default bg-surface-3 px-3 text-xs text-fg-primary hover:bg-hover-bg disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {busy === 'import' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} />
+                ) : (
+                  <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.8} />
+                )}
+                Import
+              </button>
+              <button
+                type="button"
+                onClick={() => void exportRequest()}
+                disabled={busy !== null}
+                className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-border-default bg-surface px-3 text-xs text-fg-secondary hover:bg-hover-bg hover:text-fg-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {busy === 'export' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} />
+                ) : (
+                  <KeyRound className="h-3.5 w-3.5" strokeWidth={1.8} />
+                )}
+                Export request
+              </button>
+              <button
+                type="button"
+                onClick={() => void refresh()}
+                disabled={busy !== null}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-default bg-surface text-fg-secondary hover:bg-hover-bg hover:text-fg-primary disabled:cursor-not-allowed disabled:opacity-50"
+                title="Refresh license status"
+                aria-label="Refresh license status"
+              >
+                <RefreshCw
+                  className={`h-3.5 w-3.5 ${busy === 'refresh' ? 'animate-spin' : ''}`}
+                  strokeWidth={1.8}
+                  aria-hidden
+                />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-x-6 gap-y-2 border-t border-border-default pt-3 text-xs sm:grid-cols-2">
+            <LicenseField
+              label="Edition"
+              value={status ? formatEdition(status.edition) : 'Loading'}
+            />
+            <LicenseField label="Kind" value={status?.licenseKind ?? 'none'} />
+            <LicenseField
+              label="Expires"
+              value={status?.expiresAt ? formatDate(status.expiresAt) : 'none'}
+            />
+            <LicenseField label="Source" value={status?.enforcementSource ?? 'none'} />
+            <LicenseField
+              label="Features"
+              value={status && status.features.length > 0 ? status.features.join(', ') : 'none'}
+              wide
+            />
+            {status?.reason && <LicenseField label="Reason" value={status.reason} wide />}
+          </div>
+
+          {message && (
+            <div className="rounded-lg border border-ok/40 bg-ok/12 px-3 py-2 text-xs text-ok">
+              {message}
+            </div>
+          )}
+          {err && (
+            <div className="rounded-lg border border-danger/40 bg-danger/12 px-3 py-2 text-xs text-danger">
+              {err}
+            </div>
+          )}
+        </div>
+      </SettingsSection>
+    </div>
+  );
+}
+
+function LicenseField({
+  label,
+  value,
+  wide = false,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly wide?: boolean;
+}): JSX.Element {
+  return (
+    <div className={wide ? 'sm:col-span-2' : undefined}>
+      <div className="text-[11px] font-medium uppercase tracking-wide text-fg-muted">{label}</div>
+      <div className="mt-0.5 break-words font-mono text-[11px] leading-5 text-fg-primary">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function formatEdition(edition: LicenseStatusT['edition']): string {
+  if (edition === 'community') return 'Community';
+  if (edition === 'professional') return 'Professional';
+  return 'Enterprise';
+}
+
+function formatLicenseStatus(status: LicenseStatusT): string {
+  if (status.status === 'licensed') return formatEdition(status.edition);
+  if (status.status === 'community') return 'Community';
+  if (status.status === 'required') return 'License required';
+  return status.status[0].toUpperCase() + status.status.slice(1);
+}
+
+function licenseStatusClass(status: LicenseStatusT['status']): string {
+  if (status === 'licensed' || status === 'community') return 'text-ok';
+  if (status === 'expired' || status === 'required' || status === 'degraded') return 'text-warn';
+  return 'text-danger';
+}
+
+function formatDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
 }
 
 function ProvidersPanel(): JSX.Element {

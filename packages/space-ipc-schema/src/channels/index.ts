@@ -99,6 +99,13 @@ import {
   settingsSetLanguageModeChannel,
   settingsSetRuntimeDefaultsChannel,
 } from './settings.js';
+import {
+  licenseExportRequestChannel,
+  licenseGetStatusChannel,
+  licenseHasFeatureChannel,
+  licenseImportEntitlementChannel,
+  licenseRequireEntitlementChannel,
+} from './license.js';
 import { notificationShowChannel, notificationClickedChannel } from './notification.js';
 import { windowActivityChannel } from './window.js';
 import { updaterCheckChannel, updaterInstallChannel, updaterStatusChannel } from './updater.js';
@@ -221,6 +228,11 @@ export const invokeChannels = {
   [settingsSetDefaultWorkspaceChannel.name]: settingsSetDefaultWorkspaceChannel,
   [settingsSetLanguageModeChannel.name]: settingsSetLanguageModeChannel,
   [settingsSetRuntimeDefaultsChannel.name]: settingsSetRuntimeDefaultsChannel,
+  [licenseGetStatusChannel.name]: licenseGetStatusChannel,
+  [licenseImportEntitlementChannel.name]: licenseImportEntitlementChannel,
+  [licenseExportRequestChannel.name]: licenseExportRequestChannel,
+  [licenseRequireEntitlementChannel.name]: licenseRequireEntitlementChannel,
+  [licenseHasFeatureChannel.name]: licenseHasFeatureChannel,
   [notificationShowChannel.name]: notificationShowChannel,
   [updaterCheckChannel.name]: updaterCheckChannel,
   [updaterInstallChannel.name]: updaterInstallChannel,

@@ -1,0 +1,24 @@
+{
+  "schema": "kodax-license/v1",
+  "kid": "kai-prod-2026-q2-synthetic",
+  "alg": "Ed25519",
+  "payload": {
+    "product": "kodax-space",
+    "licenseFamily": "KodaX-AI Fair Core License",
+    "licenseId": "lic_synthetic_prod_eval_001",
+    "customer": "Synthetic Customer",
+    "edition": "enterprise",
+    "licenseKind": "evaluation",
+    "issuedAt": "2026-06-24T00:00:00.000Z",
+    "expiresAt": "2026-07-24T00:00:00.000Z",
+    "features": [
+      "enterprise-evaluation",
+      "offline"
+    ],
+    "binding": {
+      "mode": "site",
+      "siteId": "synthetic-customer-site"
+    }
+  },
+  "signature": "XtJV1cHOBvdVKEuksLfsl6vhx6Iz3WoFCUDUMcIjGp4ekLJB6yaaoidFjv5LoBDHAHohxFZmi_UBjJlRae1AAg"
+}
