@@ -231,6 +231,21 @@ test('session.event payload: text_delta variant', () => {
   assert.equal(sessionEventChannel.payload.safeParse(evt).success, true);
 });
 
+test('session.event payload: mid_turn_user_prompt variant', () => {
+  const evt = { kind: 'mid_turn_user_prompt' as const, sessionId: 's_1', content: 'follow up' };
+  assert.equal(sessionEventChannel.payload.safeParse(evt).success, true);
+});
+
+test('session.event payload: queued_user_prompt_started variant', () => {
+  const evt = {
+    kind: 'queued_user_prompt_started' as const,
+    sessionId: 's_1',
+    queueMode: 'after-turn' as const,
+    content: 'follow up',
+  };
+  assert.equal(sessionEventChannel.payload.safeParse(evt).success, true);
+});
+
 test('session.event payload: tool_start with input', () => {
   const evt = {
     kind: 'tool_start' as const,

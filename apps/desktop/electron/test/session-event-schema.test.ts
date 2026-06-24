@@ -2,6 +2,29 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sessionEventChannel } from '@kodax-space/space-ipc-schema';
 
+test('session.event accepts SDK mid-turn user prompt boundaries', () => {
+  assert.equal(
+    sessionEventChannel.payload.safeParse({
+      kind: 'mid_turn_user_prompt',
+      sessionId: 's_1',
+      content: 'Please also check the tests.',
+    }).success,
+    true,
+  );
+});
+
+test('session.event accepts queued user prompt started boundaries', () => {
+  assert.equal(
+    sessionEventChannel.payload.safeParse({
+      kind: 'queued_user_prompt_started',
+      sessionId: 's_1',
+      queueMode: 'after-turn',
+      content: 'Please run this after the current turn.',
+    }).success,
+    true,
+  );
+});
+
 test('session.event accepts SDK 0.7.53 sidecar verifier messages', () => {
   assert.equal(
     sessionEventChannel.payload.safeParse({

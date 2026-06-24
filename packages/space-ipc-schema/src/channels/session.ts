@@ -754,6 +754,17 @@ export const sessionEventChannel = {
       provider: z.string().min(1).max(64),
     }),
     z.object({
+      kind: z.literal('mid_turn_user_prompt'),
+      sessionId: z.string().min(1),
+      content: z.string().min(1).max(MAX_PROMPT_BYTES),
+    }),
+    z.object({
+      kind: z.literal('queued_user_prompt_started'),
+      sessionId: z.string().min(1),
+      queueMode: sessionSendQueueModeSchema,
+      content: z.string().min(1).max(MAX_PROMPT_BYTES),
+    }),
+    z.object({
       kind: z.literal('iteration_start'),
       sessionId: z.string().min(1),
       iter: z.number().int().nonnegative(),

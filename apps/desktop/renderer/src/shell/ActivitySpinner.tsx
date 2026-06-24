@@ -17,7 +17,7 @@ import { useAppStore } from '../store/appStore.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 
-interface ActivitySnapshot {
+export interface ActivitySnapshot {
   readonly streaming: boolean;
   readonly status: string;
   readonly iter?: { current: number; max: number };
@@ -32,7 +32,7 @@ interface ActivitySnapshot {
   readonly toolInputTokens?: number;
 }
 
-function snapshotFromEvents(
+export function snapshotFromEvents(
   events: readonly SessionEvent[],
   pending: boolean,
   managedPhase: string | undefined,
@@ -55,7 +55,7 @@ function snapshotFromEvents(
       streaming = false;
       break;
     }
-    if (ev.kind === 'session_start') {
+    if (ev.kind === 'session_start' || ev.kind === 'queued_user_prompt_started') {
       streaming = true;
       break;
     }
@@ -100,6 +100,8 @@ function snapshotFromEvents(
         ev.kind === 'compact_end'
       ) {
         status = 'Compacting context…';
+      } else if (ev.kind === 'mid_turn_user_prompt' || ev.kind === 'queued_user_prompt_started') {
+        break;
       }
     }
     if (!iter && ev.kind === 'iteration_end') {
@@ -153,6 +155,8 @@ function snapshotFromEvents(
         ev.kind === 'tool_result' ||
         ev.kind === 'iteration_end' ||
         ev.kind === 'session_start' ||
+        ev.kind === 'mid_turn_user_prompt' ||
+        ev.kind === 'queued_user_prompt_started' ||
         ev.kind === 'session_complete'
       ) {
         break;
@@ -237,7 +241,7 @@ function resolveStartedAtMemo(events: readonly SessionEvent[]): number {
   for (let i = events.length - 1; i >= 0; i--) {
     const k = events[i].kind;
     if (k === 'session_complete' || k === 'session_error') break;
-    if (k === 'session_start') {
+    if (k === 'session_start' || k === 'queued_user_prompt_started') {
       lastStartIdx = i;
       break;
     }

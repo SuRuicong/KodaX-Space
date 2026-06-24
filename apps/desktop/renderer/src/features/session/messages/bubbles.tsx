@@ -213,6 +213,38 @@ export function UserBubble({ content, sentAt }: { content: string; sentAt?: numb
 
 // ---- Assistant Bubble (markdown + 可选 thinking) ----
 
+export function QueuedUserBubble({
+  content,
+  queueMode,
+  status,
+  sentAt,
+}: Extract<ConversationMessage, { kind: 'queued_user' }>): JSX.Element {
+  const label = queueMode === 'after-turn' ? 'After-turn queued' : 'Interrupt queued';
+  const detail =
+    status === 'pending-ack'
+      ? 'Sending to queue'
+      : queueMode === 'after-turn'
+        ? 'Waiting for current turn'
+        : 'Waiting for safe point';
+  return (
+    <div className="group flex flex-col items-start" data-testid="queued-user-message-bubble">
+      <div
+        className={[
+          'inline-block max-w-[80%] rounded-2xl px-3 py-2 text-[13px] whitespace-pre-wrap border border-dashed',
+          'bg-warn/10 border-warn/45 text-fg-secondary',
+        ].join(' ')}
+      >
+        <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-mono text-warn">
+          <span className="uppercase tracking-[0.12em]">{label}</span>
+          <span className="text-fg-muted normal-case">{detail}</span>
+        </div>
+        <div>{content}</div>
+      </div>
+      <MessageFooter text={content} sentAt={sentAt} />
+    </div>
+  );
+}
+
 export function AssistantBubble({
   text,
   thinking,

@@ -14,6 +14,7 @@ import {
   dequeueOwnedPromptsForSession,
   enqueueOwnedPrompt,
   installSessionQueueGuard,
+  ownerSessionForQueuedPrompt,
   peekOwnedPromptsForSession,
 } from '../kodax/session-queue-guard.js';
 import type {
@@ -44,6 +45,11 @@ type SpaceQueuedPrompt = {
   readonly enqueuedAt: number;
   readonly order: number;
   readonly queueMode: 'after-turn';
+};
+
+export type DequeuedUserPrompt = {
+  readonly content: string;
+  readonly queueMode: SessionSendQueueMode;
 };
 
 let agentModuleCache: AgentModule | null = null;
@@ -82,6 +88,7 @@ function projectMessage(m: QueuedMessage): QueuedMessageT {
     mode: m.mode as MessageModeT,
     content: clampQueueContentForIpc(m.content),
     enqueuedAt: m.enqueuedAt,
+    ...(ownerSessionForQueuedPrompt(m) !== undefined ? { queueMode: 'interrupt' as const } : {}),
   };
   if (m.agentId !== undefined) {
     return { ...proj, agentId: m.agentId };
@@ -97,6 +104,7 @@ function projectSpacePrompt(m: SpaceQueuedPrompt): QueuedMessageT {
     agentId: m.agentId,
     content: clampQueueContentForIpc(m.content),
     enqueuedAt: m.enqueuedAt,
+    queueMode: m.queueMode,
   };
 }
 
@@ -216,7 +224,7 @@ export async function enqueueUserPrompt(
 }
 
 /** Pop the next queued follow-up prompt for one Space session. */
-export function dequeueNextUserPromptForSession(sessionId: string): string | undefined {
+export function dequeueNextUserPromptForSession(sessionId: string): DequeuedUserPrompt | undefined {
   const afterTurnPrompt = afterTurnPromptQueues.get(sessionId)?.[0];
   const sdkPrompt =
     agentModuleCache === null
@@ -231,14 +239,15 @@ export function dequeueNextUserPromptForSession(sessionId: string): string | und
         ? afterTurnPrompt.order <= sdkOrder
         : afterTurnPrompt.enqueuedAt <= sdkPrompt.enqueuedAt));
   if (afterTurnFirst) {
-    return shiftAfterTurnPrompt(sessionId)?.content;
+    const message = shiftAfterTurnPrompt(sessionId);
+    return message ? { content: message.content, queueMode: message.queueMode } : undefined;
   }
 
   if (!sdkPrompt || agentModuleCache === null) return undefined;
   const q = agentModuleCache.getMessageQueue();
   const [message] = dequeueOwnedPromptsForSession(q, sessionId, 1);
   if (message) sdkPromptOrders.delete(message.id);
-  return message?.content;
+  return message ? { content: message.content, queueMode: 'interrupt' } : undefined;
 }
 
 /** Clear Space-owned queued user prompts when a session is cancelled/disposed. */
@@ -273,17 +282,27 @@ export function registerQueueChannels(): void {
 
 export async function startQueueWatch(): Promise<() => void> {
   const q = await loadQueue();
+  let active = true;
   const unsubscribe = q.subscribe((event) => {
     let affected: QueuedMessageT[];
     if (event.kind === 'enqueued') {
-      affected = [projectMessage(event.message)];
+      // enqueueOwnedPrompt can only stamp the owner map after SDK enqueue()
+      // returns the id. Defer projection one microtask so UI snapshots can
+      // distinguish Space-owned interrupt prompts from internal SDK prompts.
+      queueMicrotask(() => {
+        if (active) emitQueueChanged(event.kind, [projectMessage(event.message)]);
+      });
+      return;
     } else {
       for (const message of event.messages) sdkPromptOrders.delete(message.id);
       affected = event.messages.map(projectMessage);
     }
     emitQueueChanged(event.kind, affected);
   });
-  return unsubscribe;
+  return () => {
+    active = false;
+    unsubscribe();
+  };
 }
 
 export function _resetQueueStateForTests(): void {

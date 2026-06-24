@@ -125,6 +125,10 @@ export function peekOwnedPromptsForSession(queue: MessageQueue, sessionId: strin
   });
 }
 
+export function ownerSessionForQueuedPrompt(message: QueuedMessage): string | undefined {
+  return ownerFor(message);
+}
+
 export function _resetSessionQueueGuardForTests(): void {
   ownersByMessageId.clear();
 }

@@ -91,6 +91,16 @@ export interface WorkflowNoticeMessage {
   readonly sentAt: number;
 }
 
+export interface QueuedUserMessage {
+  readonly id: string;
+  readonly queueId?: string;
+  readonly content: string;
+  readonly matchContent: string;
+  readonly queueMode: 'interrupt' | 'after-turn';
+  readonly status: 'pending-ack' | 'queued';
+  readonly sentAt: number;
+}
+
 interface AppState {
   // ----- 数据 -----
   projects: readonly Project[];
@@ -107,6 +117,7 @@ interface AppState {
   eventsBySession: Readonly<Record<string, readonly SessionEvent[]>>;
   /** 每个 sessionId 一桶用户消息（renderer 本地跟踪）。*/
   userMessagesBySession: Readonly<Record<string, readonly UserMessage[]>>;
+  queuedUserMessagesBySession: Readonly<Record<string, readonly QueuedUserMessage[]>>;
   /** Renderer-local workflow notices. These are not user turns and should not affect history/fork indices. */
   workflowNoticesBySession: Readonly<Record<string, readonly WorkflowNoticeMessage[]>>;
   /**
@@ -377,6 +388,28 @@ interface AppState {
   ): void;
   /** sentAt 可选——缺省 Date.now()；history restore 时传 session.createdAt 让旧消息显示真实时间。 */
   appendUserMessage(sessionId: string, content: string, sentAt?: number): void;
+  appendQueuedUserMessage(
+    sessionId: string,
+    input: {
+      readonly content: string;
+      readonly matchContent?: string;
+      readonly queueMode: 'interrupt' | 'after-turn';
+      readonly sentAt?: number;
+    },
+  ): string | null;
+  markQueuedUserMessageAccepted(sessionId: string, localId: string, queueId?: string): void;
+  removeQueuedUserMessage(sessionId: string, localId: string): void;
+  promoteQueuedUserMessage(sessionId: string, localId: string, sentAt?: number): void;
+  convertLastUserMessageToQueued(
+    sessionId: string,
+    userContent: string,
+    input: {
+      readonly content: string;
+      readonly matchContent?: string;
+      readonly queueMode: 'interrupt' | 'after-turn';
+      readonly sentAt?: number;
+    },
+  ): string | null;
   appendWorkflowNotice(sessionId: string, content: string, sentAt?: number): void;
   /**
    * v0.1.4 B3: BottomBar optimistic appendUserMessage 后若 IPC session.send 失败
@@ -469,6 +502,7 @@ interface AppState {
 // 单调 counter 用于生成 stable id——sessionId 内多条 user message 顺序唯一。
 let userMessageCounter = 0;
 let workflowNoticeCounter = 0;
+let queuedUserMessageCounter = 0;
 /**
  * 持久化 currentProjectPath 到 localStorage —— Vite HMR full reload / Electron renderer
  * 重载时，避免 zustand store 重置为 null 让 App.tsx 启动 effect 误把 currentProjectPath
@@ -652,6 +686,66 @@ function capWorkflowRuns(runs: Record<string, WorkflowRunT>): Record<string, Wor
   return trimmed;
 }
 
+function createUserMessage(sessionId: string, content: string, sentAt = Date.now()): UserMessage {
+  return { id: `u_${sessionId}_${++userMessageCounter}`, content, sentAt };
+}
+
+function normalizeQueuedMatchContent(content: string): string {
+  const marker = '\n\n[truncated]';
+  return content.endsWith(marker) ? content.slice(0, -marker.length) : content;
+}
+
+function queuedMessageMatches(entry: QueuedUserMessage, matchContent: string): boolean {
+  const normalized = normalizeQueuedMatchContent(matchContent);
+  return (
+    entry.matchContent === matchContent ||
+    entry.content === matchContent ||
+    entry.matchContent === normalized ||
+    entry.content === normalized ||
+    entry.matchContent.startsWith(normalized)
+  );
+}
+
+function promoteQueuedUserMessageForPrompt(
+  state: AppState,
+  sessionId: string,
+  queueMode: QueuedUserMessage['queueMode'],
+  matchContent: string,
+): Partial<AppState> {
+  const queued = state.queuedUserMessagesBySession[sessionId] ?? [];
+  const idx = queued.findIndex(
+    (entry) => entry.queueMode === queueMode && queuedMessageMatches(entry, matchContent),
+  );
+  const userBucket = state.userMessagesBySession[sessionId] ?? [];
+
+  if (idx === -1) {
+    const normalized = normalizeQueuedMatchContent(matchContent);
+    const alreadyRendered = userBucket.some(
+      (message) => message.content === matchContent || message.content === normalized,
+    );
+    if (alreadyRendered) return {};
+    return {
+      userMessagesBySession: {
+        ...state.userMessagesBySession,
+        [sessionId]: [...userBucket, createUserMessage(sessionId, matchContent)],
+      },
+    };
+  }
+
+  const entry = queued[idx]!;
+  const nextQueued = [...queued.slice(0, idx), ...queued.slice(idx + 1)];
+  return {
+    queuedUserMessagesBySession: {
+      ...state.queuedUserMessagesBySession,
+      [sessionId]: nextQueued,
+    },
+    userMessagesBySession: {
+      ...state.userMessagesBySession,
+      [sessionId]: [...userBucket, createUserMessage(sessionId, entry.content)],
+    },
+  };
+}
+
 export const useAppStore = create<AppState>((set) => ({
   projects: [],
   currentProjectPath: lsGet(LS_KEY_PROJECT),
@@ -660,6 +754,7 @@ export const useAppStore = create<AppState>((set) => ({
   currentSessionId: null,
   eventsBySession: {},
   userMessagesBySession: {},
+  queuedUserMessagesBySession: {},
   workflowNoticesBySession: {},
   permissionQueue: [],
   askUserQueue: [],
@@ -803,8 +898,7 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => {
       if (!state.sessions.some((s) => s.sessionId === sessionId)) return state;
       const bucket = state.userMessagesBySession[sessionId] ?? [];
-      const id = `u_${sessionId}_${++userMessageCounter}`;
-      const msg: UserMessage = { id, content, sentAt: sentAt ?? Date.now() };
+      const msg = createUserMessage(sessionId, content, sentAt ?? Date.now());
       return {
         userMessagesBySession: {
           ...state.userMessagesBySession,
@@ -812,6 +906,124 @@ export const useAppStore = create<AppState>((set) => ({
         },
       };
     }),
+
+  appendQueuedUserMessage: (sessionId, input) => {
+    const localId = `qu_${sessionId}_${++queuedUserMessageCounter}`;
+    let appended = false;
+    set((state) => {
+      if (!state.sessions.some((s) => s.sessionId === sessionId)) return state;
+      appended = true;
+      const bucket = state.queuedUserMessagesBySession[sessionId] ?? [];
+      const msg: QueuedUserMessage = {
+        id: localId,
+        content: input.content,
+        matchContent: input.matchContent ?? input.content,
+        queueMode: input.queueMode,
+        status: 'pending-ack',
+        sentAt: input.sentAt ?? Date.now(),
+      };
+      return {
+        queuedUserMessagesBySession: {
+          ...state.queuedUserMessagesBySession,
+          [sessionId]: [...bucket, msg],
+        },
+      };
+    });
+    return appended ? localId : null;
+  },
+
+  markQueuedUserMessageAccepted: (sessionId, localId, queueId) =>
+    set((state) => {
+      const bucket = state.queuedUserMessagesBySession[sessionId];
+      if (!bucket) return state;
+      let changed = false;
+      const nextBucket = bucket.map((entry) => {
+        if (entry.id !== localId) return entry;
+        changed = true;
+        return {
+          ...entry,
+          ...(queueId !== undefined ? { queueId } : {}),
+          status: 'queued' as const,
+        };
+      });
+      if (!changed) return state;
+      return {
+        queuedUserMessagesBySession: {
+          ...state.queuedUserMessagesBySession,
+          [sessionId]: nextBucket,
+        },
+      };
+    }),
+
+  removeQueuedUserMessage: (sessionId, localId) =>
+    set((state) => {
+      const bucket = state.queuedUserMessagesBySession[sessionId];
+      if (!bucket) return state;
+      const nextBucket = bucket.filter((entry) => entry.id !== localId);
+      if (nextBucket.length === bucket.length) return state;
+      return {
+        queuedUserMessagesBySession: {
+          ...state.queuedUserMessagesBySession,
+          [sessionId]: nextBucket,
+        },
+      };
+    }),
+
+  promoteQueuedUserMessage: (sessionId, localId, sentAt) =>
+    set((state) => {
+      const bucket = state.queuedUserMessagesBySession[sessionId];
+      if (!bucket) return state;
+      const idx = bucket.findIndex((entry) => entry.id === localId);
+      if (idx === -1) return state;
+      const entry = bucket[idx]!;
+      const userBucket = state.userMessagesBySession[sessionId] ?? [];
+      return {
+        queuedUserMessagesBySession: {
+          ...state.queuedUserMessagesBySession,
+          [sessionId]: [...bucket.slice(0, idx), ...bucket.slice(idx + 1)],
+        },
+        userMessagesBySession: {
+          ...state.userMessagesBySession,
+          [sessionId]: [
+            ...userBucket,
+            createUserMessage(sessionId, entry.content, sentAt ?? Date.now()),
+          ],
+        },
+      };
+    }),
+
+  convertLastUserMessageToQueued: (sessionId, userContent, input) => {
+    let localId: string | null = null;
+    set((state) => {
+      if (!state.sessions.some((s) => s.sessionId === sessionId)) return state;
+      const userBucket = state.userMessagesBySession[sessionId];
+      if (!userBucket || userBucket.length === 0) return state;
+      const last = userBucket[userBucket.length - 1];
+      if (!last || last.content !== userContent) return state;
+
+      localId = `qu_${sessionId}_${++queuedUserMessageCounter}`;
+      const queuedBucket = state.queuedUserMessagesBySession[sessionId] ?? [];
+      const queued: QueuedUserMessage = {
+        id: localId,
+        content: input.content,
+        matchContent: input.matchContent ?? input.content,
+        queueMode: input.queueMode,
+        status: 'queued',
+        sentAt: input.sentAt ?? last.sentAt,
+      };
+      return {
+        userMessagesBySession: {
+          ...state.userMessagesBySession,
+          [sessionId]: userBucket.slice(0, -1),
+        },
+        queuedUserMessagesBySession: {
+          ...state.queuedUserMessagesBySession,
+          [sessionId]: [...queuedBucket, queued],
+        },
+      };
+    });
+    return localId;
+  },
 
   appendWorkflowNotice: (sessionId, content, sentAt) =>
     set((state) => {
@@ -1056,6 +1268,30 @@ export const useAppStore = create<AppState>((set) => ({
         const { [event.sessionId]: _drop, ...restPending } = state.pendingSendBySession;
         next.pendingSendBySession = restPending;
       }
+      if (event.kind === 'mid_turn_user_prompt') {
+        Object.assign(
+          next,
+          promoteQueuedUserMessageForPrompt(state, event.sessionId, 'interrupt', event.content),
+        );
+      } else if (event.kind === 'queued_user_prompt_started') {
+        Object.assign(
+          next,
+          promoteQueuedUserMessageForPrompt(
+            state,
+            event.sessionId,
+            event.queueMode,
+            event.content,
+          ),
+        );
+      } else if (event.kind === 'session_error' && event.error === 'cancelled') {
+        const queued = state.queuedUserMessagesBySession[event.sessionId];
+        if (queued && queued.length > 0) {
+          next.queuedUserMessagesBySession = {
+            ...state.queuedUserMessagesBySession,
+            [event.sessionId]: [],
+          };
+        }
+      }
       // F008: 同步抽取 work_budget / harness_profile 到 derived maps
       // —— 视图不必每次 scan 整条 bucket
       if (event.kind === 'iteration_end') {
@@ -1219,6 +1455,7 @@ export const useAppStore = create<AppState>((set) => ({
       // 同时清掉对应事件 buffer 和 user message buffer——session 不在了，留着就是泄漏
       const { [sessionId]: _evt, ...restEvents } = state.eventsBySession;
       const { [sessionId]: _msg, ...restMsgs } = state.userMessagesBySession;
+      const { [sessionId]: _queuedMsg, ...restQueuedMsgs } = state.queuedUserMessagesBySession;
       const { [sessionId]: _wfn, ...restWorkflowNotices } = state.workflowNoticesBySession;
       const { [sessionId]: _bud, ...restBudgets } = state.workBudgetBySession;
       const { [sessionId]: _prof, ...restProfiles } = state.harnessProfileBySession;
@@ -1239,6 +1476,7 @@ export const useAppStore = create<AppState>((set) => ({
         sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
         eventsBySession: restEvents,
         userMessagesBySession: restMsgs,
+        queuedUserMessagesBySession: restQueuedMsgs,
         workflowNoticesBySession: restWorkflowNotices,
         workBudgetBySession: restBudgets,
         harnessProfileBySession: restProfiles,
@@ -1462,6 +1700,7 @@ export const useAppStore = create<AppState>((set) => ({
       currentSessionId: null,
       eventsBySession: {},
       userMessagesBySession: {},
+      queuedUserMessagesBySession: {},
       workflowNoticesBySession: {},
       permissionQueue: [],
       askUserQueue: [],
@@ -1492,6 +1731,7 @@ export const useAppStore = create<AppState>((set) => ({
       return {
         eventsBySession: { ...state.eventsBySession, [sessionId]: [] },
         userMessagesBySession: { ...state.userMessagesBySession, [sessionId]: [] },
+        queuedUserMessagesBySession: { ...state.queuedUserMessagesBySession, [sessionId]: [] },
         workflowNoticesBySession: { ...state.workflowNoticesBySession, [sessionId]: [] },
         pendingToolPaths: nextPending,
       };
@@ -1517,6 +1757,10 @@ export const useAppStore = create<AppState>((set) => ({
       return {
         eventsBySession: { ...state.eventsBySession, [newSessionId]: remapped },
         userMessagesBySession: { ...state.userMessagesBySession, [newSessionId]: srcMsgs.slice() },
+        queuedUserMessagesBySession: {
+          ...state.queuedUserMessagesBySession,
+          [newSessionId]: [],
+        },
         workflowNoticesBySession: {
           ...state.workflowNoticesBySession,
           [newSessionId]: srcNotices.slice(),
@@ -1570,6 +1814,7 @@ export const useAppStore = create<AppState>((set) => ({
       const { [sessionId]: _tok, ...restTokens } = state.tokensBySession;
       return {
         userMessagesBySession: { ...state.userMessagesBySession, [sessionId]: newMsgs },
+        queuedUserMessagesBySession: { ...state.queuedUserMessagesBySession, [sessionId]: [] },
         workflowNoticesBySession: {
           ...state.workflowNoticesBySession,
           [sessionId]: newNotices,

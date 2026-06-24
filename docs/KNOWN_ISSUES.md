@@ -1,6 +1,6 @@
 # Known Issues
 
-Last Updated: 2026-06-23
+Last Updated: 2026-06-24
 
 ## Issue Index
 
@@ -16,6 +16,7 @@ Last Updated: 2026-06-23
 | 008 | High | Resolved | Real KodaX sessions did not register configured MCP capability provider | v0.1.x | 2026-06-23 |
 | 009 | High | Resolved | Space per-session follow-up queue removed SDK mid-turn queue-query insertion | v0.1.21 | 2026-06-23 |
 | 010 | High | Resolved | Changing current project could keep a stale active session, so agent ran in the previous workspace | v0.1.x | 2026-06-23 |
+| 011 | High | Resolved | Mid-turn interrupt prompts stayed visually above the spinner because SDK prompt-consumption events were not surfaced | v0.1.22 | 2026-06-24 |
 
 ## Issue Details
 
@@ -785,12 +786,126 @@ Verification:
 - `node --test --import tsx/esm test/session.test.ts test/slash.test.ts` from `packages/space-ipc-schema` passed: 51/51.
 - `npm run typecheck` passed.
 
+### 011: Mid-turn interrupt prompts stayed visually above the spinner because SDK prompt-consumption events were not surfaced
+
+- Priority: High
+- Status: Resolved
+- Introduced: v0.1.22
+- Fixed: v0.1.23
+- Created: 2026-06-24
+- Resolution Date: 2026-06-24
+
+#### Original Problem
+
+Current behavior:
+
+- `queueMode: interrupt` successfully entered the SDK main-thread queue and could be consumed mid-turn.
+- The renderer optimistically appended the user's follow-up prompt immediately.
+- Space did not surface the SDK `onMidTurnUserMessages` callback, so `composeMessages()` had no event boundary showing when the SDK actually consumed the queued prompt.
+- While the current run kept streaming, the optimistic user bubble stayed directly above the live spinner and older stream output kept growing above it, visually resembling the old after-turn queue behavior.
+- Even after mid-turn boundaries were surfaced, pending interrupt/after-turn prompts still looked like normal user bubbles before they had actually entered the agent flow.
+
+Expected behavior:
+
+- Once the SDK consumes an interrupt prompt mid-turn, Space should receive an explicit event boundary.
+- Once Space starts an after-turn queued prompt, Space should receive an explicit event boundary with the original queue mode.
+- Pending interrupt/after-turn prompts should have a distinct queued visual state until they are consumed or started.
+- The transcript should split the current event segment at that boundary so subsequent assistant output belongs to the inserted user prompt.
+- The live spinner should reset to the inserted prompt's current turn instead of inheriting the previous stream status.
+
+#### Context
+
+Affected components:
+
+- `packages/space-ipc-schema/src/channels/session.ts`
+- `apps/desktop/electron/kodax/real-session.ts`
+- `apps/desktop/electron/ipc/queue.ts`
+- `apps/desktop/electron/kodax/session-queue-guard.ts`
+- `packages/space-ipc-schema/src/channels/queue.ts`
+- `apps/desktop/renderer/src/store/appStore.ts`
+- `apps/desktop/renderer/src/features/session/composeMessages.ts`
+- `apps/desktop/renderer/src/features/session/messages/bubbles.tsx`
+- `apps/desktop/renderer/src/shell/ActivitySpinner.tsx`
+- `apps/desktop/renderer/src/shell/BottomBar.tsx`
+- `apps/desktop/renderer/src/shell/ConversationStreamV2.tsx`
+- `apps/desktop/renderer/src/shell/QueueIndicator.tsx`
+- `apps/desktop/electron/test/composeMessages.test.ts`
+- `apps/desktop/electron/test/activitySpinner.test.ts`
+- `apps/desktop/electron/test/queue.test.ts`
+- `apps/desktop/electron/test/app-store-cancel-event.test.ts`
+- `apps/desktop/electron/test/session-event-schema.test.ts`
+- `packages/space-ipc-schema/test/session.test.ts`
+
+#### Root Cause
+
+The first interrupt-mode fix restored SDK queue insertion and guarded cross-session ownership, but the renderer only knew about optimistic local user messages and terminal or `session_start` boundaries. KodaX's runner-driven mid-turn insertion happens inside the same `runManagedTask()` call and does not emit a second `session_start`. The SDK exposes `KodaXEvents.onMidTurnUserMessages` for this exact UI boundary, but Space was not wiring it into `session.event`.
+
+#### Resolution
+
+Implemented explicit queued-prompt lifecycle boundaries and UI states:
+
+- Added `session.event` kind `mid_turn_user_prompt` with clamped prompt content.
+- Added `session.event` kind `queued_user_prompt_started` with `queueMode` and clamped prompt content for queued prompts that start after the current turn settles.
+- Changed `dequeueNextUserPromptForSession()` to return both prompt content and queue mode.
+- Added renderer-local `queuedUserMessagesBySession` state for prompts accepted into a queue but not yet effective.
+- `BottomBar` now renders running-session sends as queued bubbles first; it promotes them to normal user bubbles only when `mid_turn_user_prompt` or `queued_user_prompt_started` arrives.
+- If main returns `queued: true` after the renderer optimistically rendered a normal user bubble, `BottomBar` converts that last user bubble back into a queued bubble.
+- Added a dashed warning-tone `QueuedUserBubble` that distinguishes `Interrupt queued` from `After-turn queued`.
+- Queue snapshots now include `queueMode` for Space-owned interrupt/after-turn prompt entries, and `QueueIndicator` shows that mode.
+- Deferred queue-watch projection is cancelled on unsubscribe, so the owner-stamped interrupt preview cannot leak after a watcher has been torn down.
+- Wired `KodaXEvents.onMidTurnUserMessages` in `RealKodaXSession` to emit `mid_turn_user_prompt` for each consumed interrupt prompt.
+- Updated `composeMessages()` so a later `mid_turn_user_prompt` splits the current user-turn segment without rendering a duplicate user bubble.
+- Updated `ActivitySpinner` so `mid_turn_user_prompt` resets live status boundaries; immediately after the prompt is consumed it shows a fresh thinking state instead of inheriting previous text output.
+- Updated `ActivitySpinner` so `queued_user_prompt_started` is treated as a live run boundary until the next `session_start` arrives.
+
+Files changed:
+
+- `packages/space-ipc-schema/src/channels/session.ts`
+- `packages/space-ipc-schema/src/channels/queue.ts`
+- `apps/desktop/electron/ipc/queue.ts`
+- `apps/desktop/electron/kodax/real-session.ts`
+- `apps/desktop/electron/kodax/session-queue-guard.ts`
+- `apps/desktop/renderer/src/store/appStore.ts`
+- `apps/desktop/renderer/src/features/session/composeMessages.ts`
+- `apps/desktop/renderer/src/features/session/messages/bubbles.tsx`
+- `apps/desktop/renderer/src/shell/ActivitySpinner.tsx`
+- `apps/desktop/renderer/src/shell/BottomBar.tsx`
+- `apps/desktop/renderer/src/shell/ConversationStreamV2.tsx`
+- `apps/desktop/renderer/src/shell/QueueIndicator.tsx`
+- `apps/desktop/electron/test/composeMessages.test.ts`
+- `apps/desktop/electron/test/activitySpinner.test.ts`
+- `apps/desktop/electron/test/queue.test.ts`
+- `apps/desktop/electron/test/app-store-cancel-event.test.ts`
+- `apps/desktop/electron/test/session-event-schema.test.ts`
+- `packages/space-ipc-schema/test/session.test.ts`
+
+Tests added/updated:
+
+- `mid_turn_user_prompt splits SDK-consumed interrupt prompt within the same run`
+- `pending queued user messages render as queued_user, not normal user bubbles`
+- `queued_user_prompt_started splits a queued follow-up turn at its effective point`
+- `mid_turn_user_prompt promotes a pending interrupt queued message`
+- `queued_user_prompt_started promotes a pending after-turn queued message`
+- `convertLastUserMessageToQueued replaces a normal optimistic bubble after queued ack`
+- `queued_user_prompt_started keeps spinner alive before the next session_start arrives`
+- `queue IPC preview clamps large prompts while preserving raw prompt`
+- `session.event accepts SDK mid-turn user prompt boundaries`
+- `session.event accepts queued user prompt started boundaries`
+- `session.event payload: mid_turn_user_prompt variant`
+- `session.event payload: queued_user_prompt_started variant`
+
+Verification:
+
+- `npm test` from `apps/desktop` passed: 879/879.
+- `node --test --import tsx/esm test/session.test.ts` from `packages/space-ipc-schema` passed: 49/49.
+- `npm run typecheck` passed.
+
 ## Summary
 
-- Total: 10
+- Total: 11
 - Open: 1
-- Resolved: 9
-- High: 7
+- Resolved: 10
+- High: 8
 - Medium: 2
 - Low: 1
 - Next to resolve: 006

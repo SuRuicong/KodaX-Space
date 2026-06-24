@@ -24,6 +24,8 @@ beforeEach(() => {
     currentSessionId: SID,
     eventsBySession: {},
     pendingSendBySession: { [SID]: true },
+    userMessagesBySession: {},
+    queuedUserMessagesBySession: {},
     notifications: [],
     workflowRuns: {},
     workflowNoticesBySession: {},
@@ -66,6 +68,64 @@ test('appendEvent accepts a later cancelled event after a new session_start', ()
     ['session_error', 'session_start', 'session_error'],
   );
 });
+
+test('mid_turn_user_prompt promotes a pending interrupt queued message', () => {
+  const store = useAppStore.getState();
+  const localId = store.appendQueuedUserMessage(SID, {
+    content: 'q2',
+    queueMode: 'interrupt',
+  });
+  assert.ok(localId);
+
+  store.appendEvent({ kind: 'mid_turn_user_prompt', sessionId: SID, content: 'q2' });
+
+  const state = useAppStore.getState();
+  assert.equal(state.queuedUserMessagesBySession[SID]?.length ?? 0, 0);
+  assert.equal(state.userMessagesBySession[SID]?.at(-1)?.content, 'q2');
+});
+
+test('queued_user_prompt_started promotes a pending after-turn queued message', () => {
+  const store = useAppStore.getState();
+  const localId = store.appendQueuedUserMessage(SID, {
+    content: 'q2',
+    queueMode: 'after-turn',
+  });
+  assert.ok(localId);
+
+  store.appendEvent({
+    kind: 'queued_user_prompt_started',
+    sessionId: SID,
+    queueMode: 'after-turn',
+    content: 'q2',
+  });
+
+  const state = useAppStore.getState();
+  assert.equal(state.queuedUserMessagesBySession[SID]?.length ?? 0, 0);
+  assert.equal(state.userMessagesBySession[SID]?.at(-1)?.content, 'q2');
+});
+
+test('convertLastUserMessageToQueued replaces a normal optimistic bubble after queued ack', () => {
+  const store = useAppStore.getState();
+  store.appendUserMessage(SID, 'q2', 1234);
+
+  const localId = store.convertLastUserMessageToQueued(SID, 'q2', {
+    content: 'q2',
+    matchContent: 'resolved q2',
+    queueMode: 'interrupt',
+  });
+
+  const state = useAppStore.getState();
+  assert.ok(localId);
+  assert.equal(state.userMessagesBySession[SID]?.length ?? 0, 0);
+  const queued = state.queuedUserMessagesBySession[SID]?.[0];
+  assert.equal(queued?.id, localId);
+  assert.equal(queued?.content, 'q2');
+  assert.equal(queued?.matchContent, 'resolved q2');
+  assert.equal(queued?.queueMode, 'interrupt');
+  assert.equal(queued?.status, 'queued');
+  assert.equal(queued?.sentAt, 1234);
+});
+
 test('appendEvent turns todo drift warnings into session notifications', () => {
   const store = useAppStore.getState();
   store.appendEvent({

@@ -17,10 +17,22 @@
 // 设计原则：纯函数。给定相同输入产相同输出，便于 useMemo + 单元测试。
 
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
-import type { UserMessage, WorkflowNoticeMessage } from '../../store/appStore.js';
+import type {
+  QueuedUserMessage,
+  UserMessage,
+  WorkflowNoticeMessage,
+} from '../../store/appStore.js';
 
 export type ConversationMessage =
   | { kind: 'user'; id: string; content: string; sentAt: number }
+  | {
+      kind: 'queued_user';
+      id: string;
+      content: string;
+      queueMode: 'interrupt' | 'after-turn';
+      status: 'pending-ack' | 'queued';
+      sentAt: number;
+    }
   | {
       kind: 'assistant_text';
       id: string;
@@ -68,12 +80,14 @@ export type ConversationMessage =
 interface ComposeInput {
   readonly events: readonly SessionEvent[];
   readonly userMessages: readonly UserMessage[];
+  readonly queuedUserMessages?: readonly QueuedUserMessage[];
   readonly workflowNotices?: readonly WorkflowNoticeMessage[];
 }
 
 export function composeMessages({
   events,
   userMessages,
+  queuedUserMessages = [],
   workflowNotices = [],
 }: ComposeInput): ConversationMessage[] {
   const result: ConversationMessage[] = [];
@@ -143,6 +157,17 @@ export function composeMessages({
     composeAssistantSegment(events.slice(cursor), result);
   }
 
+  for (const queued of [...queuedUserMessages].sort((a, b) => a.sentAt - b.sentAt)) {
+    result.push({
+      kind: 'queued_user',
+      id: queued.id,
+      content: queued.content,
+      queueMode: queued.queueMode,
+      status: queued.status,
+      sentAt: queued.sentAt,
+    });
+  }
+
   return result;
 }
 
@@ -151,9 +176,16 @@ function findSegmentEnd(events: readonly SessionEvent[], cursor: number): number
   for (let i = cursor; i < events.length; i++) {
     const e = events[i];
     // Interrupt queued prompts can begin a new logical turn before the
-    // previous turn emits a terminal event, so a later session_start is a
-    // segment boundary. The session_start at cursor still belongs here.
+    // previous turn emits a terminal event. A later session_start or the
+    // SDK's mid-turn prompt callback is a segment boundary; the boundary
+    // event at cursor still belongs to the next segment.
     if (i > cursor && e.kind === 'session_start') {
+      return i;
+    }
+    if (
+      i > cursor &&
+      (e.kind === 'mid_turn_user_prompt' || e.kind === 'queued_user_prompt_started')
+    ) {
       return i;
     }
     if (e.kind === 'session_complete' || e.kind === 'session_error') {
@@ -303,6 +335,14 @@ function composeAssistantSegment(
           // 时间戳，直接透传，不在 selector 里重 stamp 防漂移 (review HIGH-2)
           ...(evt.retryAvailableAt !== undefined ? { retryAvailableAt: evt.retryAvailableAt } : {}),
         });
+        break;
+      }
+      case 'mid_turn_user_prompt': {
+        flushTextBubble();
+        break;
+      }
+      case 'queued_user_prompt_started': {
+        flushTextBubble();
         break;
       }
     }

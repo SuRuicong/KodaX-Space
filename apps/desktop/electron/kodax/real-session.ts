@@ -249,7 +249,13 @@ export class RealKodaXSession implements ManagedSession {
     if (this.disposed || this.currentAbort !== null) return;
     const nextPrompt = dequeueNextUserPromptForSession(this.sessionId);
     if (nextPrompt === undefined) return;
-    this.startRun(nextPrompt);
+    this.emit({
+      kind: 'queued_user_prompt_started',
+      sessionId: this.sessionId,
+      queueMode: nextPrompt.queueMode,
+      content: clampSessionEventText(nextPrompt.content) ?? nextPrompt.content,
+    });
+    this.startRun(nextPrompt.content);
   }
 
   private async ensureExtensionRuntime(retryStale = true): Promise<SpaceSdkExtensionRuntimeHandle | undefined> {
@@ -732,6 +738,17 @@ export class RealKodaXSession implements ManagedSession {
               }
             : undefined,
         });
+      },
+      onMidTurnUserMessages: (contents) => {
+        for (const content of contents) {
+          const clamped = clampSessionEventText(content);
+          if (clamped === undefined || clamped.trim() === '') continue;
+          emitLive({
+            kind: 'mid_turn_user_prompt',
+            sessionId: sid,
+            content: clamped,
+          });
+        }
       },
 
       // ---- Context compaction ----

@@ -425,6 +425,11 @@ export function BottomBar(): JSX.Element {
   const pendingAgentMode = useAppStore((s) => s.pendingAgentMode);
   const setPendingProviderId = useAppStore((s) => s.setPendingProviderId);
   const appendUserMessage = useAppStore((s) => s.appendUserMessage);
+  const appendQueuedUserMessage = useAppStore((s) => s.appendQueuedUserMessage);
+  const markQueuedUserMessageAccepted = useAppStore((s) => s.markQueuedUserMessageAccepted);
+  const removeQueuedUserMessage = useAppStore((s) => s.removeQueuedUserMessage);
+  const promoteQueuedUserMessage = useAppStore((s) => s.promoteQueuedUserMessage);
+  const convertLastUserMessageToQueued = useAppStore((s) => s.convertLastUserMessageToQueued);
   const appendWorkflowNotice = useAppStore((s) => s.appendWorkflowNotice);
   const appendEvent = useAppStore((s) => s.appendEvent);
   const rollbackLastUserMessage = useAppStore((s) => s.rollbackLastUserMessage);
@@ -1537,7 +1542,14 @@ export function BottomBar(): JSX.Element {
       return;
     }
     const skillEcho = `/skill:${name} ${args.join(' ')}`.trim();
-    appendUserMessage(sessionId, skillEcho);
+    const queuedLocalId = isStreaming
+      ? appendQueuedUserMessage(sessionId, {
+          content: skillEcho,
+          matchContent: resolvedPrompt,
+          queueMode,
+        })
+      : null;
+    if (!queuedLocalId) appendUserMessage(sessionId, skillEcho);
     const sendResult = await window.kodaxSpace.invoke('session.send', {
       sessionId,
       prompt: resolvedPrompt,
@@ -1547,12 +1559,28 @@ export function BottomBar(): JSX.Element {
     });
     if (!sendResult.ok) {
       setPendingSend(sessionId, false);
-      rollbackLastUserMessage(sessionId, skillEcho);
+      if (queuedLocalId) removeQueuedUserMessage(sessionId, queuedLocalId);
+      else rollbackLastUserMessage(sessionId, skillEcho);
       setErr(
         `${sendResult.error?.code ?? 'ERR_UNKNOWN'}: ${sendResult.error?.message ?? 'unknown error'}`,
       );
     } else if (sendResult.data.queued) {
-      pushToast(queuedToastText(sendResult.data.queueMode ?? queueMode), 'info');
+      const acceptedQueueMode = sendResult.data.queueMode ?? queueMode;
+      if (queuedLocalId) {
+        markQueuedUserMessageAccepted(sessionId, queuedLocalId, sendResult.data.queueId);
+      } else {
+        const convertedLocalId = convertLastUserMessageToQueued(sessionId, skillEcho, {
+          content: skillEcho,
+          matchContent: resolvedPrompt,
+          queueMode: acceptedQueueMode,
+        });
+        if (convertedLocalId) {
+          markQueuedUserMessageAccepted(sessionId, convertedLocalId, sendResult.data.queueId);
+        }
+      }
+      pushToast(queuedToastText(acceptedQueueMode), 'info');
+    } else if (queuedLocalId) {
+      promoteQueuedUserMessage(sessionId, queuedLocalId);
     }
   }
 
@@ -1611,8 +1639,15 @@ export function BottomBar(): JSX.Element {
     try {
       const sid = await ensureSession();
       if (!sid) return;
-      appendUserMessage(sid, effectivePrompt);
       const promptForAI = effectivePrompt;
+      const queuedLocalId = isStreaming
+        ? appendQueuedUserMessage(sid, {
+            content: effectivePrompt,
+            matchContent: promptForAI,
+            queueMode,
+          })
+        : null;
+      if (!queuedLocalId) appendUserMessage(sid, effectivePrompt);
       const imagesAtSend = pendingImages;
       const fileRefsAtSend = pendingFileRefs;
       const artifactsForSend: InputArtifact[] | undefined =
@@ -1646,7 +1681,7 @@ export function BottomBar(): JSX.Element {
       setHistoryIdx(-1);
       draftRef.current = '';
 
-      setPendingSend(sid, true);
+      if (!queuedLocalId) setPendingSend(sid, true);
       const result = await window.kodaxSpace.invoke('session.send', {
         sessionId: sid,
         prompt: promptForAI,
@@ -1656,8 +1691,9 @@ export function BottomBar(): JSX.Element {
         ...(artifactsForSend ? { artifacts: artifactsForSend } : {}),
       });
       if (!result.ok) {
-        setPendingSend(sid, false);
-        rollbackLastUserMessage(sid, promptForAI);
+        if (!queuedLocalId) setPendingSend(sid, false);
+        if (queuedLocalId) removeQueuedUserMessage(sid, queuedLocalId);
+        else rollbackLastUserMessage(sid, promptForAI);
         setPrompt(promptForAI);
         draftRef.current = promptForAI;
         if (imagesAtSend.length > 0) {
@@ -1672,7 +1708,22 @@ export function BottomBar(): JSX.Element {
       } else if (result.data.queued) {
         // The turn is already running; main accepted the prompt into the requested
         // queue mode. Keep the current spinner and show a toast.
-        pushToast(queuedToastText(result.data.queueMode ?? queueMode), 'info');
+        const acceptedQueueMode = result.data.queueMode ?? queueMode;
+        if (queuedLocalId) {
+          markQueuedUserMessageAccepted(sid, queuedLocalId, result.data.queueId);
+        } else {
+          const convertedLocalId = convertLastUserMessageToQueued(sid, effectivePrompt, {
+            content: effectivePrompt,
+            matchContent: promptForAI,
+            queueMode: acceptedQueueMode,
+          });
+          if (convertedLocalId) {
+            markQueuedUserMessageAccepted(sid, convertedLocalId, result.data.queueId);
+          }
+        }
+        pushToast(queuedToastText(acceptedQueueMode), 'info');
+      } else if (queuedLocalId) {
+        promoteQueuedUserMessage(sid, queuedLocalId);
       }
     } finally {
       setBusy(false);

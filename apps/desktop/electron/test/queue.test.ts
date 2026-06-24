@@ -24,6 +24,14 @@ afterEach(() => {
   _resetQueueStateForTests();
 });
 
+function assertDequeued(
+  sessionId: string,
+  content: string,
+  queueMode: 'interrupt' | 'after-turn' = 'interrupt',
+): void {
+  assert.deepEqual(dequeueNextUserPromptForSession(sessionId), { content, queueMode });
+}
+
 test('enqueueUserPrompt enters SDK main-thread queue but drains only its owner session', async () => {
   const queueId = await enqueueUserPrompt('s1', 'hello');
   const q = getMessageQueue();
@@ -32,7 +40,7 @@ test('enqueueUserPrompt enters SDK main-thread queue but drains only its owner s
   assert.equal(q.getSnapshot().length, 1);
   assert.equal(q.peek({ maxPriority: 'user', mode: 'prompt' }).length, 1);
   assert.equal(dequeueNextUserPromptForSession('s2'), undefined);
-  assert.equal(dequeueNextUserPromptForSession('s1'), 'hello');
+  assertDequeued('s1', 'hello');
   assert.equal(dequeueNextUserPromptForSession('s1'), undefined);
   assert.equal(q.getSnapshot().length, 0);
 });
@@ -44,7 +52,7 @@ test('after-turn follow-up stays out of the SDK queue until session settles', as
   assert.equal(q.getSnapshot().length, 0);
   assert.equal(q.peek({ maxPriority: 'user', mode: 'prompt' }).length, 0);
   assert.equal(dequeueNextUserPromptForSession('s2'), undefined);
-  assert.equal(dequeueNextUserPromptForSession('s1'), 'run later');
+  assertDequeued('s1', 'run later', 'after-turn');
   assert.equal(dequeueNextUserPromptForSession('s1'), undefined);
 });
 
@@ -62,7 +70,7 @@ test('after-turn prompts are invisible to SDK mid-turn drains', async () => {
     drained.map((message) => message.content),
     ['interruptible'],
   );
-  assert.equal(dequeueNextUserPromptForSession('s1'), 'after turn only');
+  assertDequeued('s1', 'after turn only', 'after-turn');
 });
 
 test('session queue scope lets SDK mid-turn drain only the current session prompt', async () => {
@@ -80,7 +88,7 @@ test('session queue scope lets SDK mid-turn drain only the current session promp
     ['follow up from s2'],
   );
   assert.equal(dequeueNextUserPromptForSession('s2'), undefined);
-  assert.equal(dequeueNextUserPromptForSession('s1'), 'follow up from s1');
+  assertDequeued('s1', 'follow up from s1');
 });
 
 test('drainQueueForSession clears only that session across both queues', async () => {
@@ -91,8 +99,8 @@ test('drainQueueForSession clears only that session across both queues', async (
 
   assert.equal(await drainQueueForSession('s2'), 2);
   assert.equal(dequeueNextUserPromptForSession('s2'), undefined);
-  assert.equal(dequeueNextUserPromptForSession('s1'), 'one');
-  assert.equal(dequeueNextUserPromptForSession('s1'), 'two');
+  assertDequeued('s1', 'one');
+  assertDequeued('s1', 'two');
 });
 
 test('queue IPC preview clamps large prompts while preserving raw prompt', async () => {
@@ -114,7 +122,11 @@ test('queue IPC preview clamps large prompts while preserving raw prompt', async
     const payload = sent.current?.payload as { affected: Array<{ content: string }> };
     assert.equal(payload.affected[0]?.content.length, 32 * 1024);
     assert.ok(payload.affected[0]?.content.endsWith('\n[truncated]'));
-    assert.equal(dequeueNextUserPromptForSession('s1'), longPrompt);
+    assert.equal(
+      (payload.affected[0] as { queueMode?: string } | undefined)?.queueMode,
+      'interrupt',
+    );
+    assertDequeued('s1', longPrompt);
   } finally {
     unsubscribe();
   }

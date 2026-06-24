@@ -20,6 +20,7 @@ const messagePrioritySchema = z.enum(['user', 'background']);
 //   'task-notification'   — 子 agent 完成通知,等待父 agent 拉取
 //   'system-reminder'     — 主流程 inject 给 LLM 看的 ephemeral 提醒
 const messageModeSchema = z.enum(['prompt', 'task-notification', 'system-reminder']);
+const queuedPromptModeSchema = z.enum(['interrupt', 'after-turn']);
 
 const queuedMessageSchema = z.object({
   /** 稳定 id `msg-<seq>` — 给 UI dedupe + 单条精确撤销用 */
@@ -32,6 +33,8 @@ const queuedMessageSchema = z.object({
   content: z.string().max(32 * 1024),
   /** Date.now() wall-clock;只用于 trace/UI 显示,不参与排序 */
   enqueuedAt: z.number().int().nonnegative(),
+  /** Space user follow-up mode; absent for SDK internal background messages. */
+  queueMode: queuedPromptModeSchema.optional(),
 });
 
 // --- Invoke: kodax.queueGet ---

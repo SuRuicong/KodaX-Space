@@ -12,7 +12,12 @@
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
-import { useAppStore, type UserMessage, type WorkflowNoticeMessage } from '../store/appStore.js';
+import {
+  useAppStore,
+  type QueuedUserMessage,
+  type UserMessage,
+  type WorkflowNoticeMessage,
+} from '../store/appStore.js';
 import { composeMessages, type ConversationMessage } from '../features/session/composeMessages.js';
 
 // **稳定空数组**：useAppStore selector 里返回 `?? []` literal 会每次 render 创建新引用，
@@ -20,12 +25,14 @@ import { composeMessages, type ConversationMessage } from '../features/session/c
 // (React error #185)。module-level const 让"空"case 复用同一引用。
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 const EMPTY_USER_MESSAGES: readonly UserMessage[] = [];
+const EMPTY_QUEUED_USER_MESSAGES: readonly QueuedUserMessage[] = [];
 const EMPTY_WORKFLOW_NOTICES: readonly WorkflowNoticeMessage[] = [];
 import {
   AssistantBubble,
   SystemNotice,
   ToolCallCard,
   UserBubble,
+  QueuedUserBubble,
 } from '../features/session/messages/bubbles.js';
 import { WelcomeDashboard } from './WelcomeDashboard.js';
 import { ActivitySpinner, useIsStreaming } from './ActivitySpinner.js';
@@ -175,7 +182,7 @@ function groupTools(
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
 
-    if (m.kind === 'user' || m.kind === 'system_notice') {
+    if (m.kind === 'user' || m.kind === 'queued_user' || m.kind === 'system_notice') {
       flushCluster();
       out.push(m);
       continue;
@@ -279,6 +286,11 @@ export function ConversationStreamV2(): JSX.Element {
       ? (s.userMessagesBySession[currentSessionId] ?? EMPTY_USER_MESSAGES)
       : EMPTY_USER_MESSAGES,
   );
+  const queuedUserMessages = useAppStore((s) =>
+    currentSessionId
+      ? (s.queuedUserMessagesBySession[currentSessionId] ?? EMPTY_QUEUED_USER_MESSAGES)
+      : EMPTY_QUEUED_USER_MESSAGES,
+  );
   const workflowNotices = useAppStore((s) =>
     currentSessionId
       ? (s.workflowNoticesBySession[currentSessionId] ?? EMPTY_WORKFLOW_NOTICES)
@@ -304,8 +316,8 @@ export function ConversationStreamV2(): JSX.Element {
   const transcriptView = useAppStore((s) => s.transcriptView);
 
   const messages = useMemo(
-    () => composeMessages({ events, userMessages, workflowNotices }),
-    [events, userMessages, workflowNotices],
+    () => composeMessages({ events, userMessages, queuedUserMessages, workflowNotices }),
+    [events, userMessages, queuedUserMessages, workflowNotices],
   );
   const viewMessages = useMemo(
     () => groupTools(messages, transcriptView),
@@ -369,6 +381,9 @@ export function ConversationStreamV2(): JSX.Element {
       let txt = '';
       switch (m.kind) {
         case 'user':
+          txt = m.content;
+          break;
+        case 'queued_user':
           txt = m.content;
           break;
         case 'assistant_text':
@@ -561,6 +576,10 @@ export function ConversationStreamV2(): JSX.Element {
                 case 'user':
                   inner = <UserBubble content={m.content} sentAt={m.sentAt} />;
                   markerTone = 'user';
+                  break;
+                case 'queued_user':
+                  inner = <QueuedUserBubble {...m} />;
+                  markerTone = 'queued';
                   break;
                 case 'assistant_text':
                   inner = <AssistantBubble text={m.text} thinking={m.thinking} sentAt={m.sentAt} />;
@@ -783,9 +802,10 @@ function ArtifactInlineCallout({ artifact }: { artifact: ArtifactMessage }): JSX
 // Timeline rail marker —— absolute 定位到时间线竖线上，配色按消息 kind 区分
 // 让用户一眼能扫出"哪些是我说的 / 模型说的 / 系统通知 / 工具调用 / 思考"。
 // 直径 9px，与 rail (1px wide @ left:7px) 居中对齐 = marker.left = 3px。
-type MarkerTone = 'user' | 'assistant' | 'system' | 'tool' | 'artifact' | 'thinking';
+type MarkerTone = 'user' | 'queued' | 'assistant' | 'system' | 'tool' | 'artifact' | 'thinking';
 const MARKER_TONE_CLASS: Record<MarkerTone, string> = {
   user: 'bg-run',
+  queued: 'bg-warn',
   assistant: 'bg-ok',
   system: 'bg-warn',
   tool: 'bg-fg-faint dark:bg-fg-muted',

@@ -10,7 +10,11 @@ import {
   composeMessages,
   type ConversationMessage,
 } from '../../renderer/src/features/session/composeMessages.js';
-import type { UserMessage, WorkflowNoticeMessage } from '../../renderer/src/store/appStore.js';
+import type {
+  QueuedUserMessage,
+  UserMessage,
+  WorkflowNoticeMessage,
+} from '../../renderer/src/store/appStore.js';
 
 const sid = 's_1';
 
@@ -21,6 +25,23 @@ function userMsg(id: string, content: string, sentAt = 1000): UserMessage {
 function workflowNotice(id: string, content: string, sentAt = 1001): WorkflowNoticeMessage {
   return { id, content, sentAt };
 }
+
+function queuedMsg(
+  id: string,
+  content: string,
+  queueMode: 'interrupt' | 'after-turn' = 'interrupt',
+  sentAt = 1002,
+): QueuedUserMessage {
+  return {
+    id,
+    content,
+    matchContent: content,
+    queueMode,
+    status: 'queued',
+    sentAt,
+  };
+}
+
 function kindsOf(msgs: ConversationMessage[]): string[] {
   return msgs.map((m) => m.kind);
 }
@@ -37,6 +58,22 @@ test('only user message, no events: returns single user bubble', () => {
   assert.equal(out.length, 1);
   assert.equal(out[0].kind, 'user');
   if (out[0].kind === 'user') assert.equal(out[0].content, 'hello');
+});
+
+test('pending queued user messages render as queued_user, not normal user bubbles', () => {
+  const out = composeMessages({
+    events: [{ kind: 'text_delta', sessionId: sid, text: 'working' }],
+    userMessages: [userMsg('u1', 'q1')],
+    queuedUserMessages: [queuedMsg('qu1', 'q2', 'after-turn')],
+  });
+
+  assert.deepEqual(kindsOf(out), ['user', 'assistant_text', 'queued_user']);
+  const queued = out[2];
+  assert.equal(queued.kind, 'queued_user');
+  if (queued.kind === 'queued_user') {
+    assert.equal(queued.content, 'q2');
+    assert.equal(queued.queueMode, 'after-turn');
+  }
 });
 
 test('user + consecutive text_deltas → user bubble + single merged assistant bubble', () => {
@@ -227,6 +264,49 @@ test('session_start can split an interrupt-queued user turn before terminal even
 
   assert.deepEqual(kindsOf(out), ['user', 'assistant_text', 'user', 'assistant_text']);
   if (out[1].kind === 'assistant_text') assert.equal(out[1].text, 'reply1');
+  if (out[3].kind === 'assistant_text') assert.equal(out[3].text, 'reply2');
+});
+
+test('mid_turn_user_prompt splits SDK-consumed interrupt prompt within the same run', () => {
+  const events: SessionEvent[] = [
+    { kind: 'session_start', sessionId: sid, provider: 'mock' },
+    { kind: 'text_delta', sessionId: sid, text: 'reply1' },
+    { kind: 'mid_turn_user_prompt', sessionId: sid, content: 'q2' },
+    { kind: 'text_delta', sessionId: sid, text: 'reply2' },
+    { kind: 'session_complete', sessionId: sid },
+  ];
+  const out = composeMessages({
+    events,
+    userMessages: [userMsg('u1', 'q1', 1000), userMsg('u2', 'q2', 1001)],
+  });
+
+  assert.deepEqual(kindsOf(out), ['user', 'assistant_text', 'user', 'assistant_text']);
+  if (out[1].kind === 'assistant_text') assert.equal(out[1].text, 'reply1');
+  if (out[2].kind === 'user') assert.equal(out[2].content, 'q2');
+  if (out[3].kind === 'assistant_text') assert.equal(out[3].text, 'reply2');
+});
+
+test('queued_user_prompt_started splits a queued follow-up turn at its effective point', () => {
+  const events: SessionEvent[] = [
+    { kind: 'text_delta', sessionId: sid, text: 'reply1' },
+    {
+      kind: 'queued_user_prompt_started',
+      sessionId: sid,
+      queueMode: 'after-turn',
+      content: 'q2',
+    },
+    { kind: 'session_start', sessionId: sid, provider: 'mock' },
+    { kind: 'text_delta', sessionId: sid, text: 'reply2' },
+    { kind: 'session_complete', sessionId: sid },
+  ];
+  const out = composeMessages({
+    events,
+    userMessages: [userMsg('u1', 'q1', 1000), userMsg('u2', 'q2', 1001)],
+  });
+
+  assert.deepEqual(kindsOf(out), ['user', 'assistant_text', 'user', 'assistant_text']);
+  if (out[1].kind === 'assistant_text') assert.equal(out[1].text, 'reply1');
+  if (out[2].kind === 'user') assert.equal(out[2].content, 'q2');
   if (out[3].kind === 'assistant_text') assert.equal(out[3].text, 'reply2');
 });
 

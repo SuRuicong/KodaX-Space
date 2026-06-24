@@ -19,6 +19,10 @@ const MODE_LABEL: Record<QueuedMessageT['mode'], string> = {
   'task-notification': 'task',
   'system-reminder': 'system',
 };
+const QUEUE_MODE_LABEL: Record<NonNullable<QueuedMessageT['queueMode']>, string> = {
+  interrupt: 'interrupt',
+  'after-turn': 'after-turn',
+};
 
 // Filter UI: 'all' / 'prompt' / 'task-notification' / 'system-reminder'
 type FilterMode = 'all' | MessageModeT;
@@ -107,6 +111,12 @@ export function QueueIndicator(): JSX.Element | null {
                     <span className={PRIORITY_COLOR[m.priority]}>{m.priority}</span>
                     <span className="text-fg-muted">·</span>
                     <span className="text-fg-muted">{MODE_LABEL[m.mode]}</span>
+                    {m.queueMode !== undefined && (
+                      <>
+                        <span className="text-fg-muted">·</span>
+                        <span className="text-warn">{QUEUE_MODE_LABEL[m.queueMode]}</span>
+                      </>
+                    )}
                     {m.agentId !== undefined && (
                       <>
                         <span className="text-fg-muted">·</span>
