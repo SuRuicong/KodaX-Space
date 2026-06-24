@@ -10,10 +10,14 @@ import { useAppStore } from '../../renderer/src/store/appStore.js';
 import { useSurfaceStore } from '../../renderer/src/store/surface.js';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 
-function mkSession(sessionId: string, surface: SessionMeta['surface']): SessionMeta {
+function mkSession(
+  sessionId: string,
+  surface: SessionMeta['surface'],
+  projectRoot = '/proj/x',
+): SessionMeta {
   return {
     sessionId,
-    projectRoot: '/proj/x',
+    projectRoot,
     provider: 'mock',
     reasoningMode: 'auto',
     permissionMode: 'accept-edits',
@@ -97,4 +101,26 @@ test('switching away with no current session records null, restores null', () =>
   assert.equal(useSurfaceStore.getState().sessionIdBySurface.code, null);
   useSurfaceStore.getState().setSurface('code');
   assert.equal(useAppStore.getState().currentSessionId, null);
+});
+
+test('setSurface does not restore a remembered session from another project', () => {
+  useAppStore.setState({
+    sessions: [
+      mkSession('code-A', 'code', '/proj/a'),
+      mkSession('partner-B', 'partner', '/proj/a'),
+    ],
+    currentSessionId: null,
+    currentProjectPath: '/proj/a',
+  });
+  useSurfaceStore.setState({
+    currentSurface: 'code',
+    sessionIdBySurface: { code: null, partner: 'partner-B' },
+  });
+
+  useAppStore.getState().setCurrentProject('/proj/b');
+  useSurfaceStore.getState().setSurface('partner');
+
+  const app = useAppStore.getState();
+  assert.equal(app.currentProjectPath, '/proj/b');
+  assert.equal(app.currentSessionId, null);
 });

@@ -16,6 +16,7 @@
 // 会丢）；KodaX SDK 0.7.42 出 forkSession()/rewindSession() 后接磁盘。
 
 import { useEffect, useState } from 'react';
+import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 import {
   ExternalLink,
   Pin,
@@ -32,7 +33,9 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useAppStore, type UserMessage } from '../store/appStore.js';
+import { shouldActivateSessionForCurrentScope } from '../lib/sessionActivation.js';
 import { SessionLineagePanel } from '../features/session/SessionLineagePanel.js';
+import { useSurfaceStore } from '../store/surface.js';
 
 // 稳定空数组，防 selector `?? []` literal 每次新引用触发 zustand re-render loop (React #185)。
 const EMPTY_USER_MESSAGES: readonly UserMessage[] = [];
@@ -151,7 +154,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
       session.title !== undefined
         ? `${session.title.replace(/( \(fork\))+$/, '')} (fork)`
         : undefined;
-    upsertSession({
+    const childSession: SessionMeta = {
       sessionId: newSessionId,
       projectRoot: session.projectRoot,
       provider: session.provider,
@@ -165,11 +168,21 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
       lastActivityAt: createdAt,
       parentSessionId: sessionId,
       forkPointTurnIdx,
-    });
+    };
+    upsertSession(childSession);
     // 复制 buffer 到新 session
     forkSessionBuffers(sessionId, newSessionId, forkPointTurnIdx);
     // 切到新 session（用户期望"fork 后立刻在新分支里干活"）
-    setCurrentSession(newSessionId);
+    const latest = useAppStore.getState();
+    const latestSurface = useSurfaceStore.getState().currentSurface;
+    if (
+      shouldActivateSessionForCurrentScope(childSession, {
+        currentProjectPath: latest.currentProjectPath,
+        currentSurface: latestSurface,
+      })
+    ) {
+      setCurrentSession(newSessionId);
+    }
     onClose();
   }
 

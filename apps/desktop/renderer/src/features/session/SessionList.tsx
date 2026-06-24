@@ -11,6 +11,7 @@ import { useAppStore } from '../../store/appStore.js';
 import { resolveActiveModel } from '../../shell/resolveActiveModel.js';
 import { useSurfaceStore } from '../../store/surface.js';
 import { sessionMatchesScope } from '../../lib/sessionScope.js';
+import { shouldActivateSessionForCurrentScope } from '../../lib/sessionActivation.js';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 
 // 'mock' 永远保留——FEATURE_003 Mock adapter 的入口，未配 key 时也能跑通整个流程。
@@ -159,7 +160,16 @@ export function SessionList(): JSX.Element {
         lastActivityAt: result.data.createdAt,
       };
       upsertSession(stub);
-      setCurrentSession(stub.sessionId);
+      const latest = useAppStore.getState();
+      const latestSurface = useSurfaceStore.getState().currentSurface;
+      if (
+        shouldActivateSessionForCurrentScope(stub, {
+          currentProjectPath: latest.currentProjectPath,
+          currentSurface: latestSurface,
+        })
+      ) {
+        setCurrentSession(stub.sessionId);
+      }
       // await refresh——确保 main 端权威列表已应用，避免后续操作看到 stub 残影
       await refreshSessions(currentProjectPath, replaceSessionsForScope, currentSurface);
     } finally {

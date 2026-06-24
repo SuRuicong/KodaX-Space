@@ -13,7 +13,7 @@
 //   - ⏳ Partner 受限工具集（F047）/ 自定义画像（F053，依赖 SDK R1/R2）。
 
 import { create } from 'zustand';
-import type { Surface } from '@kodax-space/space-ipc-schema';
+import { canonProjectRoot, type SessionMeta, type Surface } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from './appStore.js';
 
 // F045: Surface 联合的**权威定义**在 IPC schema 包（surfaceSchema = z.enum(['code','partner'])）
@@ -57,6 +57,24 @@ export const DEFAULT_SURFACE: Surface = 'code';
 // F046: currentSurface 持久化——重启回到上次停留的面（Coder/Partner）。
 // 仅持久化"哪个面"，不持久化"哪个 session"——与 Coder 现状一致（重启都回各面 dashboard）。
 const LS_KEY_SURFACE = 'kodax-space.currentSurface';
+const IS_WIN_SURFACE =
+  typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent);
+
+function sessionSurface(session: SessionMeta): Surface {
+  return session.surface ?? 'code';
+}
+
+function sessionMatchesCurrentProject(
+  session: SessionMeta,
+  currentProjectPath: string | null,
+): boolean {
+  if (currentProjectPath === null) return true;
+  return (
+    canonProjectRoot(session.projectRoot, IS_WIN_SURFACE) ===
+    canonProjectRoot(currentProjectPath, IS_WIN_SURFACE)
+  );
+}
+
 function lsGetSurface(): Surface {
   if (typeof window === 'undefined') return DEFAULT_SURFACE;
   try {
@@ -104,9 +122,14 @@ export const useSurfaceStore = create<SurfaceState>((set, get) => ({
     // 校验：目标面上次的 session 可能已在另一面被删除（review HIGH-1）。不在当前
     // sessions 列表里就回退到 null（该面 dashboard），避免 currentSessionId 指向 orphan id
     // 让 ConversationStreamV2 渲染一个已不存在的 session。
-    const restored = stored !== null && app.sessions.some((s) => s.sessionId === stored)
-      ? stored
-      : null;
+    const restoredSession =
+      stored !== null ? app.sessions.find((s) => s.sessionId === stored) : undefined;
+    const restored =
+      restoredSession !== undefined &&
+      sessionSurface(restoredSession) === surface &&
+      sessionMatchesCurrentProject(restoredSession, app.currentProjectPath)
+        ? stored
+        : null;
     set((s) => ({
       currentSurface: surface,
       sessionIdBySurface: { ...s.sessionIdBySurface, [prev]: leavingSessionId },

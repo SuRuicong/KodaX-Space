@@ -763,9 +763,12 @@ Implemented project/session scope validation on both state transition and send:
 
 - `setCurrentProject()` now clears `currentSessionId` when switching to a project that does not match the active session's canonical `projectRoot`.
 - `setCurrentProject(null)` clears the active session as well as the project.
-- If the active session already belongs to the target project, the session is preserved.
+- `setCurrentProject()` was hardened so any explicit switch to a different project starts from the new-session view, even if renderer metadata could otherwise preserve a session.
+- Selecting the same canonical project keeps the current session, so no-op project picks do not disturb the user.
 - `BottomBar.ensureSession()` now validates the active session with `sessionMatchesScope()` against the current project and surface before reusing it.
 - If the active session is stale or missing from renderer session metadata, the composer clears it and creates a new session scoped to the displayed project.
+- Async `session.create` and `session.fork` responses now activate the returned session only if the user is still viewing the same project and surface when the IPC call returns.
+- Surface tab session memory now restores only sessions that still belong to the displayed project, so switching Coder/Partner after a project change cannot resurrect the previous project's session.
 - `session.send` and `slash.exec` now accept optional `expectedProjectRoot` and `expectedSurface` guard fields.
 - First-party renderer send and slash paths pass those guard fields from the displayed project/surface.
 - The main process rejects a send before title mutation or agent execution if the resolved session scope does not match the expected project/surface.
@@ -773,7 +776,12 @@ Implemented project/session scope validation on both state transition and send:
 Tests added:
 
 - `setCurrentProject clears currentSessionId when active session belongs to previous project`
-- `setCurrentProject keeps currentSessionId when active session already belongs to target project`
+- `setCurrentProject clears currentSessionId when switching to a different project`
+- `setCurrentProject keeps currentSessionId when target project is unchanged`
+- `setSurface does not restore a remembered session from another project`
+- `created session activates only when current project and surface still match`
+- `missing session surface is treated as code for activation`
+- `forked session does not activate after the user switched projects`
 - `assertSessionSendScope rejects stale project root`
 - `assertSessionSendScope rejects stale surface`
 - `session.send accepts expected project and surface guard fields`
@@ -783,7 +791,7 @@ Tests added:
 
 Verification:
 
-- `node --test --import tsx/esm electron/test/session-send-scope.test.ts electron/test/set-current-session-syncs-project.test.ts electron/test/slash-ipc.test.ts` from `apps/desktop` passed: 16/16.
+- `node --test --import tsx/esm electron/test/set-current-session-syncs-project.test.ts electron/test/surface-session-swap.test.ts electron/test/session-activation.test.ts electron/test/session-send-scope.test.ts` from `apps/desktop` passed: 21/21.
 - `node --test --import tsx/esm test/session.test.ts test/slash.test.ts` from `packages/space-ipc-schema` passed: 51/51.
 - `npm run typecheck` passed.
 

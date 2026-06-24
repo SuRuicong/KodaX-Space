@@ -139,12 +139,27 @@ test('setCurrentProject clears currentSessionId when active session belongs to p
   assert.equal(s.currentSessionId, null);
 });
 
-test('setCurrentProject keeps currentSessionId when active session already belongs to target project', () => {
+test('setCurrentProject clears currentSessionId when switching to a different project', () => {
   const session = mkSession('sess-current', '/Users/vincegao/finance-management');
   useAppStore.setState({
     sessions: [session],
     currentSessionId: 'sess-current',
     currentProjectPath: '/Users/vincegao/kodax_workspace',
+  });
+
+  useAppStore.getState().setCurrentProject('/Users/vincegao/finance-management');
+
+  const s = useAppStore.getState();
+  assert.equal(s.currentProjectPath, '/Users/vincegao/finance-management');
+  assert.equal(s.currentSessionId, null);
+});
+
+test('setCurrentProject keeps currentSessionId when target project is unchanged', () => {
+  const session = mkSession('sess-current', '/Users/vincegao/finance-management');
+  useAppStore.setState({
+    sessions: [session],
+    currentSessionId: 'sess-current',
+    currentProjectPath: '/Users/vincegao/finance-management/',
   });
 
   useAppStore.getState().setCurrentProject('/Users/vincegao/finance-management');

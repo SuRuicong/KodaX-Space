@@ -853,16 +853,11 @@ export const useAppStore = create<AppState>((set) => ({
         : null;
       if (currentCanon === nextCanon) return { currentProjectPath: path };
 
-      const currentSession =
-        state.currentSessionId !== null
-          ? state.sessions.find((s) => s.sessionId === state.currentSessionId)
-          : undefined;
-      const keepCurrentSession =
-        currentSession !== undefined &&
-        canonProjectRootShared(currentSession.projectRoot, IS_WIN_RENDERER) === nextCanon;
       return {
         currentProjectPath: path,
-        currentSessionId: keepCurrentSession ? state.currentSessionId : null,
+        currentSessionId: null,
+        lastDiffPath: null,
+        pendingToolPaths: {},
       };
     });
   },

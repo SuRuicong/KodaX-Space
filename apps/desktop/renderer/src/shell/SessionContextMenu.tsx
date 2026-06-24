@@ -25,6 +25,8 @@
 import { useEffect, useRef } from 'react';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
+import { shouldActivateSessionForCurrentScope } from '../lib/sessionActivation.js';
+import { useSurfaceStore } from '../store/surface.js';
 import { Caret } from '../components/Caret.js';
 import { Portal } from '../components/Portal.js';
 
@@ -116,7 +118,16 @@ export function SessionContextMenu({
     };
     upsertSession(stub);
     forkBuffers(session.sessionId, r.data.newSessionId, turnIdx);
-    setCurrentSession(r.data.newSessionId);
+    const latest = useAppStore.getState();
+    const latestSurface = useSurfaceStore.getState().currentSurface;
+    if (
+      shouldActivateSessionForCurrentScope(stub, {
+        currentProjectPath: latest.currentProjectPath,
+        currentSurface: latestSurface,
+      })
+    ) {
+      setCurrentSession(r.data.newSessionId);
+    }
     // F045: 按 fork child 的工作面拉（fork 继承 source surface），与分面列表保持一致——
     // 否则刷新会把另一面的 session 也灌进 store，破坏 Coder/Partner 列表独立。
     const listR = await window.kodaxSpace.invoke('session.list', {

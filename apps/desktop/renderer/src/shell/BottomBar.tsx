@@ -27,6 +27,7 @@ import { RetryBanner } from './RetryBanner.js';
 import { NotificationsSurface } from './NotificationsSurface.js';
 import { pushToast } from '../store/toastStore.js';
 import { sessionMatchesScope } from '../lib/sessionScope.js';
+import { shouldActivateSessionForCurrentScope } from '../lib/sessionActivation.js';
 
 const SLASH_ARGS_MAX = 20;
 
@@ -603,7 +604,16 @@ export function BottomBar(): JSX.Element {
       lastActivityAt: result.data.createdAt,
     };
     upsertSession(stub);
-    setCurrentSession(stub.sessionId);
+    const latest = useAppStore.getState();
+    const latestSurface = useSurfaceStore.getState().currentSurface;
+    if (
+      shouldActivateSessionForCurrentScope(stub, {
+        currentProjectPath: latest.currentProjectPath,
+        currentSurface: latestSurface,
+      })
+    ) {
+      setCurrentSession(stub.sessionId);
+    }
     setPendingProviderId(null);
     void window.kodaxSpace
       .invoke('session.list', {
@@ -1435,7 +1445,7 @@ export function BottomBar(): JSX.Element {
         session.title !== undefined
           ? `${session.title.replace(/( \(fork\))+$/, '')} (fork)`
           : undefined;
-      state.upsertSession({
+      const childSession = {
         ...session,
         sessionId: r.data.newSessionId,
         title: childTitle,
@@ -1443,9 +1453,19 @@ export function BottomBar(): JSX.Element {
         lastActivityAt: r.data.createdAt,
         parentSessionId: sessionId,
         forkPointTurnIdx,
-      });
+      };
+      state.upsertSession(childSession);
       state.forkSessionBuffers(sessionId, r.data.newSessionId, forkPointTurnIdx);
-      state.setCurrentSession(r.data.newSessionId);
+      const latest = useAppStore.getState();
+      const latestSurface = useSurfaceStore.getState().currentSurface;
+      if (
+        shouldActivateSessionForCurrentScope(childSession, {
+          currentProjectPath: latest.currentProjectPath,
+          currentSurface: latestSurface,
+        })
+      ) {
+        state.setCurrentSession(r.data.newSessionId);
+      }
       appendUserMessage(
         sessionId,
         `[fork] created ${r.data.newSessionId} from turn ${forkPointTurnIdx}`,
