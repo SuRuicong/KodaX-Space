@@ -107,6 +107,28 @@ test('clock rollback degrades an otherwise valid entitlement', async () => {
   assert.equal(status.degraded, true);
 });
 
+test('clock rolled back before issuance degrades even without a state baseline', async () => {
+  // Threat: a local user deletes state.json (user-writable) to wipe the rollback
+  // baseline, then rolls the system clock back to extend an expiring license. The
+  // signed issuedAt is a stateless floor that survives state.json deletion.
+  const fixture = createSignedLicense({ expiresAt: '2026-07-24T00:00:00.000Z' });
+  const filePath = path.join(tmpDir, 'valid.kodax-license');
+  await fs.writeFile(filePath, fixture.raw, 'utf-8');
+  const manager = createManager({ keys: [fixture.key], now: new Date('2026-06-24T00:00:00.000Z') });
+  await manager.importEntitlement(filePath);
+
+  // Wipe the persisted rollback baseline, then observe at a clock well before issuedAt.
+  await fs.rm(stateFile, { force: true });
+  const rolledBack = createManager({
+    keys: [fixture.key],
+    now: new Date('2026-06-20T00:00:00.000Z'),
+  });
+  const status = await rolledBack.getStatus();
+
+  assert.equal(status.status, 'degraded');
+  assert.equal(status.degraded, true);
+});
+
 test('exportRequest writes an offline request file', async () => {
   const manager = createManager({ keys: [], now: new Date('2026-06-24T00:00:00.000Z') });
 

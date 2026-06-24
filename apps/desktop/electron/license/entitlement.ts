@@ -1,4 +1,4 @@
-import { createVerify, verify as verifyOneShot } from 'node:crypto';
+import { verify as verifyOneShot } from 'node:crypto';
 import {
   licenseEntitlementEnvelopeSchema,
   type LicenseEntitlementEnvelopeT,
@@ -100,18 +100,18 @@ export function verifyLicenseEnvelope(
   const signature = decodeBase64Url(envelope.signature);
   const message = Buffer.from(licenseSignatureMessage(envelope), 'utf-8');
 
+  // Ed25519 verification only. `verify(null, ...)` derives the algorithm from the
+  // pinned public key, never from the (attacker-controlled) envelope `alg` field —
+  // so there is no algorithm-confusion surface. Any failure (bad signature,
+  // malformed key PEM, crypto error) is fail-closed: signatureOk stays false.
+  // NB: do NOT add a SHA-256 / createVerify fallback here — a SHA-256 signature is
+  // not a valid format for an Ed25519 key, and retrying with a different algorithm
+  // would reopen an algorithm-confusion bypass.
   let signatureOk = false;
   try {
     signatureOk = verifyOneShot(null, message, key.publicKeyPem, signature);
   } catch {
-    try {
-      const verifier = createVerify('sha256');
-      verifier.update(message);
-      verifier.end();
-      signatureOk = verifier.verify(key.publicKeyPem, signature);
-    } catch {
-      signatureOk = false;
-    }
+    signatureOk = false;
   }
 
   if (!signatureOk) {

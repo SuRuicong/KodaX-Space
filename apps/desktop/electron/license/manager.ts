@@ -219,7 +219,16 @@ export class LicenseManager {
       return this.payloadStatus('expired', verified.payload, 'License is expired.', now, false);
     }
 
-    if (clock.rollback) {
+    // Stateless rollback floor: the signed `issuedAt` is tamper-proof and, unlike the
+    // persisted `state.json` baseline, cannot be reset by deleting a user-writable file.
+    // If the current clock predates issuance beyond tolerance, the clock was moved
+    // backward regardless of (or despite a deleted) baseline. This hardens the
+    // clock-rollback control against the trivial "rm state.json then roll back" bypass.
+    const issuedAtMs = Date.parse(verified.payload.issuedAt);
+    const issuedRollback =
+      Number.isFinite(issuedAtMs) && now.getTime() + CLOCK_ROLLBACK_TOLERANCE_MS < issuedAtMs;
+
+    if (clock.rollback || issuedRollback) {
       return this.payloadStatus(
         'degraded',
         verified.payload,
