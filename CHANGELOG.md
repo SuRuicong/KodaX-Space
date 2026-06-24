@@ -14,13 +14,32 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 
 ## [Unreleased]
 
+## [0.1.24] - 2026-06-24
+
+### Theme
+
+**Offline customer entitlement MVP, plus streaming-scroll, session-isolation, and queued-prompt fixes.**
+
+This release adds an offline, signed license entitlement system for managed customer deployments (no telephone-home, no prompt for community/education/research/personal use), unlocks the transcript scroll during streaming, hardens session isolation across project switches, and clarifies the queued-prompt lifecycle in the composer.
+
+### Added
+
+- **Offline customer timebox entitlement (F105)** - Offline signed entitlement import/verification (Ed25519, build-embedded issuer key), managed-required mode driven by signed package policy, customer trial/timebox support with `issuedAt`/`expiresAt`, and license status surfaced in Settings / About / Diagnostics. Community, education, research, and personal use are never prompted for a license.
+
 ### Changed
 
 - **KodaX 0.7.55 SDK catch-up** - Root and desktop workspace dependencies now resolve `@kodax-ai/kodax` `^0.7.55`. This upstream release is a concurrency-safety hardening patch for same-directory sessions: per-session scratch isolation, owner-scoped managed-task checkpoints, per-process extension-store temp writes, and stricter runtime tool gating. Space already passes stable session ids into `runManagedTask`, so no additional host API wiring is required for the baseline integration.
 
-### Planning
+### Fixed
 
-- **v0.1.24 lane** - The current 0.1.24 implementation target remains F105 customer timebox entitlement MVP: offline signed entitlement import/verification, managed-required mode, 30-day customer trial support, Settings/About/Diagnostics license status, and no license prompt for community/education/research/personal use.
+- **Streaming transcript scroll unlock** - During active streaming the transcript no longer feels locked to the bottom: a wheel/keyboard/touch scroll-up now disengages auto-follow immediately (bypassing the programmatic-scroll guard that streaming kept refreshing), and auto-follow re-engages only when the user returns to the bottom or clicks Jump to bottom.
+- **Session isolation on project switch** - Switching projects unconditionally clears the current session and validates both surface and project before restoring one, so a session from a previous project can no longer leak into a newly opened project, even under rapid switching.
+- **Queued prompt lifecycle UI** - The composer's queued-prompt add / cancel / promote states stay consistent between main and renderer, with no orphaned queued bubbles after history reloads or session errors.
+
+### Security
+
+- **License signature verification hardening** - Entitlement verification is Ed25519-only; the algorithm is derived from the pinned public key, never from the envelope, and the post-failure SHA-256 fallback was removed to eliminate an algorithm-confusion footgun. Verification is fail-closed on every error path.
+- **Clock-rollback floor** - The clock-rollback guard now also enforces a stateless floor from the signed `issuedAt`, so a rolled-back system clock degrades the entitlement even if the user-writable rollback baseline (`state.json`) is deleted.
 
 ## [0.1.23] - 2026-06-24
 

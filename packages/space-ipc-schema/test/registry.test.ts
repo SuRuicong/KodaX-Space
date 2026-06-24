@@ -84,7 +84,7 @@ test('space.version output schema: valid object parses', () => {
     platform: 'win32' as const,
     kodaxSdkVersion: '0.7.52',
     kodaxDependencySpec: '^0.7.52',
-    capabilityContract: 'space-v0.1.23',
+    capabilityContract: 'space-v0.1.24',
     capabilities: [
       {
         id: 'repointel.trace',
@@ -108,7 +108,7 @@ test('space.version output schema: rejects empty string fields', () => {
     platform: 'win32' as const,
     kodaxSdkVersion: '0.7.52',
     kodaxDependencySpec: '^0.7.52',
-    capabilityContract: 'space-v0.1.23',
+    capabilityContract: 'space-v0.1.24',
     capabilities: [
       {
         id: 'repointel.trace',
@@ -131,7 +131,7 @@ test('space.version output schema: rejects unknown platform', () => {
     platform: 'plan9',
     kodaxSdkVersion: '0.7.52',
     kodaxDependencySpec: '^0.7.52',
-    capabilityContract: 'space-v0.1.23',
+    capabilityContract: 'space-v0.1.24',
     capabilities: [
       {
         id: 'repointel.trace',
@@ -154,7 +154,7 @@ test('space.version output schema: rejects unknown capability status', () => {
     platform: 'win32' as const,
     kodaxSdkVersion: '0.7.52',
     kodaxDependencySpec: '^0.7.52',
-    capabilityContract: 'space-v0.1.23',
+    capabilityContract: 'space-v0.1.24',
     capabilities: [
       {
         id: 'quickAsk.sideQuery',
