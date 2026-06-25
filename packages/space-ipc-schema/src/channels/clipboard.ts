@@ -42,6 +42,26 @@ export const clipboardSaveImageChannel = {
   }),
 } as const;
 
+export const clipboardReadImageChannel = {
+  name: 'clipboard.readImage',
+  direction: 'invoke',
+  input: z.object({
+    sessionId: z.string().min(1).max(128),
+  }),
+  output: z.object({
+    image: z
+      .object({
+        path: z.string().min(1).max(4096),
+        mediaType: z.enum(['image/png', 'image/jpeg']),
+        base64: z.string().min(1).max(MAX_IMAGE_BYTES * 2),
+        bytes: z.number().int().positive().max(MAX_IMAGE_BYTES),
+        width: z.number().int().positive().max(100_000),
+        height: z.number().int().positive().max(100_000),
+      })
+      .nullable(),
+  }),
+} as const;
+
 // ---- Invoke: clipboard.cleanupSession ----
 //
 // session dispose 时调用 — 删该 sessionId 下所有暂存 image 文件。

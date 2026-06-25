@@ -185,6 +185,34 @@ function isSupportedInlineImage(file: File): boolean {
   return INLINE_IMAGE_TYPES.has(file.type);
 }
 
+function clipboardImageFiles(data: DataTransfer): File[] {
+  const images: File[] = [];
+  const seen = new Set<string>();
+  const add = (file: File | null): void => {
+    if (!file || !file.type.startsWith('image/')) return;
+    const key = `${file.name}:${file.size}:${file.type}:${file.lastModified}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    images.push(file);
+  };
+
+  for (let i = 0; i < data.files.length; i++) add(data.files.item(i));
+  for (let i = 0; i < data.items.length; i++) {
+    const item = data.items[i];
+    if (item?.kind === 'file' && item.type.startsWith('image/')) add(item.getAsFile());
+  }
+  return images;
+}
+
+function shouldTryNativeClipboardImageFallback(data: DataTransfer): boolean {
+  const types = Array.from(data.types);
+  const hasText = types.includes('text/plain') && data.getData('text/plain').length > 0;
+  if (hasText) return false;
+  if (Array.from(data.items).some((item) => item.type.startsWith('image/'))) return true;
+  if (types.includes('Files')) return true;
+  return types.length === 0;
+}
+
 function removeFirstReference(text: string, reference: string): string {
   const idx = text.indexOf(reference);
   if (idx < 0) return text;
@@ -701,6 +729,41 @@ export function BottomBar(): JSX.Element {
     if (saved.length > 0) {
       setPendingImages((prev) => [...prev, ...saved]);
     }
+  }
+
+  async function attachNativeClipboardImage(): Promise<void> {
+    if (!window.kodaxSpace) return;
+    if (pendingImages.length >= MAX_PENDING_IMAGES) {
+      setImageErr(`Max ${MAX_PENDING_IMAGES} images per send.`);
+      return;
+    }
+
+    setImageErr(null);
+    const sid = await ensureSession();
+    if (!sid) return;
+
+    const r = await window.kodaxSpace.invoke('clipboard.readImage', { sessionId: sid });
+    if (!r.ok) {
+      setImageErr(`${r.error?.code ?? 'ERR_UNKNOWN'}: ${r.error?.message ?? 'read failed'}`);
+      return;
+    }
+    if (r.data.image === null) return;
+
+    const image = r.data.image;
+    setPendingImages((prev) => {
+      if (prev.length >= MAX_PENDING_IMAGES) return prev;
+      return [
+        ...prev,
+        {
+          path: image.path,
+          mediaType: image.mediaType,
+          source: 'clipboard',
+          bytes: image.bytes,
+          dataUrl: `data:${image.mediaType};base64,${image.base64}`,
+          label: 'Pasted image',
+        },
+      ];
+    });
   }
 
   function removePendingImage(idx: number): void {
@@ -1993,16 +2056,17 @@ export function BottomBar(): JSX.Element {
               });
             }}
             onPaste={(e) => {
-              const items = e.clipboardData?.files;
-              if (!items || items.length === 0) return;
-              const images: File[] = [];
-              for (let i = 0; i < items.length; i++) {
-                const f = items[i];
-                if (f && f.type.startsWith('image/')) images.push(f);
+              const data = e.clipboardData;
+              if (!data) return;
+              const images = clipboardImageFiles(data);
+              if (images.length > 0) {
+                e.preventDefault();
+                void attachImages(images, 'clipboard');
+                return;
               }
-              if (images.length === 0) return;
+              if (!shouldTryNativeClipboardImageFallback(data)) return;
               e.preventDefault();
-              void attachImages(images, 'clipboard');
+              void attachNativeClipboardImage();
             }}
             disabled={busy}
             rows={2}

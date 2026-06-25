@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   saveClipboardImage,
+  readNativeClipboardImage,
   cleanupClipboardSession,
   cleanupClipboardForSession,
   assertArtifactPathInClipboardSandbox,
@@ -56,6 +57,47 @@ test('saveImage: webp media type → .webp extension', async () => {
     mediaType: 'image/webp',
   });
   assert.ok(out.path.endsWith('.webp'));
+});
+
+test('readNativeClipboardImage: returns null when SDK sees no clipboard image', async () => {
+  const out = await readNativeClipboardImage(
+    { sessionId: 'sess-native-empty' },
+    {
+      readAndNormalizeClipboardImage: async () => null,
+      persistImageAsBlock: async () => {
+        throw new Error('should not persist an empty clipboard');
+      },
+    },
+  );
+  assert.equal(out.image, null);
+});
+
+test('readNativeClipboardImage: persists normalized image inside session sandbox', async () => {
+  const image = {
+    buffer: Buffer.from(TINY_PNG_BASE64, 'base64'),
+    mediaType: 'image/png' as const,
+    width: 1,
+    height: 1,
+  };
+  const out = await readNativeClipboardImage(
+    { sessionId: 'sess-native' },
+    {
+      readAndNormalizeClipboardImage: async () => image,
+      persistImageAsBlock: async (normalized, options) => {
+        const filePath = path.join(options.directory, 'clipboard-test.png');
+        await fs.writeFile(filePath, normalized.buffer);
+        return { type: 'image', path: filePath, mediaType: normalized.mediaType };
+      },
+    },
+  );
+
+  assert.ok(out.image);
+  assert.equal(out.image.mediaType, 'image/png');
+  assert.equal(out.image.base64, image.buffer.toString('base64'));
+  assert.equal(out.image.bytes, image.buffer.length);
+  assert.equal(out.image.width, 1);
+  assert.equal(out.image.height, 1);
+  await assertArtifactPathInClipboardSandbox('sess-native', out.image.path);
 });
 
 test('saveImage: rejects sessionId with path-traversal chars', async () => {

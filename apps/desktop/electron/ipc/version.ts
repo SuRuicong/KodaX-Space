@@ -88,15 +88,15 @@ function buildCapabilityLedger(): SpaceCapability[] {
       label: 'Composer image artifacts',
       status: 'supported',
       detail:
-        'Space sends PNG/JPEG/WEBP image artifacts through KodaX inputArtifacts and preserves KodaX 0.7.56 source provenance for clipboard and drag-drop inputs.',
+        'Space sends PNG/JPEG/WEBP image artifacts through KodaX inputArtifacts, preserves KodaX 0.7.56 source provenance for clipboard and drag-drop inputs, supports native clipboard-image fallback, and preflights image artifacts against the selected provider/model before send.',
       since: '0.1.24',
     },
     {
       id: 'composer.mediaHelpers',
       label: 'SDK media helpers',
-      status: 'planned',
+      status: 'partial',
       detail:
-        'KodaX 0.7.56 exposes public media helpers for clipboard normalization, artifact construction, capability checks, and validation; Space still needs main-process IPC and UX wiring for native clipboard fallback, GIF direct-path handling, file artifacts, and video follow-ups.',
+        'Space now uses KodaX 0.7.56 media helpers for native clipboard normalization, sandboxed image artifact construction, and provider/model validation. GIF direct-path handling, structured file artifacts, and video follow-ups remain planned.',
       since: '0.1.24',
     },
   ];

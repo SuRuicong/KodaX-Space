@@ -23,6 +23,7 @@ import {
   handoffAcceptChannel,
   handoffDismissChannel,
   handoffChangedChannel,
+  clipboardReadImageChannel,
   ok,
   fail,
   type IpcResult,
@@ -49,6 +50,26 @@ test('handoff channels are registered', () => {
   assert.equal(handoffAcceptChannel.direction, 'invoke');
   assert.equal(handoffDismissChannel.direction, 'invoke');
   assert.equal(handoffChangedChannel.direction, 'push');
+});
+
+test('clipboard.readImage channel is registered and accepts nullable image output', () => {
+  assert.ok(invokeChannels['clipboard.readImage'], 'clipboard.readImage channel must be registered');
+  assert.ok(INVOKE_CHANNEL_NAMES.has('clipboard.readImage'));
+  assert.equal(clipboardReadImageChannel.direction, 'invoke');
+  assert.equal(
+    clipboardReadImageChannel.output.safeParse({
+      image: {
+        path: '/tmp/kodax-space/clipboard/s_1/clipboard.png',
+        mediaType: 'image/png',
+        base64: 'abc',
+        bytes: 2,
+        width: 1,
+        height: 1,
+      },
+    }).success,
+    true,
+  );
+  assert.equal(clipboardReadImageChannel.output.safeParse({ image: null }).success, true);
 });
 
 test('INVOKE_CHANNEL_NAMES is derived from invokeChannels keys', () => {

@@ -56,6 +56,7 @@ import { assertArtifactPathInClipboardSandbox } from './clipboard.js';
 import { clearSlashGoalForSession } from '../slash/builtin.js';
 import type {
   AgentsFileMeta,
+  InputArtifact,
   SessionHistoryItem,
   SessionMeta,
 } from '@kodax-space/space-ipc-schema';
@@ -70,6 +71,35 @@ async function loadSdkSessionCached(): Promise<SdkSessionModule> {
     sdkSessionCache = await import('@kodax-ai/kodax/session');
   }
   return sdkSessionCache;
+}
+
+type SdkMediaModule = Pick<
+  typeof import('@kodax-ai/kodax/media'),
+  'validateInputArtifactsForModel'
+>;
+let sdkMediaCache: SdkMediaModule | null = null;
+async function loadSdkMediaCached(): Promise<SdkMediaModule> {
+  if (sdkMediaCache === null) {
+    sdkMediaCache = await import('@kodax-ai/kodax/media');
+  }
+  return sdkMediaCache;
+}
+
+async function validateInputArtifactsForSession(
+  artifacts: readonly InputArtifact[] | undefined,
+  session: { readonly provider: string; readonly model?: string },
+): Promise<void> {
+  if (!artifacts || artifacts.length === 0) return;
+  const sdk = await loadSdkMediaCached();
+  try {
+    sdk.validateInputArtifactsForModel(artifacts, {
+      provider: session.provider,
+      ...(session.model ? { model: session.model } : {}),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`input artifact preflight failed: ${message}`);
+  }
 }
 
 // FEATURE_034 reviewer MEDIUM-2: 编译期保证 loader 的 AgentsFile 与 schema 的 AgentsFileMeta
@@ -198,6 +228,7 @@ export function registerSessionChannels(): void {
         await assertArtifactPathInClipboardSandbox(input.sessionId, a.path);
       }
     }
+    await validateInputArtifactsForSession(input.artifacts, session);
     const result = await session.send(input.prompt, input.artifacts, { queueMode: input.queueMode });
     return {
       accepted: true as const,

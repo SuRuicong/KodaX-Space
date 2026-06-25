@@ -18,6 +18,33 @@ import { registerChannel } from './register.js';
 
 const SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 
+type NativeClipboardImage = {
+  readonly buffer: Buffer;
+  readonly mediaType: 'image/png' | 'image/jpeg';
+  readonly width: number;
+  readonly height: number;
+};
+
+type NativeImageBlock = {
+  readonly type: 'image';
+  readonly path: string;
+  readonly mediaType?: string;
+};
+
+type MediaSdk = {
+  readAndNormalizeClipboardImage(): Promise<NativeClipboardImage | null>;
+  persistImageAsBlock(
+    image: NativeClipboardImage,
+    options: { readonly directory: string; readonly fileNamePrefix: string },
+  ): Promise<NativeImageBlock>;
+};
+
+let mediaSdkCache: Promise<MediaSdk> | null = null;
+function loadMediaSdk(): Promise<MediaSdk> {
+  mediaSdkCache ??= import('@kodax-ai/kodax/media') as Promise<MediaSdk>;
+  return mediaSdkCache;
+}
+
 const EXT_BY_MEDIA: Record<string, string> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
@@ -97,7 +124,52 @@ export async function saveClipboardImage(input: {
   return { path: filePath, bytes: buf.length };
 }
 
-/** 同上 — 单纯清盘逻辑，便于单测。*/
+/** Read a native OS clipboard image and persist it into the Space session sandbox. */
+export async function readNativeClipboardImage(
+  input: { readonly sessionId: string },
+  sdk: MediaSdk | undefined = undefined,
+): Promise<{
+  image: {
+    path: string;
+    mediaType: 'image/png' | 'image/jpeg';
+    base64: string;
+    bytes: number;
+    width: number;
+    height: number;
+  } | null;
+}> {
+  const dir = await sessionDir(input.sessionId);
+  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+
+  const media = sdk ?? (await loadMediaSdk());
+  const image = await media.readAndNormalizeClipboardImage();
+  if (image === null) return { image: null };
+
+  const block = await media.persistImageAsBlock(image, {
+    directory: dir,
+    fileNamePrefix: 'clipboard',
+  });
+  if (block.type !== 'image' || typeof block.path !== 'string' || block.path.length === 0) {
+    throw new Error('clipboard.readImage: SDK returned an invalid image block');
+  }
+  if (block.mediaType !== image.mediaType) {
+    throw new Error(`clipboard.readImage: SDK returned unexpected mediaType ${block.mediaType}`);
+  }
+  await assertArtifactPathInClipboardSandbox(input.sessionId, block.path);
+  await fs.chmod(block.path, 0o600).catch(() => {});
+
+  return {
+    image: {
+      path: block.path,
+      mediaType: image.mediaType,
+      base64: image.buffer.toString('base64'),
+      bytes: image.buffer.length,
+      width: image.width,
+      height: image.height,
+    },
+  };
+}
+
 export async function cleanupClipboardSession(input: {
   readonly sessionId: string;
 }): Promise<{ removed: number }> {
@@ -117,6 +189,7 @@ export async function cleanupClipboardSession(input: {
 
 export function registerClipboardChannels(): void {
   registerChannel('clipboard.saveImage', saveClipboardImage);
+  registerChannel('clipboard.readImage', readNativeClipboardImage);
   registerChannel('clipboard.cleanupSession', cleanupClipboardSession);
 }
 

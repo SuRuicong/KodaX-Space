@@ -123,7 +123,11 @@ import {
   terminalOutputChannel,
   terminalExitChannel,
 } from './terminal.js';
-import { clipboardSaveImageChannel, clipboardCleanupSessionChannel } from './clipboard.js';
+import {
+  clipboardSaveImageChannel,
+  clipboardReadImageChannel,
+  clipboardCleanupSessionChannel,
+} from './clipboard.js';
 import { shellRevealPathChannel, shellOpenExternalChannel } from './shell.js';
 import {
   artifactCreateChannel,
@@ -244,6 +248,7 @@ export const invokeChannels = {
   [terminalResizeChannel.name]: terminalResizeChannel,
   [terminalKillChannel.name]: terminalKillChannel,
   [clipboardSaveImageChannel.name]: clipboardSaveImageChannel,
+  [clipboardReadImageChannel.name]: clipboardReadImageChannel,
   [clipboardCleanupSessionChannel.name]: clipboardCleanupSessionChannel,
   [shellRevealPathChannel.name]: shellRevealPathChannel,
   [shellOpenExternalChannel.name]: shellOpenExternalChannel,
