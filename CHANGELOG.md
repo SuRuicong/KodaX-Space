@@ -14,9 +14,21 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 
 ## [Unreleased]
 
+## [0.1.25] - 2026-06-25
+
+### Theme
+
+**KodaX 0.7.56 SDK catch-up — image artifact source provenance and Kimi K2.7 Code coverage.**
+
+This release resolves `@kodax-ai/kodax` `^0.7.56` and threads the new image-artifact source provenance through the composer and managed-session send path, refreshes Kimi K2.7 Code context-window coverage, and records the public SDK media helpers as Space-owned follow-up work.
+
 ### Changed
 
-- **KodaX 0.7.56 SDK catch-up** - Root and desktop workspace dependencies now resolve `@kodax-ai/kodax` `^0.7.56`. Space preserves image artifact source provenance for clipboard/drag-drop sends, updates Kimi K2.7 Code context fallback coverage, and records the new public SDK media helpers as Space-owned follow-up work for native clipboard fallback and capability preflight.
+- **KodaX 0.7.56 SDK catch-up** - Root and desktop workspace dependencies now resolve `@kodax-ai/kodax` `^0.7.56`. Image artifacts carry source provenance (`clipboard` for pasted images, `drag-drop` for dropped images) through `inputArtifacts` instead of a hardcoded `user-inline` label, with the legacy default preserved for callers that omit it. Kimi K2.7 Code (256k) is added to the context-window fallback table, and the new public SDK media helpers are recorded as planned Space-owned follow-up for native clipboard fallback, GIF direct-path handling, file artifacts, and capability preflight.
+
+### Security
+
+- **File-picker source reserved, not yet wired** - The `file-picker` artifact source value is reserved in the schema but has no emitter; a documented guard requires any future file-picker flow to copy picked paths into the main-owned clipboard sandbox before send, so the existing path-traversal protection cannot be bypassed.
 
 ## [0.1.24] - 2026-06-24
 
