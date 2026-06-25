@@ -1872,6 +1872,12 @@ export function BottomBar(): JSX.Element {
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
+    if (e.key === 'Escape' && isStreaming && !slashMode && !attachOpen) {
+      e.preventDefault();
+      handleCancel();
+      return;
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       if (slashMode) {
         e.preventDefault();

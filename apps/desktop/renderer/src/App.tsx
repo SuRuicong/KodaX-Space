@@ -301,7 +301,7 @@ export default function App(): JSX.Element {
   // 跟 VSCode Quick Open / Slack / Linear 一致的 muscle memory。
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setShowQuickAsk((v) => !v);
       }

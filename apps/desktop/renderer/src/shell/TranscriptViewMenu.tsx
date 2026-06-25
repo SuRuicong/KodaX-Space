@@ -2,7 +2,7 @@
 //
 // Claude Desktop 截图 7：右上小按钮，点击弹出：
 //   ┌─────────────────────────┐
-//   │ Transcript view  Ctrl O │
+//   │ Transcript view  Ctrl+Shift+O │
 //   │   Normal       ✓        │
 //   │   Thinking              │
 //   │   Verbose               │
@@ -10,7 +10,7 @@
 //   │   [Aa] [Aa] [Aa]        │
 //   └─────────────────────────┘
 //
-// 4 个 transcript view 模式 + 3 档字号。Ctrl+O 切换打开。
+// 4 个 transcript view 模式 + 3 档字号。Ctrl+Shift+O 切换打开。
 
 import { useEffect, useRef, useState } from 'react';
 import { ScrollText } from 'lucide-react';
@@ -30,6 +30,12 @@ const FONT_OPTIONS = [
   { key: 'lg' as const, label: 'Aa', cls: 'text-sm' },
 ];
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName.toLowerCase();
+  return tag === 'input' || tag === 'textarea' || target.isContentEditable;
+}
+
 export function TranscriptViewMenu(): JSX.Element {
   const view = useAppStore((s) => s.transcriptView);
   const setView = useAppStore((s) => s.setTranscriptView);
@@ -43,7 +49,14 @@ export function TranscriptViewMenu(): JSX.Element {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
-      if (e.ctrlKey && (e.key === 'o' || e.key === 'O')) {
+      if (
+        e.ctrlKey &&
+        e.shiftKey &&
+        !e.altKey &&
+        !e.metaKey &&
+        e.key.toLowerCase() === 'o' &&
+        !isEditableTarget(e.target)
+      ) {
         e.preventDefault();
         setOpen((v) => !v);
       }
@@ -70,7 +83,7 @@ export function TranscriptViewMenu(): JSX.Element {
             ? 'bg-surface-3 text-fg-primary'
             : 'text-fg-secondary hover:text-fg-primary hover:bg-hover-bg'
         }`}
-        title="Transcript view (Ctrl+O)"
+        title="Transcript view (Ctrl+Shift+O)"
         aria-label="Transcript view"
       >
         <ScrollText className="w-4 h-4" strokeWidth={1.75} aria-hidden />
@@ -80,6 +93,7 @@ export function TranscriptViewMenu(): JSX.Element {
           <div className="px-3 py-1 flex justify-between items-center text-fg-muted text-[11px] uppercase tracking-wider">
             <span>Transcript view</span>
             <span className="font-mono text-fg-muted flex items-center gap-1">
+              <kbd className="px-1 border border-border-strong rounded">⇧</kbd>
               <kbd className="px-1 border border-border-strong rounded">Ctrl</kbd>
               <kbd className="px-1 border border-border-strong rounded">O</kbd>
             </span>

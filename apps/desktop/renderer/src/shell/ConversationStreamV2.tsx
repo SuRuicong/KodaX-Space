@@ -373,7 +373,7 @@ export function ConversationStreamV2(): JSX.Element {
   // Esc 关闭并清空 query。
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F')) {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
         e.preventDefault();
         setSearchOpen(true);
         // focus 落到搜索框（下一帧，等 input 挂载）

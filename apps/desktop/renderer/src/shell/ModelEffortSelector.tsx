@@ -66,7 +66,7 @@ export function ModelEffortSelector(): JSX.Element {
   // Ctrl+I 打开/关闭
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
-      if (e.ctrlKey && (e.key === 'i' || e.key === 'I')) {
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 'i') {
         e.preventDefault();
         setOpen((v) => !v);
       }
@@ -191,11 +191,14 @@ export function ModelEffortSelector(): JSX.Element {
     }
   }
 
-  // P3: Ctrl+T 循环 reasoning depth — 对齐 KodaX TUI。off→quick→balanced→auto→deep→off。
-  // 不与 Ctrl+Shift+T (theme) 冲突 (shift 不同)。
+  // Ctrl+Shift+E matches the Effort shortcut shown in the picker.
+  // Keep Ctrl+T as a legacy cycle shortcut.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.ctrlKey && !e.shiftKey && (e.key === 't' || e.key === 'T')) {
+      const key = e.key.toLowerCase();
+      const isLegacyCycle = e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && key === 't';
+      const isEffortCycle = e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && key === 'e';
+      if (isLegacyCycle || isEffortCycle) {
         e.preventDefault();
         const idx = EFFORT_ORDER.indexOf(activeEffort);
         const next = EFFORT_ORDER[(idx + 1) % EFFORT_ORDER.length];

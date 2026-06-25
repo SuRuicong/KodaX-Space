@@ -37,13 +37,19 @@ const POPOUTS: ReadonlyArray<{
   Icon: LucideIcon;
   shortcut: string;
 }> = [
-  { kind: 'preview', label: 'Preview', Icon: Eye, shortcut: '⇧Ctrl P' },
+  { kind: 'preview', label: 'Preview', Icon: Eye, shortcut: '⇧Ctrl V' },
   { kind: 'diff', label: 'Diff', Icon: GitCompare, shortcut: '⇧Ctrl D' },
   { kind: 'terminal', label: 'Terminal', Icon: Terminal, shortcut: 'Ctrl `' },
   { kind: 'agents', label: 'Agents', Icon: Bot, shortcut: '' },
   { kind: 'mcp', label: 'MCP', Icon: Plug, shortcut: '' },
   { kind: 'workflow', label: 'Workflow', Icon: Workflow, shortcut: '' },
 ];
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName.toLowerCase();
+  return tag === 'input' || tag === 'textarea' || target.isContentEditable;
+}
 
 export function CommandToolbar({ active, onToggle }: CommandToolbarProps): JSX.Element {
   const [open, setOpen] = useState(false);
@@ -52,7 +58,33 @@ export function CommandToolbar({ active, onToggle }: CommandToolbarProps): JSX.E
   // Esc 关闭；点击外部关闭
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') {
+        setOpen(false);
+        return;
+      }
+      if (isEditableTarget(e.target)) return;
+
+      const key = e.key.toLowerCase();
+      let next: PopoutKind | null = null;
+      if (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && key === 'v') {
+        next = 'preview';
+      } else if (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && key === 'd') {
+        next = 'diff';
+      } else if (
+        e.ctrlKey &&
+        !e.shiftKey &&
+        !e.altKey &&
+        !e.metaKey &&
+        (e.key === '`' || e.code === 'Backquote')
+      ) {
+        next = 'terminal';
+      }
+
+      if (next !== null) {
+        e.preventDefault();
+        onToggle(active === next ? null : next);
+        setOpen(false);
+      }
     }
     function onDocDown(e: MouseEvent): void {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
@@ -63,7 +95,7 @@ export function CommandToolbar({ active, onToggle }: CommandToolbarProps): JSX.E
       window.removeEventListener('keydown', onKey);
       document.removeEventListener('mousedown', onDocDown);
     };
-  }, []);
+  }, [active, onToggle]);
 
   const activeMeta = active ? POPOUTS.find((p) => p.kind === active) : null;
 

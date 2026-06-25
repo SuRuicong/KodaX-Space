@@ -76,7 +76,7 @@ export function ThemeToggle(): JSX.Element {
   // ⇧Ctrl+T 循环 + 点外/Esc 关闭
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
-      if (e.ctrlKey && e.shiftKey && (e.key === 'T' || e.key === 't')) {
+      if (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 't') {
         e.preventDefault();
         // 循环到下一档
         const cur = useAppStore.getState().theme;

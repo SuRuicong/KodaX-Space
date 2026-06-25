@@ -81,7 +81,7 @@ export function ModeSelector(): JSX.Element {
   // 不再 gate 在 session 上——无 session 时也能 toggle pending mode
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.ctrlKey && (e.key === 'm' || e.key === 'M')) {
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 'm') {
         e.preventDefault();
         setOpen((v) => !v);
         return;
@@ -94,7 +94,7 @@ export function ModeSelector(): JSX.Element {
         void setMode(next);
         return;
       }
-      if (open && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      if (open && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
         const idx = ['1', '2', '3'].indexOf(e.key);
         if (idx >= 0) {
           e.preventDefault();
@@ -211,7 +211,6 @@ export function ModeSelector(): JSX.Element {
           <div className="px-3 py-1 flex justify-between items-center text-fg-muted text-[11px] uppercase tracking-wider">
             <span>Mode</span>
             <span className="font-mono text-fg-muted flex items-center gap-1">
-              <kbd className="px-1 border border-border-strong rounded">⇧</kbd>
               <kbd className="px-1 border border-border-strong rounded">Ctrl</kbd>
               <kbd className="px-1 border border-border-strong rounded">M</kbd>
             </span>
