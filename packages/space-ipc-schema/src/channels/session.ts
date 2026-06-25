@@ -204,16 +204,26 @@ export const sessionCreateChannel = {
 // `path`: main 端写到 app temp dir 的绝对路径 (Electron app.getPath('temp')/kodax-space/clipboard/<sid>/<ts>.png)
 //          ── renderer 不能传任意路径，path 必须是 clipboard.saveImage IPC 返回的
 //          ── 受信任值；schema 这层只做长度兜底，路径合法性由 main 端 saveImage 保证。
-// `mediaType`: 'image/png' | 'image/jpeg' | 'image/webp' (KodaX SDK 接 mediaType
-//          ── 由后端 provider transport 决定支持子集 — 这里只限制三个最常见的)
-// `source`: KodaXInputArtifact.source 闭集，当前 SDK 只接 'user-inline'。
+// `mediaType`: Space saveImage currently persists PNG/JPEG/WEBP. KodaX 0.7.56
+//          also defines image/gif for direct SDK path artifacts; keep GIF as a
+//          later Space persistence/preview follow-up.
+// `source`: KodaX 0.7.56 artifact source union. Older callers that omit it keep
+//          the legacy user-inline default. Current emitters: 'clipboard' (paste)
+//          and 'drag-drop'; both route through clipboard.saveImage so `path` stays
+//          inside the main-owned sandbox enforced by assertArtifactPathInClipboardSandbox.
+//          SECURITY — 'file-picker' is reserved for a future flow and has NO emitter
+//          yet. Before wiring file-picker attachments, the picked path MUST be copied
+//          into the clipboard sandbox (or the sandbox guard extended); do NOT forward a
+//          user-chosen filesystem path in-place, or the path-traversal guard is bypassed.
+const inputArtifactSourceSchema = z.enum(['user-inline', 'clipboard', 'drag-drop', 'file-picker']);
 const inputArtifactSchema = z.object({
   kind: z.literal('image'),
   path: z.string().min(1).max(4096),
   mediaType: z.enum(['image/png', 'image/jpeg', 'image/webp']),
-  source: z.literal('user-inline').default('user-inline'),
+  source: inputArtifactSourceSchema.default('user-inline'),
 });
 export type InputArtifact = z.infer<typeof inputArtifactSchema>;
+export type InputArtifactSource = z.infer<typeof inputArtifactSourceSchema>;
 
 const sessionSendQueueModeSchema = z.enum(['interrupt', 'after-turn']);
 export type SessionSendQueueMode = z.infer<typeof sessionSendQueueModeSchema>;

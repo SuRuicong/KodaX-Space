@@ -3,7 +3,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, FileText, Folder, Plus, X } from 'lucide-react';
-import type { InputArtifact, SessionMeta } from '@kodax-space/space-ipc-schema';
+import type {
+  InputArtifact,
+  InputArtifactSource,
+  SessionMeta,
+} from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 import { useSurfaceStore } from '../store/surface.js';
 import { ChipBar } from './ChipBar.js';
@@ -45,6 +49,7 @@ const TITLE_MAX_CHARS = 50;
 interface PendingImage {
   readonly path: string;
   readonly mediaType: 'image/png' | 'image/jpeg' | 'image/webp';
+  readonly source: InputArtifactSource;
   readonly bytes: number;
   readonly dataUrl: string;
   readonly label: string;
@@ -80,8 +85,9 @@ function toReferencePath(value: string): string {
 }
 
 function encodeFileUrlSegment(segment: string): string {
-  return encodeURIComponent(segment).replace(/[!'()*]/g, (ch) =>
-    `%${ch.charCodeAt(0).toString(16).toUpperCase()}`,
+  return encodeURIComponent(segment).replace(
+    /[!'()*]/g,
+    (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`,
   );
 }
 
@@ -632,7 +638,7 @@ export function BottomBar(): JSX.Element {
     return stub.sessionId;
   }
 
-  async function attachImages(blobs: readonly File[]): Promise<void> {
+  async function attachImages(blobs: readonly File[], source: InputArtifactSource): Promise<void> {
     if (blobs.length === 0) return;
     if (!window.kodaxSpace) return;
 
@@ -678,9 +684,15 @@ export function BottomBar(): JSX.Element {
         saved.push({
           path: r.data.path,
           mediaType: b.type as PendingImage['mediaType'],
+          source,
           bytes: r.data.bytes,
           dataUrl: `data:${b.type};base64,${base64}`,
-          label: b.name && b.name !== 'image.png' ? b.name : 'Pasted image',
+          label:
+            b.name && b.name !== 'image.png'
+              ? b.name
+              : source === 'drag-drop'
+                ? 'Dropped image'
+                : 'Pasted image',
         });
       } catch (e) {
         setImageErr(e instanceof Error ? e.message : String(e));
@@ -764,7 +776,7 @@ export function BottomBar(): JSX.Element {
     }
 
     if (imageFiles.length > 0) {
-      await attachImages(imageFiles);
+      await attachImages(imageFiles, 'drag-drop');
     }
   }
 
@@ -1676,7 +1688,7 @@ export function BottomBar(): JSX.Element {
               kind: 'image' as const,
               path: img.path,
               mediaType: img.mediaType,
-              source: 'user-inline' as const,
+              source: img.source,
             }))
           : undefined;
       setPrompt('');
@@ -1990,7 +2002,7 @@ export function BottomBar(): JSX.Element {
               }
               if (images.length === 0) return;
               e.preventDefault();
-              void attachImages(images);
+              void attachImages(images, 'clipboard');
             }}
             disabled={busy}
             rows={2}

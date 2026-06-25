@@ -19,7 +19,7 @@ function readSpaceVersion(electronApp: App): string {
 function readKodaxSdkVersion(): string {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const meta = (typeof require !== 'undefined' ? null : (import.meta as any));
+    const meta = typeof require !== 'undefined' ? null : (import.meta as any);
     const req = meta ? createRequire(meta.url) : require;
     const pkg = req('@kodax-ai/kodax/package.json') as { version?: unknown };
     return typeof pkg.version === 'string' && pkg.version.length > 0 ? pkg.version : 'unknown';
@@ -29,12 +29,13 @@ function readKodaxSdkVersion(): string {
 }
 
 function readKodaxDependencySpec(): string {
-  const fromEnv = process.env.npm_package_dependencies__kodax_ai_kodax
-    ?? process.env.npm_package_dependencies_kodax_ai_kodax;
+  const fromEnv =
+    process.env.npm_package_dependencies__kodax_ai_kodax ??
+    process.env.npm_package_dependencies_kodax_ai_kodax;
   if (fromEnv) return fromEnv;
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const meta = (typeof require !== 'undefined' ? null : (import.meta as any));
+    const meta = typeof require !== 'undefined' ? null : (import.meta as any);
     const req = meta ? createRequire(meta.url) : require;
     const pkg = req('../../package.json') as { dependencies?: Record<string, unknown> };
     const spec = pkg.dependencies?.['@kodax-ai/kodax'];
@@ -50,20 +51,23 @@ function buildCapabilityLedger(): SpaceCapability[] {
       id: 'repointel.trace',
       label: 'Repointel trace',
       status: 'supported',
-      detail: 'KodaX SDK session trace events are mapped into Space session events and shown in the chip and /repointel trace view.',
+      detail:
+        'KodaX SDK session trace events are mapped into Space session events and shown in the chip and /repointel trace view.',
       since: '0.1.19',
     },
     {
       id: 'repointel.status',
       label: 'Repointel local status',
       status: 'supported',
-      detail: 'Space exposes a local status/doctor readout for project, git root, trace source, and warm support; standalone warm remains SDK-gated.',
+      detail:
+        'Space exposes a local status/doctor readout for project, git root, trace source, and warm support; standalone warm remains SDK-gated.',
     },
     {
       id: 'quickAsk.tempSession',
       label: 'Quick Ask temporary session',
       status: 'supported',
-      detail: 'Quick Ask uses a plan-mode temporary KodaX session, captures events locally, cleans up on close, and can promote the persisted session into Coder.',
+      detail:
+        'Quick Ask uses a plan-mode temporary KodaX session, captures events locally, cleans up on close, and can promote the persisted session into Coder.',
       since: '0.1.19',
     },
     {
@@ -76,7 +80,24 @@ function buildCapabilityLedger(): SpaceCapability[] {
       id: 'handoff.receive',
       label: 'Handoff receiver',
       status: 'supported',
-      detail: 'Space watches ~/.kodax/handoffs, lists valid/invalid/stale handoffs, and can accept or dismiss receiver-side handoff files.',
+      detail:
+        'Space watches ~/.kodax/handoffs, lists valid/invalid/stale handoffs, and can accept or dismiss receiver-side handoff files.',
+    },
+    {
+      id: 'composer.imageArtifacts',
+      label: 'Composer image artifacts',
+      status: 'supported',
+      detail:
+        'Space sends PNG/JPEG/WEBP image artifacts through KodaX inputArtifacts and preserves KodaX 0.7.56 source provenance for clipboard and drag-drop inputs.',
+      since: '0.1.24',
+    },
+    {
+      id: 'composer.mediaHelpers',
+      label: 'SDK media helpers',
+      status: 'planned',
+      detail:
+        'KodaX 0.7.56 exposes public media helpers for clipboard normalization, artifact construction, capability checks, and validation; Space still needs main-process IPC and UX wiring for native clipboard fallback, GIF direct-path handling, file artifacts, and video follow-ups.',
+      since: '0.1.24',
     },
   ];
 }

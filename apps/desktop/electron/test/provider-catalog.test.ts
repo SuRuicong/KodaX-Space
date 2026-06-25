@@ -51,9 +51,20 @@ test('catalog has fallback data for all 14 anchor providers (disaster recovery)'
   // 间接保证：每个 builtin 都有 apiKeyEnv + defaultModel，无论数据来自 JSON 还是 fallback。
   // 等同于"如果 JSON 缺失走 fallback，依然有完整数据"的 invariant 保护。
   const REQUIRED_IDS = [
-    'anthropic', 'openai', 'deepseek', 'kimi', 'kimi-code', 'qwen',
-    'zhipu', 'zhipu-coding', 'minimax-coding', 'mimo-coding', 'mimo', 'ark-coding',
-    'gemini-cli', 'codex-cli',
+    'anthropic',
+    'openai',
+    'deepseek',
+    'kimi',
+    'kimi-code',
+    'qwen',
+    'zhipu',
+    'zhipu-coding',
+    'minimax-coding',
+    'mimo-coding',
+    'mimo',
+    'ark-coding',
+    'gemini-cli',
+    'codex-cli',
   ];
   const ids = new Set(BUILTIN_PROVIDERS.map((p) => p.id));
   for (const req of REQUIRED_IDS) {
@@ -68,7 +79,7 @@ test('apiKeyEnv values match KodaX upstream catalog (env var naming convention)'
   const expected: Record<string, string> = {
     anthropic: 'ANTHROPIC_API_KEY',
     openai: 'OPENAI_API_KEY',
-    'zhipu': 'ZHIPU_API_KEY',
+    zhipu: 'ZHIPU_API_KEY',
     'zhipu-coding': 'ZHIPU_CODING_API_KEY',
     deepseek: 'DEEPSEEK_API_KEY',
     kimi: 'KIMI_API_KEY',
@@ -85,11 +96,24 @@ test('apiKeyEnv values match KodaX upstream catalog (env var naming convention)'
   }
 });
 
-test('zhipu-coding catalog tracks KodaX 0.7.54 GLM lineup', () => {
+test('zhipu-coding catalog tracks KodaX 0.7.56 GLM lineup', () => {
   const provider = getBuiltin('zhipu-coding');
   assert.ok(provider);
   assert.equal(provider.defaultModel, 'glm-5.2');
   assert.deepEqual(provider.models, ['glm-5.2', 'glm-5-turbo', 'glm-4.7']);
+});
+
+test('ark-coding catalog includes KodaX 0.7.56 GLM and Kimi code models', () => {
+  const provider = getBuiltin('ark-coding');
+  assert.ok(provider);
+  assert.ok(provider.models?.includes('glm-5.2'));
+  assert.ok(provider.models?.includes('kimi-k2.7-code'));
+});
+
+test('kimi catalog includes KodaX 0.7.56 Kimi K2.7 Code model', () => {
+  const provider = getBuiltin('kimi');
+  assert.ok(provider);
+  assert.ok(provider.models?.includes('kimi-k2.7-code'));
 });
 
 test('getBuiltin returns undefined for unknown id', () => {

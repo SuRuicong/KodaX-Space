@@ -82,6 +82,7 @@ export {
   type SessionEvent,
   type SessionEventKind,
   type InputArtifact,
+  type InputArtifactSource,
   type SessionSendQueueMode,
 } from './channels/session.js';
 

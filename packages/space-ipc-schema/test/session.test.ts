@@ -21,8 +21,17 @@ import {
 } from '../src/index.js';
 
 test('all 5 session invoke channels are registered', () => {
-  for (const name of ['session.create', 'session.send', 'session.cancel', 'session.list', 'session.delete']) {
-    assert.ok(invokeChannels[name as keyof typeof invokeChannels], `${name} should be in invokeChannels`);
+  for (const name of [
+    'session.create',
+    'session.send',
+    'session.cancel',
+    'session.list',
+    'session.delete',
+  ]) {
+    assert.ok(
+      invokeChannels[name as keyof typeof invokeChannels],
+      `${name} should be in invokeChannels`,
+    );
     assert.ok(INVOKE_CHANNEL_NAMES.has(name), `${name} should be in INVOKE_CHANNEL_NAMES`);
   }
 });
@@ -81,10 +90,16 @@ test('session_error event: retryAvailableAt accepts large future epoch', () => {
 });
 
 test('session.create input: requires projectRoot and provider', () => {
-  assert.equal(sessionCreateChannel.input.safeParse({ projectRoot: '/r', provider: 'mock' }).success, true);
+  assert.equal(
+    sessionCreateChannel.input.safeParse({ projectRoot: '/r', provider: 'mock' }).success,
+    true,
+  );
   assert.equal(sessionCreateChannel.input.safeParse({ provider: 'mock' }).success, false);
   assert.equal(sessionCreateChannel.input.safeParse({ projectRoot: '/r' }).success, false);
-  assert.equal(sessionCreateChannel.input.safeParse({ projectRoot: '', provider: 'mock' }).success, false);
+  assert.equal(
+    sessionCreateChannel.input.safeParse({ projectRoot: '', provider: 'mock' }).success,
+    false,
+  );
 });
 
 test('session.create input: rejects bogus reasoningMode', () => {
@@ -99,7 +114,8 @@ test('session.create input: rejects bogus reasoningMode', () => {
 test('agentMode enum accepts AMA, AMAW, and SA only', () => {
   for (const agentMode of ['ama', 'amaw', 'sa'] as const) {
     assert.equal(
-      sessionCreateChannel.input.safeParse({ projectRoot: '/r', provider: 'mock', agentMode }).success,
+      sessionCreateChannel.input.safeParse({ projectRoot: '/r', provider: 'mock', agentMode })
+        .success,
       true,
       `session.create should accept ${agentMode}`,
     );
@@ -119,7 +135,8 @@ test('agentMode enum accepts AMA, AMAW, and SA only', () => {
     );
   }
   assert.equal(
-    sessionSetAgentModeChannel.input.safeParse({ sessionId: 's_1', agentMode: 'ama-workflow' }).success,
+    sessionSetAgentModeChannel.input.safeParse({ sessionId: 's_1', agentMode: 'ama-workflow' })
+      .success,
     false,
   );
 });
@@ -134,7 +151,10 @@ test('session.create output includes resolved runtime settings', () => {
     agentMode: 'sa',
   };
   assert.equal(sessionCreateChannel.output.safeParse(output).success, true);
-  assert.equal(sessionCreateChannel.output.safeParse({ sessionId: 's_1', createdAt: 0 }).success, false);
+  assert.equal(
+    sessionCreateChannel.output.safeParse({ sessionId: 's_1', createdAt: 0 }).success,
+    false,
+  );
   assert.equal(sessionCreateChannel.output.safeParse({ sessionId: 's_1' }).success, false);
   assert.equal(sessionCreateChannel.output.safeParse({ ...output, createdAt: -1 }).success, false);
 });
@@ -159,7 +179,8 @@ test('session.send queueMode defaults to interrupt and accepts after-turn', () =
   assert.equal(afterTurnResult.success, true);
 
   assert.equal(
-    sessionSendChannel.input.safeParse({ sessionId: 's_1', prompt: 'hello', queueMode: 'later' }).success,
+    sessionSendChannel.input.safeParse({ sessionId: 's_1', prompt: 'hello', queueMode: 'later' })
+      .success,
     false,
   );
 });
@@ -213,6 +234,54 @@ test('session.send queued output may include queueMode', () => {
     }).success,
     false,
   );
+});
+
+test('session.send image artifacts accept KodaX 0.7.56 source values', () => {
+  for (const source of ['user-inline', 'clipboard', 'drag-drop', 'file-picker'] as const) {
+    const result = sessionSendChannel.input.safeParse({
+      sessionId: 's_1',
+      prompt: 'describe this',
+      artifacts: [
+        {
+          kind: 'image',
+          path: '/tmp/kodax-space/clipboard/s_1/a.png',
+          mediaType: 'image/png',
+          source,
+        },
+      ],
+    });
+    assert.equal(result.success, true, `source=${source}`);
+  }
+});
+
+test('session.send image artifact source defaults to user-inline for legacy callers', () => {
+  const result = sessionSendChannel.input.safeParse({
+    sessionId: 's_1',
+    prompt: 'describe this',
+    artifacts: [
+      { kind: 'image', path: '/tmp/kodax-space/clipboard/s_1/a.png', mediaType: 'image/png' },
+    ],
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.artifacts?.[0]?.source, 'user-inline');
+  }
+});
+
+test('session.send image artifacts reject unknown source values', () => {
+  const result = sessionSendChannel.input.safeParse({
+    sessionId: 's_1',
+    prompt: 'describe this',
+    artifacts: [
+      {
+        kind: 'image',
+        path: '/tmp/kodax-space/clipboard/s_1/a.png',
+        mediaType: 'image/png',
+        source: 'url',
+      },
+    ],
+  });
+  assert.equal(result.success, false);
 });
 
 test('session.cancel and session.delete have ok-style booleans', () => {
@@ -364,7 +433,10 @@ test('session.send rejects prompt over 1 MB (DoS guard)', () => {
   assert.equal(result.success, false);
   // 1 MB 整 exactly 边界仍接受
   const atLimit = 'x'.repeat(1_048_576);
-  assert.equal(sessionSendChannel.input.safeParse({ sessionId: 's_1', prompt: atLimit }).success, true);
+  assert.equal(
+    sessionSendChannel.input.safeParse({ sessionId: 's_1', prompt: atLimit }).success,
+    true,
+  );
 });
 
 test('session.event text_delta rejects text over 256 KB', () => {
@@ -449,32 +521,71 @@ test('session.fork + session.rewind channels are registered', () => {
 });
 
 test('session.fork input requires sessionId + non-negative forkPointTurnIdx', () => {
-  assert.equal(sessionForkChannel.input.safeParse({ sessionId: 's_1', forkPointTurnIdx: 0 }).success, true);
-  assert.equal(sessionForkChannel.input.safeParse({ sessionId: 's_1', forkPointTurnIdx: 5 }).success, true);
-  assert.equal(sessionForkChannel.input.safeParse({ sessionId: 's_1', forkPointTurnIdx: -1 }).success, false);
-  assert.equal(sessionForkChannel.input.safeParse({ sessionId: '', forkPointTurnIdx: 0 }).success, false);
+  assert.equal(
+    sessionForkChannel.input.safeParse({ sessionId: 's_1', forkPointTurnIdx: 0 }).success,
+    true,
+  );
+  assert.equal(
+    sessionForkChannel.input.safeParse({ sessionId: 's_1', forkPointTurnIdx: 5 }).success,
+    true,
+  );
+  assert.equal(
+    sessionForkChannel.input.safeParse({ sessionId: 's_1', forkPointTurnIdx: -1 }).success,
+    false,
+  );
+  assert.equal(
+    sessionForkChannel.input.safeParse({ sessionId: '', forkPointTurnIdx: 0 }).success,
+    false,
+  );
   assert.equal(sessionForkChannel.input.safeParse({ sessionId: 's_1' }).success, false);
   // 10_001 超 max → 拒绝（DoS guard）
-  assert.equal(sessionForkChannel.input.safeParse({ sessionId: 's_1', forkPointTurnIdx: 10_001 }).success, false);
+  assert.equal(
+    sessionForkChannel.input.safeParse({ sessionId: 's_1', forkPointTurnIdx: 10_001 }).success,
+    false,
+  );
 });
 
 test('session.fork output is { newSessionId, createdAt }', () => {
-  assert.equal(sessionForkChannel.output.safeParse({ newSessionId: 's_2', createdAt: 0 }).success, true);
+  assert.equal(
+    sessionForkChannel.output.safeParse({ newSessionId: 's_2', createdAt: 0 }).success,
+    true,
+  );
   assert.equal(sessionForkChannel.output.safeParse({ newSessionId: 's_2' }).success, false);
-  assert.equal(sessionForkChannel.output.safeParse({ newSessionId: '', createdAt: 0 }).success, false);
+  assert.equal(
+    sessionForkChannel.output.safeParse({ newSessionId: '', createdAt: 0 }).success,
+    false,
+  );
 });
 
 test('session.rewind input requires sessionId + non-negative rewindPastTurnIdx', () => {
-  assert.equal(sessionRewindChannel.input.safeParse({ sessionId: 's_1', rewindPastTurnIdx: 0 }).success, true);
-  assert.equal(sessionRewindChannel.input.safeParse({ sessionId: 's_1', rewindPastTurnIdx: -1 }).success, false);
+  assert.equal(
+    sessionRewindChannel.input.safeParse({ sessionId: 's_1', rewindPastTurnIdx: 0 }).success,
+    true,
+  );
+  assert.equal(
+    sessionRewindChannel.input.safeParse({ sessionId: 's_1', rewindPastTurnIdx: -1 }).success,
+    false,
+  );
 });
 
 test('session.rewind output reason enum is exhaustive', () => {
   assert.equal(sessionRewindChannel.output.safeParse({ ok: true }).success, true);
-  assert.equal(sessionRewindChannel.output.safeParse({ ok: false, reason: 'session_not_found' }).success, true);
-  assert.equal(sessionRewindChannel.output.safeParse({ ok: false, reason: 'invalid_index' }).success, true);
-  assert.equal(sessionRewindChannel.output.safeParse({ ok: false, reason: 'session_busy' }).success, true);
-  assert.equal(sessionRewindChannel.output.safeParse({ ok: false, reason: 'rate_limited' }).success, false);
+  assert.equal(
+    sessionRewindChannel.output.safeParse({ ok: false, reason: 'session_not_found' }).success,
+    true,
+  );
+  assert.equal(
+    sessionRewindChannel.output.safeParse({ ok: false, reason: 'invalid_index' }).success,
+    true,
+  );
+  assert.equal(
+    sessionRewindChannel.output.safeParse({ ok: false, reason: 'session_busy' }).success,
+    true,
+  );
+  assert.equal(
+    sessionRewindChannel.output.safeParse({ ok: false, reason: 'rate_limited' }).success,
+    false,
+  );
 });
 
 // ---- FEATURE_034 agents-md channel ----

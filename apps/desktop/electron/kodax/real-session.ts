@@ -39,7 +39,9 @@ let sdkLlmCache: Promise<SdkLlmModule | null> | null = null;
 function loadSdkLlm(): Promise<SdkLlmModule | null> {
   if (sdkLlmCache === null) {
     sdkLlmCache = import('@kodax-ai/kodax/llm').catch((err) => {
-      console.warn(`[real-session] failed to load @kodax-ai/kodax/llm subpath: ${err instanceof Error ? err.message : err}`);
+      console.warn(
+        `[real-session] failed to load @kodax-ai/kodax/llm subpath: ${err instanceof Error ? err.message : err}`,
+      );
       // 失败的 promise 留在 cache 里返 null，避免反复重试一个本来就拿不到的包。
       // 如果 SDK 之后真"突然能加载了"也无所谓 —— Space 进程整生命周期 SDK 是 immutable。
       return null;
@@ -76,10 +78,12 @@ async function extractRetryAfterMs(err: unknown): Promise<number | undefined> {
  * 复用 updater.ts 同款 union regex；rawMessage 仍进 console.warn。
  */
 function sanitizeAutoModeErrorMessage(msg: string): string {
-  return msg
-    .replace(/([A-Za-z]:[\\/][^\s]+|\\\\[^\s]+|\/[A-Za-z][^\s]+)/g, '<path>')
-    .slice(0, 240)
-    .trim() || 'unknown error';
+  return (
+    msg
+      .replace(/([A-Za-z]:[\\/][^\s]+|\\\\[^\s]+|\/[A-Za-z][^\s]+)/g, '<path>')
+      .slice(0, 240)
+      .trim() || 'unknown error'
+  );
 }
 
 import type {
@@ -209,7 +213,11 @@ export class RealKodaXSession implements ManagedSession {
     return this.currentAbort !== null;
   }
 
-  async send(prompt: string, artifacts?: readonly InputArtifact[], options?: SendOptions): Promise<SendResult> {
+  async send(
+    prompt: string,
+    artifacts?: readonly InputArtifact[],
+    options?: SendOptions,
+  ): Promise<SendResult> {
     if (this.disposed) {
       throw new Error(`[real-session ${this.sessionId}] already disposed`);
     }
@@ -258,9 +266,14 @@ export class RealKodaXSession implements ManagedSession {
     this.startRun(nextPrompt.content);
   }
 
-  private async ensureExtensionRuntime(retryStale = true): Promise<SpaceSdkExtensionRuntimeHandle | undefined> {
+  private async ensureExtensionRuntime(
+    retryStale = true,
+  ): Promise<SpaceSdkExtensionRuntimeHandle | undefined> {
     const generation = getSpaceSdkExtensionConfigGeneration();
-    if (this.extensionRuntimeGeneration !== null && this.extensionRuntimeGeneration !== generation) {
+    if (
+      this.extensionRuntimeGeneration !== null &&
+      this.extensionRuntimeGeneration !== generation
+    ) {
       await this.disposeExtensionRuntime();
     }
     if (this.extensionRuntimeHandle !== undefined) return this.extensionRuntimeHandle;
@@ -335,8 +348,10 @@ export class RealKodaXSession implements ManagedSession {
     // Stop should also drop queued follow-up prompts so cancel means
     // "do not continue". Drain failure must not block abort.
     await drainQueueForSession(this.sessionId).catch((err) => {
-      console.warn(`[real-session ${this.sessionId}] queue drain on cancel failed:`,
-        err instanceof Error ? err.message : err);
+      console.warn(
+        `[real-session ${this.sessionId}] queue drain on cancel failed:`,
+        err instanceof Error ? err.message : err,
+      );
     });
   }
 
@@ -346,8 +361,10 @@ export class RealKodaXSession implements ManagedSession {
     // Dispose removes this session from the host map; drop any remaining
     // Space-owned queued prompts for the same session.
     await drainQueueForSession(this.sessionId).catch((err) => {
-      console.warn(`[real-session ${this.sessionId}] queue drain on dispose failed:`,
-        err instanceof Error ? err.message : err);
+      console.warn(
+        `[real-session ${this.sessionId}] queue drain on dispose failed:`,
+        err instanceof Error ? err.message : err,
+      );
     });
     await this.disposeExtensionRuntime();
   }
@@ -461,7 +478,9 @@ export class RealKodaXSession implements ManagedSession {
       // abort，此刻再发就是往已关 channel 写。await 后复检一次。
       if (isStopped()) return;
       const wrapped = wrapSdkError(err, retryAfterMs !== undefined ? { retryAfterMs } : undefined);
-      console.warn(`[real-session ${sid}] sdk error (${wrapped.category}): ${wrapped.debugMessage}`);
+      console.warn(
+        `[real-session ${sid}] sdk error (${wrapped.category}): ${wrapped.debugMessage}`,
+      );
       // OC-23 review HIGH-2: stamp 绝对时间戳在 main 端（emit 时刻），避免 renderer
       // composeMessages 每次 events 变都重新 Date.now()+delta 让倒计时不断推后。
       const retryAvailableAt =
@@ -496,11 +515,16 @@ export class RealKodaXSession implements ManagedSession {
     type SdkAskUserMultiOptions = Parameters<NonNullable<KodaXEvents['askUserMulti']>>[0];
     type SdkAskUserInputOptions = Parameters<NonNullable<KodaXEvents['askUserInput']>>[0];
 
-    const cancelledToolResult = sdk.CANCELLED_TOOL_RESULT_MESSAGE ?? '[Cancelled] Operation cancelled by user';
-    const requestSdkUserQuestion = async (options: SdkAskUserQuestionOptions): Promise<string | undefined> => {
+    const cancelledToolResult =
+      sdk.CANCELLED_TOOL_RESULT_MESSAGE ?? '[Cancelled] Operation cancelled by user';
+    const requestSdkUserQuestion = async (
+      options: SdkAskUserQuestionOptions,
+    ): Promise<string | undefined> => {
       const kind = options.kind ?? 'select';
       if (kind === 'select' && (!options.options || options.options.length === 0)) {
-        console.warn(`[real-session ${sid}] SDK askUser select request had no options; cancelling prompt`);
+        console.warn(
+          `[real-session ${sid}] SDK askUser select request had no options; cancelling prompt`,
+        );
         return undefined;
       }
       return askUserBroker.requestQuestion({
@@ -521,11 +545,15 @@ export class RealKodaXSession implements ManagedSession {
         ...(options.default !== undefined ? { default: options.default } : {}),
       });
 
-    const requestSdkUserMulti = async (options: SdkAskUserMultiOptions): Promise<Record<string, string> | undefined> => {
+    const requestSdkUserMulti = async (
+      options: SdkAskUserMultiOptions,
+    ): Promise<Record<string, string> | undefined> => {
       const answers: Record<string, string> = {};
       for (const question of options.questions) {
         if (!question.options || question.options.length === 0) {
-          console.warn(`[real-session ${sid}] SDK askUserMulti select request had no options; cancelling prompt`);
+          console.warn(
+            `[real-session ${sid}] SDK askUserMulti select request had no options; cancelling prompt`,
+          );
           return undefined;
         }
         const answer = await askUserBroker.requestQuestion({
@@ -565,7 +593,10 @@ export class RealKodaXSession implements ManagedSession {
       // F047 defense-in-depth (security review MEDIUM)：Partner 白名单已在 planModeBlockCheck
       // 拦下（LLM 拿到 reason）。这里再兜一道 fail-closed——万一 SDK 改 hook 顺序 / 新增不经
       // planModeBlockCheck 的调用路径（如 MCP 工具），Partner 仍不会执行非白名单工具。
-      if (this.surface === 'partner' && !isPartnerToolAllowed(tool, sdk.resolveToolCapability(tool))) {
+      if (
+        this.surface === 'partner' &&
+        !isPartnerToolAllowed(tool, sdk.resolveToolCapability(tool))
+      ) {
         return false;
       }
       try {
@@ -594,10 +625,7 @@ export class RealKodaXSession implements ManagedSession {
     // computeToolBlockReason（纯函数，见 partner-tools.ts）。Partner 只放行 SDK 判定的只读
     // tier（resolveToolCapability==='read'）+ 显式 web 研究工具；Coder 行为不变（plan-mode 原样）。
     // SDK 查询走 thunk 保持惰性。
-    const planModeBlockCheck = (
-      tool: string,
-      _input: Record<string, unknown>,
-    ): string | null =>
+    const planModeBlockCheck = (tool: string, _input: Record<string, unknown>): string | null =>
       computeToolBlockReason({
         surface: this.surface,
         permissionMode: this.permissionMode,
@@ -1003,8 +1031,8 @@ export class RealKodaXSession implements ManagedSession {
         guardrails = [bootstrap.getGuardrail()];
         console.info(
           `[real-session ${sid}] auto-mode bootstrapped; engine=${this.autoModeEngine}, ` +
-          `rules sources=${bootstrap.rulesLoadResult.sources.length}, ` +
-          `errors=${bootstrap.rulesLoadResult.errors.length}`,
+            `rules sources=${bootstrap.rulesLoadResult.sources.length}, ` +
+            `errors=${bootstrap.rulesLoadResult.errors.length}`,
         );
       } catch (err) {
         const rawMessage = err instanceof Error ? err.message : String(err);
@@ -1097,7 +1125,7 @@ export class RealKodaXSession implements ManagedSession {
                 kind: 'image' as const,
                 path: a.path,
                 ...(a.mediaType ? { mediaType: a.mediaType } : {}),
-                source: 'user-inline' as const,
+                source: a.source,
               })),
             }
           : {}),
@@ -1139,8 +1167,9 @@ export class RealKodaXSession implements ManagedSession {
       // F058: bind artifact attribution context for this run so the
       // create_artifact tool handler (global registration) knows which
       // session/surface to attribute to (ALS — concurrency-safe across sessions).
-      await withArtifactContext({ sessionId: sid, surface: this.surface, projectRoot: this.projectRoot }, () =>
-        runWithSessionQueueScope(sid, () => sdk.runManagedTask(options, prompt)),
+      await withArtifactContext(
+        { sessionId: sid, surface: this.surface, projectRoot: this.projectRoot },
+        () => runWithSessionQueueScope(sid, () => sdk.runManagedTask(options, prompt)),
       );
       // SA 路径（agentMode='sa'）错误时 onError 触发但 Promise **resolve**（success:false），
       // 不 throw——外层 catch 不会跑。所以这里 await 之后补发暂存的错误。
@@ -1155,7 +1184,13 @@ export class RealKodaXSession implements ManagedSession {
         // 同时置 terminalEmitted，与 emitTerminalError 共享同一 latch，杜绝任何重发。
         if (!this.disposed && !terminalEmitted) {
           terminalEmitted = true;
-          this.emit({ kind: 'session_error', sessionId: sid, error: 'cancelled', category: 'cancelled', retriable: true });
+          this.emit({
+            kind: 'session_error',
+            sessionId: sid,
+            error: 'cancelled',
+            category: 'cancelled',
+            retriable: true,
+          });
         }
       } else if (!signal.aborted) {
         // AMA 路径：SDK catch 已先调过 onError(暂存 err)，这里 throw 上来。统一走

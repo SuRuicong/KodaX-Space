@@ -14,6 +14,10 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 
 ## [Unreleased]
 
+### Changed
+
+- **KodaX 0.7.56 SDK catch-up** - Root and desktop workspace dependencies now resolve `@kodax-ai/kodax` `^0.7.56`. Space preserves image artifact source provenance for clipboard/drag-drop sends, updates Kimi K2.7 Code context fallback coverage, and records the new public SDK media helpers as Space-owned follow-up work for native clipboard fallback and capability preflight.
+
 ## [0.1.24] - 2026-06-24
 
 ### Theme

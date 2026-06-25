@@ -22,7 +22,9 @@ const RULES: readonly CapRule[] = [
   // DeepSeek V3 / V4 — 1M（DeepSeek API 当前所有 model 统一 1M context window，
   // 经 resolveContextWindow 验证 deepseek-v3.2 / v4-pro 都返回 1M）
   { match: /^deepseek-/, cap: 1_000_000 },
-  // Kimi K2 系列 — 200k
+  // Kimi K2.7 Code — 256k (KodaX 0.7.56, kimi + ark-coding).
+  { match: /^kimi-k2\.7-code$/, cap: 256_000 },
+  // Kimi K2 series fallback — 200k.
   { match: /^kimi-k2/, cap: 200_000 },
   // Kimi for Coding — 256k（SDK 实际值；之前硬编码 200k 偏低）
   { match: /^kimi-for-coding/, cap: 256_000 },

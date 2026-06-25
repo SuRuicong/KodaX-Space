@@ -209,7 +209,7 @@ Space 会监听 `~/.kodax/handoffs/*.json`。当 CLI/REPL 以后写入 handoff d
 
 ### 5.1 图片粘贴（多模态输入）
 
-输入框直接 Ctrl+V 粘贴 PNG/JPEG/WEBP 截图。缩略图 chip 显示在 textarea 上方,× 可删,8 张/turn × 6 MiB/张 上限。发送时 SDK `KodaXContextOptions.inputArtifacts` 自动拼成 multimodal content block 喂给 provider。
+输入框直接 Ctrl+V 粘贴 PNG/JPEG/WEBP 截图，也可以拖入 PNG/JPEG/WEBP 图片。缩略图 chip 显示在 textarea 上方,× 可删,8 张/turn × 6 MiB/张 上限。发送时 SDK `KodaXContextOptions.inputArtifacts` 自动拼成 multimodal content block 喂给 provider；Space 会把来源标为 `clipboard` 或 `drag-drop`。
 
 落盘位置: `app.getPath('temp')/kodax-space/clipboard/<sessionId>/<ts>.png`,session 删除时 best-effort 清理。
 
@@ -291,7 +291,7 @@ Preview popout（右上 Toolbar 第 1 个图标）输入文件路径自动按 ex
 ## 7. 已知限制 (v0.1.22)
 
 - **图片粘贴 + queued path**: SDK MessageQueue 当前只接 prompt string,turn 跑中粘图发送会 fail-loud,需等 turn 完。SDK 暴露 enqueueWithArtifacts 后改通
-- **图片拖拽 / "+attach image" 按钮**: 当前 OC-31 只接 clipboard.paste,drag-drop / file picker 后续 polish
+- **原生剪贴板 fallback / "+attach image" 按钮**: DOM 粘贴和拖拽图片已支持；当网页剪贴板不给 `File` 时的原生剪贴板读取、文件选择器、GIF 直通、file/video 结构化 artifact 仍是后续工作。KodaX 0.7.56 已公开 media helper，Space 需要补主进程 IPC/UX。
 - **User commands**: KodaX `~/.kodax/commands/` 暂不在 Space 显示。需要适配 SlashCommandDef ↔ KodaXCommand 两个 shape (deferred)
 - **model 默认值不读 KodaX config**: 因为跨 provider 时 model 名通常对不上，session 创建后手动 `/model` 切。后续可能做 provider×model 映射
 - **打包安装**: 不签名（KodaX Space 是自家工具不走公开 Beta）；OS 首启 Gatekeeper / SmartScreen 警告需手动 Open 接受
