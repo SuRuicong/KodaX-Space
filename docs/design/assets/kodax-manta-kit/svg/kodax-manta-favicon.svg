@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="KodaX">
+  <path d="M32 8 C25 16 20 22 13 26 C9 29 5 30 2 31 C9 34 17 37 24 43 C28 46 30 49 32 53 C34 49 36 46 40 43 C47 37 55 34 62 31 C59 30 55 29 51 26 C44 22 39 16 32 8 Z" fill="#00ECFF"/>
+  <path d="M32 14 V49" stroke="#F5FBFF" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M32 28 C32 43 31 49 33 55 C34 58 37 59 39 61" fill="none" stroke="#6EFFF0" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M32 19 C33 24 35 27 39 29 C35 31 33 34 32 39 C31 34 29 31 25 29 C29 27 31 24 32 19 Z" fill="#fff"/>
+</svg>

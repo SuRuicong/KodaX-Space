@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc" style="">
+  <title id="title">KodaX Manta Pulse — thinking</title>
+  <desc id="desc">Animated KodaX Manta Pulse logo. Motion is disabled when reduced motion is requested.</desc>
+  <defs>
+  <linearGradient id="wing-left" x1="16" y1="112" x2="132" y2="112" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#00ECFF"/>
+    <stop offset="0.58" stop-color="#0A7CFF"/>
+    <stop offset="1" stop-color="#081420"/>
+  </linearGradient>
+  <linearGradient id="wing-right" x1="124" y1="112" x2="242" y2="112" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#081420"/>
+    <stop offset="0.48" stop-color="#0A7CFF"/>
+    <stop offset="1" stop-color="#00ECFF"/>
+  </linearGradient>
+  <linearGradient id="spine-gradient" x1="128" y1="50" x2="128" y2="246" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#F5FBFF"/>
+    <stop offset="0.38" stop-color="#6EFFF0"/>
+    <stop offset="1" stop-color="#00ECFF"/>
+  </linearGradient>
+  <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+    <feGaussianBlur stdDeviation="4" result="blur"/>
+    <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+  <filter id="wide-glow" x="-100%" y="-100%" width="300%" height="300%">
+    <feGaussianBlur stdDeviation="8" result="blur"/>
+    <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+</defs>
+  <style>
+  :root { --accent:#00ECFF; --secondary:#0A7CFF; --light:#6EFFF0; }
+  #manta, #wing-left, #wing-right, #core, #tail, .ring, .orbit, .spark, .satellite, .burst { transform-box:view-box; }
+  #manta { transform-origin:128px 120px; }
+  #wing-left, #wing-right { transform-origin:128px 120px; }
+  #core { transform-origin:128px 104px; }
+  #tail { transform-origin:128px 116px; }
+  .ring { transform-origin:128px 206px; }
+  @media (prefers-reduced-motion: reduce) { * { animation:none !important; } }
+
+
+  #wing-left,#wing-right { animation:think-breathe 2.4s ease-in-out infinite; }
+  #core { animation:think-core .9s ease-in-out infinite alternate; }
+  #tail { animation:tail-sway 2.8s ease-in-out infinite; }
+  .orbit { transform-origin:128px 118px; animation:orbit 2.8s linear infinite; }
+  .shimmer { stroke-dasharray:20 190; animation:shimmer 1.25s linear infinite; }
+  @keyframes think-breathe { 0%,100%{transform:scaleY(.99)} 50%{transform:scaleY(1.02)} }
+  @keyframes think-core { from{transform:scale(.8);opacity:.65} to{transform:scale(1.2);opacity:1} }
+  @keyframes tail-sway { 0%,100%{transform:rotate(-2deg)} 50%{transform:rotate(2deg)} }
+  @keyframes orbit { to{transform:rotate(360deg)} }
+  @keyframes shimmer { to{stroke-dashoffset:-210} }
+</style>
+  
+  <g id="manta" filter="url(#glow)">
+  <path id="wing-left" d="M128 36 C108 55 96 78 76 94 C58 109 34 116 14 120 C38 125 60 134 82 148 C101 161 116 176 128 190 C124 148 124 86 128 36 Z" fill="url(#wing-left)"/>
+  <path id="wing-right" d="M128 36 C148 55 160 78 180 94 C198 109 222 116 242 120 C218 125 196 134 174 148 C155 161 140 176 128 190 C132 148 132 86 128 36 Z" fill="url(#wing-right)"/>
+  <path id="outline" d="M128 36 C108 55 96 78 76 94 C58 109 34 116 14 120 C38 125 60 134 82 148 C101 161 116 176 128 190 C140 176 155 161 174 148 C196 134 218 125 242 120 C222 116 198 109 180 94 C160 78 148 55 128 36 Z" fill="none" stroke="#00ECFF" stroke-opacity=".75" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path id="spine" d="M128 52 L128 194" fill="none" stroke="url(#spine-gradient)" stroke-width="3.2" stroke-linecap="round"/>
+  <path id="tail" d="M128 112 C128 145 124 177 128 198 C131 216 144 222 150 230 C154 235 156 240 154 246" fill="none" stroke="url(#spine-gradient)" stroke-width="3.2" stroke-linecap="round"/>
+  <path id="core" d="M128 74 C130 89 136 98 148 104 C136 109 130 119 128 136 C126 119 120 109 108 104 C120 98 126 89 128 74 Z" fill="#6EFFF0"/>
+</g>
+  <g class="orbit" fill="#6EFFF0" filter="url(#glow)">
+  <circle cx="128" cy="26" r="3"/><circle cx="220" cy="118" r="2.5"/><circle cx="36" cy="118" r="2.5"/>
+</g>
+<path class="shimmer" d="M20 120 C68 118 101 88 128 42 C155 88 188 118 236 120" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" opacity=".8"/>
+</svg>

@@ -1,0 +1,12 @@
+{
+  "name": "kodax-manta-pulse-assets",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "demo:tui": "node tui/manta-ansi-demo.mjs --state cycle --unicode --label"
+  },
+  "peerDependencies": {
+    "ink": ">=4",
+    "react": ">=18"
+  }
+}

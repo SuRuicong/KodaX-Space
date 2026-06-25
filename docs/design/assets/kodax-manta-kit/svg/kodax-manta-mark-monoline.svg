@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title" color="#00ECFF">
+  <title id="title">KodaX Manta Pulse monoline mark</title>
+  <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M128 36 C108 55 96 78 76 94 C58 109 34 116 14 120 C38 125 60 134 82 148 C101 161 116 176 128 190 C140 176 155 161 174 148 C196 134 218 125 242 120 C222 116 198 109 180 94 C160 78 148 55 128 36 Z" stroke-width="5"/>
+    <path d="M128 52 L128 194" stroke-width="4"/>
+    <path d="M128 112 C128 145 124 177 128 198 C131 216 144 222 150 230 C154 235 156 240 154 246" stroke-width="4"/>
+    <path d="M128 74 C130 89 136 98 148 104 C136 109 130 119 128 136 C126 119 120 109 108 104 C120 98 126 89 128 74 Z" stroke-width="4"/>
+  </g>
+</svg>
