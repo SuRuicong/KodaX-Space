@@ -140,7 +140,7 @@ v0.1.21 是为补丁发布预留出的第一条 patch lane，不新增 planned f
 - Settings e2e 改用稳定 test id / scoped selector，避免系统语言和同名按钮导致 CI 误红。
 - Electron 打包显式包含 `@napi-rs/keyring` 与 native binding；macOS x64/arm64 release jobs 分别在匹配架构 runner 上打包，`smoke:pack` 会检查 keychain runtime 是否进入 `app.asar.unpacked`。
 - Windows release 除直接 `.exe` 外，也提供 `Setup.zip` / `Portable.zip` 备用下载。
-- Historical planning note: `v0.1.21` was the first patch-only release lane; `v0.1.22` is now consumed by the provider/queue patch, `v0.1.23` and `v0.1.25` remain patch reserves, and F103 still starts at `v0.1.26`.
+- Historical planning note: `v0.1.21` was the first patch-only release lane; `v0.1.22` is now consumed by the provider/queue patch, `v0.1.23` and `v0.1.26` remain patch reserves, and F103 still starts at `v0.1.27`.
 
 ### 4.1 Display Language MVP
 
