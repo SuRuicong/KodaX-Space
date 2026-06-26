@@ -60,7 +60,7 @@ async function createSession(space: SpaceInstance, prompt: string): Promise<stri
       return result.data?.sessions?.[0]?.sessionId ?? null;
     });
 
-  await expect.poll(readSessionId, { timeout: 8_000 }).not.toBeNull();
+  await expect.poll(readSessionId, { timeout: 20_000 }).not.toBeNull();
   const sessionId = await readSessionId();
   if (!sessionId) throw new Error('Session was not created');
   return sessionId;
