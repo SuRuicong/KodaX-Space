@@ -60,6 +60,9 @@ let monotonicCounter = 0;
 // 而 host.test.ts → host.ts → 这里的 module load 链不应当因此而崩。registerClipboardChannels
 // 才是会被 main 调的入口，到时候 electron 已经在 main 进程里跑起来了。
 async function clipboardRoot(): Promise<string> {
+  if (!process.versions.electron) {
+    return path.join(os.tmpdir(), 'kodax-space', 'clipboard');
+  }
   try {
     const electron = await import('electron');
     const tempDir = electron.app.getPath('temp');
@@ -144,6 +147,14 @@ export async function readNativeClipboardImage(
   const media = sdk ?? (await loadMediaSdk());
   const image = await media.readAndNormalizeClipboardImage();
   if (image === null) return { image: null };
+  if (image.buffer.length === 0) {
+    throw new Error('clipboard.readImage: empty image bytes after native clipboard read');
+  }
+  if (image.buffer.length > MAX_DECODED_IMAGE_BYTES) {
+    throw new Error(
+      `clipboard.readImage: image too large after decode: ${image.buffer.length} bytes (max ${MAX_DECODED_IMAGE_BYTES})`,
+    );
+  }
 
   const block = await media.persistImageAsBlock(image, {
     directory: dir,
@@ -217,9 +228,7 @@ export async function assertArtifactPathInClipboardSandbox(
   // path.join → 同样平台风格，startsWith 比较是安全的（同进程同平台）。
   const sandbox = path.join(await clipboardRoot(), sessionId) + path.sep;
   if (!normalized.startsWith(sandbox)) {
-    throw new Error(
-      `artifact path outside clipboard sandbox (sid=${sessionId}): ${artifactPath}`,
-    );
+    throw new Error(`artifact path outside clipboard sandbox (sid=${sessionId}): ${artifactPath}`);
   }
 }
 

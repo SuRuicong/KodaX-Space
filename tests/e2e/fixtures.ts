@@ -108,8 +108,10 @@ export async function launchSpace(testId: string, opts?: LaunchSpaceOptions): Pr
     page.on('console', (msg) => console.log(`[renderer:${msg.type()}]`, msg.text()));
     page.on('pageerror', (err) => console.error('[renderer:pageerror]', err.message));
   }
-  // 等 renderer mount —— index.html bundle 进来后才有 body
+  // The main process may show a boot splash first; wait for the real renderer
+  // document before tests touch app localStorage or query app controls.
   await page.waitForLoadState('domcontentloaded');
+  await page.waitForFunction(() => document.getElementById('root') !== null);
 
   // hook：把 project dir 注入 store + recent list + reload，让 textarea / ModeSelector 都活
   // 抽到这里避免 3 个 spec 都拷一份相同 4 行代码 (review LOW: dedup)

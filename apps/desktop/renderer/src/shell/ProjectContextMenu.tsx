@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { Project } from '@kodax-space/space-ipc-schema';
 import { pushToast } from '../store/toastStore.js';
 import { Portal } from '../components/Portal.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 
 interface ProjectContextMenuProps {
   readonly project: Project;
@@ -37,6 +38,7 @@ export function ProjectContextMenu({
   onStartRename,
   onProjectsChanged,
 }: ProjectContextMenuProps): JSX.Element {
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement | null>(null);
   const isArchived = project.archived === true;
 
@@ -51,29 +53,31 @@ export function ProjectContextMenu({
       archived: !isArchived,
     });
     if (!r.ok || !r.data.ok) {
-      pushToast('Failed to update archive state', 'error');
+      pushToast(t('menu.project.archiveUpdateFailed'), 'error');
       return;
     }
-    pushToast(isArchived ? 'Unarchived' : 'Archived', 'info', 1500);
+    pushToast(
+      isArchived ? t('menu.project.unarchived') : t('menu.project.archived'),
+      'info',
+      1500,
+    );
     await onProjectsChanged();
-  }, [project.path, isArchived, onClose, onProjectsChanged]);
+  }, [project.path, isArchived, onClose, onProjectsChanged, t]);
 
   const onRemove = useCallback(async (): Promise<void> => {
     if (!window.kodaxSpace) return;
     // review MED-3：confirm 先于 onClose — 用户取消则菜单仍可见，符合直觉
-    const confirmed = window.confirm(
-      `Remove "${project.name}" from KodaX Space?\n\nThis only removes it from your recent projects list. The folder on disk is not touched.`,
-    );
+    const confirmed = window.confirm(t('menu.project.removeConfirm', { name: project.name }));
     if (!confirmed) return;
     onClose();
     const r = await window.kodaxSpace.invoke('project.recent.remove', { path: project.path });
     if (!r.ok || !r.data.removed) {
-      pushToast('Failed to remove project', 'error');
+      pushToast(t('menu.project.removeFailed'), 'error');
       return;
     }
-    pushToast('Removed from Space', 'info', 1500);
+    pushToast(t('menu.project.removed'), 'info', 1500);
     await onProjectsChanged();
-  }, [project.path, project.name, onClose, onProjectsChanged]);
+  }, [project.path, project.name, onClose, onProjectsChanged, t]);
 
   useEffect(() => {
     function onDocDown(e: MouseEvent): void {
@@ -120,22 +124,27 @@ export function ProjectContextMenu({
         className="fixed z-[100] min-w-[180px] bg-surface border border-border-default rounded shadow-2xl text-xs py-1"
         style={{ left, top }}
         role="menu"
-        aria-label={`${project.name} actions`}
+        aria-label={t('menu.project.actions', { name: project.name })}
       >
         <MenuRow
-          label="Rename"
+          label={t('menu.project.rename')}
           hint="R"
           onClick={() => {
             onStartRename();
           }}
         />
         <MenuRow
-          label={isArchived ? 'Unarchive' : 'Archive'}
+          label={isArchived ? t('menu.project.unarchive') : t('menu.project.archive')}
           hint="A"
           onClick={() => void onToggleArchive()}
         />
         <div className="my-1 border-t border-border-default/60" />
-        <MenuRow label="Remove from Space" hint="D" danger onClick={() => void onRemove()} />
+        <MenuRow
+          label={t('menu.project.remove')}
+          hint="D"
+          danger
+          onClick={() => void onRemove()}
+        />
       </div>
     </Portal>
   );

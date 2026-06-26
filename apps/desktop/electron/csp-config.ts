@@ -10,4 +10,4 @@
  * 防漂移单测：apps/desktop/electron/test/csp-inline-hash.test.ts
  */
 export const THEME_BOOTSTRAP_INLINE_HASH =
-  'sha256-f4UnCQk/tIaj9XH7WuLiA/3uoSYVZlZDM16QkKjJr6c=';
+  'sha256-jFAue9erP7/8uXZSCw/NBSbC45sMok1WrPe7p6NDs1Y=';

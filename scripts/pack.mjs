@@ -95,7 +95,16 @@ function restoreLink({ target, type }) {
 // 否则 electron-builder 接受 `--config.publish[0]...` / `--config.extraResources[0]=...` /
 // `--extraMetadata.*` 这类能在运行时覆盖 electron-builder.yml 任意字段的参数，
 // 在被污染的 CI 或误操作下可变成"把任意文件打进包 / 改自动更新源"的供应链向量。
-const ALLOWED_PASSTHROUGH = new Set(['--win', '--mac', '--linux', '--dir', '--x64', '--arm64', '--ia32', '--armv7l']);
+const ALLOWED_PASSTHROUGH = new Set([
+  '--win',
+  '--mac',
+  '--linux',
+  '--dir',
+  '--x64',
+  '--arm64',
+  '--ia32',
+  '--armv7l',
+]);
 const passthrough = process.argv.slice(2).filter((arg) => {
   if (ALLOWED_PASSTHROUGH.has(arg)) return true;
   console.warn(`[pack] 忽略不在白名单内的参数: ${arg}`);
@@ -105,12 +114,19 @@ const link = inspectSdkLink();
 
 if (!link.linked) {
   // 干净状态：直接打包（CI / 已 unlink 的 release checkout）
+  run(
+    'node',
+    ['scripts/ensure-sqlite-native.mjs', 'electron'],
+    'ensure better-sqlite3 electron ABI',
+  );
   run('npx', ['electron-builder', '-p', 'never', ...passthrough], 'electron-builder');
   process.exit(0);
 }
 
 console.log(`[pack] @kodax-ai/kodax is dev-linked (→ ${link.target}).`);
-console.log('[pack] swapping to the published tarball for packaging (HLD §18: no KodaX-private code).');
+console.log(
+  '[pack] swapping to the published tarball for packaging (HLD §18: no KodaX-private code).',
+);
 
 try {
   run('node', ['scripts/link-kodax.mjs', '--unlink'], 'unlink:kodax');
@@ -121,6 +137,11 @@ try {
     ['install', '--force', '--no-audit', '--no-fund', '--include=dev'],
     'npm install (published SDK)',
     { NODE_ENV: 'development' },
+  );
+  run(
+    'node',
+    ['scripts/ensure-sqlite-native.mjs', 'electron'],
+    'ensure better-sqlite3 electron ABI',
   );
   run('npx', ['electron-builder', '-p', 'never', ...passthrough], 'electron-builder');
 } finally {

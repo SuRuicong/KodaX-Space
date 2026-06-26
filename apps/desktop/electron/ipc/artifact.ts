@@ -12,9 +12,15 @@ import type { ArtifactKindT } from '@kodax-space/space-ipc-schema';
 import { registerChannel } from './register.js';
 import { pushToRenderer } from './push.js';
 import { artifactStore } from '../artifact/store.js';
-import { extForKind, extForImageMime, parseDataUri, sanitizeFilename } from '../artifact/export-helpers.js';
+import {
+  extForKind,
+  extForImageMime,
+  parseDataUri,
+  sanitizeFilename,
+} from '../artifact/export-helpers.js';
 import { resolveInsideProject, readFileWithGuards } from './files-core.js';
 import { projectStore } from '../projects/store.js';
+import { kodaxHost } from '../kodax/host.js';
 
 /**
  * 文件扩展名 → 可预览的 artifact kind。
@@ -52,6 +58,15 @@ function getElectron(): typeof import('electron') {
 
 export function registerArtifactChannels(): void {
   registerChannel('artifact.create', async (input) => {
+    if (input.path !== undefined) {
+      let session = kodaxHost.get(input.sessionId);
+      if (!session && (await kodaxHost.tryResume(input.sessionId))) {
+        session = kodaxHost.get(input.sessionId);
+      }
+      if (!session) throw new Error('session not found for artifact path validation');
+      const projectRoot = await projectStore.assertAllowed(session.projectRoot);
+      await resolveInsideProject(projectRoot, input.path);
+    }
     const res = await artifactStore.upsert(input);
     pushToRenderer('artifact.changed', {
       id: res.id,

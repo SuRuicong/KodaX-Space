@@ -19,7 +19,7 @@
 // 接 surface store）；LeftSidebar 是两 surface 共用的全局导航（项目 / session / surface tab）。
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Clock, Briefcase, ChevronDown, Settings, type LucideIcon } from 'lucide-react';
+import { Plus, Clock, Briefcase, ChevronDown, Settings, Pin, type LucideIcon } from 'lucide-react';
 import { SurfaceTabs } from './SurfaceTabs.js';
 import { useAppStore } from '../store/appStore.js';
 import { useSurfaceStore } from '../store/surface.js';
@@ -28,6 +28,7 @@ import {
   canonProjectRoot,
   type SessionMeta,
   type RunningSessionInfoT,
+  type SupportedLocaleT,
 } from '@kodax-space/space-ipc-schema';
 import { SessionContextMenu } from './SessionContextMenu.js';
 import { ProjectContextMenu } from './ProjectContextMenu.js';
@@ -39,6 +40,7 @@ import { useSessionStatusMap, type SessionStatus } from '../features/session/use
 import { pushToast } from '../store/toastStore.js';
 import type { Project } from '@kodax-space/space-ipc-schema';
 import { useI18n } from '../i18n/I18nProvider.js';
+import { invokeWithTimeout } from '../lib/ipcInvokeWithTimeout.js';
 
 // Hover-prefetch: 用户鼠标悬停在 Recents 项上时,后台触发 session.history IPC
 // 让 main 端 5-LRU cache (session-store.ts) 提前 warm 起来。等用户真正点击时,handler 命中
@@ -443,11 +445,12 @@ function ProjectTree({
           )}
           {runningCount > 0 && !isRenaming && (
             <span
-              className="text-ok text-[11px] flex-shrink-0 font-mono"
+              className="text-run text-[11px] flex-shrink-0 font-mono inline-flex items-center gap-1"
               aria-label={`${runningCount} running`}
               title={`${runningCount} session${runningCount === 1 ? '' : 's'} running`}
             >
-              ●{runningCount}
+              <span className="sidebar-status-spinner sidebar-status-spinner--mini" aria-hidden />
+              {runningCount}
             </span>
           )}
           {/* v0.1.9: hover-only inline buttons — new session + contextmenu (codex 对齐) */}
@@ -627,6 +630,7 @@ function SessionTree({
   maxVisible,
   onShowMore,
 }: SessionTreeProps): JSX.Element {
+  const { t } = useI18n();
   const sessionFlags = useAppStore((s) => s.sessionFlags);
   const filter = useAppStore((s) => s.recentsFilter);
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
@@ -720,7 +724,7 @@ function SessionTree({
           type="button"
           onClick={onShowMore}
           className="w-full text-left text-xs text-fg-muted hover:text-fg-primary px-3 py-1 flex items-center gap-1.5"
-          aria-label={`Browse all ${rendered.length} sessions in this project`}
+          aria-label={t('sidebar.moreSessions.aria', { count: rendered.length })}
         >
           <span
             className="w-3 flex items-center justify-center flex-shrink-0 text-base leading-none text-fg-muted"
@@ -729,7 +733,9 @@ function SessionTree({
             +
           </span>
           <span className="italic">
-            {overflowCount} more session{overflowCount === 1 ? '' : 's'}…
+            {overflowCount === 1
+              ? t('sidebar.moreSessions.one')
+              : t('sidebar.moreSessions.many', { count: overflowCount })}
           </span>
         </button>
       )}
@@ -794,28 +800,6 @@ export function buildSessionTreeOrder(
   return out;
 }
 
-/**
- * SessionRow 行首标识。之前用文字 `·`（fork 用 `⑂`），渲染只有 ~3px 且基线偏移、很难看清
- * （用户反馈太小，2026-06-08）。改成实心圆点（fork 仍用放大的 `⑂` 字形），尺寸放大到 7px。
- */
-function SessionBullet({ isFork }: { isFork: boolean }): JSX.Element {
-  if (isFork) {
-    return (
-      <span
-        className="text-fg-muted text-[13px] leading-none w-3 text-center flex-shrink-0"
-        aria-hidden
-      >
-        ⑂
-      </span>
-    );
-  }
-  return (
-    <span className="w-3 flex items-center justify-center flex-shrink-0" aria-hidden>
-      <span className="w-[7px] h-[7px] rounded-full bg-fg-muted" />
-    </span>
-  );
-}
-
 function SessionRow({
   session,
   depth,
@@ -840,17 +824,26 @@ function SessionRow({
   onStartRename: () => void;
   onCancelRename: () => void;
 }): JSX.Element {
+  const { effectiveLocale, t } = useI18n();
   const upsertSession = useAppStore((s) => s.upsertSession);
   const indent = Math.min(depth, 4); // 不无限缩进；4 层就够
-  const isFork = depth > 0 || session.parentSessionId !== undefined;
-  const padLeft = `${0.5 + indent * 0.8}rem`;
+  const padLeft = `${1.6 + indent * 0.9}rem`;
+  const timeLabel = formatSidebarTime(session.lastActivityAt, effectiveLocale);
+  const statusLabel =
+    status === 'awaiting'
+      ? t('sidebar.status.awaiting')
+      : status === 'error'
+        ? t('sidebar.status.error')
+        : status === 'running'
+          ? t('sidebar.status.running')
+          : null;
 
   async function commitRename(value: string): Promise<void> {
     const trimmed = value.trim().slice(0, 256);
     onCancelRename();
     if (trimmed === '' || trimmed === (session.title ?? '')) return;
     if (!window.kodaxSpace) return;
-    const r = await window.kodaxSpace.invoke('session.setTitle', {
+    const r = await invokeWithTimeout(window.kodaxSpace, 'session.setTitle', {
       sessionId: session.sessionId,
       title: trimmed,
     });
@@ -860,10 +853,9 @@ function SessionRow({
   if (isRenaming) {
     return (
       <div
-        className={`flex items-center gap-1 text-xs px-2 py-1 rounded bg-surface-3 text-fg-primary`}
+        className="grid min-h-[1.625rem] grid-cols-[minmax(0,1fr)] items-center rounded px-2 py-1 text-xs bg-surface-3 text-fg-primary"
         style={{ paddingLeft: padLeft }}
       >
-        <SessionBullet isFork={isFork} />
         <RenameInput
           initial={session.title ?? ''}
           onCommit={(v) => void commitRename(v)}
@@ -883,50 +875,65 @@ function SessionRow({
         e.preventDefault();
         onContextMenu(e.clientX, e.clientY);
       }}
-      className={`w-full text-left text-xs px-2 py-1 rounded truncate flex items-center gap-1 ${
+      className={`group/sessionrow w-full min-w-0 text-left text-xs px-2 py-1 rounded grid grid-cols-[minmax(0,1fr)_4.25rem] items-center gap-2 min-h-[1.625rem] ${
         isSelected
           ? 'bg-surface-3 text-fg-primary'
           : 'text-fg-secondary hover:bg-hover-bg hover:text-fg-primary'
       }`}
       style={{ paddingLeft: padLeft }}
-      title={`${session.title ?? session.sessionId} (double-click to rename)`}
+      title={`${session.title ?? session.sessionId} - ${timeLabel}${statusLabel ? ` - ${statusLabel}` : ''} (${t('sidebar.session.renameHint')})`}
     >
-      <SessionBullet isFork={isFork} />
-      {flags?.pinned && (
-        <span className="text-warn text-[11px]" aria-hidden title="Pinned">
-          📌
-        </span>
-      )}
-      <span className="truncate flex-1">{session.title ?? 'Untitled session'}</span>
-      {flags?.unread && (
-        <span className="text-ok text-[11px]" aria-hidden title="Unread">
-          ●
-        </span>
-      )}
-      {/* F040 状态点：idle 不渲染（最常态、避免视觉噪音）。awaiting/error/running 都用单色圆点。 */}
-      {status && status !== 'idle' && (
-        <span
-          className={`text-[11px] flex-shrink-0 ${
-            status === 'awaiting'
-              ? 'text-warn'
-              : status === 'error'
-                ? 'text-danger'
-                : 'text-ok' /* running */
-          }`}
-          aria-hidden
-          title={
-            status === 'awaiting'
-              ? 'Awaiting confirmation'
-              : status === 'error'
-                ? 'Errored'
-                : 'Running'
-          }
-        >
-          ●
-        </span>
-      )}
+      <span className="min-w-0 truncate">{session.title ?? t('sidebar.session.untitled')}</span>
+      <span className="flex min-w-0 items-center justify-end gap-1.5 text-[11px] text-fg-muted">
+        {status === 'running' ? (
+          <span className="sidebar-status-spinner" aria-hidden title={statusLabel ?? undefined} />
+        ) : (
+          <>
+            {flags?.unread && (
+              <span
+                className="h-1.5 w-1.5 rounded-full bg-ok shadow-[0_0_0_2px_rgb(var(--ok)/0.12)]"
+                aria-label={t('sidebar.status.unread')}
+                title={t('sidebar.status.unread')}
+              />
+            )}
+            {status && status !== 'idle' && (
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  status === 'awaiting' ? 'bg-warn' : 'bg-danger'
+                }`}
+                aria-label={statusLabel ?? undefined}
+                title={statusLabel ?? undefined}
+              />
+            )}
+            {flags?.pinned && (
+              <span aria-label={t('sidebar.status.pinned')} title={t('sidebar.status.pinned')}>
+                <Pin className="h-3 w-3 text-fg-muted" strokeWidth={1.9} aria-hidden />
+              </span>
+            )}
+            <span className="tnum min-w-[2.15rem] text-right leading-none">{timeLabel}</span>
+          </>
+        )}
+      </span>
     </button>
   );
+}
+
+function formatSidebarTime(timestamp: number, locale: SupportedLocaleT): string {
+  const diff = Math.max(0, Date.now() - timestamp);
+  const isZh = locale === 'zh-CN';
+  const min = Math.max(1, Math.floor(diff / 60_000));
+  if (diff < 60_000) return isZh ? '刚刚' : 'now';
+  if (min < 60) return isZh ? `${min} 分` : `${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return isZh ? `${hr} 小时` : `${hr}h`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return isZh ? `${day} 天` : `${day}d`;
+  const wk = Math.floor(day / 7);
+  if (wk < 5) return isZh ? `${wk} 周` : `${wk}w`;
+  const mo = Math.floor(day / 30);
+  if (mo < 12) return isZh ? `${mo} 个月` : `${mo}mo`;
+  const yr = Math.floor(day / 365);
+  return isZh ? `${yr} 年` : `${yr}y`;
 }
 
 /** Inline rename input — Enter 提交、Esc / blur 取消（避免静默改名误操作） */
@@ -939,6 +946,7 @@ function RenameInput({
   onCommit: (value: string) => void;
   onCancel: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const [value, setValue] = useState(initial);
   return (
     <input
@@ -958,9 +966,9 @@ function RenameInput({
       onBlur={onCancel}
       onFocus={(e) => e.currentTarget.select()}
       className="flex-1 bg-transparent text-fg-primary text-xs outline-none border-b border-border-strong focus:border-warn px-0.5 -mx-0.5"
-      placeholder="Session title"
+      placeholder={t('sidebar.session.renamePlaceholder')}
       maxLength={256}
-      aria-label="Rename session"
+      aria-label={t('sidebar.session.renameAria')}
     />
   );
 }
@@ -973,29 +981,36 @@ function RenameInput({
 //     队列防腐败，但内容会乱序。v1 当"只读 / passive resume"语义；显式 takeover SDK 没出
 //   - peers 为空时 panel 不渲染（不占侧栏空间）
 function RunningPeersPanel(): JSX.Element | null {
+  const { t } = useI18n();
   const [peers, setPeers] = useState<readonly RunningSessionInfoT[]>(EMPTY_PEERS);
   const setCurrentSession = useAppStore((s) => s.setCurrentSession);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
 
   useEffect(() => {
     let cancelled = false;
-    async function refresh(): Promise<void> {
+    async function refresh(force = false): Promise<void> {
+      if (!force && (document.hidden || !document.hasFocus())) return;
       if (!window.kodaxSpace) return;
       const r = await window.kodaxSpace.invoke('session.listRunning', undefined);
       if (cancelled) return;
       if (r.ok) setPeers(r.data.peers);
     }
-    void refresh();
-    const interval = window.setInterval(refresh, 10_000);
+    void refresh(true);
+    const interval = window.setInterval(() => void refresh(), 10_000);
     // window focus 也触发一次刷新——切回 Space 立刻看到新 peer 状态
     function onFocus(): void {
-      void refresh();
+      void refresh(true);
+    }
+    function onVisibility(): void {
+      if (document.visibilityState === 'visible') void refresh(true);
     }
     window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
       window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, []);
 
@@ -1005,7 +1020,7 @@ function RunningPeersPanel(): JSX.Element | null {
     <div className="border-b border-border-default px-2 py-1.5">
       <div className="text-[11px] uppercase tracking-wider text-fg-muted mb-1 px-1 flex items-center gap-1.5">
         <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-ok" />
-        <span>Running · {peers.length}</span>
+        <span>{t('sidebar.runningPeers.count', { count: peers.length })}</span>
       </div>
       {peers.map((p) => {
         const cwdName = (p.cwd.split(/[\\/]/).filter(Boolean).pop() ?? p.cwd).slice(0, 32);
@@ -1031,8 +1046,15 @@ function RunningPeersPanel(): JSX.Element | null {
             ].join(' ')}
             title={
               p.sessionId
-                ? `pid ${p.pid} · session ${p.sessionId}\ncwd: ${p.cwd}\nclick to open (read-only resume while peer is alive)`
-                : `pid ${p.pid} · session bootstrapping\ncwd: ${p.cwd}`
+                ? t('sidebar.runningPeers.openTitle', {
+                    pid: p.pid,
+                    sessionId: p.sessionId,
+                    cwd: p.cwd,
+                  })
+                : t('sidebar.runningPeers.bootstrappingTitle', {
+                    pid: p.pid,
+                    cwd: p.cwd,
+                  })
             }
           >
             <span aria-hidden className="text-fg-faint font-mono flex-shrink-0">
@@ -1055,12 +1077,24 @@ function RecentsHeader(): JSX.Element {
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const filter = useAppStore((s) => s.recentsFilter);
   // 显示当前过滤 summary，给用户暗示"我现在看的是哪部分"
+  const filterStatusLabel =
+    filter.status === 'active'
+      ? ''
+      : filter.status === 'archived'
+        ? t('sidebar.filter.status.archived')
+        : t('sidebar.filter.status.all');
+  const filterSortLabel =
+    filter.sortBy === 'alphabetical'
+      ? t('sidebar.filter.sort.alphabetical')
+      : filter.sortBy === 'created'
+        ? t('sidebar.filter.sort.created')
+        : t('sidebar.filter.sort.recency');
   const summary =
     filter.status !== 'active' ||
     filter.lastActivity !== 'all' ||
     filter.sortBy !== 'recency' ||
     filter.groupBy !== 'none'
-      ? `${filter.status === 'active' ? '' : filter.status + ' · '}${filter.sortBy}`
+      ? `${filterStatusLabel ? `${filterStatusLabel} · ` : ''}${filterSortLabel}`
       : null;
   return (
     <div className="px-3 pt-3 pb-1 text-[11px] uppercase tracking-wider text-fg-muted flex justify-between items-center flex-shrink-0 relative">
@@ -1074,8 +1108,8 @@ function RecentsHeader(): JSX.Element {
           type="button"
           onClick={() => setMenuOpen((v) => !v)}
           className="text-fg-muted hover:text-fg-primary normal-case"
-          aria-label="Filter projects / sessions"
-          title="Filter, group, sort"
+          aria-label={t('sidebar.filter.aria')}
+          title={t('sidebar.filter.title')}
         >
           ⇅
         </button>

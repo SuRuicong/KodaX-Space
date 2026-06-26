@@ -75,6 +75,8 @@ export function ResizeHandle({
         el.removeEventListener('pointerup', onUp);
         el.removeEventListener('pointercancel', onCancel);
         window.removeEventListener('keydown', onKey);
+        window.removeEventListener('blur', onWindowBlur);
+        document.removeEventListener('visibilitychange', onVisibilityChange);
         try {
           if (el.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId);
         } catch {
@@ -108,6 +110,12 @@ export function ResizeHandle({
         onCommit(start);
       };
 
+      const onWindowBlur = (): void => onCancel();
+
+      const onVisibilityChange = (): void => {
+        if (document.hidden) onCancel();
+      };
+
       // setPointerCapture：之后 pointermove/up/cancel 都派发到 el，即便指针在 iframe 上。
       try {
         el.setPointerCapture(pointerId);
@@ -118,6 +126,8 @@ export function ResizeHandle({
       el.addEventListener('pointerup', onUp);
       el.addEventListener('pointercancel', onCancel);
       window.addEventListener('keydown', onKey);
+      window.addEventListener('blur', onWindowBlur);
+      document.addEventListener('visibilitychange', onVisibilityChange);
       teardownRef.current = teardown;
     },
     [side, width, onCommit, onPreview],

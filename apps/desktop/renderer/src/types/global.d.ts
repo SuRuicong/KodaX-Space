@@ -46,6 +46,9 @@ declare global {
 
     platform: BridgePlatform;
 
+    /** Notify main that React committed and the first app frame should be paintable. */
+    rendererReady(): void;
+
     /** Resolve the OS path for a File supplied by a user drag/drop action. */
     getPathForFile(file: File): string | null;
 

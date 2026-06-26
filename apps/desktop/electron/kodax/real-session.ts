@@ -146,6 +146,8 @@ function clampSessionEventText(value: string | undefined): string | undefined {
   return `${value.slice(0, 262_120)}\n\n[truncated]`;
 }
 
+const STREAM_DELTA_FLUSH_MS = 33;
+
 // Plan-mode 工具拦截：v0.7.42 切到 SDK `isToolPlanModeAllowed`，基于工具注册时的
 // `sideEffect` / `planModeAllowed` 元数据自动判定——SDK 新增 'mutates-fs' 工具
 // 自动流过，Space 不再硬编码 Set。fail-closed：未知 tool 一律 block。
@@ -445,9 +447,50 @@ export class RealKodaXSession implements ManagedSession {
   ): Promise<void> {
     const sid = this.sessionId;
     const isStopped = (): boolean => this.disposed || signal.aborted;
-    const emitLive = (event: SessionEvent): void => {
-      if (isStopped()) return;
+    const emitRawLive = (event: SessionEvent, force = false): void => {
+      if (this.disposed) return;
+      if (!force && isStopped()) return;
       this.emit(event);
+    };
+    type StreamDeltaKind = 'text_delta' | 'thinking_delta';
+    const streamDeltaBuffer: Array<{ kind: StreamDeltaKind; text: string }> = [];
+    let streamDeltaFlushTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearStreamDeltaFlushTimer = (): void => {
+      if (streamDeltaFlushTimer === null) return;
+      clearTimeout(streamDeltaFlushTimer);
+      streamDeltaFlushTimer = null;
+    };
+    const flushStreamDeltas = (force = false): void => {
+      clearStreamDeltaFlushTimer();
+      if (streamDeltaBuffer.length === 0) return;
+      const pending = streamDeltaBuffer.splice(0);
+      for (const delta of pending) {
+        if (delta.kind === 'text_delta') {
+          emitRawLive({ kind: 'text_delta', sessionId: sid, text: delta.text }, force);
+        } else {
+          emitRawLive({ kind: 'thinking_delta', sessionId: sid, text: delta.text }, force);
+        }
+      }
+    };
+    const scheduleStreamDeltaFlush = (): void => {
+      if (streamDeltaFlushTimer !== null) return;
+      streamDeltaFlushTimer = setTimeout(() => flushStreamDeltas(), STREAM_DELTA_FLUSH_MS);
+    };
+    const emitStreamDelta = (kind: StreamDeltaKind, text: string): void => {
+      if (isStopped() || text.length === 0) return;
+      const last = streamDeltaBuffer[streamDeltaBuffer.length - 1];
+      if (last?.kind === kind) {
+        last.text += text;
+      } else {
+        streamDeltaBuffer.push({ kind, text });
+      }
+      scheduleStreamDeltaFlush();
+    };
+    const emitLive = (event: SessionEvent): void => {
+      if (event.kind !== 'text_delta' && event.kind !== 'thinking_delta') {
+        flushStreamDeltas();
+      }
+      emitRawLive(event);
     };
 
     // 终止事件收口（修复"500 后历史位置错乱"）。
@@ -485,7 +528,7 @@ export class RealKodaXSession implements ManagedSession {
       // composeMessages 每次 events 变都重新 Date.now()+delta 让倒计时不断推后。
       const retryAvailableAt =
         wrapped.retryAfterMs !== undefined ? Date.now() + wrapped.retryAfterMs : undefined;
-      this.emit({
+      emitLive({
         kind: 'session_error',
         sessionId: sid,
         error: wrapped.userMessage,
@@ -672,11 +715,11 @@ export class RealKodaXSession implements ManagedSession {
         // F065: 子 agent 文本不进主 transcript（不淹）；不逐 delta 推活动（控量），
         // 子 agent 进度由 snapshot.latestMessage + discrete tool 活动体现。
         if (childRunId(meta)) return;
-        emitLive({ kind: 'text_delta', sessionId: sid, text });
+        emitStreamDelta('text_delta', text);
       },
       onThinkingDelta: (text, meta) => {
         if (childRunId(meta)) return;
-        emitLive({ kind: 'thinking_delta', sessionId: sid, text });
+        emitStreamDelta('thinking_delta', text);
       },
       onThinkingEnd: (thinking, meta) => {
         if (childRunId(meta)) return;
@@ -1184,13 +1227,17 @@ export class RealKodaXSession implements ManagedSession {
         // 同时置 terminalEmitted，与 emitTerminalError 共享同一 latch，杜绝任何重发。
         if (!this.disposed && !terminalEmitted) {
           terminalEmitted = true;
-          this.emit({
-            kind: 'session_error',
-            sessionId: sid,
-            error: 'cancelled',
-            category: 'cancelled',
-            retriable: true,
-          });
+          flushStreamDeltas(true);
+          emitRawLive(
+            {
+              kind: 'session_error',
+              sessionId: sid,
+              error: 'cancelled',
+              category: 'cancelled',
+              retriable: true,
+            },
+            true,
+          );
         }
       } else if (!signal.aborted) {
         // AMA 路径：SDK catch 已先调过 onError(暂存 err)，这里 throw 上来。统一走
@@ -1204,6 +1251,7 @@ export class RealKodaXSession implements ManagedSession {
         console.warn(`[real-session ${sid}] sdk error suppressed by concurrent cancel: ${msg}`);
       }
     } finally {
+      flushStreamDeltas();
       // /compact 标记是 one-shot — 不论本轮成功 / 中断 / 报错，consume 后清掉
       // 避免下一轮还误触发
       if (this.compactRequested) this.compactRequested = false;

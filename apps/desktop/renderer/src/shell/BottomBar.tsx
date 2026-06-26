@@ -4,8 +4,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, FileText, Folder, Plus, X } from 'lucide-react';
 import type {
+  ChannelInput,
+  ChannelOutput,
   InputArtifact,
   InputArtifactSource,
+  InvokeChannelName,
+  IpcResult,
   SessionMeta,
 } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
@@ -32,6 +36,7 @@ import { NotificationsSurface } from './NotificationsSurface.js';
 import { pushToast } from '../store/toastStore.js';
 import { sessionMatchesScope } from '../lib/sessionScope.js';
 import { shouldActivateSessionForCurrentScope } from '../lib/sessionActivation.js';
+import { KodaXDogMascot } from '../components/KodaXDogMascot.js';
 
 const SLASH_ARGS_MAX = 20;
 
@@ -39,10 +44,113 @@ const EMPTY_INPUT_HISTORY: readonly string[] = [];
 
 type QueueMode = 'interrupt' | 'after-turn';
 
+interface ComposerInvokeOptions<T> {
+  readonly timeoutMs?: number;
+  readonly onLateResult?: (result: IpcResult<T>) => void;
+}
+
+const DEFAULT_COMPOSER_INVOKE_TIMEOUT_MS = 45_000;
+const COMPOSER_INVOKE_TIMEOUT_MS: Partial<Record<InvokeChannelName, number>> = {
+  'session.create': 45_000,
+  'session.send': 30_000,
+  'session.setTitle': 10_000,
+  'slash.exec': 90_000,
+  'skill.invoke': 60_000,
+  'skill.discover': 45_000,
+  'provider.test': 30_000,
+  'mcp.reload': 45_000,
+  'mcp.discover': 45_000,
+};
+
 function queuedToastText(queueMode: QueueMode | undefined): string {
   return queueMode === 'after-turn'
     ? 'Queued - will run after the current turn'
     : 'Queued - will join at the next safe point';
+}
+
+function composerInvokeFailure<T>(
+  channel: InvokeChannelName,
+  message: string,
+  details?: unknown,
+): IpcResult<T> {
+  return {
+    ok: false,
+    error: {
+      code: 'INTERNAL',
+      message,
+      details: details === undefined ? { channel } : { channel, cause: details },
+    },
+  };
+}
+
+function composerInvokeTimeoutFailure<T>(
+  channel: InvokeChannelName,
+  timeoutMs: number,
+): IpcResult<T> {
+  return composerInvokeFailure(channel, composerTimeoutMessage(channel, timeoutMs), {
+    timedOut: true,
+  });
+}
+
+function composerTimeoutMessage(channel: InvokeChannelName, timeoutMs: number): string {
+  return `${channel} timed out after ${Math.round(timeoutMs / 1000)}s. The request may still finish in the background.`;
+}
+
+function composerInvokeTimeoutMs(channel: InvokeChannelName): number {
+  return COMPOSER_INVOKE_TIMEOUT_MS[channel] ?? DEFAULT_COMPOSER_INVOKE_TIMEOUT_MS;
+}
+
+function isComposerTimeoutResult<T>(result: IpcResult<T>): boolean {
+  if (result.ok) return false;
+  const details = result.error.details;
+  if (!details || typeof details !== 'object') return false;
+  if (!('cause' in details)) return false;
+  const cause = (details as { cause?: unknown }).cause;
+  return (
+    !!cause && typeof cause === 'object' && (cause as { timedOut?: unknown }).timedOut === true
+  );
+}
+
+async function invokeComposerIpc<C extends InvokeChannelName>(
+  channel: C,
+  payload: ChannelInput<C>,
+  optionsOrTimeoutMs: number | ComposerInvokeOptions<ChannelOutput<C>> = {},
+): Promise<IpcResult<ChannelOutput<C>>> {
+  const bridge = window.kodaxSpace;
+  if (!bridge) {
+    return composerInvokeFailure(channel, 'IPC unavailable');
+  }
+
+  const options =
+    typeof optionsOrTimeoutMs === 'number' ? { timeoutMs: optionsOrTimeoutMs } : optionsOrTimeoutMs;
+  const timeoutMs = options.timeoutMs ?? composerInvokeTimeoutMs(channel);
+  let timer: number | undefined;
+  let timedOut = false;
+  const timeoutResult = new Promise<IpcResult<ChannelOutput<C>>>((resolve) => {
+    timer = window.setTimeout(() => {
+      timedOut = true;
+      resolve(composerInvokeTimeoutFailure(channel, timeoutMs));
+    }, timeoutMs);
+  });
+  const invokeResult = bridge
+    .invoke(channel, payload)
+    .catch((error: unknown) =>
+      composerInvokeFailure<ChannelOutput<C>>(
+        channel,
+        error instanceof Error ? error.message : String(error),
+        error,
+      ),
+    )
+    .then((result) => {
+      if (timedOut) options.onLateResult?.(result);
+      return result;
+    });
+
+  try {
+    return await Promise.race([invokeResult, timeoutResult]);
+  } finally {
+    if (timer !== undefined) window.clearTimeout(timer);
+  }
 }
 
 const TITLE_MAX_CHARS = 50;
@@ -448,6 +556,7 @@ export function BottomBar(): JSX.Element {
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   // New sessions are tagged with the active surface.
   const currentSurface = useSurfaceStore((s) => s.currentSurface);
+  const mascotEnabled = useAppStore((s) => s.mascotEnabled);
   const providers = useAppStore((s) => s.providers);
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
   const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
@@ -495,6 +604,39 @@ export function BottomBar(): JSX.Element {
   const [caret, setCaret] = useState(0);
   const atPathKeyHandlerRef = useRef<((e: KeyboardEvent) => boolean) | null>(null);
 
+  function focusComposerSoon(): void {
+    const focusNow = (): void => textareaRef.current?.focus({ preventScroll: true });
+    focusNow();
+    requestAnimationFrame(focusNow);
+    window.setTimeout(focusNow, 50);
+    window.setTimeout(focusNow, 180);
+  }
+
+  function focusComposerFromContainer(target: EventTarget | null): void {
+    if (
+      target instanceof HTMLElement &&
+      target.closest(
+        [
+          'button',
+          'input',
+          'textarea',
+          'select',
+          'a',
+          '[role="button"]',
+          '[role="option"]',
+          '[role="listbox"]',
+          '[role="menu"]',
+          '[role="menuitem"]',
+          '[role="dialog"]',
+          '[data-composer-no-focus]',
+        ].join(', '),
+      )
+    ) {
+      return;
+    }
+    focusComposerSoon();
+  }
+
   /** Insert text into the textarea at the current caret or selection. */
   function insertAtCaret(text: string): void {
     const ta = textareaRef.current;
@@ -516,7 +658,9 @@ export function BottomBar(): JSX.Element {
       live.focus();
       try {
         live.setSelectionRange(newPos, newPos);
-      } catch {}
+      } catch {
+        /* ignore invalid selection range */
+      }
     });
   }
 
@@ -544,7 +688,7 @@ export function BottomBar(): JSX.Element {
   }, [prompt]);
 
   useEffect(() => {
-    const onFocus = (): void => textareaRef.current?.focus();
+    const onFocus = (): void => focusComposerSoon();
     window.addEventListener('kodax-space.focus-textarea', onFocus);
     return () => window.removeEventListener('kodax-space.focus-textarea', onFocus);
   }, []);
@@ -612,58 +756,77 @@ export function BottomBar(): JSX.Element {
       pendingAgentMode,
       pendingModel,
     });
-    const result = await window.kodaxSpace.invoke('session.create', {
+    const createPayload: ChannelInput<'session.create'> = {
       projectRoot: currentProjectPath,
       provider,
       ...(model ? { model } : {}),
       ...runtimeOverrides,
       surface: currentSurface,
+    };
+
+    const applyCreatedSession = (
+      data: ChannelOutput<'session.create'>,
+      source: 'foreground' | 'late',
+    ): string => {
+      const stub: SessionMeta = {
+        sessionId: data.sessionId,
+        projectRoot: currentProjectPath,
+        provider,
+        ...(model ? { model } : {}),
+        reasoningMode: data.reasoningMode,
+        permissionMode: data.permissionMode,
+        autoModeEngine: data.autoModeEngine,
+        agentMode: data.agentMode,
+        surface: currentSurface,
+        title: undefined,
+        createdAt: data.createdAt,
+        lastActivityAt: data.createdAt,
+      };
+      upsertSession(stub);
+      const latest = useAppStore.getState();
+      const latestSurface = useSurfaceStore.getState().currentSurface;
+      if (
+        shouldActivateSessionForCurrentScope(stub, {
+          currentProjectPath: latest.currentProjectPath,
+          currentSurface: latestSurface,
+        })
+      ) {
+        setCurrentSession(stub.sessionId);
+      }
+      setPendingProviderId(null);
+      if (source === 'late') {
+        setErr(null);
+        pushToast('Session finished creating in the background', 'info');
+      }
+      void window.kodaxSpace
+        ?.invoke('session.list', {
+          projectRoot: currentProjectPath,
+          surface: currentSurface,
+        })
+        .then((listResult) => {
+          if (listResult.ok) {
+            useAppStore.getState().replaceSessionsForScope(listResult.data.sessions, {
+              projectRoot: currentProjectPath,
+              surface: currentSurface,
+            });
+          }
+        })
+        .catch(() => {});
+      return stub.sessionId;
+    };
+
+    const result = await invokeComposerIpc('session.create', createPayload, {
+      onLateResult: (lateResult) => {
+        if (lateResult.ok) {
+          applyCreatedSession(lateResult.data, 'late');
+        }
+      },
     });
     if (!result.ok) {
       setErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'create failed'}`);
       return null;
     }
-    const stub: SessionMeta = {
-      sessionId: result.data.sessionId,
-      projectRoot: currentProjectPath,
-      provider,
-      ...(model ? { model } : {}),
-      reasoningMode: result.data.reasoningMode,
-      permissionMode: result.data.permissionMode,
-      autoModeEngine: result.data.autoModeEngine,
-      agentMode: result.data.agentMode,
-      surface: currentSurface,
-      title: undefined,
-      createdAt: result.data.createdAt,
-      lastActivityAt: result.data.createdAt,
-    };
-    upsertSession(stub);
-    const latest = useAppStore.getState();
-    const latestSurface = useSurfaceStore.getState().currentSurface;
-    if (
-      shouldActivateSessionForCurrentScope(stub, {
-        currentProjectPath: latest.currentProjectPath,
-        currentSurface: latestSurface,
-      })
-    ) {
-      setCurrentSession(stub.sessionId);
-    }
-    setPendingProviderId(null);
-    void window.kodaxSpace
-      .invoke('session.list', {
-        projectRoot: currentProjectPath,
-        surface: currentSurface,
-      })
-      .then((listResult) => {
-        if (listResult.ok) {
-          useAppStore.getState().replaceSessionsForScope(listResult.data.sessions, {
-            projectRoot: currentProjectPath,
-            surface: currentSurface,
-          });
-        }
-      })
-      .catch(() => {});
-    return stub.sessionId;
+    return applyCreatedSession(result.data, 'foreground');
   }
 
   async function attachImages(blobs: readonly File[], source: InputArtifactSource): Promise<void> {
@@ -700,7 +863,7 @@ export function BottomBar(): JSX.Element {
     for (const b of accepted) {
       try {
         const base64 = await blobToBase64(b);
-        const r = await window.kodaxSpace.invoke('clipboard.saveImage', {
+        const r = await invokeComposerIpc('clipboard.saveImage', {
           sessionId: sid,
           base64,
           mediaType: b.type as PendingImage['mediaType'],
@@ -742,7 +905,7 @@ export function BottomBar(): JSX.Element {
     const sid = await ensureSession();
     if (!sid) return;
 
-    const r = await window.kodaxSpace.invoke('clipboard.readImage', { sessionId: sid });
+    const r = await invokeComposerIpc('clipboard.readImage', { sessionId: sid });
     if (!r.ok) {
       setImageErr(`${r.error?.code ?? 'ERR_UNKNOWN'}: ${r.error?.message ?? 'read failed'}`);
       return;
@@ -902,7 +1065,7 @@ export function BottomBar(): JSX.Element {
       appendWorkflowNotice(sessionId, `[workflow] ${pendingWorkflowMessage}`);
     }
     try {
-      const result = await window.kodaxSpace.invoke('slash.exec', {
+      const result = await invokeComposerIpc('slash.exec', {
         sessionId,
         name,
         args,
@@ -975,6 +1138,7 @@ export function BottomBar(): JSX.Element {
         const ev = events[i];
         if (ev.kind === 'text_delta') lastText = (ev as { text?: string }).text + lastText;
         else if (ev.kind === 'session_complete' || ev.kind === 'session_error') {
+          continue;
         } else if (
           lastText.length > 0 &&
           (ev.kind === 'tool_result' || ev.kind === 'session_start')
@@ -1085,7 +1249,7 @@ export function BottomBar(): JSX.Element {
         return;
       }
       const traces = events.filter((ev) => ev.kind === 'repointel_trace');
-      const result = await window.kodaxSpace.invoke('repointel.status', {
+      const result = await invokeComposerIpc('repointel.status', {
         projectRoot: state.currentProjectPath ?? undefined,
       });
       if (!result.ok) {
@@ -1168,7 +1332,7 @@ export function BottomBar(): JSX.Element {
         appendUserMessage(sessionId, '[review] no project / IPC unavailable');
         return;
       }
-      const r = await window.kodaxSpace.invoke('project.gitDiff', {
+      const r = await invokeComposerIpc('project.gitDiff', {
         projectRoot: currentProjectPath,
       });
       if (!r.ok) {
@@ -1212,7 +1376,7 @@ export function BottomBar(): JSX.Element {
         appendUserMessage(sessionId, '[status] IPC unavailable');
         return;
       }
-      const r = await window.kodaxSpace.invoke('session.listRunning', undefined);
+      const r = await invokeComposerIpc('session.listRunning', undefined);
       if (!r.ok) {
         appendUserMessage(
           sessionId,
@@ -1246,7 +1410,7 @@ export function BottomBar(): JSX.Element {
         appendUserMessage(sessionId, '[doctor] IPC unavailable');
         return;
       }
-      const r = await window.kodaxSpace.invoke('provider.list', undefined);
+      const r = await invokeComposerIpc('provider.list', undefined);
       if (!r.ok) {
         appendUserMessage(
           sessionId,
@@ -1259,7 +1423,7 @@ export function BottomBar(): JSX.Element {
       const probeResults = await Promise.all(
         probeTargets.map(async (p) => {
           if (!window.kodaxSpace) return { id: p.id, ok: false, error: 'no IPC' };
-          const tr = await window.kodaxSpace.invoke('provider.test', { providerId: p.id });
+          const tr = await invokeComposerIpc('provider.test', { providerId: p.id });
           if (!tr.ok) return { id: p.id, ok: false, error: tr.error?.message ?? 'IPC error' };
           return {
             id: p.id,
@@ -1306,7 +1470,7 @@ export function BottomBar(): JSX.Element {
       }
       const lines = ['[reload] refreshed:'];
       if (currentProjectPath) {
-        const skills = await window.kodaxSpace.invoke('skill.discover', {
+        const skills = await invokeComposerIpc('skill.discover', {
           projectRoot: currentProjectPath,
           forceReload: true,
         });
@@ -1318,7 +1482,7 @@ export function BottomBar(): JSX.Element {
       } else {
         lines.push('  skills: skipped (no project)');
       }
-      const mcp = await window.kodaxSpace.invoke(
+      const mcp = await invokeComposerIpc(
         'mcp.reload',
         currentProjectPath ? { projectRoot: currentProjectPath } : undefined,
       );
@@ -1336,7 +1500,7 @@ export function BottomBar(): JSX.Element {
         appendUserMessage(sessionId, '[extensions] no project / IPC unavailable');
         return;
       }
-      const r = await window.kodaxSpace.invoke('mcp.discover', { projectRoot: currentProjectPath });
+      const r = await invokeComposerIpc('mcp.discover', { projectRoot: currentProjectPath });
       if (!r.ok) {
         appendUserMessage(
           sessionId,
@@ -1368,7 +1532,7 @@ export function BottomBar(): JSX.Element {
         return;
       }
       if (args[0]?.toLowerCase() === 'refresh') {
-        const reload = await window.kodaxSpace.invoke(
+        const reload = await invokeComposerIpc(
           'mcp.reload',
           currentProjectPath ? { projectRoot: currentProjectPath } : undefined,
         );
@@ -1380,7 +1544,7 @@ export function BottomBar(): JSX.Element {
           return;
         }
       }
-      const r = await window.kodaxSpace.invoke(
+      const r = await invokeComposerIpc(
         'mcp.servers',
         currentProjectPath ? { projectRoot: currentProjectPath } : undefined,
       );
@@ -1408,7 +1572,7 @@ export function BottomBar(): JSX.Element {
         appendUserMessage(sessionId, '[sessions] IPC unavailable');
         return;
       }
-      const r = await window.kodaxSpace.invoke('session.list', {
+      const r = await invokeComposerIpc('session.list', {
         ...(currentProjectPath ? { projectRoot: currentProjectPath } : {}),
         surface: currentSurface,
       });
@@ -1443,7 +1607,7 @@ export function BottomBar(): JSX.Element {
         appendUserMessage(sessionId, '[load] Usage: /load <session-id>');
         return;
       }
-      const r = await window.kodaxSpace.invoke('session.list', undefined);
+      const r = await invokeComposerIpc('session.list', undefined);
       if (!r.ok) {
         appendUserMessage(sessionId, `[load] list failed: ${r.error?.message ?? 'unknown'}`);
         return;
@@ -1474,7 +1638,7 @@ export function BottomBar(): JSX.Element {
         appendUserMessage(sessionId, '[delete] Usage: /delete <session-id>');
         return;
       }
-      const r = await window.kodaxSpace.invoke('session.delete', { sessionId: target });
+      const r = await invokeComposerIpc('session.delete', { sessionId: target });
       if (!r.ok) {
         appendUserMessage(sessionId, `[delete] failed: ${r.error?.message ?? 'unknown'}`);
         return;
@@ -1511,7 +1675,7 @@ export function BottomBar(): JSX.Element {
         0,
         Math.min(requestedIdx ?? userMsgs.length - 1, Math.max(0, userMsgs.length - 1)),
       );
-      const r = await window.kodaxSpace.invoke('session.fork', { sessionId, forkPointTurnIdx });
+      const r = await invokeComposerIpc('session.fork', { sessionId, forkPointTurnIdx });
       if (!r.ok) {
         appendUserMessage(sessionId, `[fork] failed: ${r.error?.message ?? 'unknown'}`);
         return;
@@ -1573,7 +1737,7 @@ export function BottomBar(): JSX.Element {
           Math.max(0, userMsgs.length - 1),
         ),
       );
-      const r = await window.kodaxSpace.invoke('session.rewind', { sessionId, rewindPastTurnIdx });
+      const r = await invokeComposerIpc('session.rewind', { sessionId, rewindPastTurnIdx });
       if (!r.ok) {
         appendUserMessage(sessionId, `[rewind] failed: ${r.error?.message ?? 'unknown'}`);
         return;
@@ -1593,7 +1757,7 @@ export function BottomBar(): JSX.Element {
         appendUserMessage(sessionId, '[skills] no project / IPC unavailable');
         return;
       }
-      const r = await window.kodaxSpace.invoke('skill.discover', {
+      const r = await invokeComposerIpc('skill.discover', {
         projectRoot: currentProjectPath,
         forceReload: true,
       });
@@ -1622,7 +1786,7 @@ export function BottomBar(): JSX.Element {
     queueMode: QueueMode = 'interrupt',
   ): Promise<void> {
     if (!window.kodaxSpace) return;
-    const result = await window.kodaxSpace.invoke('skill.invoke', {
+    const result = await invokeComposerIpc('skill.invoke', {
       sessionId,
       skillName: name,
       args,
@@ -1645,7 +1809,7 @@ export function BottomBar(): JSX.Element {
         })
       : null;
     if (!queuedLocalId) appendUserMessage(sessionId, skillEcho);
-    const sendResult = await window.kodaxSpace.invoke('session.send', {
+    const sendResult = await invokeComposerIpc('session.send', {
       sessionId,
       prompt: resolvedPrompt,
       queueMode,
@@ -1681,6 +1845,7 @@ export function BottomBar(): JSX.Element {
 
   async function handleSend(queueMode: QueueMode = 'interrupt'): Promise<void> {
     if (!window.kodaxSpace) return;
+    if (busy) return;
     const trimmed = prompt.trim();
     const fileRefPrompt = pendingFileRefs.map((file) => file.reference).join(' ');
     const effectivePrompt =
@@ -1763,7 +1928,7 @@ export function BottomBar(): JSX.Element {
       if (sessNow && !sessNow.title) {
         const title = deriveTitle(effectivePrompt);
         if (title) {
-          void window.kodaxSpace.invoke('session.setTitle', { sessionId: sid, title }).then((r) => {
+          void invokeComposerIpc('session.setTitle', { sessionId: sid, title }).then((r) => {
             if (r.ok) upsertSession({ ...sessNow, title });
           });
         }
@@ -1777,20 +1942,20 @@ export function BottomBar(): JSX.Element {
       draftRef.current = '';
 
       if (!queuedLocalId) setPendingSend(sid, true);
-      const result = await window.kodaxSpace.invoke('session.send', {
-        sessionId: sid,
-        prompt: promptForAI,
-        queueMode,
-        ...(currentProjectPath ? { expectedProjectRoot: currentProjectPath } : {}),
-        expectedSurface: currentSurface,
-        ...(artifactsForSend ? { artifacts: artifactsForSend } : {}),
-      });
-      if (!result.ok) {
+      const restoreFailedSend = (
+        result: Extract<IpcResult<ChannelOutput<'session.send'>>, { ok: false }>,
+        late: boolean,
+      ): void => {
         if (!queuedLocalId) setPendingSend(sid, false);
         if (queuedLocalId) removeQueuedUserMessage(sid, queuedLocalId);
         else rollbackLastUserMessage(sid, promptForAI);
-        setPrompt(promptForAI);
-        draftRef.current = promptForAI;
+        if (!late) {
+          setPrompt(promptForAI);
+          draftRef.current = promptForAI;
+        } else {
+          setPrompt((current) => (current.length === 0 ? promptForAI : current));
+          if (draftRef.current.length === 0) draftRef.current = promptForAI;
+        }
         if (imagesAtSend.length > 0) {
           setPendingImages((prev) => (prev.length === 0 ? imagesAtSend : prev));
         }
@@ -1800,25 +1965,57 @@ export function BottomBar(): JSX.Element {
         setErr(
           `${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`,
         );
-      } else if (result.data.queued) {
-        // The turn is already running; main accepted the prompt into the requested
-        // queue mode. Keep the current spinner and show a toast.
-        const acceptedQueueMode = result.data.queueMode ?? queueMode;
-        if (queuedLocalId) {
-          markQueuedUserMessageAccepted(sid, queuedLocalId, result.data.queueId);
-        } else {
-          const convertedLocalId = convertLastUserMessageToQueued(sid, effectivePrompt, {
-            content: effectivePrompt,
-            matchContent: promptForAI,
-            queueMode: acceptedQueueMode,
-          });
-          if (convertedLocalId) {
-            markQueuedUserMessageAccepted(sid, convertedLocalId, result.data.queueId);
-          }
+      };
+
+      const acceptSendResult = (data: ChannelOutput<'session.send'>, late: boolean): void => {
+        if (late) {
+          setErr(null);
+          pushToast('Send was accepted in the background', 'info');
         }
-        pushToast(queuedToastText(acceptedQueueMode), 'info');
-      } else if (queuedLocalId) {
-        promoteQueuedUserMessage(sid, queuedLocalId);
+        if (data.queued) {
+          // The turn is already running; main accepted the prompt into the requested
+          // queue mode. Keep the current spinner and show a toast.
+          const acceptedQueueMode = data.queueMode ?? queueMode;
+          if (queuedLocalId) {
+            markQueuedUserMessageAccepted(sid, queuedLocalId, data.queueId);
+          } else {
+            const convertedLocalId = convertLastUserMessageToQueued(sid, effectivePrompt, {
+              content: effectivePrompt,
+              matchContent: promptForAI,
+              queueMode: acceptedQueueMode,
+            });
+            if (convertedLocalId) {
+              markQueuedUserMessageAccepted(sid, convertedLocalId, data.queueId);
+            }
+          }
+          pushToast(queuedToastText(acceptedQueueMode), 'info');
+        } else if (queuedLocalId) {
+          promoteQueuedUserMessage(sid, queuedLocalId);
+        }
+      };
+
+      const sendPayload: ChannelInput<'session.send'> = {
+        sessionId: sid,
+        prompt: promptForAI,
+        queueMode,
+        ...(currentProjectPath ? { expectedProjectRoot: currentProjectPath } : {}),
+        expectedSurface: currentSurface,
+        ...(artifactsForSend ? { artifacts: artifactsForSend } : {}),
+      };
+      const result = await invokeComposerIpc('session.send', sendPayload, {
+        onLateResult: (lateResult) => {
+          if (lateResult.ok) acceptSendResult(lateResult.data, true);
+          else restoreFailedSend(lateResult, true);
+        },
+      });
+      if (!result.ok) {
+        if (isComposerTimeoutResult(result)) {
+          setErr(result.error.message);
+          return;
+        }
+        restoreFailedSend(result, false);
+      } else {
+        acceptSendResult(result.data, false);
       }
     } finally {
       setBusy(false);
@@ -1883,6 +2080,10 @@ export function BottomBar(): JSX.Element {
         e.preventDefault();
         return;
       }
+      if (busy) {
+        e.preventDefault();
+        return;
+      }
       const queueMode: QueueMode = e.ctrlKey || e.metaKey ? 'after-turn' : 'interrupt';
       e.preventDefault();
       void handleSend(queueMode);
@@ -1926,6 +2127,8 @@ export function BottomBar(): JSX.Element {
   }
 
   const isStreaming = useIsStreaming();
+  const mascotInputActive =
+    prompt.trim().length > 0 || pendingImages.length > 0 || pendingFileRefs.length > 0;
   // Send is enabled for text, inline images, or pending file references.
   const canSend =
     !busy &&
@@ -1958,213 +2161,231 @@ export function BottomBar(): JSX.Element {
       {currentSurface !== 'partner' && <AmaWorkStrip />}
 
       {currentSurface !== 'partner' && <BackgroundTaskBar />}
-      <div
-        className={[
-          'glass lift rounded-2xl border bg-surface-2 px-3 pt-2 pb-2 space-y-1.5 transition-colors',
-          draggingFiles
-            ? 'border-accent/70 bg-accent/5'
-            : 'border-border-default focus-within:border-accent/50',
-        ].join(' ')}
-      >
-        <ChipBar />
+      <div className="relative">
+        {mascotEnabled && (
+          <KodaXDogMascot
+            className="pointer-events-none absolute -top-1 right-4 z-10 h-7 w-[35px] opacity-90 drop-shadow-[0_4px_6px_rgb(0_0_0_/_0.10)]"
+            inputActive={mascotInputActive}
+            working={busy || isStreaming}
+          />
+        )}
 
-        {(pendingImages.length > 0 || pendingFileRefs.length > 0 || imageErr) && (
-          <div className="space-y-1">
-            {pendingImages.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {pendingImages.map((img, idx) => (
-                  <div
-                    key={img.path}
-                    className="group relative inline-flex items-center gap-1.5 bg-surface-3 border border-border-default rounded-md pl-1 pr-1.5 py-0.5 text-xs text-fg-secondary"
-                    title={`${img.label} - ${formatBytes(img.bytes)}`}
-                  >
-                    <img
-                      src={img.dataUrl}
-                      alt={img.label}
-                      className="w-7 h-7 rounded object-cover flex-shrink-0"
-                    />
-                    <span className="max-w-[120px] truncate">{img.label}</span>
-                    <span className="text-fg-muted">{formatBytes(img.bytes)}</span>
-                    <button
-                      type="button"
-                      onClick={() => removePendingImage(idx)}
-                      className="ml-0.5 w-4 h-4 rounded-full text-fg-muted hover:bg-hover-bg hover:text-fg-primary flex items-center justify-center leading-none"
-                      aria-label={`Remove ${img.label}`}
-                      title="Remove"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            {pendingFileRefs.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {pendingFileRefs.map((file, idx) => {
-                  const Icon = file.kind === 'directory' ? Folder : FileText;
-                  return (
+        <div
+          onMouseDownCapture={(e) => focusComposerFromContainer(e.target)}
+          className={[
+            'glass lift rounded-2xl border bg-surface-2 px-3 pt-2 pb-2 space-y-1.5 transition-colors',
+            draggingFiles
+              ? 'border-accent/70 bg-accent/5'
+              : 'border-border-default focus-within:border-accent/50',
+          ].join(' ')}
+        >
+          <ChipBar />
+
+          {(pendingImages.length > 0 || pendingFileRefs.length > 0 || imageErr) && (
+            <div className="space-y-1">
+              {pendingImages.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {pendingImages.map((img, idx) => (
                     <div
-                      key={`${file.path}:${idx}`}
-                      className="group inline-flex min-w-0 items-center gap-1.5 bg-surface-3 border border-border-default rounded-md px-1.5 py-1 text-xs text-fg-secondary"
-                      title={`${file.path} - ${file.reference}`}
+                      key={img.path}
+                      className="group relative inline-flex items-center gap-1.5 bg-surface-3 border border-border-default rounded-md pl-1 pr-1.5 py-0.5 text-xs text-fg-secondary"
+                      title={`${img.label} - ${formatBytes(img.bytes)}`}
                     >
-                      <Icon className="w-3.5 h-3.5 text-fg-muted flex-shrink-0" />
-                      <span className="max-w-[130px] truncate">{file.name}</span>
-                      <code className="max-w-[180px] truncate text-[11px] text-fg-muted">
-                        {file.reference}
-                      </code>
-                      {file.bytes !== undefined && (
-                        <span className="text-fg-muted">{formatBytes(file.bytes)}</span>
-                      )}
+                      <img
+                        src={img.dataUrl}
+                        alt={img.label}
+                        className="w-7 h-7 rounded object-cover flex-shrink-0"
+                      />
+                      <span className="max-w-[120px] truncate">{img.label}</span>
+                      <span className="text-fg-muted">{formatBytes(img.bytes)}</span>
                       <button
                         type="button"
-                        onClick={() => removePendingFileRef(idx)}
+                        onClick={() => removePendingImage(idx)}
                         className="ml-0.5 w-4 h-4 rounded-full text-fg-muted hover:bg-hover-bg hover:text-fg-primary flex items-center justify-center leading-none"
-                        aria-label={`Remove ${file.name}`}
+                        aria-label={`Remove ${img.label}`}
                         title="Remove"
                       >
                         <X className="w-3 h-3" />
                       </button>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-            {imageErr && <div className="text-xs text-warn">{imageErr}</div>}
-          </div>
-        )}
+                  ))}
+                </div>
+              )}
+              {pendingFileRefs.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {pendingFileRefs.map((file, idx) => {
+                    const Icon = file.kind === 'directory' ? Folder : FileText;
+                    return (
+                      <div
+                        key={`${file.path}:${idx}`}
+                        className="group inline-flex min-w-0 items-center gap-1.5 bg-surface-3 border border-border-default rounded-md px-1.5 py-1 text-xs text-fg-secondary"
+                        title={`${file.path} - ${file.reference}`}
+                      >
+                        <Icon className="w-3.5 h-3.5 text-fg-muted flex-shrink-0" />
+                        <span className="max-w-[130px] truncate">{file.name}</span>
+                        <code className="max-w-[180px] truncate text-[11px] text-fg-muted">
+                          {file.reference}
+                        </code>
+                        {file.bytes !== undefined && (
+                          <span className="text-fg-muted">{formatBytes(file.bytes)}</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => removePendingFileRef(idx)}
+                          className="ml-0.5 w-4 h-4 rounded-full text-fg-muted hover:bg-hover-bg hover:text-fg-primary flex items-center justify-center leading-none"
+                          aria-label={`Remove ${file.name}`}
+                          title="Remove"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {imageErr && <div className="text-xs text-warn">{imageErr}</div>}
+            </div>
+          )}
 
-        <div className="relative">
-          <textarea
-            ref={textareaRef}
-            value={prompt}
-            onChange={(e) => {
-              setPrompt(e.target.value);
-              setCaret(e.target.selectionStart ?? e.target.value.length);
-            }}
-            onSelect={(e) => {
-              setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0);
-            }}
-            onClick={(e) => {
-              setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0);
-            }}
-            onKeyDown={(e) => {
-              if (atPathKeyHandlerRef.current) {
-                const consumed = atPathKeyHandlerRef.current(e.nativeEvent);
-                if (consumed) {
-                  return;
-                }
-              }
-              onKeyDown(e);
-              requestAnimationFrame(() => {
-                const ta = textareaRef.current;
-                if (ta) setCaret(ta.selectionStart ?? 0);
-              });
-            }}
-            onPaste={(e) => {
-              const data = e.clipboardData;
-              if (!data) return;
-              const images = clipboardImageFiles(data);
-              if (images.length > 0) {
-                e.preventDefault();
-                void attachImages(images, 'clipboard');
-                return;
-              }
-              if (!shouldTryNativeClipboardImageFallback(data)) return;
-              e.preventDefault();
-              void attachNativeClipboardImage();
-            }}
-            disabled={busy}
-            rows={2}
-            placeholder={
-              !currentProjectPath
-                ? 'Open a folder first - Ctrl+O'
-                : currentSessionId
-                  ? 'Describe a task or ask a question - Type / for commands'
-                  : 'Describe a task or ask a question - session will be created on send'
-            }
-            className="w-full bg-transparent text-sm text-fg-primary placeholder-fg-muted resize-none focus:outline-none px-0.5 py-1 pr-44 disabled:opacity-50"
-          />
-          <div className="absolute right-1 bottom-1 pointer-events-auto flex items-center gap-3">
-            <QueueIndicator />
-            <ContextWindowIndicator />
-          </div>
-          {slashMode && <SlashCommandPopover query={trimmedPrompt} onPick={onSlashPick} />}
-          {!slashMode && (
-            <AtPathPopover
-              text={prompt}
-              caret={caret}
-              projectRoot={currentProjectPath}
-              onAccept={(replacement, tokenStart, tokenEnd) => {
-                const next = prompt.slice(0, tokenStart) + replacement + prompt.slice(tokenEnd);
-                setPrompt(next);
-                const newCaret = tokenStart + replacement.length;
-                requestAnimationFrame(() => {
-                  const live = textareaRef.current;
-                  if (!live) return;
-                  live.focus();
-                  try {
-                    live.setSelectionRange(newCaret, newCaret);
-                  } catch {
-                    /* ignore */
+          <div className="relative">
+            <textarea
+              ref={textareaRef}
+              value={prompt}
+              onChange={(e) => {
+                setPrompt(e.target.value);
+                setCaret(e.target.selectionStart ?? e.target.value.length);
+              }}
+              onSelect={(e) => {
+                setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0);
+              }}
+              onClick={(e) => {
+                setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0);
+              }}
+              onKeyDown={(e) => {
+                if (atPathKeyHandlerRef.current) {
+                  const consumed = atPathKeyHandlerRef.current(e.nativeEvent);
+                  if (consumed) {
+                    return;
                   }
-                  setCaret(newCaret);
+                }
+                onKeyDown(e);
+                requestAnimationFrame(() => {
+                  const ta = textareaRef.current;
+                  if (ta) setCaret(ta.selectionStart ?? 0);
                 });
               }}
-              registerKeyHandler={(h) => {
-                atPathKeyHandlerRef.current = h;
+              onPaste={(e) => {
+                if (busy) {
+                  e.preventDefault();
+                  return;
+                }
+                const data = e.clipboardData;
+                if (!data) return;
+                const images = clipboardImageFiles(data);
+                if (images.length > 0) {
+                  e.preventDefault();
+                  void attachImages(images, 'clipboard');
+                  return;
+                }
+                if (!shouldTryNativeClipboardImageFallback(data)) return;
+                e.preventDefault();
+                void attachNativeClipboardImage();
               }}
+              aria-disabled={busy}
+              readOnly={busy}
+              rows={2}
+              placeholder={
+                !currentProjectPath
+                  ? 'Open a folder first - Ctrl+O'
+                  : currentSessionId
+                    ? 'Describe a task or ask a question - Type / for commands'
+                    : 'Describe a task or ask a question - session will be created on send'
+              }
+              className={`w-full bg-transparent text-sm text-fg-primary placeholder-fg-muted resize-none focus:outline-none px-0.5 py-1 pr-44 ${
+                busy ? 'opacity-70 cursor-wait' : ''
+              }`}
             />
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 text-[11px]">
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setAttachOpen((v) => !v)}
-              className="w-6 h-6 rounded-md text-fg-muted hover:bg-hover-bg hover:text-fg-primary flex items-center justify-center"
-              title="Attach / Commands"
-              aria-label="Open attach menu"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-            <AttachMenu
-              open={attachOpen}
-              onClose={() => setAttachOpen(false)}
-              onInsertText={(text) => setPrompt((p) => (p ? `${p} ${text}` : text))}
-            />
+            <div className="absolute right-1 bottom-1 pointer-events-auto flex items-center gap-3">
+              <QueueIndicator />
+              <ContextWindowIndicator />
+            </div>
+            {slashMode && <SlashCommandPopover query={trimmedPrompt} onPick={onSlashPick} />}
+            {!slashMode && (
+              <AtPathPopover
+                text={prompt}
+                caret={caret}
+                projectRoot={currentProjectPath}
+                onAccept={(replacement, tokenStart, tokenEnd) => {
+                  const next = prompt.slice(0, tokenStart) + replacement + prompt.slice(tokenEnd);
+                  setPrompt(next);
+                  const newCaret = tokenStart + replacement.length;
+                  requestAnimationFrame(() => {
+                    const live = textareaRef.current;
+                    if (!live) return;
+                    live.focus();
+                    try {
+                      live.setSelectionRange(newCaret, newCaret);
+                    } catch {
+                      /* ignore */
+                    }
+                    setCaret(newCaret);
+                  });
+                }}
+                registerKeyHandler={(h) => {
+                  atPathKeyHandlerRef.current = h;
+                }}
+              />
+            )}
           </div>
-          {currentSurface !== 'partner' && <AgentPicker insertAtCaret={insertAtCaret} />}
-          <ModeSelector />
-          {currentSurface !== 'partner' && <AgentModeSelector />}
-          <span className="ml-auto" />
-          <ModelEffortSelector />
-          {isStreaming ? (
-            <button
-              type="button"
-              onClick={() => void handleCancel()}
-              className="ml-1 w-8 h-8 rounded-lg bg-danger hover:brightness-110 text-white flex items-center justify-center shadow-sm transition-[filter]"
-              title="Stop (Esc)"
-              aria-label="Stop generation"
-            >
-              <span aria-hidden className="block w-2.5 h-2.5 bg-white rounded-[2px]" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => void handleSend('interrupt')}
-              disabled={!canSend}
-              className={[
-                'ml-1 w-8 h-8 rounded-lg flex items-center justify-center disabled:cursor-not-allowed',
-                canSend ? 'btn-accent' : 'bg-surface-3 text-fg-muted',
-              ].join(' ')}
-              title={sendButtonTitle}
-              aria-label="Send message"
-            >
-              <ArrowUp className="w-4 h-4" strokeWidth={2.25} />
-            </button>
-          )}
+
+          <div className="flex items-center gap-2 text-[11px]">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setAttachOpen((v) => !v)}
+                className="w-6 h-6 rounded-md text-fg-muted hover:bg-hover-bg hover:text-fg-primary flex items-center justify-center"
+                title="Attach / Commands"
+                aria-label="Open attach menu"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+              <AttachMenu
+                open={attachOpen}
+                onClose={() => setAttachOpen(false)}
+                onInsertText={(text) => setPrompt((p) => (p ? `${p} ${text}` : text))}
+              />
+            </div>
+            {currentSurface !== 'partner' && <AgentPicker insertAtCaret={insertAtCaret} />}
+            <ModeSelector />
+            {currentSurface !== 'partner' && <AgentModeSelector />}
+            <span className="ml-auto" />
+            <ModelEffortSelector />
+            {isStreaming ? (
+              <button
+                type="button"
+                onClick={() => void handleCancel()}
+                className="ml-1 w-8 h-8 rounded-lg bg-danger hover:brightness-110 text-white flex items-center justify-center shadow-sm transition-[filter]"
+                title="Stop (Esc)"
+                aria-label="Stop generation"
+              >
+                <span aria-hidden className="block w-2.5 h-2.5 bg-white rounded-[2px]" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void handleSend('interrupt')}
+                disabled={!canSend}
+                className={[
+                  'ml-1 w-8 h-8 rounded-lg flex items-center justify-center disabled:cursor-not-allowed',
+                  canSend ? 'btn-accent' : 'bg-surface-3 text-fg-muted',
+                ].join(' ')}
+                title={sendButtonTitle}
+                aria-label="Send message"
+              >
+                <ArrowUp className="w-4 h-4" strokeWidth={2.25} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

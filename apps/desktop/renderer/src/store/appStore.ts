@@ -65,6 +65,11 @@ export interface RecentsFilter {
   sortBy: 'recency' | 'alphabetical' | 'created';
 }
 
+type SessionFlagName = 'pinned' | 'archived' | 'unread';
+type SessionFlagsById = Readonly<
+  Record<string, { pinned?: boolean; archived?: boolean; unread?: boolean } | undefined>
+>;
+
 const DEFAULT_RECENTS_FILTER: RecentsFilter = {
   status: 'active',
   projectScope: 'current',
@@ -115,6 +120,7 @@ interface AppState {
   currentSessionId: string | null;
   /** 每个 sessionId 一桶事件；append-only。Map 用 plain object 避免 zustand referential 问题。*/
   eventsBySession: Readonly<Record<string, readonly SessionEvent[]>>;
+  lastEvent?: SessionEvent;
   /** 每个 sessionId 一桶用户消息（renderer 本地跟踪）。*/
   userMessagesBySession: Readonly<Record<string, readonly UserMessage[]>>;
   queuedUserMessagesBySession: Readonly<Record<string, readonly QueuedUserMessage[]>>;
@@ -248,9 +254,7 @@ interface AppState {
    *   - unread：sidebar 标题旁加 ● 圆点（用户标记，非自动）
    * v0.1.x SDK 出持久化字段后迁移到 SessionMeta。
    */
-  sessionFlags: Readonly<
-    Record<string, { pinned?: boolean; archived?: boolean; unread?: boolean } | undefined>
-  >;
+  sessionFlags: SessionFlagsById;
   /** UI 主题。dark = 当前默认；light = zinc-100 系；'system' = 跟 OS prefers-color-scheme。
    *  持久化到 localStorage 让重启后保持。*/
   theme: 'dark' | 'light' | 'system';
@@ -290,6 +294,8 @@ interface AppState {
    * popout"。默认开;用户在 Preferences 里可关。持久化 localStorage。
    */
   smartPopoutEnabled: boolean;
+  /** Composer mascot quick toggle. Default on; persisted so users can keep it hidden. */
+  mascotEnabled: boolean;
   nativeCompletionNotificationsEnabled: boolean;
   /**
    * v0.1.9 Step 7 — 用户手动拖动排过的项目顺序 (canonProjectRoot 形态)。
@@ -442,7 +448,8 @@ interface AppState {
   setPendingAgentMode(mode: SessionMeta['agentMode'] | null): void;
   setPendingModel(model: string | null): void;
   /** Session UX flags — 局部状态 (alpha.1 不持久化)。toggle 形 + 合并形 set 函数。*/
-  toggleSessionFlag(sessionId: string, flag: 'pinned' | 'archived' | 'unread'): void;
+  toggleSessionFlag(sessionId: string, flag: SessionFlagName): void;
+  setSessionFlag(sessionId: string, flag: SessionFlagName, value: boolean): void;
   setRecentsFilter(filter: RecentsFilter): void;
   setTheme(theme: 'dark' | 'light' | 'system'): void;
   /** F060：切视觉质量档。立即应用 <html> class + 写 localStorage。*/
@@ -486,6 +493,7 @@ interface AppState {
   setActivePopoutKind(kind: string | null): void;
   /** KX-I-02: 切 smart popout director 总开关。立即写 localStorage。 */
   setSmartPopoutEnabled(enabled: boolean): void;
+  setMascotEnabled(enabled: boolean): void;
   setNativeCompletionNotificationsEnabled(enabled: boolean): void;
   /** KX-I-02: 标记某 (session, kind) 已被 promote 过(或用户主动开/关过),不再 auto。 */
   markPopoutPromoted(sessionId: string, kind: string): void;
@@ -612,8 +620,59 @@ function pushNotificationLocal(
   current: readonly Notification[],
   notice: Notification,
 ): readonly Notification[] {
-  if (current.some((n) => n.id === notice.id)) return current;
+  const existingIndex = current.findIndex((n) => n.id === notice.id);
+  if (existingIndex >= 0) {
+    const existing = current[existingIndex]!;
+    if (
+      existing.severity === notice.severity &&
+      existing.text === notice.text &&
+      existing.sessionId === notice.sessionId &&
+      existing.dismissOnOutsideInteraction === notice.dismissOnOutsideInteraction
+    ) {
+      return current;
+    }
+    return [notice, ...current.slice(0, existingIndex), ...current.slice(existingIndex + 1)].slice(
+      0,
+      50,
+    );
+  }
   return [notice, ...current].slice(0, 50);
+}
+
+function setSessionFlagValue(
+  flags: SessionFlagsById,
+  sessionId: string,
+  flag: SessionFlagName,
+  value: boolean,
+): SessionFlagsById {
+  const cur = flags[sessionId] ?? {};
+  if (Boolean(cur[flag]) === value) return flags;
+  const next = { ...cur, [flag]: value };
+  if (!next.pinned && !next.archived && !next.unread) {
+    const { [sessionId]: _drop, ...rest } = flags;
+    return rest;
+  }
+  return { ...flags, [sessionId]: next };
+}
+
+function isSessionVisiblyOpen(state: AppState, sessionId: string): boolean {
+  if (state.currentSessionId !== sessionId) return false;
+  if (typeof document === 'undefined') return true;
+  return !document.hidden && document.hasFocus();
+}
+
+function appendSessionEvent(
+  bucket: readonly SessionEvent[],
+  event: SessionEvent,
+): readonly SessionEvent[] {
+  const last = bucket[bucket.length - 1];
+  if (event.kind === 'text_delta' && last?.kind === 'text_delta') {
+    return [...bucket.slice(0, -1), { ...last, text: last.text + event.text }];
+  }
+  if (event.kind === 'thinking_delta' && last?.kind === 'thinking_delta') {
+    return [...bucket.slice(0, -1), { ...last, text: last.text + event.text }];
+  }
+  return [...bucket, event];
 }
 
 // 粗略 token 估算 — 同 bubbles.tsx / ContextWindowIndicator 公式（ASCII/4 + non-ASCII × 1）。
@@ -812,6 +871,7 @@ export const useAppStore = create<AppState>((set) => ({
   activePopoutKind: null,
   // KX-I-02: smart director 默认 on。"0" 表示用户主动关过。
   smartPopoutEnabled: lsGet('kodax-space.smartPopoutEnabled') !== '0',
+  mascotEnabled: lsGet('kodax-space.mascotEnabled') !== '0',
   nativeCompletionNotificationsEnabled:
     lsGet('kodax-space.nativeCompletionNotificationsEnabled') !== '0',
   promotedPopoutsBySession: {},
@@ -874,18 +934,21 @@ export const useAppStore = create<AppState>((set) => ({
       // 错的发送目录。
       // sessionId=null → 回 dashboard,不动 currentProjectPath (用户还能继续看当前项目)。
       if (sessionId === null) return { currentSessionId: null };
+      const readFlags = setSessionFlagValue(state.sessionFlags, sessionId, 'unread', false);
       const found = state.sessions.find((s) => s.sessionId === sessionId);
-      if (!found || !found.projectRoot) return { currentSessionId: sessionId };
+      const flagPatch = readFlags === state.sessionFlags ? {} : { sessionFlags: readFlags };
+      if (!found || !found.projectRoot) return { currentSessionId: sessionId, ...flagPatch };
       const targetCanon = canonProjectRootShared(found.projectRoot, IS_WIN_RENDERER);
       const currentCanon = state.currentProjectPath
         ? canonProjectRootShared(state.currentProjectPath, IS_WIN_RENDERER)
         : null;
-      if (targetCanon === currentCanon) return { currentSessionId: sessionId };
+      if (targetCanon === currentCanon) return { currentSessionId: sessionId, ...flagPatch };
       // 跟 setCurrentProject 同款 LS 持久化 — 重启后 sidebar 仍在该项目
       lsSet(LS_KEY_PROJECT, found.projectRoot);
       return {
         currentSessionId: sessionId,
         currentProjectPath: found.projectRoot,
+        ...flagPatch,
       };
     }),
 
@@ -1255,8 +1318,9 @@ export const useAppStore = create<AppState>((set) => ({
       const next: Partial<AppState> = {
         eventsBySession: {
           ...state.eventsBySession,
-          [event.sessionId]: [...bucket, event],
+          [event.sessionId]: appendSessionEvent(bucket, event),
         },
+        lastEvent: event,
       };
       // P0: 任一事件到达 → 该 session 不再"等待中"，spinner 改吃 event-driven 状态
       if (state.pendingSendBySession[event.sessionId]) {
@@ -1271,12 +1335,7 @@ export const useAppStore = create<AppState>((set) => ({
       } else if (event.kind === 'queued_user_prompt_started') {
         Object.assign(
           next,
-          promoteQueuedUserMessageForPrompt(
-            state,
-            event.sessionId,
-            event.queueMode,
-            event.content,
-          ),
+          promoteQueuedUserMessageForPrompt(state, event.sessionId, event.queueMode, event.content),
         );
       } else if (event.kind === 'session_error' && event.error === 'cancelled') {
         const queued = state.queuedUserMessagesBySession[event.sessionId];
@@ -1296,6 +1355,15 @@ export const useAppStore = create<AppState>((set) => ({
           [event.sessionId]: { tokens: event.tokenCount, source: 'iteration_end' },
         };
       } else if (event.kind === 'session_complete') {
+        if (!isSessionVisiblyOpen(state, event.sessionId)) {
+          const unreadFlags = setSessionFlagValue(
+            next.sessionFlags ?? state.sessionFlags,
+            event.sessionId,
+            'unread',
+            true,
+          );
+          if (unreadFlags !== state.sessionFlags) next.sessionFlags = unreadFlags;
+        }
         // History restore 的 terminal — 若到此还没有 iteration_end 写入 tokensBySession，
         // 从已有 buffer 累加一次给 dashboard 用。只算一次（已有真实 tokens 时不覆盖）。
         const existing = state.tokensBySession[event.sessionId];
@@ -1367,8 +1435,13 @@ export const useAppStore = create<AppState>((set) => ({
         const subject = event.warning.firstPendingTodoSubject
           ? ` Pending item: "${event.warning.firstPendingTodoSubject.slice(0, 120)}".`
           : '';
-        next.notifications = pushNotificationLocal(next.notifications ?? state.notifications, {
-          id: `todo-drift:${event.sessionId}:${event.warning.count}:${event.warning.toolCallId ?? event.warning.toolName}`,
+        const driftNoticeId = `todo-drift:${event.sessionId}`;
+        const legacyDriftNoticePrefix = `${driftNoticeId}:`;
+        const notificationsWithoutLegacyDrift = (next.notifications ?? state.notifications).filter(
+          (notice) => !notice.id.startsWith(legacyDriftNoticePrefix),
+        );
+        next.notifications = pushNotificationLocal(notificationsWithoutLegacyDrift, {
+          id: driftNoticeId,
           severity: 'info',
           text:
             `Todo list drift detected while running ${event.warning.toolName}: ` +
@@ -1584,6 +1657,11 @@ export const useAppStore = create<AppState>((set) => ({
     set({ smartPopoutEnabled: enabled });
   },
 
+  setMascotEnabled: (enabled) => {
+    lsSet('kodax-space.mascotEnabled', enabled ? '1' : '0');
+    set({ mascotEnabled: enabled });
+  },
+
   setNativeCompletionNotificationsEnabled: (enabled) => {
     lsSet('kodax-space.nativeCompletionNotificationsEnabled', enabled ? '1' : '0');
     set({ nativeCompletionNotificationsEnabled: enabled });
@@ -1678,13 +1756,15 @@ export const useAppStore = create<AppState>((set) => ({
   toggleSessionFlag: (sessionId, flag) =>
     set((state) => {
       const cur = state.sessionFlags[sessionId] ?? {};
-      const next = { ...cur, [flag]: !cur[flag] };
-      // 全 false 时彻底删 entry，防 sessionFlags 表无限增长 (旧 sessionId 残留)
-      if (!next.pinned && !next.archived && !next.unread) {
-        const { [sessionId]: _drop, ...rest } = state.sessionFlags;
-        return { sessionFlags: rest };
-      }
-      return { sessionFlags: { ...state.sessionFlags, [sessionId]: next } };
+      return {
+        sessionFlags: setSessionFlagValue(state.sessionFlags, sessionId, flag, !cur[flag]),
+      };
+    }),
+  setSessionFlag: (sessionId, flag, value) =>
+    set((state) => {
+      const sessionFlags = setSessionFlagValue(state.sessionFlags, sessionId, flag, value);
+      if (sessionFlags === state.sessionFlags) return state;
+      return { sessionFlags };
     }),
 
   clearLastDiffPath: () => set({ lastDiffPath: null }),

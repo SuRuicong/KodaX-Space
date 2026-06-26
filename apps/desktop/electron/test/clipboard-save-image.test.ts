@@ -100,6 +100,29 @@ test('readNativeClipboardImage: persists normalized image inside session sandbox
   await assertArtifactPathInClipboardSandbox('sess-native', out.image.path);
 });
 
+test('readNativeClipboardImage: rejects native images larger than 6 MiB before returning base64', async () => {
+  const image = {
+    buffer: Buffer.alloc(7 * 1024 * 1024, 0xff),
+    mediaType: 'image/png' as const,
+    width: 4096,
+    height: 4096,
+  };
+
+  await assert.rejects(
+    () =>
+      readNativeClipboardImage(
+        { sessionId: 'sess-native-too-big' },
+        {
+          readAndNormalizeClipboardImage: async () => image,
+          persistImageAsBlock: async () => {
+            throw new Error('should not persist an oversized clipboard image');
+          },
+        },
+      ),
+    /image too large after decode/,
+  );
+});
+
 test('saveImage: rejects sessionId with path-traversal chars', async () => {
   await assert.rejects(
     () =>

@@ -13,8 +13,11 @@
 
 import { pushToast } from '../store/toastStore.js';
 import { useAppStore } from '../store/appStore.js';
+import type { SupportedLocaleT } from '@kodax-space/space-ipc-schema';
+import type { MessageKey } from '../i18n/messages.js';
 
 export type CommandKind = 'action' | 'session' | 'file' | 'slash';
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
 export interface CommandItem {
   readonly id: string;
@@ -30,6 +33,8 @@ export interface CommandContext {
   readonly sessionId: string | null;
   /** 关闭命令面板回调 — onPick 内部用，关 modal 之后再触发可能的异步 IPC */
   readonly close: () => void;
+  readonly t: Translate;
+  readonly locale: SupportedLocaleT;
   /**
    * BottomBar 暴露的 insert 接口（通过 CustomEvent 桥接，避免命令面板硬依赖 BottomBar 实例）。
    * 把字符串插到 textarea caret 处并 focus；caret 之后的内容保留。
@@ -45,8 +50,8 @@ function actionCommands(ctx: CommandContext): readonly CommandItem[] {
   items.push({
     id: 'action:new-session',
     kind: 'action',
-    label: 'New session',
-    hint: 'Start a new chat in the current project',
+    label: ctx.t('command.action.newSession'),
+    hint: ctx.t('command.action.newSessionHint'),
     searchText: 'new session start chat create',
     onPick: () => {
       ctx.close();
@@ -60,8 +65,11 @@ function actionCommands(ctx: CommandContext): readonly CommandItem[] {
   items.push({
     id: 'action:toggle-theme',
     kind: 'action',
-    label: `Theme: ${store.theme} → ${nextTheme(store.theme)}`,
-    hint: 'Cycle dark / light / system',
+    label: ctx.t('command.action.theme', {
+      current: themeLabel(store.theme, ctx.t),
+      next: themeLabel(nextTheme(store.theme), ctx.t),
+    }),
+    hint: ctx.t('command.action.themeHint'),
     searchText: 'theme dark light system appearance toggle',
     onPick: () => {
       ctx.close();
@@ -74,8 +82,8 @@ function actionCommands(ctx: CommandContext): readonly CommandItem[] {
     items.push({
       id: 'action:clear-conversation',
       kind: 'action',
-      label: 'Clear conversation view',
-      hint: 'Hides messages in current session; does not delete data',
+      label: ctx.t('command.action.clearConversation'),
+      hint: ctx.t('command.action.clearConversationHint'),
       searchText: 'clear conversation reset view',
       onPick: () => {
         ctx.close();
@@ -93,6 +101,12 @@ function nextTheme(curr: 'dark' | 'light' | 'system'): 'dark' | 'light' | 'syste
   return 'dark';
 }
 
+function themeLabel(theme: 'dark' | 'light' | 'system', t: Translate): string {
+  if (theme === 'dark') return t('theme.dark');
+  if (theme === 'light') return t('theme.light');
+  return t('theme.system');
+}
+
 /** Session 候选 — 当前项目下最近 N 个 */
 async function sessionCommands(ctx: CommandContext): Promise<readonly CommandItem[]> {
   if (!window.kodaxSpace || !ctx.projectPath) return [];
@@ -108,7 +122,7 @@ async function sessionCommands(ctx: CommandContext): Promise<readonly CommandIte
     id: `session:${s.sessionId}`,
     kind: 'session' as const,
     label: s.title || s.sessionId.slice(0, 8),
-    hint: `${s.provider} · ${new Date(s.lastActivityAt).toLocaleString()}`,
+    hint: `${s.provider} - ${new Date(s.lastActivityAt).toLocaleString(ctx.locale)}`,
     searchText: `${s.title ?? ''} ${s.sessionId} ${s.provider}`.trim(),
     onPick: () => {
       ctx.close();
@@ -177,7 +191,7 @@ export async function gatherCommands(ctx: CommandContext): Promise<readonly Comm
     // 内层 Promise.all 已用 .catch(() => []) 吞掉单 IPC 错误，到这里通常是逻辑 bug。
     // 不 echo err.message — 主进程不通过 IPC 把 raw error 字符串送过来，但 renderer 端
     // 异常可能含敏感栈帧，对用户也无意义。
-    pushToast('Command palette load failed', 'error');
+    pushToast(ctx.t('command.loadFailed'), 'error');
     return actions;
   }
 }

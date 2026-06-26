@@ -784,19 +784,17 @@ html:not(.dark) .aurora-blob {
    鼠标移动不再触发整屏 backdrop 重算，空闲与移动开销同时塌缩。 */
 html.q-full .aurora-b1 {
   animation: aurora-drift1 40s var(--ease) infinite;
-  will-change: transform;
 }
 html.q-full .aurora-b2 {
   animation: aurora-drift2 48s var(--ease) infinite;
-  will-change: transform;
 }
 html.q-full .aurora-b3 {
   animation: aurora-drift1 60s var(--ease) infinite reverse;
-  will-change: transform;
 }
 /* 窗口失焦 / 隐藏 → 暂停漂移，绝不在后台抢占共享 GPU（根治「别的程序输入法变卡」）。 */
 .aurora-layer.is-paused .aurora-blob {
   animation-play-state: paused;
+  will-change: auto;
 }
 @keyframes aurora-drift1 {
   0%,
@@ -943,7 +941,75 @@ html:not(.q-minimal) .notice-in {
   filter: drop-shadow(0 0 4px rgb(var(--warn) / 0.22));
   animation: ks-activity-spin 920ms linear infinite;
 }
+.sidebar-status-spinner {
+  display: inline-block;
+  width: 0.72rem;
+  height: 0.72rem;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: conic-gradient(
+    from 20deg,
+    rgb(var(--run) / 0) 0deg,
+    rgb(var(--run) / 0.22) 135deg,
+    rgb(var(--run) / 0.95) 315deg,
+    rgb(var(--run) / 0) 360deg
+  );
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 2px),
+    #000 calc(100% - 1.7px)
+  );
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.7px));
+  filter: drop-shadow(0 0 4px rgb(var(--run) / 0.18));
+  animation: ks-activity-spin 920ms linear infinite;
+}
+.sidebar-status-spinner--mini {
+  width: 0.58rem;
+  height: 0.58rem;
+}
 /* 工具卡 running→done 状态 crossfade：border-color + background-color 平滑过渡。 */
+.kodax-dog-mascot {
+  display: block;
+  flex-shrink: 0;
+  aspect-ratio: 5 / 4;
+  overflow: visible;
+  user-select: none;
+}
+
+.kodax-dog-mascot__frame {
+  display: block;
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.kodax-dog-mascot__motion {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 100%;
+  transition: transform 180ms linear;
+}
+
+.kodax-dog-mascot__flip {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 100%;
+}
+
+.kodax-dog-mascot__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
+  pointer-events: none;
+}
+
+html.q-minimal .kodax-dog-mascot__motion {
+  transition: none;
+}
+
 html:not(.q-minimal) .tool-card-anim {
   transition:
     border-color var(--motion-normal) var(--ease-expo),
@@ -974,8 +1040,10 @@ html:not(.q-minimal) .collapse-track {
   html:not(.q-minimal) .copy-pulse,
   html:not(.q-minimal) .notice-in,
   .activity-spinner-comet,
+  .sidebar-status-spinner,
   html:not(.q-minimal) .tool-card-anim,
   html:not(.q-minimal) .search-ring-anim,
+  html:not(.q-minimal) .kodax-dog-mascot__motion,
   html:not(.q-minimal) .collapse-track {
     animation: none !important;
     transition: none !important;

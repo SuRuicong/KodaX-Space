@@ -10,7 +10,11 @@
 //   - layout 结构——由 shell/* 接管
 
 import { useEffect, useRef, useState } from 'react';
-import type { SpaceRuntimeDefaultsT, SpaceVersionOutput } from '@kodax-space/space-ipc-schema';
+import type {
+  SessionEvent,
+  SpaceRuntimeDefaultsT,
+  SpaceVersionOutput,
+} from '@kodax-space/space-ipc-schema';
 import { useAppStore } from './store/appStore.js';
 import { SettingsModal } from './features/settings/SettingsModal.js';
 import { QuickAskPopover } from './features/quick-ask/QuickAskPopover.js';
@@ -25,6 +29,7 @@ import {
 // Shell owns the visible layout; App keeps process-wide bootstrapping and global listeners.
 const WORKFLOW_NOTICE_DEDUPE_LIMIT = 2000;
 const seenWorkflowNoticeKeys = new Set<string>();
+const HIDDEN_SESSION_EVENT_FLUSH_MS = 100;
 
 function rememberWorkflowNoticeKey(key: string): boolean {
   if (seenWorkflowNoticeKeys.has(key)) return false;
@@ -34,6 +39,83 @@ function rememberWorkflowNoticeKey(key: string): boolean {
     if (oldest !== undefined) seenWorkflowNoticeKeys.delete(oldest);
   }
   return true;
+}
+
+type SessionEventAppender = (event: SessionEvent) => void;
+type StreamDeltaEvent = Extract<SessionEvent, { kind: 'text_delta' | 'thinking_delta' }>;
+
+function isStreamDeltaEvent(event: SessionEvent): event is StreamDeltaEvent {
+  return event.kind === 'text_delta' || event.kind === 'thinking_delta';
+}
+
+function mergeAdjacentStreamDeltas(events: readonly SessionEvent[]): SessionEvent[] {
+  const merged: SessionEvent[] = [];
+  for (const event of events) {
+    const previous = merged.at(-1);
+    if (
+      previous !== undefined &&
+      isStreamDeltaEvent(previous) &&
+      isStreamDeltaEvent(event) &&
+      previous.sessionId === event.sessionId &&
+      previous.kind === event.kind &&
+      previous.text.length + event.text.length <= 256 * 1024
+    ) {
+      merged[merged.length - 1] = { ...event, text: previous.text + event.text };
+    } else {
+      merged.push(event);
+    }
+  }
+  return merged;
+}
+
+function createSessionEventBatcher(appendEvent: SessionEventAppender): {
+  push(event: SessionEvent): void;
+  flush(): void;
+  dispose(): void;
+} {
+  let queue: SessionEvent[] = [];
+  let rafId: number | null = null;
+  let timerId: number | null = null;
+
+  const clearScheduled = (): void => {
+    if (rafId !== null) {
+      window.cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+    if (timerId !== null) {
+      window.clearTimeout(timerId);
+      timerId = null;
+    }
+  };
+
+  const flush = (): void => {
+    clearScheduled();
+    if (queue.length === 0) return;
+    const pending = mergeAdjacentStreamDeltas(queue);
+    queue = [];
+    for (const event of pending) appendEvent(event);
+  };
+
+  const schedule = (): void => {
+    if (rafId !== null || timerId !== null) return;
+    if (document.hidden || !document.hasFocus()) {
+      timerId = window.setTimeout(flush, HIDDEN_SESSION_EVENT_FLUSH_MS);
+      return;
+    }
+    rafId = window.requestAnimationFrame(flush);
+  };
+
+  return {
+    push(event) {
+      queue.push(event);
+      schedule();
+    },
+    flush,
+    dispose() {
+      clearScheduled();
+      queue = [];
+    },
+  };
 }
 
 export default function App(): JSX.Element {
@@ -59,11 +141,19 @@ export default function App(): JSX.Element {
   const appendWorkflowActivity = useAppStore((s) => s.appendWorkflowActivity);
   const appendWorkflowNotice = useAppStore((s) => s.appendWorkflowNotice);
   const setRightSidebarOpen = useAppStore((s) => s.setRightSidebarOpen);
+  const currentSessionId = useAppStore((s) => s.currentSessionId);
+  const setSessionFlag = useAppStore((s) => s.setSessionFlag);
   const unsubsRef = useRef<Array<() => void>>([]);
 
   useEffect(() => {
     const bridge = window.kodaxSpace;
     if (!bridge) return;
+    const sessionEventBatcher = createSessionEventBatcher(appendEvent);
+    const flushSessionEventsIfActive = (): void => {
+      if (!document.hidden && document.hasFocus()) sessionEventBatcher.flush();
+    };
+    window.addEventListener('focus', flushSessionEventsIfActive);
+    document.addEventListener('visibilitychange', flushSessionEventsIfActive);
 
     // 启动期一次性自检 + 订阅事件流
     bridge.invoke('space.version', undefined).then((result) => {
@@ -169,7 +259,7 @@ export default function App(): JSX.Element {
     // 全局 session.event 订阅——所有 session 共用这个监听，store 按 sessionId 路由
     unsubsRef.current.push(
       bridge.on('session.event', (event) => {
-        appendEvent(event);
+        sessionEventBatcher.push(event);
       }),
     );
 
@@ -265,6 +355,10 @@ export default function App(): JSX.Element {
     return () => {
       for (const u of unsubsRef.current) u();
       unsubsRef.current = [];
+      window.removeEventListener('focus', flushSessionEventsIfActive);
+      document.removeEventListener('visibilitychange', flushSessionEventsIfActive);
+      sessionEventBatcher.flush();
+      sessionEventBatcher.dispose();
     };
   }, [
     appendEvent,
@@ -312,6 +406,21 @@ export default function App(): JSX.Element {
 
   // F020 long-task complete OS notification — 在前台时不通知，>60s 任务才通知
   useSessionCompleteNotification();
+
+  useEffect(() => {
+    if (!currentSessionId) return;
+    const markCurrentSessionRead = (): void => {
+      if (document.hidden || !document.hasFocus()) return;
+      setSessionFlag(currentSessionId, 'unread', false);
+    };
+    markCurrentSessionRead();
+    window.addEventListener('focus', markCurrentSessionRead);
+    document.addEventListener('visibilitychange', markCurrentSessionRead);
+    return () => {
+      window.removeEventListener('focus', markCurrentSessionRead);
+      document.removeEventListener('visibilitychange', markCurrentSessionRead);
+    };
+  }, [currentSessionId, setSessionFlag]);
 
   // F020 notification click → main 推 'notification.clicked' 带 sessionId；
   // 这里订阅 push 通道，切到对应 session 让用户回到正在跑的对话。

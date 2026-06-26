@@ -27,6 +27,11 @@ files:
   # dynamically, so electron-builder will not discover it from static imports.
   - 'node_modules/@napi-rs/keyring/**/*'
   - 'node_modules/@napi-rs/keyring-*/**/*'
+  # SQLite catalog for artifact metadata. better-sqlite3 is externalized from
+  # the main bundle and loads a native binding at runtime.
+  - 'node_modules/better-sqlite3/**/*'
+  - 'node_modules/bindings/**/*'
+  - 'node_modules/file-uri-to-path/**/*'
   - 'package.json'
   - '!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,HISTORY.md,LICENSE,license,*.d.ts.map}'
   - '!**/node_modules/.cache/**'
@@ -61,6 +66,7 @@ asarUnpack:
   - '**/*.node'
   - '**/node_modules/@napi-rs/keyring-*/**'
   - '**/node_modules/node-pty/**'
+  - '**/node_modules/better-sqlite3/**'
 
 afterPack: scripts/after-pack-win-rcedit.cjs
 
@@ -103,8 +109,8 @@ nsis:
 
 # Portable 单文件免安装版（F010 v0.1.9 起）：双击直接运行，无需安装、无写注册表。
 # electron-builder 会把整个 app 解包到临时目录运行；启动时设 PORTABLE_EXECUTABLE_DIR
-# 指向 exe 所在目录。注意：默认 userData 仍写 %APPDATA%/kodax-space（与安装版共用），
-# 这是刻意为之——便携版与安装版数据互通；若要"数据随身、零系统残留"再单独处理 userData 路径。
+# 指向 exe 所在目录。Space 启动时会把 ~/.kodax 与 Electron userData 重定向到
+# PORTABLE_EXECUTABLE_DIR/.kodax，因此便携版数据随 exe 目录走，不写系统默认用户数据区。
 portable:
   artifactName: '${productName}-Portable-${version}.${ext}'
 

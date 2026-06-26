@@ -41,7 +41,9 @@ const utf8Bytes = (s: string): number => new TextEncoder().encode(s).length;
 const artifactContentSchema = z
   .string()
   .max(MAX_ARTIFACT_CONTENT_BYTES)
-  .refine((s) => utf8Bytes(s) <= MAX_ARTIFACT_CONTENT_BYTES, { message: 'content exceeds size limit' });
+  .refine((s) => utf8Bytes(s) <= MAX_ARTIFACT_CONTENT_BYTES, {
+    message: 'content exceeds size limit',
+  });
 
 // Reject NUL/CR/LF in path references (defense-in-depth; actual file reads are
 // scope-gated downstream by files.readBinary). Char-code check, not a regex
@@ -108,10 +110,32 @@ export const artifactCreateChannel = {
       // kind ↔ payload coherence: doc kinds need a path; everything else needs content.
       const isDoc = (DOC_KINDS as readonly string[]).includes(val.kind);
       if (isDoc && val.path === undefined) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'doc kinds require a path', path: ['path'] });
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'doc kinds require a path',
+          path: ['path'],
+        });
+      }
+      if (isDoc && val.content !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'doc kinds do not accept inline content',
+          path: ['content'],
+        });
       }
       if (!isDoc && val.content === undefined) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'this kind requires content', path: ['content'] });
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'this kind requires content',
+          path: ['content'],
+        });
+      }
+      if (!isDoc && val.path !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'content kinds do not accept a path',
+          path: ['path'],
+        });
       }
     }),
   output: z.object({

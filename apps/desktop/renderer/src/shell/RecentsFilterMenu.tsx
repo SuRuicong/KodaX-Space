@@ -15,6 +15,8 @@ import { useEffect, useRef } from 'react';
 import { useAppStore } from '../store/appStore.js';
 import { Caret } from '../components/Caret.js';
 import type { RecentsFilter } from '../store/appStore.js';
+import { useI18n } from '../i18n/I18nProvider.js';
+import type { MessageKey } from '../i18n/messages.js';
 
 interface RecentsFilterMenuProps {
   readonly open: boolean;
@@ -22,29 +24,32 @@ interface RecentsFilterMenuProps {
   readonly anchorEl: HTMLElement | null;
 }
 
-const STATUS_OPTIONS: ReadonlyArray<{ key: RecentsFilter['status']; label: string }> = [
-  { key: 'active', label: 'Active' },
-  { key: 'archived', label: 'Archived' },
-  { key: 'all', label: 'All' },
+const STATUS_OPTIONS: ReadonlyArray<{ key: RecentsFilter['status']; labelKey: MessageKey }> = [
+  { key: 'active', labelKey: 'sidebar.filter.status.active' },
+  { key: 'archived', labelKey: 'sidebar.filter.status.archived' },
+  { key: 'all', labelKey: 'sidebar.filter.status.all' },
 ];
 
-const ACTIVITY_OPTIONS: ReadonlyArray<{ key: RecentsFilter['lastActivity']; label: string }> = [
-  { key: 'today', label: 'Today' },
-  { key: '7d', label: '7 days' },
-  { key: '30d', label: '30 days' },
-  { key: 'all', label: 'All' },
+const ACTIVITY_OPTIONS: ReadonlyArray<{
+  key: RecentsFilter['lastActivity'];
+  labelKey: MessageKey;
+}> = [
+  { key: 'today', labelKey: 'sidebar.filter.activity.today' },
+  { key: '7d', labelKey: 'sidebar.filter.activity.7d' },
+  { key: '30d', labelKey: 'sidebar.filter.activity.30d' },
+  { key: 'all', labelKey: 'sidebar.filter.activity.all' },
 ];
 
-const SORT_OPTIONS: ReadonlyArray<{ key: RecentsFilter['sortBy']; label: string }> = [
-  { key: 'recency', label: 'Recency' },
-  { key: 'alphabetical', label: 'Alphabetical' },
-  { key: 'created', label: 'Created' },
+const SORT_OPTIONS: ReadonlyArray<{ key: RecentsFilter['sortBy']; labelKey: MessageKey }> = [
+  { key: 'recency', labelKey: 'sidebar.filter.sort.recency' },
+  { key: 'alphabetical', labelKey: 'sidebar.filter.sort.alphabetical' },
+  { key: 'created', labelKey: 'sidebar.filter.sort.created' },
 ];
 
-const GROUP_OPTIONS: ReadonlyArray<{ key: RecentsFilter['groupBy']; label: string }> = [
-  { key: 'none', label: 'None' },
-  { key: 'project', label: 'Project' },
-  { key: 'status', label: 'Status' },
+const GROUP_OPTIONS: ReadonlyArray<{ key: RecentsFilter['groupBy']; labelKey: MessageKey }> = [
+  { key: 'none', labelKey: 'sidebar.filter.group.none' },
+  { key: 'project', labelKey: 'sidebar.filter.group.project' },
+  { key: 'status', labelKey: 'sidebar.filter.group.status' },
 ];
 
 export function RecentsFilterMenu({
@@ -52,6 +57,7 @@ export function RecentsFilterMenu({
   onClose,
   anchorEl,
 }: RecentsFilterMenuProps): JSX.Element | null {
+  const { t } = useI18n();
   const filter = useAppStore((s) => s.recentsFilter);
   const setFilter = useAppStore((s) => s.setRecentsFilter);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -82,39 +88,39 @@ export function RecentsFilterMenu({
       role="menu"
     >
       <FilterRow
-        label="Status"
-        value={STATUS_OPTIONS.find((o) => o.key === filter.status)?.label ?? ''}
-        options={STATUS_OPTIONS}
+        label={t('sidebar.filter.status')}
+        valueKey={filter.status}
+        options={STATUS_OPTIONS.map((o) => ({ key: o.key, label: t(o.labelKey) }))}
         onPick={(key) => setFilter({ ...filter, status: key })}
       />
       <FilterRow
-        label="Project"
-        value={filter.projectScope === 'current' ? 'Current only' : 'All'}
+        label={t('sidebar.filter.project')}
+        valueKey={filter.projectScope}
         options={[
-          { key: 'current', label: 'Current only' },
-          { key: 'all', label: 'All' },
+          { key: 'current', label: t('sidebar.filter.project.currentOnly') },
+          { key: 'all', label: t('sidebar.filter.project.all') },
         ]}
         onPick={(key) =>
           setFilter({ ...filter, projectScope: key as RecentsFilter['projectScope'] })
         }
       />
       <FilterRow
-        label="Last activity"
-        value={ACTIVITY_OPTIONS.find((o) => o.key === filter.lastActivity)?.label ?? ''}
-        options={ACTIVITY_OPTIONS}
+        label={t('sidebar.filter.lastActivity')}
+        valueKey={filter.lastActivity}
+        options={ACTIVITY_OPTIONS.map((o) => ({ key: o.key, label: t(o.labelKey) }))}
         onPick={(key) => setFilter({ ...filter, lastActivity: key })}
       />
       <Divider />
       <FilterRow
-        label="Group by"
-        value={GROUP_OPTIONS.find((o) => o.key === filter.groupBy)?.label ?? ''}
-        options={GROUP_OPTIONS}
+        label={t('sidebar.filter.groupBy')}
+        valueKey={filter.groupBy}
+        options={GROUP_OPTIONS.map((o) => ({ key: o.key, label: t(o.labelKey) }))}
         onPick={(key) => setFilter({ ...filter, groupBy: key })}
       />
       <FilterRow
-        label="Sort by"
-        value={SORT_OPTIONS.find((o) => o.key === filter.sortBy)?.label ?? ''}
-        options={SORT_OPTIONS}
+        label={t('sidebar.filter.sortBy')}
+        valueKey={filter.sortBy}
+        options={SORT_OPTIONS.map((o) => ({ key: o.key, label: t(o.labelKey) }))}
         onPick={(key) => setFilter({ ...filter, sortBy: key })}
       />
     </div>
@@ -123,18 +129,20 @@ export function RecentsFilterMenu({
 
 function FilterRow<T extends string>({
   label,
-  value,
+  valueKey,
   options,
   onPick,
 }: {
   label: string;
-  value: string;
+  valueKey: T;
   options: ReadonlyArray<{ key: T; label: string }>;
   onPick: (key: T) => void;
 }): JSX.Element {
+  const { t } = useI18n();
+  const value = options.find((o) => o.key === valueKey)?.label ?? '';
   // 简单 cycle：每次点击切到 options 数组的下一项
   function onCycle(): void {
-    const idx = options.findIndex((o) => o.label === value);
+    const idx = options.findIndex((o) => o.key === valueKey);
     const next = options[(idx + 1) % options.length];
     onPick(next.key);
   }
@@ -143,7 +151,7 @@ function FilterRow<T extends string>({
       type="button"
       onClick={onCycle}
       className="w-full text-left px-3 py-1 hover:bg-hover-bg flex items-center gap-2 text-fg-primary"
-      title="Click to cycle"
+      title={t('sidebar.filter.clickToCycle')}
     >
       <span className="flex-1">{label}</span>
       <span className="text-fg-muted text-[11px]">{value}</span>

@@ -8,6 +8,7 @@ import {
 } from './sessionCompleteNotificationModel.js';
 
 interface ActivePromptRecord {
+  readonly userMessageId: string;
   readonly startedAt: number;
 }
 
@@ -22,15 +23,10 @@ interface SessionLite {
  * live start marker those events must never create a new toast.
  */
 export function useSessionCompleteNotification(): void {
-  const eventsBySession = useAppStore((s) => s.eventsBySession);
-  const userMessagesBySession = useAppStore((s) => s.userMessagesBySession);
-  const sessions = useAppStore((s) => s.sessions);
   const nativeEnabled = useAppStore((s) => s.nativeCompletionNotificationsEnabled);
 
   const activePromptRef = useRef<Map<string, ActivePromptRecord>>(new Map());
-  const livePromptStartRef = useRef<Map<string, ActivePromptRecord>>(new Map());
-  const lastSeenEventIdxRef = useRef<Map<string, number>>(new Map());
-  const seenUserMessageCountRef = useRef<Map<string, number>>(new Map());
+  const notifiedTerminalRef = useRef<Set<string>>(new Set());
   const nativeEnabledRef = useRef(nativeEnabled);
 
   useEffect(() => {
@@ -38,70 +34,62 @@ export function useSessionCompleteNotification(): void {
   }, [nativeEnabled]);
 
   useEffect(() => {
-    for (const [sessionId, messages] of Object.entries(userMessagesBySession)) {
-      const previousCount = seenUserMessageCountRef.current.get(sessionId);
-      seenUserMessageCountRef.current.set(sessionId, messages.length);
+    return useAppStore.subscribe((state, previousState) => {
+      const event = state.lastEvent;
+      if (!event || event === previousState.lastEvent) return;
+      const sessionId = event.sessionId;
 
-      if (
-        messages.length === 0 ||
-        (previousCount !== undefined && messages.length <= previousCount)
-      ) {
-        livePromptStartRef.current.delete(sessionId);
-        continue;
-      }
-
-      const last = messages[messages.length - 1];
-      if (last?.sentAt && isFreshLivePromptStart(last.sentAt)) {
-        livePromptStartRef.current.set(sessionId, { startedAt: last.sentAt });
-      } else {
-        livePromptStartRef.current.delete(sessionId);
-      }
-    }
-  }, [userMessagesBySession]);
-
-  useEffect(() => {
-    for (const [sessionId, events] of Object.entries(eventsBySession)) {
-      let lastSeenIdx = lastSeenEventIdxRef.current.get(sessionId) ?? -1;
-      if (lastSeenIdx >= events.length) {
-        lastSeenIdx = -1;
-        activePromptRef.current.delete(sessionId);
-      }
-
-      for (let i = lastSeenIdx + 1; i < events.length; i++) {
-        const event = events[i];
-        if (!event) continue;
-
-        if (event.kind === 'session_start') {
-          const livePromptStart = livePromptStartRef.current.get(sessionId);
-          if (livePromptStart) {
-            activePromptRef.current.set(sessionId, livePromptStart);
-          }
-          continue;
-        }
-
-        if (event.kind !== 'session_complete' && event.kind !== 'session_error') continue;
-        if (event.kind === 'session_error' && event.error === 'cancelled') {
+      if (event.kind === 'session_start') {
+        const livePromptStart = getLivePromptStart(state, sessionId);
+        if (livePromptStart) {
+          activePromptRef.current.set(sessionId, livePromptStart);
+        } else {
           activePromptRef.current.delete(sessionId);
-          continue;
         }
-
-        const activePrompt = activePromptRef.current.get(sessionId);
-        activePromptRef.current.delete(sessionId);
-        livePromptStartRef.current.delete(sessionId);
-        if (!activePrompt) continue;
-
-        void maybeNotify({
-          sessionId,
-          outcome: event.kind === 'session_complete' ? 'complete' : 'error',
-          startedAt: activePrompt.startedAt,
-          sessions,
-          nativeEnabled: nativeEnabledRef.current,
-        });
+        return;
       }
 
-      lastSeenEventIdxRef.current.set(sessionId, events.length - 1);
-    }
-  }, [eventsBySession, sessions]);
+      if (event.kind !== 'session_complete' && event.kind !== 'session_error') return;
+      if (event.kind === 'session_error' && event.error === 'cancelled') {
+        activePromptRef.current.delete(sessionId);
+        return;
+      }
+
+      const activePrompt = activePromptRef.current.get(sessionId);
+      activePromptRef.current.delete(sessionId);
+      if (!activePrompt) return;
+      const terminalKey = `${sessionId}:${activePrompt.userMessageId}:${activePrompt.startedAt}:${event.kind}`;
+      if (notifiedTerminalRef.current.has(terminalKey)) return;
+      rememberTerminalNotification(notifiedTerminalRef.current, terminalKey);
+
+      void maybeNotify({
+        sessionId,
+        outcome: event.kind === 'session_complete' ? 'complete' : 'error',
+        startedAt: activePrompt.startedAt,
+        sessions: state.sessions,
+        nativeEnabled: nativeEnabledRef.current,
+      });
+    });
+  }, []);
+}
+
+function getLivePromptStart(
+  state: ReturnType<typeof useAppStore.getState>,
+  sessionId: string,
+): ActivePromptRecord | null {
+  const messages = state.userMessagesBySession[sessionId] ?? [];
+  const last = messages[messages.length - 1];
+  if (last?.sentAt && isFreshLivePromptStart(last.sentAt)) {
+    return { userMessageId: last.id, startedAt: last.sentAt };
+  }
+  return null;
+}
+
+function rememberTerminalNotification(keys: Set<string>, key: string): void {
+  keys.add(key);
+  if (keys.size <= 200) return;
+  const oldest = keys.values().next().value;
+  if (typeof oldest === 'string') keys.delete(oldest);
 }
 
 async function maybeNotify(input: {

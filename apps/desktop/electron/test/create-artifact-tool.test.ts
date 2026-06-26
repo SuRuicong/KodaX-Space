@@ -47,6 +47,7 @@ test('handler: creates a markdown artifact within run context + notifies', async
     assert.equal(changes[0]?.reason, 'created');
     assert.equal(changes[0]?.sessionId, 's1'); // attributed from ALS, not tool input
   } finally {
+    store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -63,6 +64,7 @@ test('handler: artifactId appends a version (reason=version)', async () => {
     assert.equal((await store.list())[0]?.currentVersion, 2);
     assert.equal(changes[1]?.reason, 'version');
   } finally {
+    store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -74,6 +76,7 @@ test('handler: refuses when called outside a run context (no attribution)', asyn
     assert.match(out, /outside an active session run/i);
     assert.equal((await store.list()).length, 0);
   } finally {
+    store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -87,6 +90,7 @@ test('handler: rejects the gated react tier', async () => {
     assert.match(out, /not available/i);
     assert.equal((await store.list()).length, 0);
   } finally {
+    store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -98,6 +102,7 @@ test('handler: invalid payload (markdown without content) → error, no write', 
     assert.match(out, /invalid artifact input/i);
     assert.equal((await store.list()).length, 0);
   } finally {
+    store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -112,6 +117,7 @@ test('handler: doc kind with path works', async () => {
     const read = await store.read((await store.list())[0]!.id);
     assert.equal(read?.path, '/proj/a.pdf');
   } finally {
+    store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -125,6 +131,7 @@ test('handler: doc path outside the project is rejected', async () => {
     assert.match(out, /inside the project/i);
     assert.equal((await store.list()).length, 0);
   } finally {
+    store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }
 });

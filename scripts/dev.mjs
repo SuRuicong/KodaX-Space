@@ -52,6 +52,20 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function run(cmd, args, label, env = {}) {
+  console.log(`[dev] $ ${cmd} ${args.join(' ')}`);
+  const result = spawnSync(cmd, args, {
+    cwd: root,
+    stdio: 'inherit',
+    shell: false,
+    windowsHide: true,
+    env: { ...process.env, ...env },
+  });
+  if (result.status !== 0) {
+    throw new Error(`${label} exited with code ${result.status}`);
+  }
+}
+
 function isPortOpen(host, port) {
   return new Promise((resolve) => {
     const socket = net.createConnection({ host, port });
@@ -147,6 +161,20 @@ process.on('SIGTERM', () => shutdown(0));
 if (await isPortOpen(VITE_HOST, VITE_PORT)) {
   console.error(`[dev] ${VITE_URL} is already in use. Stop the stale dev server, then run npm run dev again.`);
   console.error(`[dev] Windows helper: Get-NetTCPConnection -LocalPort ${VITE_PORT} | Select OwningProcess`);
+  process.exit(1);
+}
+
+// better-sqlite3 is a native addon. Running Node tests or npm rebuild can leave
+// it compiled for plain Node, while Electron needs its own ABI. Check before
+// opening the desktop window so artifact catalog load does not fail mid-run.
+try {
+  run(
+    NODE,
+    [path.join(root, 'scripts/ensure-sqlite-native.mjs'), 'electron'],
+    'ensure better-sqlite3 electron ABI',
+  );
+} catch (err) {
+  console.error('[dev] native dependency check failed:', err);
   process.exit(1);
 }
 

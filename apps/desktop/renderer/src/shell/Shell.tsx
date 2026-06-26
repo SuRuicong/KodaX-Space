@@ -31,6 +31,7 @@ import {
   Info,
   PanelLeft,
   PanelRight,
+  PawPrint,
 } from 'lucide-react';
 import type {
   LanguageModeT,
@@ -48,6 +49,7 @@ import { ConversationStreamV2 } from './ConversationStreamV2.js';
 import { PopoutOverlay } from './popouts/PopoutOverlay.js';
 import { PermissionModal } from '../features/permission/PermissionModal.js';
 import { AskUserModal } from '../features/ask-user/AskUserModal.js';
+import { ConfirmDialog } from './ConfirmDialog.js';
 import { ThemeToggle } from './ThemeToggle.js';
 import { VisualQualityToggle } from './VisualQualityToggle.js';
 import { GlassAurora } from './GlassAurora.js';
@@ -65,6 +67,11 @@ import { PartnerWorkspace } from '../features/partner/PartnerWorkspace.js';
 import { HandoffInbox } from './HandoffInbox.js';
 import { SettingsModal } from '../features/settings/SettingsModal.js';
 import { useI18n } from '../i18n/I18nProvider.js';
+import {
+  isPopoutKind,
+  SHELL_POPOUT_EVENT,
+  type ShellPopoutRequest,
+} from './popoutControl.js';
 
 interface ShellProps {
   readonly version?: SpaceVersionOutput | null;
@@ -81,9 +88,15 @@ const SHELL_PANEL_HORIZONTAL_PADDING_PX = 20;
 const SHELL_PANEL_GAP_PX = 10;
 const RESIZE_HANDLE_WIDTH_PX = 4;
 
-function rightSidebarOpenWidth(leftSidebarVisible: boolean, leftWidth: number): number {
-  const viewportWidth =
-    typeof window !== 'undefined' && window.innerWidth ? window.innerWidth : 1440;
+function getViewportWidth(): number {
+  return typeof window !== 'undefined' && window.innerWidth ? window.innerWidth : 1440;
+}
+
+function rightSidebarOpenWidth(
+  leftSidebarVisible: boolean,
+  leftWidth: number,
+  viewportWidth = getViewportWidth(),
+): number {
   const rightSideChrome = RESIZE_HANDLE_WIDTH_PX + SHELL_PANEL_GAP_PX * 2;
   const leftSideChrome = leftSidebarVisible
     ? leftWidth + RESIZE_HANDLE_WIDTH_PX + SHELL_PANEL_GAP_PX * 2
@@ -93,6 +106,7 @@ function rightSidebarOpenWidth(leftSidebarVisible: boolean, leftWidth: number): 
   return clampSidebarWidthPx(Math.round(pairedWidth / 2));
 }
 export function Shell({ version = null }: ShellProps): JSX.Element {
+  const { t } = useI18n();
   // F045: surface 一等状态（替代旧 local mode）。Partner 自本版起有真实空壳。
   const currentSurface = useSurfaceStore((s) => s.currentSurface);
 
@@ -102,8 +116,10 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
   // 侧栏开/关：button 放在 breadcrumb 行最左 / 最右；侧栏关掉时 0 占位（不再 28px 竖条）
   const leftSidebarOpen = useAppStore((s) => s.leftSidebarOpen);
   const rightSidebarOpen = useAppStore((s) => s.rightSidebarOpen);
+  const mascotEnabled = useAppStore((s) => s.mascotEnabled);
   const setLeftSidebarOpen = useAppStore((s) => s.setLeftSidebarOpen);
   const setRightSidebarOpen = useAppStore((s) => s.setRightSidebarOpen);
+  const setMascotEnabled = useAppStore((s) => s.setMascotEnabled);
 
   // 2026-06: 侧栏宽度。store 是 commit-only (release 时一次性写),drag 中间用本地 state
   // 实时驱动 inline width style 避免 store 抖动 / localStorage 频繁写。
@@ -116,8 +132,24 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatusT | null>(null);
-  const leftWidth = leftWidthDraft ?? persistedLeftWidth;
-  const rightWidth = rightWidthDraft ?? persistedRightWidth;
+  const [viewportWidth, setViewportWidth] = useState(() => getViewportWidth());
+  const leftWidth = clampSidebarWidthPx(leftWidthDraft ?? persistedLeftWidth);
+  const closeDiagnostics = useCallback((): void => {
+    setDiagnosticsOpen(false);
+  }, []);
+
+  useEffect(() => {
+    let raf = 0;
+    const onResize = (): void => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => setViewportWidth(getViewportWidth()));
+    };
+    window.addEventListener('resize', onResize);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', onResize);
+    };
+  }, []);
 
   const refreshLicenseStatus = useCallback((): void => {
     if (!window.kodaxSpace) return;
@@ -133,13 +165,24 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
   }, [refreshLicenseStatus]);
 
   const openRightSidebarAtBalancedWidth = useCallback((): void => {
-    const targetWidth = rightSidebarOpenWidth(leftSidebarOpen, leftWidth);
+    const targetWidth = rightSidebarOpenWidth(leftSidebarOpen, leftWidth, viewportWidth);
     setRightWidthDraft(null);
     setRightSidebarWidth(targetWidth);
     setRightSidebarOpen(true);
-  }, [leftSidebarOpen, leftWidth, setRightSidebarOpen, setRightSidebarWidth]);
+  }, [leftSidebarOpen, leftWidth, setRightSidebarOpen, setRightSidebarWidth, viewportWidth]);
 
-  // 右侧栏跟 KodaX 计划列表（todoListBySession）联动：plan 出现 → 自动展开；
+  const openRightSidebarAtDefaultWidth = useCallback((): void => {
+    const maxComfortWidth = rightSidebarOpenWidth(leftSidebarOpen, leftWidth, viewportWidth);
+    const targetWidth = Math.min(
+      clampSidebarWidthPx(RIGHT_SIDEBAR_DEFAULT_WIDTH),
+      maxComfortWidth,
+    );
+    setRightWidthDraft(null);
+    setRightSidebarWidth(targetWidth);
+    setRightSidebarOpen(true);
+  }, [leftSidebarOpen, leftWidth, setRightSidebarOpen, setRightSidebarWidth, viewportWidth]);
+
+  // 右侧栏跟 KodaX 计划列表（todoListBySession）联动：plan 出现 → 自动打开；
   // plan 清空 → 自动折叠。只在 hasPlan 状态切换的瞬间动一次，中间段用户的手动 toggle 不会被打扰。
   // 首次挂载只记录状态、不覆盖 localStorage 持久化值——避免用户上次手动设置被开屏一瞬间冲掉。
   const currentSessionIdForPlan = useAppStore((s) => s.currentSessionId);
@@ -147,26 +190,33 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
     const sid = s.currentSessionId;
     return sid ? (s.todoListBySession[sid]?.length ?? 0) : 0;
   });
-  const lastAutoHadPlanRef = useRef<boolean | null>(null);
+  const lastAutoPlanRef = useRef<{ sessionId: string | null; hasPlan: boolean } | null>(null);
   useEffect(() => {
     const hasPlan = planLength > 0;
-    if (lastAutoHadPlanRef.current === null) {
+    const previous = lastAutoPlanRef.current;
+    if (previous === null) {
       // 初次：记录但不触发 — 尊重 localStorage 已持久的偏好
-      lastAutoHadPlanRef.current = hasPlan;
+      lastAutoPlanRef.current = { sessionId: currentSessionIdForPlan, hasPlan };
       return;
     }
-    if (lastAutoHadPlanRef.current === hasPlan) return; // 没切换
+    const sessionChanged = previous.sessionId !== currentSessionIdForPlan;
+    const planPresenceChanged = previous.hasPlan !== hasPlan;
+    if (!sessionChanged && !planPresenceChanged) return; // 没切换
+    if (!planPresenceChanged) {
+      lastAutoPlanRef.current = { sessionId: currentSessionIdForPlan, hasPlan };
+      return;
+    }
     if (hasPlan) {
-      if (!rightSidebarOpen) openRightSidebarAtBalancedWidth();
+      if (!rightSidebarOpen) openRightSidebarAtDefaultWidth();
       else setRightSidebarOpen(true);
     } else {
       setRightSidebarOpen(false);
     }
-    lastAutoHadPlanRef.current = hasPlan;
+    lastAutoPlanRef.current = { sessionId: currentSessionIdForPlan, hasPlan };
   }, [
     planLength,
     currentSessionIdForPlan,
-    openRightSidebarAtBalancedWidth,
+    openRightSidebarAtDefaultWidth,
     rightSidebarOpen,
     setRightSidebarOpen,
   ]);
@@ -264,6 +314,19 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
     [currentSessionIdForPopout, markPopoutPromoted],
   );
 
+  useEffect(() => {
+    const onShellPopout = (event: Event): void => {
+      const detail = (event as CustomEvent<Partial<ShellPopoutRequest>>).detail;
+      if (!detail || !('kind' in detail)) return;
+      const kind = detail.kind ?? null;
+      if (kind !== null && !isPopoutKind(kind)) return;
+      if (kind !== null && currentSurface !== 'code') return;
+      setActivePopout(kind);
+    };
+    window.addEventListener(SHELL_POPOUT_EVENT, onShellPopout);
+    return () => window.removeEventListener(SHELL_POPOUT_EVENT, onShellPopout);
+  }, [currentSurface, setActivePopout]);
+
   // KX-I-02: director — 监听 events,首次出现 plan/diff/tasks 信号时 auto setActivePopout
   // (前提:activePopout === null 且该 kind 在本 session 未 promoted 过)。
   useSmartPopoutDirector({ activePopout, setActivePopout });
@@ -286,19 +349,8 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
       setRequestedPopout(null);
       return;
     }
-    const known = [
-      'preview',
-      'diff',
-      'terminal',
-      'tasks',
-      'plan',
-      'agents',
-      'mcp',
-      'artifact',
-      'workflow',
-    ] as const;
-    if ((known as readonly string[]).includes(requestedPopout)) {
-      setActivePopout(requestedPopout as PopoutKind);
+    if (isPopoutKind(requestedPopout)) {
+      setActivePopout(requestedPopout);
     }
     setRequestedPopout(null); // 消费完清回 null,允许下次 slash command 再次触发
   }, [requestedPopout, setRequestedPopout, setActivePopout, currentSurface]);
@@ -325,15 +377,24 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
   const toggleRightSidebar = useCallback((): void => {
     if (fullscreenRead) {
       setFullscreenRead(false);
-      openRightSidebarAtBalancedWidth();
+      openRightSidebarAtDefaultWidth();
     } else if (rightSidebarOpen) {
       setRightSidebarOpen(false);
     } else {
-      openRightSidebarAtBalancedWidth();
+      openRightSidebarAtDefaultWidth();
     }
-  }, [fullscreenRead, openRightSidebarAtBalancedWidth, rightSidebarOpen, setRightSidebarOpen]);
+  }, [fullscreenRead, openRightSidebarAtDefaultWidth, rightSidebarOpen, setRightSidebarOpen]);
 
-  const rightSidebarExpandedWidth = rightSidebarOpenWidth(leftSidebarOpen, leftWidth);
+  const rightSidebarExpandedWidth = rightSidebarOpenWidth(
+    leftSidebarOpen,
+    leftWidth,
+    viewportWidth,
+  );
+  const clampRightSidebarWidth = useCallback(
+    (px: number): number => Math.min(clampSidebarWidthPx(px), rightSidebarExpandedWidth),
+    [rightSidebarExpandedWidth],
+  );
+  const rightWidth = clampRightSidebarWidth(rightWidthDraft ?? persistedRightWidth);
 
   return (
     <div className="h-screen flex flex-col bg-surface text-fg-primary overflow-hidden relative isolate">
@@ -384,6 +445,13 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
             )}
           </button>
           <HandoffInbox />
+          <TitlebarIconButton
+            label={mascotEnabled ? t('menu.view.hideMascot') : t('menu.view.showMascot')}
+            active={mascotEnabled}
+            onClick={() => setMascotEnabled(!mascotEnabled)}
+          >
+            <PawPrint className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+          </TitlebarIconButton>
           <VisualQualityToggle />
           <ThemeToggle />
         </div>
@@ -391,7 +459,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
           <RuntimeDiagnostics
             version={version}
             licenseStatus={licenseStatus}
-            onClose={() => setDiagnosticsOpen(false)}
+            onClose={closeDiagnostics}
           />
         )}
       </div>
@@ -458,13 +526,15 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
                 />
               </div>
 
-              <ConversationStreamV2 />
+              <div className="relative flex flex-1 min-h-0 flex-col">
+                <ConversationStreamV2 />
+
+                {activePopout !== null && (
+                  <PopoutOverlay kind={activePopout} onClose={() => setActivePopout(null)} />
+                )}
+              </div>
 
               <BottomBar />
-
-              {activePopout !== null && (
-                <PopoutOverlay kind={activePopout} onClose={() => setActivePopout(null)} />
-              )}
             </div>
 
             {!fullscreenRead && rightSidebarOpen && (
@@ -473,10 +543,10 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
                   side="right"
                   width={rightWidth}
                   defaultWidth={RIGHT_SIDEBAR_DEFAULT_WIDTH}
-                  onPreview={(px) => setRightWidthDraft(clampSidebarWidthPx(px))}
+                  onPreview={(px) => setRightWidthDraft(clampRightSidebarWidth(px))}
                   onCommit={(px) => {
                     setRightWidthDraft(null);
-                    setRightSidebarWidth(clampSidebarWidthPx(px));
+                    setRightSidebarWidth(clampRightSidebarWidth(px));
                   }}
                 />
                 <RightSidebar
@@ -493,6 +563,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
       {/* 模态/命令面板：在面板区之外，保证 position:fixed 相对视口正常铺满 */}
       <PermissionModal />
       <AskUserModal />
+      <ConfirmDialog />
       {settingsOpen && (
         <SettingsModal initialTab="preferences" onClose={() => setSettingsOpen(false)} />
       )}
@@ -577,8 +648,10 @@ function AppTopMenu({
   const { languageMode, setLanguageMode, t } = useI18n();
   const theme = useAppStore((s) => s.theme);
   const visualQuality = useAppStore((s) => s.visualQuality);
+  const mascotEnabled = useAppStore((s) => s.mascotEnabled);
   const setTheme = useAppStore((s) => s.setTheme);
   const setVisualQuality = useAppStore((s) => s.setVisualQuality);
+  const setMascotEnabled = useAppStore((s) => s.setMascotEnabled);
   const [openMenu, setOpenMenu] = useState<AppMenuId | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
   const lastEditableTargetRef = useRef<HTMLElement | null>(null);
@@ -774,6 +847,12 @@ function AppTopMenu({
           shortcut: 'Ctrl+\\',
           checked: focusMode,
           onSelect: onToggleFocusMode,
+        },
+        {
+          id: 'mascot',
+          label: t('menu.view.mascot'),
+          checked: mascotEnabled,
+          onSelect: () => setMascotEnabled(!mascotEnabled),
         },
         { id: 'view-separator-2', separator: true },
         {

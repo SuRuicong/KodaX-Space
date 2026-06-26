@@ -48,17 +48,20 @@
   },
   "dependencies": {
     "@kodax-ai/kodax": "^0.7.56",
-    "@napi-rs/keyring": "^1.3.0"
+    "@napi-rs/keyring": "^1.3.0",
+    "better-sqlite3": "^12.11.1"
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.6.1",
     "@playwright/test": "^1.60.0",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.19.19",
     "@typescript-eslint/eslint-plugin": "^8.18.0",
     "@typescript-eslint/parser": "^8.18.0",
     "concurrently": "^9.1.0",
-    "electron": "^33.2.0",
+    "electron": "^42.5.0",
     "electron-builder": "^25.1.8",
-    "esbuild": "^0.24.0",
+    "esbuild": "^0.28.1",
     "eslint": "^9.16.0",
     "eslint-plugin-react": "^7.37.0",
     "eslint-plugin-react-hooks": "^5.1.0",
@@ -72,7 +75,8 @@
   "overrides": {
     "@electron/rebuild": {
       "node-gyp": "^11.4.2"
-    }
+    },
+    "tar": "^7.5.17"
   },
   "engines": {
     "node": ">=20.5.0"

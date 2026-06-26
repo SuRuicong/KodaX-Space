@@ -36,6 +36,10 @@ import { useAppStore, type UserMessage } from '../store/appStore.js';
 import { shouldActivateSessionForCurrentScope } from '../lib/sessionActivation.js';
 import { SessionLineagePanel } from '../features/session/SessionLineagePanel.js';
 import { useSurfaceStore } from '../store/surface.js';
+import { invokeWithTimeout } from '../lib/ipcInvokeWithTimeout.js';
+import { requestConfirm } from '../store/confirmStore.js';
+import { pushToast } from '../store/toastStore.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 
 // 稳定空数组，防 selector `?? []` literal 每次新引用触发 zustand re-render loop (React #185)。
 const EMPTY_USER_MESSAGES: readonly UserMessage[] = [];
@@ -46,6 +50,7 @@ interface SessionMenuProps {
 }
 
 export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Element {
+  const { t } = useI18n();
   const sessions = useAppStore((s) => s.sessions);
   const removeSession = useAppStore((s) => s.removeSession);
   const upsertSession = useAppStore((s) => s.upsertSession);
@@ -105,7 +110,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
       onClose();
       return;
     }
-    const r = await window.kodaxSpace.invoke('session.setTitle', {
+    const r = await invokeWithTimeout(window.kodaxSpace, 'session.setTitle', {
       sessionId,
       title: trimmed,
     });
@@ -118,12 +123,17 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
 
   async function doDelete(): Promise<void> {
     if (!window.kodaxSpace) return;
-    if (!confirm(`Delete session "${session?.title ?? sessionId}"? This cannot be undone.`)) {
-      return;
-    }
+    const confirmed = await requestConfirm({
+      title: t('menu.session.deleteTitle'),
+      message: t('menu.session.deleteMessage', { title: session?.title ?? sessionId }),
+      confirmLabel: t('menu.session.delete'),
+      danger: true,
+    });
+    if (!confirmed) return;
     const r = await window.kodaxSpace.invoke('session.delete', { sessionId });
     if (r.ok && r.data.deleted) {
       removeSession(sessionId);
+      window.dispatchEvent(new Event('kodax-space.focus-textarea'));
     }
     onClose();
   }
@@ -142,7 +152,12 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
       forkPointTurnIdx,
     });
     if (!r.ok) {
-      alert(`Fork failed: ${r.error?.message ?? 'unknown error'}`);
+      pushToast(
+        t('menu.session.forkFailed', {
+          message: r.error?.message ?? t('common.unknownError'),
+        }),
+        'error',
+      );
       onClose();
       return;
     }
@@ -153,7 +168,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
     const childTitle =
       session.title !== undefined
         ? `${session.title.replace(/( \(fork\))+$/, '')} (fork)`
-        : undefined;
+        : t('menu.session.forkedTitle');
     const childSession: SessionMeta = {
       sessionId: newSessionId,
       projectRoot: session.projectRoot,
@@ -193,11 +208,17 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
   async function doRewind(): Promise<void> {
     if (!window.kodaxSpace || !session) return;
     if (userMessages.length === 0) {
-      alert('Nothing to rewind — no turns yet.');
+      pushToast(t('menu.session.noTurnsYet'), 'info');
       onClose();
       return;
     }
-    if (!confirm(`Rewind 1 turn? The last response will be discarded.`)) {
+    const confirmed = await requestConfirm({
+      title: t('menu.session.rewindTitle'),
+      message: t('menu.session.rewindMessage'),
+      confirmLabel: t('menu.session.rewindOneTurn'),
+      danger: true,
+    });
+    if (!confirmed) {
       onClose();
       return;
     }
@@ -208,12 +229,22 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
     const rewindPastTurnIdx = onlyOneTurn ? 0 : userMessages.length - 2;
     const r = await window.kodaxSpace.invoke('session.rewind', { sessionId, rewindPastTurnIdx });
     if (!r.ok) {
-      alert(`Rewind failed: ${r.error?.message ?? 'unknown error'}`);
+      pushToast(
+        t('menu.session.rewindFailed', {
+          message: r.error?.message ?? t('common.unknownError'),
+        }),
+        'error',
+      );
       onClose();
       return;
     }
     if (!r.data.ok) {
-      alert(`Rewind rejected: ${r.data.reason ?? 'unknown'}`);
+      pushToast(
+        t('menu.session.rewindRejected', {
+          message: r.data.reason ?? t('common.unknownError'),
+        }),
+        'error',
+      );
       onClose();
       return;
     }
@@ -242,7 +273,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
           }}
           autoFocus
           className="w-full bg-surface border border-border-default text-xs text-fg-primary px-2 py-1 rounded focus:outline-none focus:border-border-strong"
-          placeholder="New session title"
+          placeholder={t('menu.session.newTitlePlaceholder')}
         />
         <div className="flex gap-1 mt-1 text-[11px]">
           <button
@@ -250,7 +281,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
             onClick={() => void doRename()}
             className="px-2 py-0.5 rounded bg-surface-3 hover:bg-hover-bg text-fg-primary"
           >
-            Save
+            {t('common.save')}
           </button>
           <button
             type="button"
@@ -260,7 +291,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
             }}
             className="px-2 py-0.5 text-fg-muted hover:text-fg-secondary"
           >
-            Cancel
+            {t('common.cancel')}
           </button>
         </div>
       </div>
@@ -274,14 +305,14 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
     >
       <MenuRow
         Icon={ExternalLink}
-        label="Open in"
+        label={t('menu.session.openIn')}
         shortcut=""
         disabled
-        hint="External app — v0.1.x"
+        hint={t('menu.session.externalAppHint')}
       />
       <MenuRow
         Icon={sessionFlags?.pinned ? PinOff : Pin}
-        label={sessionFlags?.pinned ? 'Unpin' : 'Pin'}
+        label={sessionFlags?.pinned ? t('menu.session.unpin') : t('menu.session.pin')}
         shortcut="P"
         onClick={() => {
           toggleFlag(sessionId, 'pinned');
@@ -290,26 +321,38 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
       />
       <MenuRow
         Icon={Circle}
-        label={sessionFlags?.unread ? 'Mark as read' : 'Mark as unread'}
+        label={
+          sessionFlags?.unread ? t('menu.session.markRead') : t('menu.session.markUnread')
+        }
         shortcut="U"
         onClick={() => {
           toggleFlag(sessionId, 'unread');
           onClose();
         }}
       />
-      <MenuRow Icon={Pencil} label="Rename" shortcut="R" onClick={() => setRenaming(true)} />
-      <MenuRow Icon={GitFork} label="Fork" shortcut="F" onClick={() => void doFork()} />
+      <MenuRow
+        Icon={Pencil}
+        label={t('menu.session.rename')}
+        shortcut="R"
+        onClick={() => setRenaming(true)}
+      />
+      <MenuRow
+        Icon={GitFork}
+        label={t('menu.session.fork')}
+        shortcut="F"
+        onClick={() => void doFork()}
+      />
       <MenuRow
         Icon={Undo2}
-        label="Rewind 1 turn"
+        label={t('menu.session.rewindOneTurn')}
         shortcut="W"
         onClick={() => void doRewind()}
         disabled={userMessages.length === 0}
-        hint={userMessages.length === 0 ? 'No turns yet' : undefined}
+        hint={userMessages.length === 0 ? t('menu.session.noTurnsYet') : undefined}
       />
       <MenuRow
         Icon={Network}
-        label={showLineage ? 'Hide lineage' : 'Show lineage'}
+        label={showLineage ? t('menu.session.hideLineage') : t('menu.session.showLineage')}
         shortcut="L"
         onClick={() => setShowLineage((v) => !v)}
       />
@@ -324,10 +367,16 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
           />
         </div>
       )}
-      <MenuRow Icon={FolderInput} label="Move to group" shortcut="" disabled hint="v0.1.x" />
+      <MenuRow
+        Icon={FolderInput}
+        label={t('menu.session.moveToGroup')}
+        shortcut=""
+        disabled
+        hint="v0.1.x"
+      />
       <MenuRow
         Icon={sessionFlags?.archived ? ArchiveRestore : Archive}
-        label={sessionFlags?.archived ? 'Unarchive' : 'Archive'}
+        label={sessionFlags?.archived ? t('menu.session.unarchive') : t('menu.session.archive')}
         shortcut="A"
         onClick={() => {
           toggleFlag(sessionId, 'archived');
@@ -335,7 +384,13 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
         }}
       />
       <div className="border-t border-border-default my-1" />
-      <MenuRow Icon={Trash2} label="Delete" shortcut="D" onClick={() => void doDelete()} danger />
+      <MenuRow
+        Icon={Trash2}
+        label={t('menu.session.delete')}
+        shortcut="D"
+        onClick={() => void doDelete()}
+        danger
+      />
     </div>
   );
 }

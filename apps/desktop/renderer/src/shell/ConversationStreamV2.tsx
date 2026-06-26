@@ -37,13 +37,18 @@ const EMPTY_EVENTS: readonly SessionEvent[] = [];
 const EMPTY_USER_MESSAGES: readonly UserMessage[] = [];
 const EMPTY_QUEUED_USER_MESSAGES: readonly QueuedUserMessage[] = [];
 const EMPTY_WORKFLOW_NOTICES: readonly WorkflowNoticeMessage[] = [];
-const PROGRAMMATIC_SCROLL_GUARD_MS = 400;
+const INSTANT_PROGRAMMATIC_SCROLL_GUARD_MS = 120;
+const SMOOTH_PROGRAMMATIC_SCROLL_GUARD_MS = 400;
 const BOTTOM_DISTANCE_PX = 32;
 const JUMP_TO_BOTTOM_DISTANCE_PX = 100;
 const USER_SCROLL_INTENT_DELTA_PX = 4;
 
 function getDistanceFromBottom(el: HTMLDivElement): number {
   return Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight);
+}
+
+function isDocumentActiveForAutoFollow(): boolean {
+  return !document.hidden && document.hasFocus();
 }
 import {
   AssistantBubble,
@@ -357,6 +362,7 @@ export function ConversationStreamV2(): JSX.Element {
   const contentRef = useRef<HTMLDivElement | null>(null);
   const wasAtBottomRef = useRef<boolean>(true);
   const touchStartYRef = useRef<number | null>(null);
+  const autoFollowRafRef = useRef<number | null>(null);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   // 每个 tool_group 的展开状态；默认折叠
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -478,17 +484,28 @@ export function ConversationStreamV2(): JSX.Element {
   //   4. handleScroll 误以为用户上滚了 → wasAtBottomRef.current = false
   //   5. 后续 observer 看到 false → 停止 follow → 屏幕卡在中间
   //
-  // 守卫：程序滚动前打 timestamp，handleScroll 在 PROGRAMMATIC_SCROLL_GUARD_MS 内跳过更新。
+  // 守卫：程序滚动前记录 ignore-until，handleScroll 在窗口内跳过更新。
   // 用户真的上滚时无 timestamp / 已过期 → 正常处理。
   //
   // 时钟源：performance.now() 而非 Date.now() —— 后者随系统时钟可跳变 (NTP / DST)，
   //   监测短时间间隔 (<1s) 必须用单调 monotonic clock.
-  // 时长：400ms 覆盖 jumpToBottom 的 `behavior:'smooth'` 动画 (~300ms) + 余量；
-  //   ResizeObserver 阶段一般 16-50ms 也包在内。
-  const lastProgrammaticScrollRef = useRef<number>(0);
+  // ResizeObserver 的 instant follow 只需要短守卫；jumpToBottom 的 smooth scroll 用 400ms。
+  const programmaticScrollIgnoreUntilRef = useRef<number>(0);
 
-  function markProgrammaticScroll(): void {
-    lastProgrammaticScrollRef.current = performance.now();
+  function markProgrammaticScroll(guardMs = INSTANT_PROGRAMMATIC_SCROLL_GUARD_MS): void {
+    programmaticScrollIgnoreUntilRef.current = performance.now() + guardMs;
+  }
+
+  function clearProgrammaticScrollGuard(): void {
+    programmaticScrollIgnoreUntilRef.current = 0;
+  }
+
+  function scrollToBottomNow(
+    scroller: HTMLDivElement,
+    guardMs = INSTANT_PROGRAMMATIC_SCROLL_GUARD_MS,
+  ): void {
+    markProgrammaticScroll(guardMs);
+    scroller.scrollTop = scroller.scrollHeight;
   }
 
   function syncFollowStateFromScrollPosition(el: HTMLDivElement): void {
@@ -514,15 +531,30 @@ export function ConversationStreamV2(): JSX.Element {
     });
   }
 
+  function scheduleAutoFollow(scroller: HTMLDivElement): void {
+    if (autoFollowRafRef.current !== null) return;
+    autoFollowRafRef.current = requestAnimationFrame(() => {
+      autoFollowRafRef.current = null;
+      if (scrollRef.current !== scroller) return;
+      if (!isDocumentActiveForAutoFollow()) return;
+      if (wasAtBottomRef.current) {
+        scrollToBottomNow(scroller);
+        setShowJumpToBottom(false);
+      } else {
+        syncJumpButtonFromScrollPosition(scroller);
+      }
+    });
+  }
+
   function handleScroll(e: React.UIEvent<HTMLDivElement>): void {
     // 守卫期内的 scroll 事件来自 ResizeObserver / smooth scroll 自己的 scrollTop 赋值，
     // 不视为用户上滚
-    if (performance.now() - lastProgrammaticScrollRef.current < PROGRAMMATIC_SCROLL_GUARD_MS)
-      return;
+    if (performance.now() < programmaticScrollIgnoreUntilRef.current) return;
     syncFollowStateFromScrollPosition(e.currentTarget);
   }
 
   function handleWheel(e: ReactWheelEvent<HTMLDivElement>): void {
+    clearProgrammaticScrollGuard();
     const scroller = e.currentTarget;
     const deltaY = e.deltaY;
     const scrollTopBefore = scroller.scrollTop;
@@ -604,22 +636,38 @@ export function ConversationStreamV2(): JSX.Element {
     const content = contentRef.current;
     if (!scroller || !content) return;
     const ro = new ResizeObserver(() => {
-      if (wasAtBottomRef.current) {
-        markProgrammaticScroll();
-        scroller.scrollTop = scroller.scrollHeight;
-        setShowJumpToBottom(false);
-      } else {
-        setShowJumpToBottom(getDistanceFromBottom(scroller) > JUMP_TO_BOTTOM_DISTANCE_PX);
-      }
+      if (!isDocumentActiveForAutoFollow()) return;
+      scheduleAutoFollow(scroller);
     });
     ro.observe(content);
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      if (autoFollowRafRef.current !== null) {
+        cancelAnimationFrame(autoFollowRafRef.current);
+        autoFollowRafRef.current = null;
+      }
+    };
+  }, [currentSessionId]);
+
+  useEffect(() => {
+    const catchUpAfterFocus = (): void => {
+      if (!isDocumentActiveForAutoFollow()) return;
+      const scroller = scrollRef.current;
+      if (!scroller) return;
+      if (wasAtBottomRef.current) scheduleAutoFollow(scroller);
+      else syncJumpButtonFromScrollPosition(scroller);
+    };
+    window.addEventListener('focus', catchUpAfterFocus);
+    document.addEventListener('visibilitychange', catchUpAfterFocus);
+    return () => {
+      window.removeEventListener('focus', catchUpAfterFocus);
+      document.removeEventListener('visibilitychange', catchUpAfterFocus);
+    };
   }, [currentSessionId]);
 
   useEffect(() => {
     if (scrollRef.current) {
-      markProgrammaticScroll();
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollToBottomNow(scrollRef.current);
       wasAtBottomRef.current = true;
       setShowJumpToBottom(false);
       setExpanded(new Set());
@@ -628,7 +676,7 @@ export function ConversationStreamV2(): JSX.Element {
 
   function jumpToBottom(): void {
     if (!scrollRef.current) return;
-    markProgrammaticScroll();
+    markProgrammaticScroll(SMOOTH_PROGRAMMATIC_SCROLL_GUARD_MS);
     wasAtBottomRef.current = true;
     setShowJumpToBottom(false);
     scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });

@@ -12,6 +12,7 @@ import { resolveActiveModel } from '../../shell/resolveActiveModel.js';
 import { useSurfaceStore } from '../../store/surface.js';
 import { sessionMatchesScope } from '../../lib/sessionScope.js';
 import { shouldActivateSessionForCurrentScope } from '../../lib/sessionActivation.js';
+import { invokeWithTimeout } from '../../lib/ipcInvokeWithTimeout.js';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 
 // 'mock' 永远保留——FEATURE_003 Mock adapter 的入口，未配 key 时也能跑通整个流程。
@@ -184,6 +185,7 @@ export function SessionList(): JSX.Element {
     const result = await bridge.invoke('session.delete', { sessionId });
     if (result.ok && result.data.deleted) {
       removeSession(sessionId);
+      window.dispatchEvent(new Event('kodax-space.focus-textarea'));
     }
   }
 
@@ -205,7 +207,10 @@ export function SessionList(): JSX.Element {
       setRenaming(null);
       return;
     }
-    const result = await bridge.invoke('session.setTitle', { sessionId: renaming, title: trimmed });
+    const result = await invokeWithTimeout(bridge, 'session.setTitle', {
+      sessionId: renaming,
+      title: trimmed,
+    });
     setRenaming(null);
     if (result.ok && currentProjectPath) {
       await refreshSessions(currentProjectPath, replaceSessionsForScope, currentSurface);

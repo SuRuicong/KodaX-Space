@@ -70,6 +70,7 @@ test('previewFile 去重：同 (session,title,kind) 复用 id 升版本，不同
     assert.equal(read?.content, '<h1>v2</h1>');
     assert.equal(read?.version, 2);
   } finally {
+    store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }
 });

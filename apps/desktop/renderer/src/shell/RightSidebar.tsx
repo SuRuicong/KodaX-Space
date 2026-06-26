@@ -11,7 +11,7 @@
 //   - Working folder: currentProjectPath
 //   - Context:        eventsBySession[sid].tool_start 投影
 //
-// 每节标题右侧的 ⤢ 按钮 → requestPopout(kind) 弹原 overlay 看完整细节。Plan/Workers/Diff overlays 复用。
+// 每节标题右侧的 ⤢ 按钮 → 同步通知 Shell 切 popout，看完整细节。Plan/Workers/Diff overlays 复用。
 //
 // CommandToolbar 的 POPOUTS 移除了 tasks / plan（避免两个入口重复触发 PlanPanel / TasksPanel）；
 // Diff / Preview / Terminal / Agents / MCP 保留。
@@ -42,6 +42,8 @@ import {
   type SidebarTodoStatus,
 } from './sidebarPlanView.js';
 import { useI18n } from '../i18n/I18nProvider.js';
+import { requestShellPopout } from './popoutControl.js';
+import type { PopoutKind } from './CommandToolbar.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 
@@ -60,7 +62,6 @@ export function RightSidebar({
   const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const { artifacts } = useArtifacts(currentSessionId);
-  const requestPopout = useAppStore((s) => s.requestPopout);
   const hasArtifacts = artifacts.length > 0;
   const [tab, setTab] = useState<'overview' | 'artifact'>('overview');
   // 锁存"对话卡片点选的 artifact id"，传给 ArtifactsView——它从概览切过来时是新挂载、
@@ -113,7 +114,7 @@ export function RightSidebar({
           {showArtifact && (
             <button
               type="button"
-              onClick={() => requestPopout('artifact')}
+              onClick={() => requestShellPopout('artifact')}
               title={t('right.expandArtifact')}
               aria-label={t('right.expandArtifact')}
               className="px-2.5 inline-flex items-center justify-center text-fg-muted hover:text-fg-primary hover:bg-surface-3 border-l border-border-default/60"
@@ -167,7 +168,7 @@ function RightSidebarWidthToolbar({
 }): JSX.Element {
   const { t } = useI18n();
   const setRightSidebarWidth = useAppStore((s) => s.setRightSidebarWidth);
-  const effectiveDefaultWidth = clampSidebarWidthPx(defaultWidth);
+  const effectiveDefaultWidth = Math.min(clampSidebarWidthPx(defaultWidth), expandedWidth);
   const currentWidth = width ?? effectiveDefaultWidth;
   const hasRoomToExpand = expandedWidth > effectiveDefaultWidth + 8;
   const isExpanded = hasRoomToExpand && currentWidth >= (effectiveDefaultWidth + expandedWidth) / 2;
@@ -225,21 +226,22 @@ function SidebarTab({
 interface SectionProps {
   title: string;
   defaultOpen?: boolean;
-  /** F041: 设了的话 header 右侧显示 `⤢` 按钮，点击触发 requestPopout(popoutKind)。 */
-  popoutKind?: string;
+  /** F041: 设了的话 header 右侧显示 `⤢` 按钮，点击同步打开/关闭对应 popout。 */
+  popoutKind?: PopoutKind;
   children: React.ReactNode;
 }
 
 function Section({ title, defaultOpen = true, popoutKind, children }: SectionProps): JSX.Element {
   const { t } = useI18n();
   const [open, setOpen] = useState(defaultOpen);
-  const requestPopout = useAppStore((s) => s.requestPopout);
   // v0.1.9 fix: ⤢ 改 toggle —— 当前 popout 已经是 popoutKind 时再点关掉,否则打开。
   const activePopoutKind = useAppStore((s) => s.activePopoutKind);
-  const setActivePopoutKind = useAppStore((s) => s.setActivePopoutKind);
   const isThisPopoutActive = popoutKind !== undefined && activePopoutKind === popoutKind;
   return (
-    <section className="border-b border-border-default/60">
+    <section
+      className="border-b border-border-default/60"
+      data-testid={popoutKind ? `right-sidebar-section-${popoutKind}` : undefined}
+    >
       <div className="w-full px-3 py-2 flex items-center justify-between text-xs uppercase tracking-wider text-fg-muted">
         <button
           type="button"
@@ -259,11 +261,9 @@ function Section({ title, defaultOpen = true, popoutKind, children }: SectionPro
               onClick={(e) => {
                 e.stopPropagation();
                 if (isThisPopoutActive) {
-                  // Shell 监听 store 不太顺手关 popout (它是 useState), 这里走 setActivePopoutKind(null)
-                  // + Shell.tsx 加 useEffect 监听 store 同步关。下面 Shell 改动: 双向同步。
-                  setActivePopoutKind(null);
+                  requestShellPopout(null);
                 } else {
-                  requestPopout(popoutKind);
+                  requestShellPopout(popoutKind);
                 }
               }}
               className="w-5 h-5 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
@@ -542,7 +542,6 @@ function ChangesSection(): JSX.Element | null {
   const { t } = useI18n();
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
-  const requestPopout = useAppStore((s) => s.requestPopout);
 
   // 监听 write/edit/bash tool_result → debounce 触发 refetch（沿用 StashNotice 同款逻辑）
   const lastToolResultMarker = useAppStore((s) => {
@@ -578,9 +577,9 @@ function ChangesSection(): JSX.Element | null {
   const pickFile = useCallback(
     (filePath: string): void => {
       useAppStore.getState().setLastDiffPath(filePath);
-      requestPopout('diff');
+      requestShellPopout('diff');
     },
-    [requestPopout],
+    [],
   );
   const tree = useMemo(() => buildChangeTree(snapshot?.files ?? []), [snapshot?.files]);
 

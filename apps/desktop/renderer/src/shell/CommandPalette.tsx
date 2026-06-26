@@ -24,6 +24,7 @@ import { useAppStore } from '../store/appStore.js';
 import { createMatcher, type FuzzyMatcher } from '../lib/fuzzy.js';
 import { requestInsert } from './inputBridge.js';
 import { pushToast } from '../store/toastStore.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 import {
   gatherCommands,
   type CommandItem,
@@ -36,18 +37,18 @@ import {
  * Replaces an earlier `window` CustomEvent design that was ambient — any
  * renderer JS could fire it.
  */
-function emitInsert(text: string): void {
+function emitInsert(text: string, failureMessage: string): void {
   const ok = requestInsert(text);
   if (!ok) {
-    pushToast('Could not insert — input not ready', 'warning', 2000);
+    pushToast(failureMessage, 'warning', 2000);
   }
 }
 
-const KIND_BADGE: Record<CommandKind, { label: string; cls: string }> = {
-  action: { label: 'Action', cls: 'text-warn bg-warn/10' },
-  session: { label: 'Session', cls: 'text-run bg-run/10' },
-  file: { label: 'File', cls: 'text-ok bg-ok/10' },
-  slash: { label: 'Slash', cls: 'text-thinking bg-thinking/10' },
+const KIND_BADGE_CLASS: Record<CommandKind, string> = {
+  action: 'text-warn bg-warn/10',
+  session: 'text-run bg-run/10',
+  file: 'text-ok bg-ok/10',
+  slash: 'text-thinking bg-thinking/10',
 };
 
 const GROUP_ORDER: readonly CommandKind[] = ['action', 'session', 'file', 'slash'];
@@ -58,6 +59,7 @@ interface CommandPaletteProps {
 }
 
 function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Element | null {
+  const { t, effectiveLocale } = useI18n();
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const [query, setQuery] = useState('');
@@ -107,7 +109,9 @@ function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Element | n
       projectPath: currentProjectPath,
       sessionId: currentSessionId,
       close: onClose,
-      insertToInput: emitInsert,
+      t,
+      locale: effectiveLocale,
+      insertToInput: (text) => emitInsert(text, t('commandPalette.insertNotReady')),
     };
     void gatherCommands(ctx).then((next) => {
       if (cancelled) return;
@@ -117,7 +121,7 @@ function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Element | n
     return () => {
       cancelled = true;
     };
-  }, [open, currentProjectPath, currentSessionId, onClose]);
+  }, [open, currentProjectPath, currentSessionId, onClose, effectiveLocale, t]);
 
   // Fuzzy filter — items 或 query 变化时重算
   const filtered = useMemo((): readonly { item: CommandItem; score: number }[] => {
@@ -205,7 +209,7 @@ function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Element | n
       onClick={onClose}
       onKeyDown={onKeyDown}
       role="dialog"
-      aria-label="Command palette"
+      aria-label={t('commandPalette.label')}
     >
       <div
         className="glass lift ix-zone border border-border-default rounded-lg w-[640px] max-w-[90vw] max-h-[70vh] flex flex-col overflow-hidden"
@@ -218,17 +222,21 @@ function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Element | n
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Type a command, file, session, or /slash…"
+            placeholder={t('commandPalette.queryPlaceholder')}
             className="w-full bg-transparent text-fg-primary placeholder:text-fg-faint outline-none text-sm"
-            aria-label="Command query"
+            aria-label={t('commandPalette.queryAria')}
           />
         </div>
         <ul ref={listRef} className="overflow-y-auto flex-1 text-[13px]">
           {loading && filtered.length === 0 && (
-            <li className="px-3 py-4 text-fg-muted text-center">Loading…</li>
+            <li className="px-3 py-4 text-fg-muted text-center">
+              {t('commandPalette.loading')}
+            </li>
           )}
           {!loading && filtered.length === 0 && (
-            <li className="px-3 py-4 text-fg-muted text-center">No matches</li>
+            <li className="px-3 py-4 text-fg-muted text-center">
+              {t('commandPalette.noMatches')}
+            </li>
           )}
           {GROUP_ORDER.flatMap((kind) => {
             const arr = grouped.get(kind);
@@ -238,7 +246,7 @@ function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Element | n
                 key={`group:${kind}`}
                 className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wider text-fg-muted"
               >
-                {KIND_BADGE[kind].label}
+                {t(`commandPalette.kind.${kind}`)}
               </li>,
               ...arr.map(({ item, flatIdx }) => {
                 const isActive = flatIdx === activeIdx;
@@ -255,9 +263,9 @@ function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Element | n
                       }`}
                     >
                       <span
-                        className={`text-[9px] px-1 py-0.5 rounded uppercase tracking-wider ${KIND_BADGE[kind].cls}`}
+                        className={`text-[9px] px-1 py-0.5 rounded uppercase tracking-wider ${KIND_BADGE_CLASS[kind]}`}
                       >
-                        {KIND_BADGE[kind].label}
+                        {t(`commandPalette.kind.${kind}`)}
                       </span>
                       <span className="truncate flex-1">{item.label}</span>
                       {item.hint && (
@@ -276,9 +284,9 @@ function CommandPalette({ open, onClose }: CommandPaletteProps): JSX.Element | n
           })}
         </ul>
         <div className="border-t border-border-default px-3 py-1.5 text-[11px] text-fg-muted flex gap-3">
-          <span>↑↓ navigate</span>
-          <span>Enter to select</span>
-          <span>Esc to close</span>
+          <span>{t('commandPalette.navigateHint')}</span>
+          <span>{t('commandPalette.selectHint')}</span>
+          <span>{t('commandPalette.closeHint')}</span>
         </div>
       </div>
     </div>

@@ -41,6 +41,14 @@ contextBridge.exposeInMainWorld('kodaxSpace', {
   platform: platformValue,
 
   /**
+   * Narrow boot signal: renderer calls this after React commits and a frame has
+   * had a chance to paint. It is intentionally not a generic IPC escape hatch.
+   */
+  rendererReady: (): void => {
+    ipcRenderer.send('boot.rendererReady');
+  },
+
+  /**
    * Resolve the OS path for a user-provided File object from drag/drop.
    * The renderer never receives Electron itself; this keeps the capability
    * narrow and tied to a real browser File handle.

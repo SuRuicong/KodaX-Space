@@ -55,8 +55,15 @@ export function PopoutOverlay({ kind, onClose }: PopoutOverlayProps): JSX.Elemen
     : `${POPOUT_WIDTH[kind] ?? DEFAULT_POPOUT_WIDTH} max-w-[95vw]`;
   return (
     <>
-      <div className="absolute inset-0 bg-black/30 z-30" onClick={onClose} aria-hidden />
+      <div
+        className="absolute inset-0 bg-black/30 z-30"
+        data-testid="popout-backdrop"
+        onClick={onClose}
+        aria-hidden
+      />
       <aside
+        data-testid={`popout-${kind}`}
+        data-popout-kind={kind}
         // `!absolute`：`.glass`（styles.css，无 @layer 的裸规则）带 `position: relative`，
         // 在级联里永远压过 Tailwind `@layer utilities` 的 `.absolute` —— 不加 important 这个
         // 浮层会退回文档流、掉到 BottomBar(输入框) 下面（F060 起的回归）。important utility

@@ -19,6 +19,8 @@ export interface NavGuardDeps {
   readonly devServerUrl: string | undefined;
   /** file:// prefix (with trailing slash) of the packaged renderer dist. */
   readonly allowedFilePrefix: string;
+  /** Optional trusted data: URL prefix for a main-process generated boot page. */
+  readonly allowedDataUrlPrefix?: string;
   /** Open an external https URL in the system browser (inject shell.openExternal). */
   readonly openExternal: (url: string) => void;
 }
@@ -33,7 +35,10 @@ export function installNavigationGuards(wc: WebContents, deps: NavGuardDeps): vo
   wc.on('will-navigate', (event, url) => {
     const isDevServer = Boolean(deps.devServerUrl && url.startsWith(deps.devServerUrl));
     const isAllowedLocalFile = url.startsWith(deps.allowedFilePrefix);
-    if (isDevServer || isAllowedLocalFile) return;
+    const isAllowedDataUrl = Boolean(
+      deps.allowedDataUrlPrefix && url.startsWith(deps.allowedDataUrlPrefix),
+    );
+    if (isDevServer || isAllowedLocalFile || isAllowedDataUrl) return;
 
     event.preventDefault();
     if (url.startsWith('https://')) deps.openExternal(url);

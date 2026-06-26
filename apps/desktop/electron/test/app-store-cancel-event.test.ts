@@ -69,6 +69,31 @@ test('appendEvent accepts a later cancelled event after a new session_start', ()
   );
 });
 
+test('appendEvent coalesces adjacent stream deltas without crossing event boundaries', () => {
+  const store = useAppStore.getState();
+  store.appendEvent({ kind: 'text_delta', sessionId: SID, text: 'Hel' });
+  store.appendEvent({ kind: 'text_delta', sessionId: SID, text: 'lo' });
+  store.appendEvent({ kind: 'thinking_delta', sessionId: SID, text: 'Plan ' });
+  store.appendEvent({ kind: 'thinking_delta', sessionId: SID, text: 'A' });
+  store.appendEvent({
+    kind: 'tool_start',
+    sessionId: SID,
+    toolId: 'tool_1',
+    toolName: 'read',
+    input: { path: 'README.md' },
+  });
+  store.appendEvent({ kind: 'text_delta', sessionId: SID, text: 'Done' });
+
+  const events = useAppStore.getState().eventsBySession[SID] ?? [];
+  assert.deepEqual(
+    events.map((event) => event.kind),
+    ['text_delta', 'thinking_delta', 'tool_start', 'text_delta'],
+  );
+  assert.equal(events[0]?.kind === 'text_delta' ? events[0].text : undefined, 'Hello');
+  assert.equal(events[1]?.kind === 'thinking_delta' ? events[1].text : undefined, 'Plan A');
+  assert.equal(events[3]?.kind === 'text_delta' ? events[3].text : undefined, 'Done');
+});
+
 test('mid_turn_user_prompt promotes a pending interrupt queued message', () => {
   const store = useAppStore.getState();
   const localId = store.appendQueuedUserMessage(SID, {
@@ -152,6 +177,55 @@ test('appendEvent turns todo drift warnings into session notifications', () => {
   assert.equal(state.notifications[0]?.sessionId, SID);
   assert.match(state.notifications[0]?.text ?? '', /Todo list drift detected/);
   assert.match(state.notifications[0]?.text ?? '', /Update tests/);
+});
+
+test('appendEvent coalesces repeated todo drift warnings for a session', () => {
+  useAppStore.setState({
+    notifications: [
+      {
+        id: `todo-drift:${SID}:1:tool_old`,
+        severity: 'info',
+        text: 'legacy drift notice',
+        sessionId: SID,
+        createdAt: 1,
+      },
+    ],
+  });
+  const store = useAppStore.getState();
+  store.appendEvent({
+    kind: 'todo_drift_warning',
+    sessionId: SID,
+    warning: {
+      kind: 'work_started_without_claimed_todo',
+      toolName: 'read',
+      toolCallId: 'tool_1',
+      count: 1,
+      pendingCount: 6,
+      openCount: 6,
+      firstPendingTodoId: 'todo_1',
+      firstPendingTodoSubject: 'Review runtime changes',
+    },
+  });
+  store.appendEvent({
+    kind: 'todo_drift_warning',
+    sessionId: SID,
+    warning: {
+      kind: 'work_started_without_claimed_todo',
+      toolName: 'grep',
+      toolCallId: 'tool_2',
+      count: 2,
+      pendingCount: 6,
+      openCount: 6,
+      firstPendingTodoId: 'todo_1',
+      firstPendingTodoSubject: 'Review runtime changes',
+    },
+  });
+
+  const state = useAppStore.getState();
+  assert.equal((state.eventsBySession[SID] ?? []).length, 2);
+  assert.equal(state.notifications.length, 1);
+  assert.equal(state.notifications[0]?.id, `todo-drift:${SID}`);
+  assert.match(state.notifications[0]?.text ?? '', /grep/);
 });
 
 test('upsertWorkflowRun exposes workflow event message as latest live message', () => {

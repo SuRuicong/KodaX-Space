@@ -24,7 +24,12 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import type { LanguageModeT, LicenseStatusT, ProviderInfo } from '@kodax-space/space-ipc-schema';
+import type {
+  LanguageModeT,
+  LicenseStatusT,
+  ProviderInfo,
+  SupportedLocaleT,
+} from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
 import { localeDisplayName, useI18n } from '../../i18n/I18nProvider.js';
 import type { MessageKey } from '../../i18n/messages.js';
@@ -46,6 +51,8 @@ interface SettingsTabMeta {
   readonly descriptionKey: MessageKey;
   readonly Icon: LucideIcon;
 }
+
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
 const TABS: readonly SettingsTabMeta[] = [
   {
@@ -513,6 +520,7 @@ function NativeCompletionNotificationToggle(): JSX.Element {
 }
 
 function LicensePanel(): JSX.Element {
+  const { t, effectiveLocale } = useI18n();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [status, setStatus] = useState<LicenseStatusT | null>(null);
   const [busy, setBusy] = useState<'refresh' | 'import' | 'export' | null>(null);
@@ -521,7 +529,6 @@ function LicensePanel(): JSX.Element {
 
   useEffect(() => {
     void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function refresh(): Promise<void> {
@@ -544,7 +551,7 @@ function LicensePanel(): JSX.Element {
 
     const filePath = window.kodaxSpace.getPathForFile(file);
     if (!filePath) {
-      setErr('Could not resolve the selected license file path.');
+      setErr(t('license.resolveFilePathError'));
       return;
     }
 
@@ -578,20 +585,20 @@ function LicensePanel(): JSX.Element {
         setErr(`${result.error.code}: ${result.error.message}`);
         return;
       }
-      setMessage(`Request exported: ${result.data.filePath}`);
+      setMessage(t('license.requestExported', { path: result.data.filePath }));
     } finally {
       setBusy(null);
     }
   }
 
-  const statusText = status ? formatLicenseStatus(status) : 'Loading';
+  const statusText = status ? formatLicenseStatus(status, t) : t('common.loading');
   const statusClass = status ? licenseStatusClass(status.status) : 'text-fg-muted';
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-5">
       <SettingsSection
-        title="License"
-        description="Community status and offline enterprise activation."
+        title={t('settings.license')}
+        description={t('settings.license.description')}
         icon={ShieldCheck}
       >
         <input
@@ -607,7 +614,9 @@ function LicensePanel(): JSX.Element {
             <div className="min-w-0">
               <div className={`text-base font-semibold ${statusClass}`}>{statusText}</div>
               <div className="mt-1 text-xs text-fg-muted">
-                {status?.customer ? `Licensed to ${status.customer}` : 'Community use'}
+                {status?.customer
+                  ? t('license.customer', { customer: status.customer })
+                  : t('license.communityUse')}
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -622,7 +631,7 @@ function LicensePanel(): JSX.Element {
                 ) : (
                   <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.8} />
                 )}
-                Import
+                {t('license.import')}
               </button>
               <button
                 type="button"
@@ -635,15 +644,15 @@ function LicensePanel(): JSX.Element {
                 ) : (
                   <KeyRound className="h-3.5 w-3.5" strokeWidth={1.8} />
                 )}
-                Export request
+                {t('license.exportRequest')}
               </button>
               <button
                 type="button"
                 onClick={() => void refresh()}
                 disabled={busy !== null}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-default bg-surface text-fg-secondary hover:bg-hover-bg hover:text-fg-primary disabled:cursor-not-allowed disabled:opacity-50"
-                title="Refresh license status"
-                aria-label="Refresh license status"
+                title={t('license.refreshStatus')}
+                aria-label={t('license.refreshStatus')}
               >
                 <RefreshCw
                   className={`h-3.5 w-3.5 ${busy === 'refresh' ? 'animate-spin' : ''}`}
@@ -656,21 +665,31 @@ function LicensePanel(): JSX.Element {
 
           <div className="grid gap-x-6 gap-y-2 border-t border-border-default pt-3 text-xs sm:grid-cols-2">
             <LicenseField
-              label="Edition"
-              value={status ? formatEdition(status.edition) : 'Loading'}
+              label={t('license.field.edition')}
+              value={status ? formatEdition(status.edition, t) : t('common.loading')}
             />
-            <LicenseField label="Kind" value={status?.licenseKind ?? 'none'} />
             <LicenseField
-              label="Expires"
-              value={status?.expiresAt ? formatDate(status.expiresAt) : 'none'}
+              label={t('license.field.kind')}
+              value={formatLicenseKind(status?.licenseKind ?? null, t)}
             />
-            <LicenseField label="Source" value={status?.enforcementSource ?? 'none'} />
             <LicenseField
-              label="Features"
-              value={status && status.features.length > 0 ? status.features.join(', ') : 'none'}
+              label={t('license.field.expires')}
+              value={status?.expiresAt ? formatDate(status.expiresAt, effectiveLocale) : t('license.none')}
+            />
+            <LicenseField
+              label={t('license.field.source')}
+              value={formatLicenseSource(status?.enforcementSource ?? null, t)}
+            />
+            <LicenseField
+              label={t('license.field.features')}
+              value={
+                status && status.features.length > 0 ? status.features.join(', ') : t('license.none')
+              }
               wide
             />
-            {status?.reason && <LicenseField label="Reason" value={status.reason} wide />}
+            {status?.reason && (
+              <LicenseField label={t('license.field.reason')} value={status.reason} wide />
+            )}
           </div>
 
           {message && (
@@ -708,17 +727,39 @@ function LicenseField({
   );
 }
 
-function formatEdition(edition: LicenseStatusT['edition']): string {
-  if (edition === 'community') return 'Community';
-  if (edition === 'professional') return 'Professional';
-  return 'Enterprise';
+function formatEdition(edition: LicenseStatusT['edition'], t: Translate): string {
+  if (edition === 'community') return t('license.edition.community');
+  if (edition === 'professional') return t('license.edition.professional');
+  return t('license.edition.enterprise');
 }
 
-function formatLicenseStatus(status: LicenseStatusT): string {
-  if (status.status === 'licensed') return formatEdition(status.edition);
-  if (status.status === 'community') return 'Community';
-  if (status.status === 'required') return 'License required';
-  return status.status[0].toUpperCase() + status.status.slice(1);
+function formatLicenseKind(kind: LicenseStatusT['licenseKind'], t: Translate): string {
+  if (kind === null) return t('license.none');
+  if (kind === 'evaluation') return t('license.kind.evaluation');
+  if (kind === 'commercial') return t('license.kind.commercial');
+  if (kind === 'partner') return t('license.kind.partner');
+  if (kind === 'dev') return t('license.kind.dev');
+  return t('license.kind.test');
+}
+
+function formatLicenseSource(
+  source: LicenseStatusT['enforcementSource'] | null,
+  t: Translate,
+): string {
+  if (source === null || source === 'none') return t('license.source.none');
+  if (source === 'build-metadata') return t('license.source.buildMetadata');
+  if (source === 'signed-policy-manifest') return t('license.source.signedPolicyManifest');
+  return t('license.source.devOverride');
+}
+
+function formatLicenseStatus(status: LicenseStatusT, t: Translate): string {
+  if (status.status === 'licensed') return formatEdition(status.edition, t);
+  if (status.status === 'community') return t('license.edition.community');
+  if (status.status === 'required') return t('license.status.required');
+  if (status.status === 'expired') return t('license.status.expired');
+  if (status.status === 'invalid') return t('license.status.invalid');
+  if (status.status === 'degraded') return t('license.status.degraded');
+  return status.status;
 }
 
 function licenseStatusClass(status: LicenseStatusT['status']): string {
@@ -727,10 +768,10 @@ function licenseStatusClass(status: LicenseStatusT['status']): string {
   return 'text-danger';
 }
 
-function formatDate(value: string): string {
+function formatDate(value: string, locale: SupportedLocaleT): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
+  return date.toLocaleString(locale);
 }
 
 function ProvidersPanel(): JSX.Element {

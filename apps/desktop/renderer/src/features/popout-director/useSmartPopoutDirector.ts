@@ -4,8 +4,8 @@
 //
 // Lifecycle:
 //   - Mounted at the top of Shell (alongside the activePopout state)
-//   - Reads events for currentSessionId from store via selector
-//   - Each render runs decideAutoPromote(events, activePopout, promoted)
+//   - Reads only the latest popout-relevant tail event for currentSessionId from store
+//   - Each relevant event runs decideAutoPromote([event], activePopout, promoted)
 //   - Non-null result → calls onPromote(kind) + marks promoted
 //
 // 副作用纯单向 (events change → maybe set popout); 没有内部 state。
@@ -19,6 +19,7 @@ import { decideAutoPromote, type SmartPopoutKind } from './rules.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 const EMPTY_PROMOTED: ReadonlySet<SmartPopoutKind> = new Set<SmartPopoutKind>();
+const RELEVANT_EVENT_LOOKBACK = 32;
 
 interface UseSmartPopoutDirectorArgs {
   /** 当前 active popout (Shell state)。非 null 时 director 不会 promote。 */
@@ -37,9 +38,19 @@ export function useSmartPopoutDirector({
   // session 时，本该首次自动弹的 plan/diff/tasks 因已 promoted 而永不弹，feature 静默失效。
   const surfaceIsCode = useSurfaceStore((s) => s.currentSurface === 'code');
   const sessionId = useAppStore((s) => s.currentSessionId);
-  const events = useAppStore((s) =>
-    sessionId ? s.eventsBySession[sessionId] ?? EMPTY_EVENTS : EMPTY_EVENTS,
-  );
+  const latestRelevantEvent = useAppStore((s) => {
+    if (!sessionId) return null;
+    const events = s.eventsBySession[sessionId];
+    if (!events || events.length === 0) return null;
+    const start = Math.max(0, events.length - RELEVANT_EVENT_LOOKBACK);
+    for (let i = events.length - 1; i >= start; i--) {
+      const event = events[i];
+      if (!event) continue;
+      if (event.kind === 'todo_update' || event.kind === 'tool_start') return event;
+      if (event.kind === 'session_start') break;
+    }
+    return null;
+  });
   // KX-I-02 review HIGH-2 fix: 只 subscribe **当前 session** 的 promoted Set 引用,而非
   // 整个 Map。这样别 session markPromoted 时 (会换 outer map 引用) 本 hook 不会被惊动重跑。
   // EMPTY_PROMOTED 是模块级稳定引用,sessionId === null 时 selector 不会每 render 新建。
@@ -54,11 +65,21 @@ export function useSmartPopoutDirector({
     if (!enabled) return;
     if (!surfaceIsCode) return; // Partner 面不跑 director（见上）
     if (sessionId === null) return;
+    const events = latestRelevantEvent ? [latestRelevantEvent] : EMPTY_EVENTS;
     const decision = decideAutoPromote({ events, activePopout, promoted });
     if (decision === null) return;
     // Mark first — 即便 setActivePopout 之后 trigger re-render,markPromoted 已经写进
     // store,下一帧 selector 拿到 prom 含 decision,decideAutoPromote 不会再 emit。
     markPromoted(sessionId, decision);
     setActivePopout(decision);
-  }, [enabled, surfaceIsCode, sessionId, events, activePopout, promoted, markPromoted, setActivePopout]);
+  }, [
+    enabled,
+    surfaceIsCode,
+    sessionId,
+    latestRelevantEvent,
+    activePopout,
+    promoted,
+    markPromoted,
+    setActivePopout,
+  ]);
 }

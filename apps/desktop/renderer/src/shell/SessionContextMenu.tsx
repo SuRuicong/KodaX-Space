@@ -29,6 +29,8 @@ import { shouldActivateSessionForCurrentScope } from '../lib/sessionActivation.j
 import { useSurfaceStore } from '../store/surface.js';
 import { Caret } from '../components/Caret.js';
 import { Portal } from '../components/Portal.js';
+import { requestConfirm } from '../store/confirmStore.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 
 interface SessionContextMenuProps {
   readonly session: SessionMeta;
@@ -47,6 +49,7 @@ export function SessionContextMenu({
   onClose,
   onStartRename,
 }: SessionContextMenuProps): JSX.Element {
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement | null>(null);
   const toggleFlag = useAppStore((s) => s.toggleSessionFlag);
   const upsertSession = useAppStore((s) => s.upsertSession);
@@ -112,7 +115,7 @@ export function SessionContextMenu({
       sessionId: r.data.newSessionId,
       parentSessionId: session.sessionId,
       forkPointTurnIdx: turnIdx,
-      title: session.title ? `${session.title} (fork)` : 'Forked session',
+      title: session.title ? `${session.title} (fork)` : t('menu.session.forkedTitle'),
       createdAt: r.data.createdAt,
       lastActivityAt: r.data.createdAt,
     };
@@ -145,12 +148,20 @@ export function SessionContextMenu({
   async function onDelete(): Promise<void> {
     onClose();
     if (!window.kodaxSpace) return;
-    const confirmed = window.confirm(
-      `Delete session "${session.title ?? session.sessionId.slice(0, 8)}"? This can't be undone.`,
-    );
+    const confirmed = await requestConfirm({
+      title: t('menu.session.deleteTitle'),
+      message: t('menu.session.deleteMessage', {
+        title: session.title ?? session.sessionId.slice(0, 8),
+      }),
+      confirmLabel: t('menu.session.delete'),
+      danger: true,
+    });
     if (!confirmed) return;
     const r = await window.kodaxSpace.invoke('session.delete', { sessionId: session.sessionId });
-    if (r.ok && r.data.deleted) removeSession(session.sessionId);
+    if (r.ok && r.data.deleted) {
+      removeSession(session.sessionId);
+      window.dispatchEvent(new Event('kodax-space.focus-textarea'));
+    }
   }
 
   // 屏幕边界保护：菜单宽度 192px / 高度估算约 240px；超出右/下视口时翻转
@@ -169,10 +180,10 @@ export function SessionContextMenu({
         style={{ left, top }}
         role="menu"
       >
-        <MenuRow label="Open in" hint="" disabled chevron tip="v0.1.x" />
+        <MenuRow label={t('menu.session.openIn')} hint="" disabled chevron tip="v0.1.x" />
         <Divider />
         <MenuRow
-          label="Pin"
+          label={t('menu.session.pin')}
           hint="P"
           onClick={() => {
             toggleFlag(session.sessionId, 'pinned');
@@ -180,18 +191,24 @@ export function SessionContextMenu({
           }}
         />
         <MenuRow
-          label="Mark as unread"
+          label={t('menu.session.markUnread')}
           hint="U"
           onClick={() => {
             toggleFlag(session.sessionId, 'unread');
             onClose();
           }}
         />
-        <MenuRow label="Rename" hint="R" onClick={onStartRename} />
-        <MenuRow label="Fork" hint="F" onClick={() => void onFork()} />
-        <MenuRow label="Move to group" hint="" disabled chevron tip="v0.1.x" />
+        <MenuRow label={t('menu.session.rename')} hint="R" onClick={onStartRename} />
+        <MenuRow label={t('menu.session.fork')} hint="F" onClick={() => void onFork()} />
         <MenuRow
-          label="Archive"
+          label={t('menu.session.moveToGroup')}
+          hint=""
+          disabled
+          chevron
+          tip="v0.1.x"
+        />
+        <MenuRow
+          label={t('menu.session.archive')}
           hint="A"
           onClick={() => {
             toggleFlag(session.sessionId, 'archived');
@@ -199,7 +216,12 @@ export function SessionContextMenu({
           }}
         />
         <Divider />
-        <MenuRow label="Delete" hint="D" onClick={() => void onDelete()} danger />
+        <MenuRow
+          label={t('menu.session.delete')}
+          hint="D"
+          onClick={() => void onDelete()}
+          danger
+        />
       </div>
     </Portal>
   );

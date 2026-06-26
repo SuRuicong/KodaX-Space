@@ -8,14 +8,33 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { WorkflowPolicyT } from '@kodax-space/space-ipc-schema';
+import { useI18n } from '../../i18n/I18nProvider.js';
+import type { MessageKey } from '../../i18n/messages.js';
 
-const AUTOSTART_OPTS: { value: WorkflowPolicyT['autoStart']; label: string; hint: string }[] = [
-  { value: 'off', label: 'Off', hint: 'Never start workflows from natural language.' },
-  { value: 'confirm', label: 'Confirm', hint: 'Ask once before starting a workflow.' },
-  { value: 'on', label: 'Auto', hint: 'Start matching workflows without confirmation.' },
+const AUTOSTART_OPTS: {
+  value: WorkflowPolicyT['autoStart'];
+  labelKey: MessageKey;
+  hintKey: MessageKey;
+}[] = [
+  {
+    value: 'off',
+    labelKey: 'workflow.autoStart.off',
+    hintKey: 'workflow.autoStart.off.hint',
+  },
+  {
+    value: 'confirm',
+    labelKey: 'workflow.autoStart.confirm',
+    hintKey: 'workflow.autoStart.confirm.hint',
+  },
+  {
+    value: 'on',
+    labelKey: 'workflow.autoStart.on',
+    hintKey: 'workflow.autoStart.on.hint',
+  },
 ];
 
 export function WorkflowPolicySection(): JSX.Element {
+  const { t } = useI18n();
   const [policy, setPolicy] = useState<WorkflowPolicyT | null>(null);
   const [advanced, setAdvanced] = useState(false);
 
@@ -33,16 +52,17 @@ export function WorkflowPolicySection(): JSX.Element {
   return (
     <section className="space-y-3">
       <label className="block text-[11px] font-medium uppercase tracking-wide text-fg-muted">
-        Workflow autostart
+        {t('workflow.autoStart.title')}
       </label>
       <div className="inline-flex overflow-hidden rounded-lg border border-border-default bg-surface">
         {AUTOSTART_OPTS.map((o) => {
           const active = policy?.autoStart === o.value;
+          const hint = t(o.hintKey);
           return (
             <button
               key={o.value}
               type="button"
-              title={o.hint}
+              title={hint}
               aria-pressed={active}
               disabled={!policy}
               onClick={() => void patch({ autoStart: o.value })}
@@ -50,14 +70,15 @@ export function WorkflowPolicySection(): JSX.Element {
                 active ? 'bg-accent/20 text-accent' : 'text-fg-secondary hover:bg-surface-3'
               }`}
             >
-              {o.label}
+              {t(o.labelKey)}
             </button>
           );
         })}
       </div>
       <div className="text-xs leading-5 text-fg-muted">
-        {AUTOSTART_OPTS.find((o) => o.value === policy?.autoStart)?.hint ??
-          'Policy for natural-language workflow triggers.'}
+        {policy
+          ? t(AUTOSTART_OPTS.find((o) => o.value === policy.autoStart)?.hintKey ?? 'workflow.policy.hint')
+          : t('workflow.policy.hint')}
       </div>
 
       <button
@@ -67,32 +88,30 @@ export function WorkflowPolicySection(): JSX.Element {
         className="inline-flex items-center gap-1 text-xs text-fg-muted hover:text-fg-primary"
       >
         {advanced ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        Advanced limits
+        {t('workflow.advancedLimits')}
       </button>
       {advanced && policy && (
         <div className="space-y-2 rounded-lg border border-border-default bg-surface px-3 py-3">
           <CapInput
-            label="Max agents"
+            label={t('workflow.maxAgents')}
             value={policy.maxAgents}
             max={64}
             onCommit={(v) => void patch({ maxAgents: v })}
           />
           <CapInput
-            label="Max concurrency"
+            label={t('workflow.maxConcurrency')}
             value={policy.maxConcurrency}
             max={16}
             onCommit={(v) => void patch({ maxConcurrency: v })}
           />
           <CapInput
-            label="Token budget"
+            label={t('workflow.tokenBudget')}
             value={policy.tokenBudget}
             max={200000}
             step={10000}
             onCommit={(v) => void patch({ tokenBudget: v })}
           />
-          <div className="text-[10px] text-fg-faint">
-            Limits cannot exceed KodaX runtime caps: 64 agents, 16 concurrent, 200k tokens.
-          </div>
+          <div className="text-[10px] text-fg-faint">{t('workflow.limitsHint')}</div>
         </div>
       )}
     </section>

@@ -33,6 +33,8 @@ import {
 import type { McpServerMeta, SkillMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 import { Caret } from '../components/Caret.js';
+import { useI18n } from '../i18n/I18nProvider.js';
+import type { MessageKey } from '../i18n/messages.js';
 
 interface AttachMenuProps {
   open: boolean;
@@ -40,16 +42,17 @@ interface AttachMenuProps {
   onInsertText: (text: string) => void;
 }
 
-const SLASH_COMMANDS = [
-  { cmd: '/help', desc: 'Show available commands' },
-  { cmd: '/clear', desc: 'Clear conversation context (new session)' },
-  { cmd: '/mode', desc: 'Cycle permission mode' },
-  { cmd: '/model', desc: 'Switch model' },
+const SLASH_COMMANDS: readonly { cmd: string; descKey: MessageKey }[] = [
+  { cmd: '/help', descKey: 'attach.slash.help' },
+  { cmd: '/clear', descKey: 'attach.slash.clear' },
+  { cmd: '/mode', descKey: 'attach.slash.mode' },
+  { cmd: '/model', descKey: 'attach.slash.model' },
 ];
 
 type SubMenu = 'root' | 'slash' | 'connectors' | 'skills';
 
 export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JSX.Element | null {
+  const { t } = useI18n();
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const setCurrentProject = useAppStore((s) => s.setCurrentProject);
   const [sub, setSub] = useState<SubMenu>('root');
@@ -101,7 +104,7 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
   async function loadConnectors(): Promise<void> {
     if (!window.kodaxSpace) return;
     if (!currentProjectPath) {
-      setDiscoverErr('Open a project first to see its MCP servers.');
+      setDiscoverErr(t('attach.openProjectForMcp'));
       setSub('connectors');
       return;
     }
@@ -111,17 +114,17 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
     if (r.ok) {
       setMcpServers(r.data.servers);
       if (r.data.errors.length > 0) {
-        setDiscoverErr(`${r.data.errors.length} config errors — check console`);
+        setDiscoverErr(t('attach.configErrors', { count: r.data.errors.length }));
       }
     } else {
-      setDiscoverErr(r.error?.message ?? 'failed to load MCP servers');
+      setDiscoverErr(r.error?.message ?? t('attach.loadMcpFailed'));
     }
   }
 
   async function loadSkills(): Promise<void> {
     if (!window.kodaxSpace) return;
     if (!currentProjectPath) {
-      setDiscoverErr('Open a project first to see its skills.');
+      setDiscoverErr(t('attach.openProjectForSkills'));
       setSub('skills');
       return;
     }
@@ -131,13 +134,13 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
     if (r.ok) {
       setSkills(r.data.skills);
     } else {
-      setDiscoverErr(r.error?.message ?? 'failed to load skills');
+      setDiscoverErr(r.error?.message ?? t('attach.loadSkillsFailed'));
     }
   }
 
   if (sub === 'slash') {
     return (
-      <SubMenuFrame title="Slash commands" onBack={() => setSub('root')}>
+      <SubMenuFrame title={t('attach.slashCommands')} onBack={() => setSub('root')}>
         {SLASH_COMMANDS.map((s) => (
           <button
             key={s.cmd}
@@ -149,11 +152,11 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
             className="w-full text-left px-3 py-1.5 hover:bg-hover-bg flex items-center gap-2 text-xs"
           >
             <code className="text-ok font-mono">{s.cmd}</code>
-            <span className="text-fg-muted truncate">{s.desc}</span>
+            <span className="text-fg-muted truncate">{t(s.descKey)}</span>
           </button>
         ))}
         <div className="border-t border-border-default mt-1 pt-1 px-3 py-1 text-[11px] text-fg-muted">
-          Use `/` in textarea for full skill + command picker
+          {t('attach.slashHint')}
         </div>
       </SubMenuFrame>
     );
@@ -161,14 +164,14 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
 
   if (sub === 'connectors') {
     return (
-      <SubMenuFrame title="Connectors (MCP)" onBack={() => setSub('root')}>
+      <SubMenuFrame title={t('attach.connectorsMcp')} onBack={() => setSub('root')}>
         {discoverErr && <div className="px-3 py-1 text-[11px] text-warn">{discoverErr}</div>}
         {mcpServers === null && !discoverErr && (
-          <div className="px-3 py-1 text-[11px] text-fg-muted">Loading…</div>
+          <div className="px-3 py-1 text-[11px] text-fg-muted">{t('attach.loading')}</div>
         )}
         {mcpServers !== null && mcpServers.length === 0 && (
           <div className="px-3 py-1 text-[11px] text-fg-muted">
-            No MCP servers configured. Edit ~/.kodax/config.json to add.
+            {t('attach.noMcp')}
           </div>
         )}
         {mcpServers?.map((s) => (
@@ -188,13 +191,13 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
 
   if (sub === 'skills') {
     return (
-      <SubMenuFrame title="Skills" onBack={() => setSub('root')}>
+      <SubMenuFrame title={t('attach.skills')} onBack={() => setSub('root')}>
         {discoverErr && <div className="px-3 py-1 text-[11px] text-warn">{discoverErr}</div>}
         {skills === null && !discoverErr && (
-          <div className="px-3 py-1 text-[11px] text-fg-muted">Loading…</div>
+          <div className="px-3 py-1 text-[11px] text-fg-muted">{t('attach.loading')}</div>
         )}
         {skills !== null && skills.length === 0 && (
-          <div className="px-3 py-1 text-[11px] text-fg-muted">No skills registered yet.</div>
+          <div className="px-3 py-1 text-[11px] text-fg-muted">{t('attach.noSkills')}</div>
         )}
         {skills?.map((sk) => (
           <button
@@ -223,11 +226,11 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
       className="absolute left-0 bottom-full mb-1 w-60 bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 text-xs z-50"
       onMouseLeave={onClose}
     >
-      <AttachRow Icon={Paperclip} label="Add files or photos" onClick={() => void addFiles()} />
-      <AttachRow Icon={FolderPlus} label="Add folder" onClick={() => void addFolder()} />
-      <AttachRow Icon={Slash} label="Slash commands" onClick={() => setSub('slash')} chevron />
-      <AttachRow Icon={Plug} label="Connectors" onClick={() => void loadConnectors()} chevron />
-      <AttachRow Icon={Puzzle} label="Skills" onClick={() => void loadSkills()} chevron />
+      <AttachRow Icon={Paperclip} label={t('attach.addFiles')} onClick={() => void addFiles()} />
+      <AttachRow Icon={FolderPlus} label={t('attach.addFolder')} onClick={() => void addFolder()} />
+      <AttachRow Icon={Slash} label={t('attach.slashCommands')} onClick={() => setSub('slash')} chevron />
+      <AttachRow Icon={Plug} label={t('attach.connectors')} onClick={() => void loadConnectors()} chevron />
+      <AttachRow Icon={Puzzle} label={t('attach.skills')} onClick={() => void loadSkills()} chevron />
     </div>
   );
 }
@@ -241,6 +244,7 @@ function SubMenuFrame({
   onBack: () => void;
   children: React.ReactNode;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className="absolute left-0 bottom-full mb-1 w-72 bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 z-50 max-h-80 overflow-y-auto">
       <div className="px-3 py-1 text-[11px] uppercase tracking-wider text-fg-muted flex items-center gap-2 sticky top-0 bg-surface-2">
@@ -248,7 +252,7 @@ function SubMenuFrame({
           type="button"
           onClick={onBack}
           className="hover:text-fg-secondary inline-flex items-center"
-          aria-label="Back"
+          aria-label={t('attach.back')}
         >
           <ChevronLeft className="w-3.5 h-3.5" strokeWidth={2} aria-hidden />
         </button>

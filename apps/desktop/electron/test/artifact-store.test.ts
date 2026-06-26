@@ -3,19 +3,42 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ArtifactStore } from '../artifact/store.js';
+import DatabaseConstructor from 'better-sqlite3';
+import type BetterSqlite3 from 'better-sqlite3';
+import {
+  ArtifactStore,
+  isRecoverableCatalogOpenError,
+  type ArtifactStoreOptions,
+} from '../artifact/store.js';
 import { artifactCreateChannel } from '@kodax-space/space-ipc-schema';
 
-function freshStore(): { store: ArtifactStore; dir: string; file: string } {
+function freshStore(options?: ArtifactStoreOptions): {
+  store: ArtifactStore;
+  dir: string;
+  file: string;
+  catalog: string;
+} {
   const dir = mkdtempSync(join(tmpdir(), 'artifact-store-'));
   const file = join(dir, 'artifacts.json');
-  return { store: new ArtifactStore(file, dir), dir, file };
+  const catalog = join(dir, 'artifacts', 'v2', 'catalog.sqlite');
+  return { store: new ArtifactStore(file, dir, options), dir, file, catalog };
 }
 
 const base = { sessionId: 's1', surface: 'partner' as const, kind: 'markdown' as const };
+
+function artifactDir(root: string, sessionId: string, id: string): string {
+  return join(
+    root,
+    'artifacts',
+    'v2',
+    'sessions',
+    Buffer.from(sessionId, 'utf8').toString('base64url'),
+    id,
+  );
+}
 
 test('create → list (meta only) → read (content)', async () => {
   const { store, dir } = freshStore();
@@ -36,6 +59,7 @@ test('create → list (meta only) → read (content)', async () => {
     assert.equal(read?.content, '# hi');
     assert.equal(read?.version, 1);
   } finally {
+    store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -54,6 +78,7 @@ test('upsert with existing id appends a version (iterate)', async () => {
     assert.equal((await store.read(id))?.content, 'v2'); // default = current
     assert.equal((await store.read(id, 1))?.content, 'v1'); // explicit old version
   } finally {
+    store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -61,13 +86,20 @@ test('upsert with existing id appends a version (iterate)', async () => {
 test('list filters by sessionId and surface', async () => {
   const { store, dir } = freshStore();
   try {
-    await store.upsert({ sessionId: 'a', surface: 'partner', kind: 'markdown', title: 'A', content: 'x' });
+    await store.upsert({
+      sessionId: 'a',
+      surface: 'partner',
+      kind: 'markdown',
+      title: 'A',
+      content: 'x',
+    });
     await store.upsert({ sessionId: 'b', surface: 'code', kind: 'code', title: 'B', content: 'y' });
     assert.equal((await store.list({ sessionId: 'a' })).length, 1);
     assert.equal((await store.list({ surface: 'code' })).length, 1);
     assert.equal((await store.list({ sessionId: 'a', surface: 'code' })).length, 0);
     assert.equal((await store.list()).length, 2);
   } finally {
+    store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -89,6 +121,7 @@ test('doc kind stores a path reference (no inline content)', async () => {
     assert.equal(read?.path, '/proj/report.pdf');
     assert.equal(read?.content, undefined);
   } finally {
+    store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -102,20 +135,181 @@ test('delete removes the artifact', async () => {
     assert.equal((await store.list()).length, 0);
     assert.equal(await store.read(id), null);
   } finally {
+    store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('persists across store instances (atomic write + reload)', async () => {
-  const { store, dir, file } = freshStore();
+test('persists across store instances (file source + catalog reload)', async () => {
+  const { store, dir, file, catalog } = freshStore();
+  let store2: ArtifactStore | null = null;
   try {
     const { id } = await store.upsert({ ...base, title: 'Doc', content: 'persisted' });
-    assert.ok(existsSync(file));
+    assert.equal(existsSync(file), false); // new artifacts do not revive the v1 monolith
+    assert.ok(existsSync(catalog));
     // A fresh instance on the same file reloads it.
-    const store2 = new ArtifactStore(file, dir);
+    store2 = new ArtifactStore(file, dir);
     const read = await store2.read(id);
     assert.equal(read?.content, 'persisted');
   } finally {
+    store2?.invalidate();
+    store.invalidate();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('corrupt catalog is discarded and rebuilt from v2 files', async () => {
+  const { store, dir, file, catalog } = freshStore();
+  let store2: ArtifactStore | null = null;
+  try {
+    const { id } = await store.upsert({ ...base, title: 'Doc', content: 'still here' });
+    store.invalidate();
+    writeFileSync(catalog, 'not a sqlite database');
+
+    store2 = new ArtifactStore(file, dir);
+    assert.equal((await store2.read(id))?.content, 'still here');
+  } finally {
+    store2?.invalidate();
+    store.invalidate();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('catalog open recovery is limited to SQLite catalog corruption', () => {
+  const malformed = Object.assign(new Error('database disk image is malformed'), {
+    code: 'SQLITE_CORRUPT',
+  });
+  assert.equal(isRecoverableCatalogOpenError(malformed), true);
+
+  const notDatabase = Object.assign(new Error('file is not a database'), { code: 'SQLITE_NOTADB' });
+  assert.equal(isRecoverableCatalogOpenError(notDatabase), true);
+
+  const abiMismatch = new Error(
+    'The module better_sqlite3.node was compiled against a different Node.js version using NODE_MODULE_VERSION 137.',
+  );
+  assert.equal(isRecoverableCatalogOpenError(abiMismatch), false);
+});
+
+test('list self-heals when catalog row metadata is malformed', async () => {
+  const { store, dir, catalog } = freshStore();
+  let db: BetterSqlite3.Database | null = null;
+  try {
+    const { id } = await store.upsert({ ...base, title: 'Doc', content: 'still indexed' });
+    db = new DatabaseConstructor(catalog);
+    db.prepare('UPDATE artifacts SET versionsJson = ? WHERE id = ?').run('not-json', id);
+    db.close();
+    db = null;
+
+    const list = await store.list();
+    assert.equal(list.length, 1);
+    assert.equal(list[0]?.id, id);
+    assert.equal((await store.read(id))?.content, 'still indexed');
+  } finally {
+    db?.close();
+    store.invalidate();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('read self-heals stale catalog rows when source files are gone', async () => {
+  const { store, dir } = freshStore();
+  try {
+    const { id } = await store.upsert({ ...base, title: 'Doc', content: 'delete me' });
+    rmSync(artifactDir(dir, base.sessionId, id), { recursive: true, force: true });
+
+    assert.equal(await store.read(id), null);
+    assert.deepEqual(await store.list(), []);
+  } finally {
+    store.invalidate();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('read self-heals stale catalog rows when meta files are invalid', async () => {
+  const { store, dir } = freshStore();
+  try {
+    const { id } = await store.upsert({ ...base, title: 'Doc', content: 'bad meta' });
+    writeFileSync(join(artifactDir(dir, base.sessionId, id), 'meta.json'), '{ bad json');
+
+    assert.equal(await store.read(id), null);
+    assert.deepEqual(await store.list(), []);
+  } finally {
+    store.invalidate();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('list self-heals stale catalog rows when source meta files are gone', async () => {
+  const { store, dir } = freshStore();
+  try {
+    const { id } = await store.upsert({ ...base, title: 'Doc', content: 'delete meta' });
+    rmSync(join(artifactDir(dir, base.sessionId, id), 'meta.json'), { force: true });
+
+    assert.deepEqual(await store.list(), []);
+    assert.equal(await store.read(id), null);
+  } finally {
+    store.invalidate();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('list self-heals stale catalog rows when source meta files are invalid', async () => {
+  const { store, dir } = freshStore();
+  try {
+    const { id } = await store.upsert({ ...base, title: 'Doc', content: 'bad meta' });
+    writeFileSync(join(artifactDir(dir, base.sessionId, id), 'meta.json'), '{ bad json');
+
+    assert.deepEqual(await store.list(), []);
+    assert.equal(await store.read(id), null);
+  } finally {
+    store.invalidate();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('quota cleanup prunes old artifacts before the count hard cap', async () => {
+  const { store, dir } = freshStore({
+    maxArtifacts: 3,
+    targetArtifacts: 2,
+    maxBytes: 1024 * 1024 * 1024,
+    targetBytes: 1024 * 1024 * 1024,
+  });
+  try {
+    await store.upsert({ ...base, title: 'A', content: 'a' });
+    await store.upsert({ ...base, title: 'B', content: 'b' });
+    await store.upsert({ ...base, title: 'C', content: 'c' });
+    const latest = await store.upsert({ ...base, title: 'D', content: 'd' });
+
+    const list = await store.list();
+    assert.equal(list.length, 2);
+    assert.ok(list.some((artifact) => artifact.id === latest.id));
+  } finally {
+    store.invalidate();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('catalog rebuild removes uncommitted artifact dirs and unreferenced version files', async () => {
+  const { store, dir, file } = freshStore();
+  let store2: ArtifactStore | null = null;
+  try {
+    const { id } = await store.upsert({ ...base, title: 'Doc', content: 'v1' });
+    const committedDir = artifactDir(dir, base.sessionId, id);
+    const unreferenced = join(committedDir, 'versions', '9999.md');
+    writeFileSync(unreferenced, 'orphan version');
+
+    const orphanDir = artifactDir(dir, base.sessionId, 'never-committed');
+    mkdirSync(join(orphanDir, 'versions'), { recursive: true });
+    writeFileSync(join(orphanDir, 'versions', '0001.md'), 'partial write');
+
+    store.invalidate();
+    store2 = new ArtifactStore(file, dir);
+    assert.equal((await store2.list()).length, 1);
+    assert.equal(existsSync(unreferenced), false);
+    assert.equal(existsSync(orphanDir), false);
+  } finally {
+    store2?.invalidate();
+    store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -130,6 +324,79 @@ test('corrupt file → starts empty, does not throw', async () => {
     const { id } = await store.upsert({ ...base, title: 'Doc', content: 'ok' });
     assert.equal((await store.read(id))?.content, 'ok');
   } finally {
+    store.invalidate();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('migrates legacy artifacts.json into v2 files and keeps a backup', async () => {
+  const { store, dir, file } = freshStore();
+  try {
+    writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        artifacts: [
+          {
+            id: 'legacy-a',
+            sessionId: 's-legacy',
+            surface: 'partner',
+            kind: 'markdown',
+            title: 'Legacy',
+            currentVersion: 2,
+            versions: [
+              { v: 1, createdAt: 100, content: 'v1', summary: 'first' },
+              { v: 2, createdAt: 200, content: 'v2', summary: 'second' },
+            ],
+            createdAt: 100,
+            updatedAt: 200,
+          },
+        ],
+      }),
+    );
+
+    const list = await store.list({ sessionId: 's-legacy' });
+    assert.equal(list.length, 1);
+    assert.equal(list[0]?.id, 'legacy-a');
+    assert.equal(list[0]?.currentVersion, 2);
+    assert.equal((await store.read('legacy-a'))?.content, 'v2');
+    assert.equal((await store.read('legacy-a', 1))?.content, 'v1');
+    assert.equal(existsSync(file), false);
+    assert.ok(existsSync(join(dir, 'artifacts.v1.backup.json')));
+  } finally {
+    store.invalidate();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('legacy migration rejects unsafe artifact ids before using them as paths', async () => {
+  const { store, dir, file } = freshStore();
+  try {
+    writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        artifacts: [
+          {
+            id: '../escape',
+            sessionId: 'legacy-s',
+            surface: 'partner',
+            kind: 'markdown',
+            title: 'Unsafe',
+            currentVersion: 1,
+            versions: [{ v: 1, createdAt: 1, content: 'owned' }],
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+      }),
+    );
+
+    assert.deepEqual(await store.list(), []);
+    assert.equal(existsSync(join(dir, 'escape')), false);
+    assert.equal(existsSync(file), true);
+  } finally {
+    store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -138,8 +405,46 @@ test('rejects content over the size cap', async () => {
   const { store, dir } = freshStore();
   try {
     const huge = 'a'.repeat(1_048_577); // > 1 MB
-    await assert.rejects(() => store.upsert({ ...base, title: 'Big', content: huge }), /size limit/);
+    await assert.rejects(
+      () => store.upsert({ ...base, title: 'Big', content: huge }),
+      /size limit/,
+    );
   } finally {
+    store.invalidate();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('upsert enforces content/path invariants before writing metadata', async () => {
+  const { store, dir } = freshStore();
+  try {
+    await assert.rejects(
+      () => store.upsert({ ...base, title: 'Missing content' }),
+      /content artifact kinds require content/,
+    );
+    await assert.rejects(
+      () => store.upsert({ ...base, title: 'Mixed', content: 'x', path: '/proj/x.md' }),
+      /content artifact kinds do not accept a path/,
+    );
+    await assert.rejects(
+      () => store.upsert({ sessionId: 's1', surface: 'partner', kind: 'pdf', title: 'No path' }),
+      /doc artifact kinds require a path/,
+    );
+    await assert.rejects(
+      () =>
+        store.upsert({
+          sessionId: 's1',
+          surface: 'partner',
+          kind: 'pdf',
+          title: 'Mixed',
+          path: '/proj/a.pdf',
+          content: 'x',
+        }),
+      /doc artifact kinds do not accept inline content/,
+    );
+    assert.deepEqual(await store.list(), []);
+  } finally {
+    store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -159,6 +464,7 @@ test('upsert: created flag + fresh id on unknown id (no resurrection)', async ()
     assert.equal(r3.created, true);
     assert.notEqual(r3.id, 'does-not-exist');
   } finally {
+    store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -168,24 +474,87 @@ test('upsert: created flag + fresh id on unknown id (no resurrection)', async ()
 const parseCreate = (v: unknown) => artifactCreateChannel.input.safeParse(v);
 
 test('create schema: valid content artifact passes', () => {
-  assert.equal(parseCreate({ sessionId: 's', surface: 'partner', kind: 'markdown', title: 'T', content: '# x' }).success, true);
+  assert.equal(
+    parseCreate({
+      sessionId: 's',
+      surface: 'partner',
+      kind: 'markdown',
+      title: 'T',
+      content: '# x',
+    }).success,
+    true,
+  );
 });
 
 test('create schema: doc kind requires path, content kind requires content', () => {
-  assert.equal(parseCreate({ sessionId: 's', surface: 'partner', kind: 'pdf', title: 'T' }).success, false); // pdf, no path
-  assert.equal(parseCreate({ sessionId: 's', surface: 'partner', kind: 'pdf', title: 'T', path: '/p/a.pdf' }).success, true);
-  assert.equal(parseCreate({ sessionId: 's', surface: 'partner', kind: 'markdown', title: 'T' }).success, false); // md, no content
+  assert.equal(
+    parseCreate({ sessionId: 's', surface: 'partner', kind: 'pdf', title: 'T' }).success,
+    false,
+  ); // pdf, no path
+  assert.equal(
+    parseCreate({ sessionId: 's', surface: 'partner', kind: 'pdf', title: 'T', path: '/p/a.pdf' })
+      .success,
+    true,
+  );
+  assert.equal(
+    parseCreate({
+      sessionId: 's',
+      surface: 'partner',
+      kind: 'pdf',
+      title: 'T',
+      path: '/p/a.pdf',
+      content: 'x',
+    }).success,
+    false,
+  );
+  assert.equal(
+    parseCreate({ sessionId: 's', surface: 'partner', kind: 'markdown', title: 'T' }).success,
+    false,
+  ); // md, no content
+  assert.equal(
+    parseCreate({
+      sessionId: 's',
+      surface: 'partner',
+      kind: 'markdown',
+      title: 'T',
+      content: '# x',
+      path: '/p/a.md',
+    }).success,
+    false,
+  );
 });
 
 test('create schema: rejects NUL/CR/LF in path', () => {
-  assert.equal(parseCreate({ sessionId: 's', surface: 'partner', kind: 'pdf', title: 'T', path: `/p/a${String.fromCharCode(0)}.pdf` }).success, false);
-  assert.equal(parseCreate({ sessionId: 's', surface: 'partner', kind: 'pdf', title: 'T', path: '/p/a\n.pdf' }).success, false);
+  assert.equal(
+    parseCreate({
+      sessionId: 's',
+      surface: 'partner',
+      kind: 'pdf',
+      title: 'T',
+      path: `/p/a${String.fromCharCode(0)}.pdf`,
+    }).success,
+    false,
+  );
+  assert.equal(
+    parseCreate({ sessionId: 's', surface: 'partner', kind: 'pdf', title: 'T', path: '/p/a\n.pdf' })
+      .success,
+    false,
+  );
 });
 
 test('create schema: content cap is UTF-8 bytes (multibyte over byte budget rejected)', () => {
   // 600k '中' chars = 1.8 MB UTF-8 (>1 MB) but < 1,048,576 chars → byte refine must reject.
   const multibyte = '中'.repeat(600_000);
-  assert.equal(parseCreate({ sessionId: 's', surface: 'partner', kind: 'markdown', title: 'T', content: multibyte }).success, false);
+  assert.equal(
+    parseCreate({
+      sessionId: 's',
+      surface: 'partner',
+      kind: 'markdown',
+      title: 'T',
+      content: multibyte,
+    }).success,
+    false,
+  );
 });
 
 test('concurrent upserts all land (write-lock serialization)', async () => {
@@ -198,6 +567,7 @@ test('concurrent upserts all land (write-lock serialization)', async () => {
     );
     assert.equal((await store.list()).length, 10);
   } finally {
+    store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }
 });

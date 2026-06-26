@@ -38,7 +38,7 @@ const isDev = process.env.NODE_ENV === 'development';
 const sharedOptions = {
   bundle: true,
   platform: 'node',
-  target: 'node20',
+  target: 'node24',
   format: 'cjs',
   sourcemap: isDev ? 'inline' : false,
   minify: !isDev,
@@ -57,7 +57,20 @@ const sharedOptions = {
   // 动态 `await import('@kodax-ai/kodax/coding')` —— 动态 import 走 ESM 解析规则，
   // 即使在 CJS 上下文也能命中 `"import"` 条件。static `import` 只能用类型 (typeof import())。
   // 详见 apps/desktop/electron/kodax/{user-config,mcp/config-reader}.ts 的 lazy 模式。
-  external: ['electron', 'keytar', '@kodax-ai/kodax', '@kodax-ai/kodax/coding', '@kodax-ai/kodax/skills', '@kodax-ai/kodax/repl', '@kodax-ai/kodax/session', '@kodax-ai/kodax/mcp', '@kodax-ai/kodax/llm', '@kodax-ai/kodax/agent', 'electron-updater'],
+  external: [
+    'electron',
+    'keytar',
+    'better-sqlite3',
+    '@kodax-ai/kodax',
+    '@kodax-ai/kodax/coding',
+    '@kodax-ai/kodax/skills',
+    '@kodax-ai/kodax/repl',
+    '@kodax-ai/kodax/session',
+    '@kodax-ai/kodax/mcp',
+    '@kodax-ai/kodax/llm',
+    '@kodax-ai/kodax/agent',
+    'electron-updater',
+  ],
   logLevel: 'info',
   // 双轨 require 模式（register/catalog/ptyHost/artifact 的 `typeof require !== 'undefined' ? ... : import.meta`）：
   // CJS bundle 里 `require` 永远有定义 → import.meta 分支是死代码、永不求值，仅供 tsx/esm 测试 loader 走。
