@@ -37,6 +37,7 @@ import { pushToast } from '../store/toastStore.js';
 import { sessionMatchesScope } from '../lib/sessionScope.js';
 import { shouldActivateSessionForCurrentScope } from '../lib/sessionActivation.js';
 import { KodaXDogMascot } from '../components/KodaXDogMascot.js';
+import { KodaXDogSpriteMascot } from '../components/KodaXDogSpriteMascot.js';
 
 const SLASH_ARGS_MAX = 20;
 
@@ -45,7 +46,7 @@ const EMPTY_INPUT_HISTORY: readonly string[] = [];
 type QueueMode = 'interrupt' | 'after-turn';
 
 interface ComposerInvokeOptions<T> {
-  readonly timeoutMs?: number;
+  readonly timeoutMs?: number | null;
   readonly onLateResult?: (result: IpcResult<T>) => void;
 }
 
@@ -123,15 +124,19 @@ async function invokeComposerIpc<C extends InvokeChannelName>(
 
   const options =
     typeof optionsOrTimeoutMs === 'number' ? { timeoutMs: optionsOrTimeoutMs } : optionsOrTimeoutMs;
-  const timeoutMs = options.timeoutMs ?? composerInvokeTimeoutMs(channel);
+  const timeoutMs =
+    options.timeoutMs === null ? null : (options.timeoutMs ?? composerInvokeTimeoutMs(channel));
   let timer: number | undefined;
   let timedOut = false;
-  const timeoutResult = new Promise<IpcResult<ChannelOutput<C>>>((resolve) => {
-    timer = window.setTimeout(() => {
-      timedOut = true;
-      resolve(composerInvokeTimeoutFailure(channel, timeoutMs));
-    }, timeoutMs);
-  });
+  const timeoutResult =
+    timeoutMs === null
+      ? null
+      : new Promise<IpcResult<ChannelOutput<C>>>((resolve) => {
+          timer = window.setTimeout(() => {
+            timedOut = true;
+            resolve(composerInvokeTimeoutFailure(channel, timeoutMs));
+          }, timeoutMs);
+        });
   const invokeResult = bridge
     .invoke(channel, payload)
     .catch((error: unknown) =>
@@ -147,7 +152,9 @@ async function invokeComposerIpc<C extends InvokeChannelName>(
     });
 
   try {
-    return await Promise.race([invokeResult, timeoutResult]);
+    return timeoutResult === null
+      ? await invokeResult
+      : await Promise.race([invokeResult, timeoutResult]);
   } finally {
     if (timer !== undefined) window.clearTimeout(timer);
   }
@@ -317,7 +324,6 @@ function shouldTryNativeClipboardImageFallback(data: DataTransfer): boolean {
   const hasText = types.includes('text/plain') && data.getData('text/plain').length > 0;
   if (hasText) return false;
   if (Array.from(data.items).some((item) => item.type.startsWith('image/'))) return true;
-  if (types.includes('Files')) return true;
   return types.length === 0;
 }
 
@@ -556,7 +562,7 @@ export function BottomBar(): JSX.Element {
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   // New sessions are tagged with the active surface.
   const currentSurface = useSurfaceStore((s) => s.currentSurface);
-  const mascotEnabled = useAppStore((s) => s.mascotEnabled);
+  const mascotMode = useAppStore((s) => s.mascotMode);
   const providers = useAppStore((s) => s.providers);
   const defaultProviderId = useAppStore((s) => s.defaultProviderId);
   const kodaxDefaults = useAppStore((s) => s.kodaxDefaults);
@@ -1638,7 +1644,11 @@ export function BottomBar(): JSX.Element {
         appendUserMessage(sessionId, '[delete] Usage: /delete <session-id>');
         return;
       }
-      const r = await invokeComposerIpc('session.delete', { sessionId: target });
+      const r = await invokeComposerIpc(
+        'session.delete',
+        { sessionId: target },
+        { timeoutMs: null },
+      );
       if (!r.ok) {
         appendUserMessage(sessionId, `[delete] failed: ${r.error?.message ?? 'unknown'}`);
         return;
@@ -1675,7 +1685,11 @@ export function BottomBar(): JSX.Element {
         0,
         Math.min(requestedIdx ?? userMsgs.length - 1, Math.max(0, userMsgs.length - 1)),
       );
-      const r = await invokeComposerIpc('session.fork', { sessionId, forkPointTurnIdx });
+      const r = await invokeComposerIpc(
+        'session.fork',
+        { sessionId, forkPointTurnIdx },
+        { timeoutMs: null },
+      );
       if (!r.ok) {
         appendUserMessage(sessionId, `[fork] failed: ${r.error?.message ?? 'unknown'}`);
         return;
@@ -1737,7 +1751,11 @@ export function BottomBar(): JSX.Element {
           Math.max(0, userMsgs.length - 1),
         ),
       );
-      const r = await invokeComposerIpc('session.rewind', { sessionId, rewindPastTurnIdx });
+      const r = await invokeComposerIpc(
+        'session.rewind',
+        { sessionId, rewindPastTurnIdx },
+        { timeoutMs: null },
+      );
       if (!r.ok) {
         appendUserMessage(sessionId, `[rewind] failed: ${r.error?.message ?? 'unknown'}`);
         return;
@@ -2129,6 +2147,7 @@ export function BottomBar(): JSX.Element {
   const isStreaming = useIsStreaming();
   const mascotInputActive =
     prompt.trim().length > 0 || pendingImages.length > 0 || pendingFileRefs.length > 0;
+  const mascotInputActivityKey = `${prompt.length}:${pendingImages.length}:${pendingFileRefs.length}`;
   // Send is enabled for text, inline images, or pending file references.
   const canSend =
     !busy &&
@@ -2162,10 +2181,18 @@ export function BottomBar(): JSX.Element {
 
       {currentSurface !== 'partner' && <BackgroundTaskBar />}
       <div className="relative">
-        {mascotEnabled && (
+        {mascotMode === 'legacy' && (
           <KodaXDogMascot
             className="pointer-events-none absolute -top-1 right-4 z-10 h-7 w-[35px] opacity-90 drop-shadow-[0_4px_6px_rgb(0_0_0_/_0.10)]"
             inputActive={mascotInputActive}
+            working={busy || isStreaming}
+          />
+        )}
+        {mascotMode === 'sprite' && (
+          <KodaXDogSpriteMascot
+            className="pointer-events-none absolute -top-[39px] right-3 z-10 h-10 w-10 opacity-90 drop-shadow-[0_4px_6px_rgb(0_0_0_/_0.10)]"
+            inputActive={mascotInputActive}
+            inputActivityKey={mascotInputActivityKey}
             working={busy || isStreaming}
           />
         )}

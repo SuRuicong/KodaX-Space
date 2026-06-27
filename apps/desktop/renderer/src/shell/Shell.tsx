@@ -67,11 +67,7 @@ import { PartnerWorkspace } from '../features/partner/PartnerWorkspace.js';
 import { HandoffInbox } from './HandoffInbox.js';
 import { SettingsModal } from '../features/settings/SettingsModal.js';
 import { useI18n } from '../i18n/I18nProvider.js';
-import {
-  isPopoutKind,
-  SHELL_POPOUT_EVENT,
-  type ShellPopoutRequest,
-} from './popoutControl.js';
+import { isPopoutKind, SHELL_POPOUT_EVENT, type ShellPopoutRequest } from './popoutControl.js';
 
 interface ShellProps {
   readonly version?: SpaceVersionOutput | null;
@@ -116,10 +112,16 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
   // 侧栏开/关：button 放在 breadcrumb 行最左 / 最右；侧栏关掉时 0 占位（不再 28px 竖条）
   const leftSidebarOpen = useAppStore((s) => s.leftSidebarOpen);
   const rightSidebarOpen = useAppStore((s) => s.rightSidebarOpen);
-  const mascotEnabled = useAppStore((s) => s.mascotEnabled);
+  const mascotMode = useAppStore((s) => s.mascotMode);
   const setLeftSidebarOpen = useAppStore((s) => s.setLeftSidebarOpen);
   const setRightSidebarOpen = useAppStore((s) => s.setRightSidebarOpen);
-  const setMascotEnabled = useAppStore((s) => s.setMascotEnabled);
+  const cycleMascotMode = useAppStore((s) => s.cycleMascotMode);
+  const mascotButtonLabel =
+    mascotMode === 'legacy'
+      ? t('menu.view.mascotModeLegacy')
+      : mascotMode === 'sprite'
+        ? t('menu.view.mascotModeSprite')
+        : t('menu.view.mascotModeOff');
 
   // 2026-06: 侧栏宽度。store 是 commit-only (release 时一次性写),drag 中间用本地 state
   // 实时驱动 inline width style 避免 store 抖动 / localStorage 频繁写。
@@ -173,10 +175,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
 
   const openRightSidebarAtDefaultWidth = useCallback((): void => {
     const maxComfortWidth = rightSidebarOpenWidth(leftSidebarOpen, leftWidth, viewportWidth);
-    const targetWidth = Math.min(
-      clampSidebarWidthPx(RIGHT_SIDEBAR_DEFAULT_WIDTH),
-      maxComfortWidth,
-    );
+    const targetWidth = Math.min(clampSidebarWidthPx(RIGHT_SIDEBAR_DEFAULT_WIDTH), maxComfortWidth);
     setRightWidthDraft(null);
     setRightSidebarWidth(targetWidth);
     setRightSidebarOpen(true);
@@ -446,9 +445,9 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
           </button>
           <HandoffInbox />
           <TitlebarIconButton
-            label={mascotEnabled ? t('menu.view.hideMascot') : t('menu.view.showMascot')}
-            active={mascotEnabled}
-            onClick={() => setMascotEnabled(!mascotEnabled)}
+            label={mascotButtonLabel}
+            active={mascotMode !== 'off'}
+            onClick={cycleMascotMode}
           >
             <PawPrint className="h-4 w-4" strokeWidth={1.75} aria-hidden />
           </TitlebarIconButton>
@@ -648,10 +647,10 @@ function AppTopMenu({
   const { languageMode, setLanguageMode, t } = useI18n();
   const theme = useAppStore((s) => s.theme);
   const visualQuality = useAppStore((s) => s.visualQuality);
-  const mascotEnabled = useAppStore((s) => s.mascotEnabled);
+  const mascotMode = useAppStore((s) => s.mascotMode);
   const setTheme = useAppStore((s) => s.setTheme);
   const setVisualQuality = useAppStore((s) => s.setVisualQuality);
-  const setMascotEnabled = useAppStore((s) => s.setMascotEnabled);
+  const setMascotMode = useAppStore((s) => s.setMascotMode);
   const [openMenu, setOpenMenu] = useState<AppMenuId | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
   const lastEditableTargetRef = useRef<HTMLElement | null>(null);
@@ -849,10 +848,27 @@ function AppTopMenu({
           onSelect: onToggleFocusMode,
         },
         {
-          id: 'mascot',
+          id: 'mascot-label',
           label: t('menu.view.mascot'),
-          checked: mascotEnabled,
-          onSelect: () => setMascotEnabled(!mascotEnabled),
+          disabled: true,
+        },
+        {
+          id: 'mascot-legacy',
+          label: t('menu.view.mascotLegacy'),
+          checked: mascotMode === 'legacy',
+          onSelect: () => setMascotMode('legacy'),
+        },
+        {
+          id: 'mascot-sprite',
+          label: t('menu.view.mascotSprite'),
+          checked: mascotMode === 'sprite',
+          onSelect: () => setMascotMode('sprite'),
+        },
+        {
+          id: 'mascot-off',
+          label: t('menu.view.mascotOff'),
+          checked: mascotMode === 'off',
+          onSelect: () => setMascotMode('off'),
         },
         { id: 'view-separator-2', separator: true },
         {
@@ -947,7 +963,7 @@ function AppTopMenu({
   return (
     <div
       ref={ref}
-      className="app-no-drag flex h-7 min-w-0 items-center gap-0.5 text-[12px] text-fg-secondary"
+      className="titlebar-brand app-no-drag flex h-7 min-w-0 items-center gap-0.5 text-[12px] text-fg-secondary"
     >
       <TitlebarIconButton
         label={leftSidebarOpen ? t('menu.view.hideLeftSidebar') : t('menu.view.showLeftSidebar')}

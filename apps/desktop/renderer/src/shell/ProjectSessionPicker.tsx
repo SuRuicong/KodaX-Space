@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
 import { createMatcher } from '../lib/fuzzy.js';
 import { Portal } from '../components/Portal.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 
 interface ProjectSessionPickerProps {
   readonly projectName: string;
@@ -19,21 +20,22 @@ interface ProjectSessionPickerProps {
   readonly onClose: () => void;
 }
 
-function formatAgo(ts: number, now: number): string {
+function formatAgo(ts: number, now: number, locale: string): string {
   const diff = Math.max(0, now - ts);
   const sec = Math.floor(diff / 1000);
-  if (sec < 60) return 'just now';
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style: 'short' });
+  if (sec < 60) return rtf.format(0, 'second');
   const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
+  if (min < 60) return rtf.format(-min, 'minute');
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
+  if (hr < 24) return rtf.format(-hr, 'hour');
   const day = Math.floor(hr / 24);
-  if (day < 7) return `${day}d ago`;
+  if (day < 7) return rtf.format(-day, 'day');
   const wk = Math.floor(day / 7);
-  if (wk < 4) return `${wk}w ago`;
+  if (wk < 4) return rtf.format(-wk, 'week');
   const mo = Math.floor(day / 30);
-  if (mo < 12) return `${mo}mo ago`;
-  return `${Math.floor(day / 365)}y ago`;
+  if (mo < 12) return rtf.format(-mo, 'month');
+  return rtf.format(-Math.floor(day / 365), 'year');
 }
 
 export function ProjectSessionPicker({
@@ -43,6 +45,7 @@ export function ProjectSessionPicker({
   onSelect,
   onClose,
 }: ProjectSessionPickerProps): JSX.Element {
+  const { t, effectiveLocale } = useI18n();
   const [query, setQuery] = useState('');
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -145,14 +148,14 @@ export function ProjectSessionPicker({
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        aria-label={`Sessions in ${projectName}`}
+        aria-label={t('sessionPicker.label', { project: projectName })}
       >
         <div
           className="bg-surface border border-border-default rounded-lg shadow-2xl w-[560px] max-w-[90vw] max-h-[70vh] flex flex-col overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="border-b border-border-default px-3 py-2 flex items-center gap-2">
-            <span className="text-xs text-fg-muted truncate">Sessions in</span>
+            <span className="text-xs text-fg-muted truncate">{t('sessionPicker.prefix')}</span>
             <span
               className="text-[12px] text-fg-primary font-semibold truncate flex-1"
               title={projectName}
@@ -168,14 +171,16 @@ export function ProjectSessionPicker({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Filter by title…"
+              placeholder={t('sessionPicker.filterPlaceholder')}
               className="w-full bg-transparent text-fg-primary placeholder:text-fg-faint outline-none text-sm"
-              aria-label="Session filter query"
+              aria-label={t('sessionPicker.filterAria')}
             />
           </div>
           <ul ref={listRef} className="overflow-y-auto flex-1 text-[12px]">
             {filtered.length === 0 ? (
-              <li className="px-3 py-4 text-fg-muted text-center">No matches</li>
+              <li className="px-3 py-4 text-fg-muted text-center">
+                {t('sessionPicker.noMatches')}
+              </li>
             ) : (
               filtered.map(({ session }, idx) => {
                 const isActive = idx === activeIdx;
@@ -205,9 +210,9 @@ export function ProjectSessionPicker({
                       </span>
                       <span
                         className="text-[11px] text-fg-muted font-mono flex-shrink-0"
-                        title={new Date(session.lastActivityAt).toLocaleString()}
+                        title={new Date(session.lastActivityAt).toLocaleString(effectiveLocale)}
                       >
-                        {formatAgo(session.lastActivityAt, now)}
+                        {formatAgo(session.lastActivityAt, now, effectiveLocale)}
                       </span>
                     </button>
                   </li>
@@ -216,9 +221,9 @@ export function ProjectSessionPicker({
             )}
           </ul>
           <div className="border-t border-border-default px-3 py-1.5 text-[11px] text-fg-muted flex gap-3">
-            <span>↑↓ navigate</span>
-            <span>Enter to open</span>
-            <span>Esc to close</span>
+            <span>{t('sessionPicker.navigateHint')}</span>
+            <span>{t('sessionPicker.openHint')}</span>
+            <span>{t('sessionPicker.closeHint')}</span>
           </div>
         </div>
       </div>

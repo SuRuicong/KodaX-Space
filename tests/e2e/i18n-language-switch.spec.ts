@@ -4,6 +4,7 @@ import { launchSpace } from './fixtures.js';
 const TEST_ID = `i18n-language-switch-${Date.now()}`;
 
 test('language switch updates settings, sidebar, and command palette copy', async () => {
+  test.setTimeout(60_000);
   const space = await launchSpace(TEST_ID);
   try {
     const { page } = space;
@@ -12,7 +13,7 @@ test('language switch updates settings, sidebar, and command palette copy', asyn
     await page.getByTestId('settings-button').click();
     await expect(page.locator('#settings-modal-title')).toHaveText('Settings');
     await expect(page.getByRole('tab', { name: 'License' })).toBeVisible();
-    await expect(page.getByText('Workflow auto-start')).toBeVisible();
+    await expect(page.getByText('Workflow autostart')).toBeVisible();
 
     await page.getByRole('button', { name: '简体中文' }).click();
     await expect(page.locator('#settings-modal-title')).toHaveText('设置');
@@ -23,6 +24,7 @@ test('language switch updates settings, sidebar, and command palette copy', asyn
 
     await page.keyboard.press('Escape');
     await expect(page.locator('#settings-modal-title')).toHaveCount(0);
+    await expect(page.locator('button[aria-label^="主题"]').first()).toBeVisible();
     await page.keyboard.press('Control+Shift+P');
     const palette = page.getByRole('dialog', { name: '命令面板' });
     await expect(palette).toBeVisible();
@@ -30,16 +32,16 @@ test('language switch updates settings, sidebar, and command palette copy', asyn
       'placeholder',
       '输入命令、文件、会话或 /slash...',
     );
-    await expect(palette.getByText('操作', { exact: true })).toBeVisible();
-    await expect(palette.getByText('新对话', { exact: true })).toBeVisible();
+    await expect(palette.getByRole('button', { name: /操作 新对话/ })).toBeVisible();
 
     await page.keyboard.press('Escape');
     await page.getByTestId('settings-button').click();
     await page.getByRole('button', { name: 'English' }).click();
     await expect(page.locator('#settings-modal-title')).toHaveText('Settings');
     await expect(page.getByRole('tab', { name: 'License' })).toBeVisible();
-    await expect(page.getByText('Workflow auto-start')).toBeVisible();
+    await expect(page.getByText('Workflow autostart')).toBeVisible();
     await expect(page.getByTestId('settings-button')).toContainText('Settings');
+    await expect(page.locator('button[aria-label^="Theme"]').first()).toBeVisible();
   } finally {
     await space.close();
   }

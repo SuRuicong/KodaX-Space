@@ -16,7 +16,7 @@
 // v2(全嵌 gateway-core，独立进程)再加 gateway-core/gateway-middleware/llm-clients。
 //
 // ⚠️ 注意：
-//   - junction 在 node_modules 内，`npm install` 会冲掉 → 装后重跑 `npm run link:livecanvas`
+//   - junction 在 node_modules 内，`npm ci` 会冲掉 → 装后重跑 `npm run link:livecanvas`
 //     (同 link:kodax 纪律)。
 //   - LC 尚未发 npm(0.1.0)→ 打包时不能像 KodaX 那样 swap 成发布版；packaging 路径要等 LC
 //     发布或单独处理(记 livecanvas_artifact_plan)。
@@ -68,7 +68,7 @@ if (unlinkMode) {
   for (const pkg of PACKAGES) rimrafSafe(path.join(SCOPE_DIR, pkg));
   for (const x of CROSS_SCOPE) rimrafSafe(path.join(SPACE_ROOT, 'node_modules', x.scope, x.name));
   console.log(`[link-livecanvas] removed @livecanvas/* + cross-scope junctions`);
-  console.log(`[link-livecanvas] run \`npm install --force\` if you also want to restore any published tarball.`);
+  console.log(`[link-livecanvas] run \`npm ci\` if you also want to restore package-lock.json state.`);
   process.exit(0);
 }
 
@@ -115,4 +115,4 @@ for (const x of CROSS_SCOPE) {
 
 console.log('');
 console.log('Live LC iteration: edit LC src → `cd ' + LC_REPO + ' && npm run build:packages` → restart Space dev.');
-console.log('Restore after npm install: `npm run link:livecanvas`.');
+console.log('Restore after npm ci: `npm run link:livecanvas`.');

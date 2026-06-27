@@ -83,6 +83,41 @@ test('upsert with existing id appends a version (iterate)', async () => {
   }
 });
 
+test('upsert rejects an existing id from another session', async () => {
+  const { store, dir } = freshStore();
+  try {
+    const { id } = await store.upsert({
+      sessionId: 'session-a',
+      surface: 'partner',
+      kind: 'markdown',
+      title: 'Owned',
+      content: 'v1',
+    });
+
+    await assert.rejects(
+      () =>
+        store.upsert({
+          sessionId: 'session-b',
+          surface: 'partner',
+          kind: 'markdown',
+          id,
+          title: 'Hijack',
+          content: 'v2',
+        }),
+      /different session/,
+    );
+
+    assert.equal((await store.list({ sessionId: 'session-b' })).length, 0);
+    const owned = await store.read(id);
+    assert.equal(owned?.ref.sessionId, 'session-a');
+    assert.equal(owned?.ref.currentVersion, 1);
+    assert.equal(owned?.content, 'v1');
+  } finally {
+    store.invalidate();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('list filters by sessionId and surface', async () => {
   const { store, dir } = freshStore();
   try {
@@ -309,6 +344,37 @@ test('catalog rebuild removes uncommitted artifact dirs and unreferenced version
     assert.equal(existsSync(orphanDir), false);
   } finally {
     store2?.invalidate();
+    store.invalidate();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('catalog upsert recovery returns success when rebuild indexes the written meta', async () => {
+  const { store, dir } = freshStore();
+  type RecoverableStore = {
+    upsertCatalog: (...args: unknown[]) => void;
+  };
+  const internal = store as unknown as RecoverableStore;
+  const originalUpsertCatalog = internal.upsertCatalog.bind(store);
+  let failOnce = true;
+  internal.upsertCatalog = (...args: unknown[]) => {
+    if (failOnce) {
+      failOnce = false;
+      throw new Error('simulated catalog write failure');
+    }
+    originalUpsertCatalog(...args);
+  };
+
+  try {
+    const { id, version, created } = await store.upsert({ ...base, title: 'Doc', content: 'v1' });
+    assert.equal(created, true);
+    assert.equal(version, 1);
+    const list = await store.list({ sessionId: base.sessionId });
+    assert.equal(list.length, 1);
+    assert.equal(list[0]?.id, id);
+    assert.equal((await store.read(id))?.content, 'v1');
+  } finally {
+    internal.upsertCatalog = originalUpsertCatalog;
     store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }

@@ -100,6 +100,33 @@ test('readNativeClipboardImage: persists normalized image inside session sandbox
   await assertArtifactPathInClipboardSandbox('sess-native', out.image.path);
 });
 
+test('readNativeClipboardImage: rejects SDK image blocks outside the session sandbox', async () => {
+  const image = {
+    buffer: Buffer.from(TINY_PNG_BASE64, 'base64'),
+    mediaType: 'image/png' as const,
+    width: 1,
+    height: 1,
+  };
+  const evilPath =
+    process.platform === 'win32' ? 'C:\\Windows\\System32\\config\\SAM' : '/etc/passwd';
+
+  await assert.rejects(
+    () =>
+      readNativeClipboardImage(
+        { sessionId: 'sess-native-escape' },
+        {
+          readAndNormalizeClipboardImage: async () => image,
+          persistImageAsBlock: async () => ({
+            type: 'image',
+            path: evilPath,
+            mediaType: image.mediaType,
+          }),
+        },
+      ),
+    /outside clipboard sandbox/,
+  );
+});
+
 test('readNativeClipboardImage: rejects native images larger than 6 MiB before returning base64', async () => {
   const image = {
     buffer: Buffer.alloc(7 * 1024 * 1024, 0xff),

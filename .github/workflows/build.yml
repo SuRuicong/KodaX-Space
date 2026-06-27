@@ -27,7 +27,7 @@ jobs:
           cache: 'npm'
 
       - name: Install
-        run: npm install
+        run: npm ci
 
       - name: Build packages (needed for typecheck cross-package + tests)
         run: npm run build:packages

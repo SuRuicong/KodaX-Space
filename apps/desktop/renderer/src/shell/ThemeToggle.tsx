@@ -21,16 +21,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { Sun, Moon, Monitor, type LucideIcon } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
+import { useI18n } from '../i18n/I18nProvider.js';
+import type { MessageKey } from '../i18n/messages.js';
 
 const DARK_OVERLAY = { color: '#0b0b0c', symbolColor: '#a1a1aa' };
 const LIGHT_OVERLAY = { color: '#ffffff', symbolColor: '#3f3f46' };
 
 type ThemeKey = 'dark' | 'light' | 'system';
 
-const OPTIONS: ReadonlyArray<{ key: ThemeKey; label: string; Icon: LucideIcon }> = [
-  { key: 'light', label: 'Light', Icon: Sun },
-  { key: 'dark', label: 'Dark', Icon: Moon },
-  { key: 'system', label: 'System', Icon: Monitor },
+const OPTIONS: ReadonlyArray<{ key: ThemeKey; labelKey: MessageKey; Icon: LucideIcon }> = [
+  { key: 'light', labelKey: 'theme.light', Icon: Sun },
+  { key: 'dark', labelKey: 'theme.dark', Icon: Moon },
+  { key: 'system', labelKey: 'theme.system', Icon: Monitor },
 ];
 
 const CYCLE_ORDER: ReadonlyArray<ThemeKey> = ['dark', 'light', 'system'];
@@ -56,6 +58,7 @@ export function applyThemeToDocument(theme: ThemeKey): void {
 }
 
 export function ThemeToggle(): JSX.Element {
+  const { t } = useI18n();
   const theme = useAppStore((s) => s.theme);
   const setTheme = useAppStore((s) => s.setTheme);
   const [open, setOpen] = useState(false);
@@ -99,6 +102,7 @@ export function ThemeToggle(): JSX.Element {
   }, [setTheme]);
 
   const current = OPTIONS.find((o) => o.key === theme) ?? OPTIONS[1];
+  const currentLabel = t(current.labelKey);
 
   return (
     <div className="relative" ref={ref}>
@@ -106,8 +110,8 @@ export function ThemeToggle(): JSX.Element {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="ix-pop text-xs text-fg-muted hover:text-fg-primary px-1.5 py-0.5 rounded hover:bg-hover-bg flex items-center gap-1"
-        title={`Theme: ${current.label} (⇧Ctrl+T)`}
-        aria-label={`Theme ${current.label}`}
+        title={t('themeToggle.title', { theme: currentLabel })}
+        aria-label={t('themeToggle.aria', { theme: currentLabel })}
       >
         <current.Icon className="w-4 h-4" strokeWidth={1.75} aria-hidden />
       </button>
@@ -115,7 +119,7 @@ export function ThemeToggle(): JSX.Element {
       {open && (
         <div className="absolute right-0 top-full mt-1 w-44 bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 text-xs z-50">
           <div className="px-3 py-1 flex justify-between items-center text-fg-muted text-[11px] uppercase tracking-wider">
-            <span>Theme</span>
+            <span>{t('menu.view.theme')}</span>
             <span className="font-mono text-fg-muted flex items-center gap-1">
               <kbd className="px-1 border border-border-strong rounded">⇧</kbd>
               <kbd className="px-1 border border-border-strong rounded">Ctrl</kbd>
@@ -137,7 +141,7 @@ export function ThemeToggle(): JSX.Element {
                 }`}
               >
                 <o.Icon className="w-4 h-4" strokeWidth={1.75} aria-hidden />
-                <span className="flex-1">{o.label}</span>
+                <span className="flex-1">{t(o.labelKey)}</span>
                 {selected && (
                   <span className="text-ok" aria-hidden>
                     ✓

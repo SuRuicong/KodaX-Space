@@ -41,7 +41,10 @@ type MediaSdk = {
 
 let mediaSdkCache: Promise<MediaSdk> | null = null;
 function loadMediaSdk(): Promise<MediaSdk> {
-  mediaSdkCache ??= import('@kodax-ai/kodax/media') as Promise<MediaSdk>;
+  mediaSdkCache ??= (import('@kodax-ai/kodax/media') as Promise<MediaSdk>).catch((err) => {
+    mediaSdkCache = null;
+    throw err;
+  });
   return mediaSdkCache;
 }
 

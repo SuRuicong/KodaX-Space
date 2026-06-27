@@ -15,7 +15,7 @@
 # historically the flakiest combo. Build matrix in release.yml still includes
 # macOS so we don't lose macOS-specific build coverage.
 #
-# Total runtime budget: ~5 min per platform (npm install ~2m + build ~30s +
+# Total runtime budget: ~5 min per platform (npm ci ~2m + build ~30s +
 # e2e ~30s + overhead). Adjust if it grows.
 
 name: ci
@@ -51,7 +51,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm ci
 
       # Linux: install xvfb so Electron has an X display for e2e
       - name: Install xvfb (Linux)

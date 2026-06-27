@@ -430,6 +430,9 @@ export class ArtifactStore {
       const existing = input.id !== undefined ? await this.loadArtifactById(input.id) : null;
 
       if (existing) {
+        if (existing.sessionId !== input.sessionId) {
+          throw new Error('artifact id belongs to a different session');
+        }
         if (existing.versions.length >= MAX_VERSIONS) {
           throw new Error(`artifact ${existing.id} reached max ${MAX_VERSIONS} versions`);
         }
@@ -963,12 +966,15 @@ export class ArtifactStore {
     try {
       this.upsertCatalog(artifact, bytes, metaFingerprint);
     } catch (err) {
-      await this.rebuildCatalogFromDisk().catch((rebuildErr) => {
+      try {
+        await this.rebuildCatalogFromDisk();
+        return;
+      } catch (rebuildErr) {
         console.warn(
           '[ArtifactStore] catalog recovery after upsert failed:',
           rebuildErr instanceof Error ? rebuildErr.message : String(rebuildErr),
         );
-      });
+      }
       throw err;
     }
   }

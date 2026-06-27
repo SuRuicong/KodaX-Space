@@ -34,6 +34,8 @@ import {
 } from '../lib/visualQuality.js';
 import { replaceSessionsInScope, type SessionScope } from '../lib/sessionScope.js';
 
+export type MascotMode = 'legacy' | 'sprite' | 'off';
+
 /**
  * Persistent inline notification (NotificationsSurface 渲染源)。
  *   - id: dedupe key (eg `ctx-warn:${sessionId}` / `auto-fallback:${sessionId}:${reason}`)
@@ -294,7 +296,9 @@ interface AppState {
    * popout"。默认开;用户在 Preferences 里可关。持久化 localStorage。
    */
   smartPopoutEnabled: boolean;
-  /** Composer mascot quick toggle. Default on; persisted so users can keep it hidden. */
+  /** Composer mascot mode. Default is the original mascot; persisted for quick switching. */
+  mascotMode: MascotMode;
+  /** Backward-compatible boolean view of mascotMode. */
   mascotEnabled: boolean;
   nativeCompletionNotificationsEnabled: boolean;
   /**
@@ -493,6 +497,8 @@ interface AppState {
   setActivePopoutKind(kind: string | null): void;
   /** KX-I-02: 切 smart popout director 总开关。立即写 localStorage。 */
   setSmartPopoutEnabled(enabled: boolean): void;
+  setMascotMode(mode: MascotMode): void;
+  cycleMascotMode(): void;
   setMascotEnabled(enabled: boolean): void;
   setNativeCompletionNotificationsEnabled(enabled: boolean): void;
   /** KX-I-02: 标记某 (session, kind) 已被 promote 过(或用户主动开/关过),不再 auto。 */
@@ -532,7 +538,10 @@ const LS_KEY_PENDING_AGENT = 'kodax-space.pendingAgentMode';
 // pendingModel 是 provider-specific 字符串 (eg "anthropic/claude-opus-4-8")，
 // 不像 mode 是封闭 enum——用宽校验：非空 + 长度上限避免 LS 被改成异常长字符串。
 const LS_KEY_PENDING_MODEL = 'kodax-space.pendingModel';
+const LS_KEY_MASCOT_MODE = 'kodax-space.mascotMode';
+const LS_KEY_MASCOT_ENABLED = 'kodax-space.mascotEnabled';
 const PENDING_MODEL_MAX_LEN = 256;
+const MASCOT_MODE_VALUES = ['legacy', 'sprite', 'off'] as const;
 
 // 持久化 pending* 模式时校验合法 enum 值，避免 LS 被改成非法值后崩 (typescript 编译期没法知道)
 const PERMISSION_MODE_VALUES = ['plan', 'accept-edits', 'auto'] as const;
@@ -569,6 +578,25 @@ function readPersistedModel(): string | null {
   if (v === null) return null;
   if (v.length === 0 || v.length > PENDING_MODEL_MAX_LEN) return null;
   return v;
+}
+
+function readPersistedMascotMode(): MascotMode {
+  const mode = lsGet(LS_KEY_MASCOT_MODE);
+  if (mode !== null && (MASCOT_MODE_VALUES as readonly string[]).includes(mode)) {
+    return mode as MascotMode;
+  }
+  return lsGet(LS_KEY_MASCOT_ENABLED) === '0' ? 'off' : 'legacy';
+}
+
+function persistMascotMode(mode: MascotMode): void {
+  lsSet(LS_KEY_MASCOT_MODE, mode);
+  lsSet(LS_KEY_MASCOT_ENABLED, mode === 'off' ? '0' : '1');
+}
+
+function nextMascotMode(mode: MascotMode): MascotMode {
+  if (mode === 'legacy') return 'sprite';
+  if (mode === 'sprite') return 'off';
+  return 'legacy';
 }
 
 /**
@@ -805,6 +833,8 @@ function promoteQueuedUserMessageForPrompt(
   };
 }
 
+const initialMascotMode = readPersistedMascotMode();
+
 export const useAppStore = create<AppState>((set) => ({
   projects: [],
   currentProjectPath: lsGet(LS_KEY_PROJECT),
@@ -871,7 +901,8 @@ export const useAppStore = create<AppState>((set) => ({
   activePopoutKind: null,
   // KX-I-02: smart director 默认 on。"0" 表示用户主动关过。
   smartPopoutEnabled: lsGet('kodax-space.smartPopoutEnabled') !== '0',
-  mascotEnabled: lsGet('kodax-space.mascotEnabled') !== '0',
+  mascotMode: initialMascotMode,
+  mascotEnabled: initialMascotMode !== 'off',
   nativeCompletionNotificationsEnabled:
     lsGet('kodax-space.nativeCompletionNotificationsEnabled') !== '0',
   promotedPopoutsBySession: {},
@@ -1657,9 +1688,22 @@ export const useAppStore = create<AppState>((set) => ({
     set({ smartPopoutEnabled: enabled });
   },
 
+  setMascotMode: (mode) => {
+    persistMascotMode(mode);
+    set({ mascotMode: mode, mascotEnabled: mode !== 'off' });
+  },
+
+  cycleMascotMode: () =>
+    set((state) => {
+      const mode = nextMascotMode(state.mascotMode);
+      persistMascotMode(mode);
+      return { mascotMode: mode, mascotEnabled: mode !== 'off' };
+    }),
+
   setMascotEnabled: (enabled) => {
-    lsSet('kodax-space.mascotEnabled', enabled ? '1' : '0');
-    set({ mascotEnabled: enabled });
+    const mode: MascotMode = enabled ? 'legacy' : 'off';
+    persistMascotMode(mode);
+    set({ mascotMode: mode, mascotEnabled: enabled });
   },
 
   setNativeCompletionNotificationsEnabled: (enabled) => {

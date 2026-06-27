@@ -14,6 +14,39 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 
 ## [Unreleased]
 
+## [0.1.26] - 2026-06-27
+
+### Theme
+
+**Release hardening — Electron security pin + reproducible installs, with composer drag/drop completion, an optional sprite mascot, and desktop responsiveness/i18n polish.**
+
+This release closes out the F107 SDK catch-up / F108 composer-file-reference batch and focuses on release readiness: Electron is pinned to a CVE-clean version while preserving the existing Linux compatibility floor (Debian 10 / glibc 2.28, which keeps 麒麟/Kylin V10 enterprise targets supported), installs are made reproducible (`npm ci` + exact-pinned native dependencies), and a round of UI/navigation/artifact hardening lands.
+
+### Added
+
+- **Sprite mascot mode** - The composer mascot now has a three-way mode (`legacy` / `sprite` / `off`, persisted) with a new pixel-sheet sprite renderer (see [ADR-008](docs/ADR/ADR-008-mascot-soft-rig-animation.md)). The previous on/off toggle is preserved as a backward-compatible view of the new mode.
+- **Native clipboard image fallback** - Pasting an image with no usable text payload now persists the bitmap through the main-process clipboard sandbox and attaches it as an image artifact, reusing the OC-31 image path. Non-image `Files` paste interception is intentionally not added.
+
+### Changed
+
+- **Electron pinned to 42.5.0** - The desktop runtime is pinned to an exact, currently-supported Electron version. This keeps the documented Linux runtime floor at Debian 10 / glibc 2.28 (verified by Electron's own platform-support matrix across 33/40/42), so Kylin V10 (麒麟, glibc 2.28) and other enterprise Linux targets continue to run, while clearing the security advisories below. The esbuild main-process target stays aligned with the bundled Node runtime (`node24`).
+- **Reproducible installs** - CI, release, and the link-safe packaging script now use `npm ci` (lockfile-exact) instead of `npm install`, a repo-level `.npmrc` enforces `save-exact=true`, and `better-sqlite3` is exact-pinned (`12.11.1`) for native-ABI stability. `scripts/pack.mjs` now asserts that `package.json` / `package-lock.json` are not mutated during packaging.
+- **Desktop responsiveness & i18n polish** - Shell, session picker, theme toggle, and bottom-bar layout adapt better to narrow widths, with added/aligned zh/en strings.
+
+### Fixed
+
+- **Navigation guard exact-match** - Trusted main-process `data:` URLs (the boot splash page) are now matched against an exact allow-list instead of a `startsWith` prefix, removing a class of prefix-appended-payload bypass. Covered by a new `navigation-guards` test.
+- **Artifact cross-session isolation** - The artifact store now rejects reusing an artifact id that belongs to a different session, preventing one session from appending versions to another session's artifact.
+- **Media SDK cache invalidation** - A failed dynamic import of `@kodax-ai/kodax/media` no longer poisons the cache permanently; the next clipboard image operation retries the import.
+- **Long session operations no longer time out** - `/delete`, `/fork`, and `/rewind` run without the composer IPC timeout so an in-app confirmation can take as long as needed without a spurious timeout failure.
+- **Runtime diagnostics Escape close**, **shortcut-hint behavior**, and **right-sidebar popout e2e stability** are corrected.
+
+### Security
+
+- **Electron CVE pin (18 HIGH advisories cleared)** - Pinning Electron to `42.5.0` removes a set of known Chromium/Electron security advisories (use-after-free in permission/PowerMonitor/offscreen callbacks, renderer command-line-switch injection, HTTP response-header injection in custom protocol/`webRequest`, `clipboard.readImage` crash on malformed data, named `window.open` scope, ASAR integrity bypass, and more). `npm audit` reports 0 vulnerabilities. The advisory fix floor is Electron `39.8.5`; `42.5.0` was chosen as the currently-supported, already-shipped (v0.1.25) baseline, and it does not raise the Linux glibc floor.
+- **Navigation guard tightening** - As above, the trusted `data:` URL check is now exact-match.
+- **Artifact ownership guard** - As above, cross-session artifact id reuse is rejected.
+
 ## [0.1.25] - 2026-06-25
 
 ### Theme

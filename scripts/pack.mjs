@@ -12,7 +12,7 @@
 //
 // 本脚本做法（对开发者无感）：
 //   1. 检测 SDK 是否 dev-link（realpath 落在 Space 根之外）
-//   2. 若是：记下原 link 目标 → 拆链 → `npm install --force` 装回 package.json 声明的发布版
+//   2. 若是：记下原 link 目标 → 拆链 → `npm ci` 装回 lockfile 声明的发布版
 //   3. 跑 electron-builder（透传平台参数，如 --win / --mac / --linux）
 //   4. finally：把原 link 原样重建（无论打包成功失败都恢复联调链路）
 //   5. 本来就不是 link（干净 CI/release checkout）→ 直接打包，零额外动作
@@ -28,6 +28,25 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SPACE_ROOT = path.resolve(__dirname, '..');
 const SDK_DIR = path.join(SPACE_ROOT, 'node_modules', '@kodax-ai', 'kodax');
 const ROOT_PREFIX = SPACE_ROOT.endsWith(path.sep) ? SPACE_ROOT : SPACE_ROOT + path.sep;
+const MANIFEST_FILES = ['package.json', 'package-lock.json'];
+
+function readManifestSnapshot() {
+  return new Map(
+    MANIFEST_FILES.map((name) => [
+      name,
+      fs.readFileSync(path.join(SPACE_ROOT, name), 'utf8'),
+    ]),
+  );
+}
+
+function assertManifestUnchanged(snapshot, phase) {
+  for (const [name, before] of snapshot.entries()) {
+    const after = fs.readFileSync(path.join(SPACE_ROOT, name), 'utf8');
+    if (after !== before) {
+      throw new Error(`[pack] ${phase} changed ${name}; build scripts must not mutate dependency manifests.`);
+    }
+  }
+}
 
 /**
  * dev-link 判定：SDK 目录的真实路径落在 Space 根之外即为 link。
@@ -72,7 +91,7 @@ function run(cmd, args, label, envOverride) {
     stdio: 'inherit',
     cwd: SPACE_ROOT,
     shell: process.platform === 'win32', // win 下 npm/npx 是 .cmd，需 shell
-    // 关键：不强设 NODE_ENV=production。否则 `npm install` 会丢掉 devDependencies
+    // 关键：不强设 NODE_ENV=production。否则 `npm ci` 会丢掉 devDependencies
     // （electron / electron-builder），打包随即失败。各步按需传 envOverride。
     env: { ...process.env, ...envOverride },
   });
@@ -110,6 +129,7 @@ const passthrough = process.argv.slice(2).filter((arg) => {
   console.warn(`[pack] 忽略不在白名单内的参数: ${arg}`);
   return false;
 });
+const manifestSnapshot = readManifestSnapshot();
 const link = inspectSdkLink();
 
 if (!link.linked) {
@@ -120,6 +140,7 @@ if (!link.linked) {
     'ensure better-sqlite3 electron ABI',
   );
   run('npx', ['electron-builder', '-p', 'never', ...passthrough], 'electron-builder');
+  assertManifestUnchanged(manifestSnapshot, 'pack');
   process.exit(0);
 }
 
@@ -134,16 +155,18 @@ try {
   // npm 会丢掉 electron / electron-builder 等 devDeps，打包随即失败。
   run(
     'npm',
-    ['install', '--force', '--no-audit', '--no-fund', '--include=dev'],
-    'npm install (published SDK)',
+    ['ci', '--no-audit', '--no-fund', '--include=dev'],
+    'npm ci (published SDK)',
     { NODE_ENV: 'development' },
   );
+  assertManifestUnchanged(manifestSnapshot, 'npm ci (published SDK)');
   run(
     'node',
     ['scripts/ensure-sqlite-native.mjs', 'electron'],
     'ensure better-sqlite3 electron ABI',
   );
   run('npx', ['electron-builder', '-p', 'never', ...passthrough], 'electron-builder');
+  assertManifestUnchanged(manifestSnapshot, 'pack');
 } finally {
   try {
     restoreLink(link);

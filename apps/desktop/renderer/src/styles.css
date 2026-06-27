@@ -407,7 +407,7 @@ html.q-minimal .content-copy-button {
   background: rgb(var(--surface-3));
   box-shadow: none;
 }
-/* macOS: traffic lights 占左上 ~78px (hiddenInset)；给 brand 让位 */
+/* macOS: traffic lights 占左上 ~78px (hiddenInset)；给 titlebar leading controls 让位 */
 .platform-darwin .titlebar-brand {
   padding-left: 70px;
 }
@@ -1010,6 +1010,51 @@ html.q-minimal .kodax-dog-mascot__motion {
   transition: none;
 }
 
+.kodax-dog-sprite-mascot {
+  display: block;
+  flex-shrink: 0;
+  aspect-ratio: 1 / 1;
+  overflow: visible;
+  user-select: none;
+}
+
+.kodax-dog-sprite-mascot__frame {
+  display: block;
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.kodax-dog-sprite-mascot__motion {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 100%;
+  transition: transform 180ms linear;
+}
+
+.kodax-dog-sprite-mascot__flip {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 100%;
+}
+
+.kodax-dog-sprite-mascot__sprite {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+html.dark .kodax-dog-sprite-mascot__sprite {
+  filter: invert(1) brightness(1.12) drop-shadow(0 1px 1px rgb(0 0 0 / 0.55));
+}
+
+html.q-minimal .kodax-dog-sprite-mascot__motion {
+  transition: none;
+}
+
 html:not(.q-minimal) .tool-card-anim {
   transition:
     border-color var(--motion-normal) var(--ease-expo),
@@ -1044,6 +1089,7 @@ html:not(.q-minimal) .collapse-track {
   html:not(.q-minimal) .tool-card-anim,
   html:not(.q-minimal) .search-ring-anim,
   html:not(.q-minimal) .kodax-dog-mascot__motion,
+  html:not(.q-minimal) .kodax-dog-sprite-mascot__motion,
   html:not(.q-minimal) .collapse-track {
     animation: none !important;
     transition: none !important;

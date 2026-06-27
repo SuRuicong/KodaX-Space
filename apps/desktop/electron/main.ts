@@ -282,7 +282,7 @@ function createMainWindow(): void {
   installNavigationGuards(win.webContents, {
     devServerUrl: VITE_DEV_SERVER_URL,
     allowedFilePrefix: ALLOWED_FILE_PREFIX,
-    allowedDataUrlPrefix: BOOT_SPLASH_URL_PREFIX,
+    allowedDataUrls: [createBootSplashUrl()],
     openExternal: (url) => void shell.openExternal(url),
   });
 
