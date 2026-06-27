@@ -42,7 +42,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
+          # windows-2022 pins VS 2022 (v17); windows-latest moved to VS 18
+          # which bundled node-gyp cannot detect, breaking the better-sqlite3
+          # native rebuild that packaging depends on.
+          - os: windows-2022
             artifact_glob: 'out/*.exe'
             build_script: build:win
           - os: macos-15-intel

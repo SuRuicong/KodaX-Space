@@ -16,7 +16,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        # windows-2022 pins VS 2022 (v17). The windows-latest image moved to
+        # VS 18 (2026-06-26), which bundled node-gyp (11.5.0) cannot detect
+        # (reads "undefined" + ERR_CHILD_PROCESS_STDIO_MAXBUFFER), breaking the
+        # better-sqlite3 native rebuild. Repin when node-gyp supports VS 18.
+        os: [windows-2022, macos-latest, ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
 

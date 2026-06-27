@@ -40,7 +40,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        # windows-2022 pins VS 2022 (v17); windows-latest moved to VS 18 which
+        # bundled node-gyp cannot detect, breaking the better-sqlite3 rebuild.
+        os: [windows-2022, ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
 
