@@ -30,6 +30,18 @@ files:
   # SQLite catalog for artifact metadata. better-sqlite3 is externalized from
   # the main bundle and loads a native binding at runtime.
   - 'node_modules/better-sqlite3/**/*'
+  # ...but drop the ~44 MB of build residue electron-builder would otherwise
+  # ship: the sqlite amalgamation (deps/), the C++ sources (src/), and the whole
+  # MSVC build tree (build/** — intermediate obj/tlog/.iobj/.ipdb/.pdb/.lib,
+  # vcxproj, and test_extension.* artifacts). Only the compiled binding
+  # build/Release/better_sqlite3.node (~1.9 MB) is loaded at runtime, so
+  # re-include just that one file after excluding the tree. (electron-builder
+  # auto-includes the full production dependency, so an allowlist alone does not
+  # trim it — explicit excludes are required.)
+  - '!**/node_modules/better-sqlite3/deps/**'
+  - '!**/node_modules/better-sqlite3/src/**'
+  - '!**/node_modules/better-sqlite3/build/**'
+  - 'node_modules/better-sqlite3/build/Release/better_sqlite3.node'
   - 'node_modules/bindings/**/*'
   - 'node_modules/file-uri-to-path/**/*'
   - 'package.json'
@@ -55,6 +67,15 @@ files:
 
 asar: true
 
+# Ship only the Electron/Chromium framework locales the app actually uses
+# (the renderer's own zh/en i18n is bundled in JS and is unaffected). Electron
+# bundles ~55 locale .pak files (~47 MB raw); restricting to en-US + zh-CN
+# trims the rest. Chromium's built-in chrome (context menus, etc.) falls back to
+# en-US for any unlisted locale, which is fine for a zh/en product.
+electronLanguages:
+  - en-US
+  - zh-CN
+
 extraResources:
   - from: resources/kodax-license-policy.json
     to: kodax-license-policy.json
@@ -67,6 +88,11 @@ asarUnpack:
   - '**/node_modules/@napi-rs/keyring-*/**'
   - '**/node_modules/node-pty/**'
   - '**/node_modules/better-sqlite3/**'
+  # Keep better-sqlite3's native-binding resolver chain on the filesystem next to
+  # the unpacked .node (tiny: ~25 KB) so require('bindings') never has to cross
+  # the asar boundary.
+  - '**/node_modules/bindings/**'
+  - '**/node_modules/file-uri-to-path/**'
 
 afterPack: scripts/after-pack-win-rcedit.cjs
 
