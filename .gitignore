@@ -83,3 +83,7 @@ test-results/
 .agent/
 .repointel/
 playwright-report/
+
+# Local scratch / working files (asset generation previews, vite-preview logs, etc.)
+# Final assets are committed under apps/desktop/renderer/src/assets/; tmp/ is scratch only.
+tmp/
