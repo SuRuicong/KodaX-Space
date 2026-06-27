@@ -30,7 +30,7 @@ This release closes out the F107 SDK catch-up / F108 composer-file-reference bat
 ### Changed
 
 - **Electron pinned to 42.5.0** - The desktop runtime is pinned to an exact, currently-supported Electron version. This keeps the documented Linux runtime floor at Debian 10 / glibc 2.28 (verified by Electron's own platform-support matrix across 33/40/42), so Kylin V10 (麒麟, glibc 2.28) and other enterprise Linux targets continue to run, while clearing the security advisories below. The esbuild main-process target stays aligned with the bundled Node runtime (`node24`).
-- **Reproducible installs** - CI, release, and the link-safe packaging script now use `npm ci` (lockfile-exact) instead of `npm install`, a repo-level `.npmrc` enforces `save-exact=true`, and `better-sqlite3` is exact-pinned (`12.11.1`) for native-ABI stability. `scripts/pack.mjs` now asserts that `package.json` / `package-lock.json` are not mutated during packaging.
+- **Reproducible installs** - CI and release prefer `npm ci` (lockfile-exact, with an `npm install` fallback for resilience), a repo-level `.npmrc` enforces `save-exact=true`, `better-sqlite3` is exact-pinned (`12.11.1`) for native-ABI stability, and the lockfile is regenerated under the CI npm major so `npm ci` stays in sync across platforms. `scripts/pack.mjs` uses `npm ci` for the published-SDK swap and asserts that `package.json` / `package-lock.json` are not mutated during packaging.
 - **Desktop responsiveness & i18n polish** - Shell, session picker, theme toggle, and bottom-bar layout adapt better to narrow widths, with added/aligned zh/en strings.
 
 ### Fixed
