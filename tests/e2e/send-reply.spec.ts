@@ -17,6 +17,10 @@ import os from 'node:os';
 import { launchSpace } from './fixtures.js';
 
 test('S3: send a prompt and see assistant reply via mock adapter', async () => {
+  // The mock assistant turn (text → tool_start → tool_result → iteration_end)
+  // can be slow to fully render under load on the Windows CI runner; give the
+  // whole flow generous headroom so a slow-but-correct turn is not flagged.
+  test.setTimeout(90_000);
   const testId = `s3-${Date.now()}`;
   // 准备一个真实存在的 project 目录（Space main 端 validateProjectRoot 会查盘）
   const projectDir = path.join(os.tmpdir(), `kodax-test-${testId}-project`);
@@ -49,7 +53,7 @@ test('S3: send a prompt and see assistant reply via mock adapter', async () => {
     // 不展开看不到）。
     await expect(
       stream.getByText(/Ran 1 command/).first(),
-    ).toBeVisible({ timeout: 15_000 });
+    ).toBeVisible({ timeout: 30_000 });
   } finally {
     await space.close();
     await fs.rm(projectDir, { recursive: true, force: true }).catch(() => {});

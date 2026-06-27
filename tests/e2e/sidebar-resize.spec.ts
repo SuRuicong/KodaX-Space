@@ -40,7 +40,27 @@ test('sidebar width writes to localStorage and survives reload', async () => {
     });
     await reload(page);
 
-    await expect(inlineWidth(page, 'right-sidebar')).resolves.toBe('380px');
+    // The right sidebar additionally clamps to a responsive "expanded" ceiling
+    // (~half the available paired width) that depends on the viewport, so a
+    // persisted 380 renders narrower on small windows (e.g. the Windows CI
+    // window). Measure that ceiling, then assert the persisted 380 round-trips
+    // as min(380, ceiling) and survives another reload — stable across window
+    // sizes/platforms instead of hard-coding 380px.
+    await page.evaluate(() => {
+      window.localStorage.setItem('kodax-space.rightSidebarWidth', '9999');
+    });
+    await reload(page);
+    const ceilingPx = Number.parseInt(await inlineWidth(page, 'right-sidebar'), 10);
+    expect(ceilingPx).toBeGreaterThan(0);
+
+    await page.evaluate(() => {
+      window.localStorage.setItem('kodax-space.rightSidebarWidth', '380');
+    });
+    await reload(page);
+    const expectedRight = `${Math.min(380, ceilingPx)}px`;
+    await expect(inlineWidth(page, 'right-sidebar')).resolves.toBe(expectedRight);
+    await reload(page);
+    await expect(inlineWidth(page, 'right-sidebar')).resolves.toBe(expectedRight);
   } finally {
     await space.close();
   }

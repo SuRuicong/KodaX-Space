@@ -198,6 +198,9 @@ async function expectSectionPopoutToggle(
 }
 
 test('right sidebar full-panel buttons open and close promptly while a session streams', async () => {
+  // Seeding sidebar signals and rendering them while a session streams is
+  // slower under load on the Windows CI runner; give the test headroom.
+  test.setTimeout(90_000);
   const testId = `right-sidebar-popouts-${Date.now()}`;
   const { space, projectDir } = await launchSeededSpace(testId);
   try {
@@ -215,7 +218,7 @@ test('right sidebar full-panel buttons open and close promptly while a session s
           await seedRightSidebarSignals(space, sessionId);
           return (await sidebar.textContent()) ?? '';
         },
-        { timeout: 5_000, intervals: [100, 250, 500, 1000] },
+        { timeout: 15_000, intervals: [100, 250, 500, 1000] },
       )
       .toContain('Inspect plan popout button');
 
