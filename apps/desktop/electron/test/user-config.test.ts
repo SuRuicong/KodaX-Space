@@ -96,6 +96,27 @@ test('reasoningCeiling alone is used', async () => {
   assert.equal(d.reasoningMode, 'balanced');
 });
 
+test('effort preferred over legacy reasoning fields (v0.7.57 compat)', async () => {
+  mockUserConfig({
+    effort: 'medium',
+    reasoningCeiling: 'deep',
+    reasoningMode: 'quick',
+  });
+  const d = await loadKodaxUserDefaults();
+  assert.equal(d.reasoningMode, 'balanced');
+});
+
+test('effort aliases map to Space reasoning defaults', async () => {
+  mockUserConfig({ effort: 'off' });
+  assert.equal((await loadKodaxUserDefaults()).reasoningMode, 'off');
+
+  mockUserConfig({ effort: 'max' });
+  assert.equal((await loadKodaxUserDefaults()).reasoningMode, 'deep');
+
+  mockUserConfig({ effort: 'vendor-custom' });
+  assert.equal((await loadKodaxUserDefaults()).reasoningMode, undefined);
+});
+
 test('reasoning invalid value → undefined', async () => {
   mockUserConfig({ reasoningMode: 'nonsense' });
   const d = await loadKodaxUserDefaults();
@@ -196,31 +217,34 @@ test('loadKodaxCustomProviders exposes SDK config custom providers as Space summ
 
 test('registerKodaxCustomProviders forwards customProviders array to SDK', async () => {
   const calls: Array<{ customProviders?: unknown[] }> = [];
-  mockUserConfig({
-    customProviders: [
-      {
-        name: 'p1',
-        protocol: 'anthropic',
-        baseUrl: 'https://p1.example.com/v1/',
-        apiKeyEnv: 'P1_API_KEY',
-        model: 'claude-sonnet-4-6',
-      },
-      {
-        name: 'bad-env',
-        protocol: 'anthropic',
-        baseUrl: 'https://p2.example.com/v1',
-        apiKeyEnv: 'NODE_OPTIONS',
-        model: 'claude-sonnet-4-6',
-      },
-      {
-        name: 'bad-url',
-        protocol: 'anthropic',
-        baseUrl: 'http://169.254.169.254/latest/meta-data',
-        apiKeyEnv: 'P3_API_KEY',
-        model: 'claude-sonnet-4-6',
-      },
-    ],
-  }, { registerCalls: calls });
+  mockUserConfig(
+    {
+      customProviders: [
+        {
+          name: 'p1',
+          protocol: 'anthropic',
+          baseUrl: 'https://p1.example.com/v1/',
+          apiKeyEnv: 'P1_API_KEY',
+          model: 'claude-sonnet-4-6',
+        },
+        {
+          name: 'bad-env',
+          protocol: 'anthropic',
+          baseUrl: 'https://p2.example.com/v1',
+          apiKeyEnv: 'NODE_OPTIONS',
+          model: 'claude-sonnet-4-6',
+        },
+        {
+          name: 'bad-url',
+          protocol: 'anthropic',
+          baseUrl: 'http://169.254.169.254/latest/meta-data',
+          apiKeyEnv: 'P3_API_KEY',
+          model: 'claude-sonnet-4-6',
+        },
+      ],
+    },
+    { registerCalls: calls },
+  );
   await registerKodaxCustomProviders();
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0].customProviders, [

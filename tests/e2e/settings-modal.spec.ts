@@ -125,7 +125,6 @@ test('SettingsModal providers tab adds a custom provider and saves its API key',
     await page.getByRole('button', { name: 'Add custom' }).click();
     await page.getByLabel('Display name').fill('E2E Gateway');
     await page.getByLabel('Base URL').fill('https://api.example.com/v1');
-    await page.getByLabel('API key env var').fill('E2E_GATEWAY_API_KEY');
     await page.getByLabel('Default model').fill('e2e-model');
     await page.getByPlaceholder('Paste API key').fill('sk-e2e-provider-key');
     await page.getByRole('button', { name: 'Add provider' }).click();
@@ -153,7 +152,6 @@ test('SettingsModal keeps a partially-created custom provider visible when key s
     await page.getByRole('button', { name: 'Add custom' }).click();
     await page.getByLabel('Display name').fill('Partial Gateway');
     await page.getByLabel('Base URL').fill('https://partial.example.com/v1');
-    await page.getByLabel('API key env var').fill('PARTIAL_GATEWAY_API_KEY');
     await page.getByLabel('Default model').fill('partial-model');
     await page.getByPlaceholder('Paste API key').fill(`sk-${'x'.repeat(4100)}`);
     await page.getByRole('button', { name: 'Add provider' }).click();
@@ -184,9 +182,10 @@ test('SettingsModal does not allow an unconfigured provider to become default', 
     await page.getByRole('button', { name: 'Add custom' }).click();
     await page.getByLabel('Display name').fill('No Key Gateway');
     await page.getByLabel('Base URL').fill('https://nokey.example.com/v1');
-    await page.getByLabel('API key env var').fill('NO_KEY_GATEWAY_API_KEY');
+    await page.getByRole('button', { name: 'Use environment variable' }).click();
+    await page.getByLabel('Environment variable name').fill('NO_KEY_GATEWAY_API_KEY');
     await page.getByLabel('Default model').fill('nokey-model');
-    await expect(page.getByLabel('Set as default after saving key')).toBeDisabled();
+    await expect(page.getByLabel('Set as default after saving key')).toHaveCount(0);
     await page.getByRole('button', { name: 'Add provider' }).click();
 
     const card = page.locator('article', { hasText: 'No Key Gateway' });
@@ -234,14 +233,15 @@ test('SettingsModal API key editor Escape cancels edit without closing the modal
     await page.getByRole('button', { name: 'Add custom' }).click();
     await page.getByLabel('Display name').fill('Escape Gateway');
     await page.getByLabel('Base URL').fill('https://escape.example.com/v1');
-    await page.getByLabel('API key env var').fill('ESCAPE_GATEWAY_API_KEY');
+    await page.getByRole('button', { name: 'Use environment variable' }).click();
+    await page.getByLabel('Environment variable name').fill('ESCAPE_GATEWAY_API_KEY');
     await page.getByLabel('Default model').fill('escape-model');
     await page.getByRole('button', { name: 'Add provider' }).click();
 
     const card = page.locator('article', { hasText: 'Escape Gateway' });
     await expect(card).toBeVisible({ timeout: 5000 });
     await card.getByRole('button', { name: 'Add key' }).click();
-    const keyInput = card.getByPlaceholder('Paste ESCAPE_GATEWAY_API_KEY');
+    const keyInput = card.getByPlaceholder('Paste API key');
     await expect(keyInput).toBeVisible();
     await keyInput.fill('sk-escape');
     await page.keyboard.press('Escape');

@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { registerChannel } from './register.js';
 import type { RepointelStatusItemT, RepointelStatusOutput } from '@kodax-space/space-ipc-schema';
+import { loadSpaceSdkCoding } from '../kodax/sdk-extensions.js';
 
-const WARM_UNSUPPORTED_REASON =
-  'The current KodaX SDK exposes repo-intelligence through session trace events, but not a standalone warm API.';
+const WARM_SUPPORTED_REASON =
+  'KodaX SDK exposes built-in best-effort repo-intelligence prewarm; use /repointel warm to start it for the current project.';
 
 function canReadDirectory(dir: string): boolean {
   try {
@@ -25,14 +26,90 @@ function findGitRoot(startDir: string): string | null {
   }
 }
 
-function item(id: string, status: RepointelStatusItemT['status'], detail: string): RepointelStatusItemT {
+function item(
+  id: string,
+  status: RepointelStatusItemT['status'],
+  detail: string,
+): RepointelStatusItemT {
   return { id, status, detail };
 }
 
-function buildStatus(projectRoot: string | undefined): RepointelStatusOutput {
+function sdkStatus(status: string): RepointelStatusItemT['status'] {
+  if (status === 'unavailable') return 'blocked';
+  if (status === 'limited') return 'warn';
+  return 'ok';
+}
+
+async function sdkDiagnostics(projectRoot: string | null): Promise<{
+  readonly warmSupported: boolean;
+  readonly warmReason: string;
+  readonly diagnostics: readonly RepointelStatusItemT[];
+}> {
+  try {
+    const sdk = await loadSpaceSdkCoding();
+    const inspection = await sdk.inspectRepoIntelligenceRuntime({
+      probe: true,
+      ...(projectRoot ? { workspaceRoot: projectRoot } : {}),
+    });
+    const diagnostics: RepointelStatusItemT[] = [
+      item(
+        'repo-intelligence',
+        sdkStatus(inspection.status),
+        `Built-in engine status=${inspection.status}, configured=${inspection.configuredMode}, requested=${inspection.requestedMode}, effective=${inspection.effectiveEngine}, trace=${inspection.traceEnabled ? 'on' : 'off'}.`,
+      ),
+    ];
+    if (inspection.workerPath) {
+      diagnostics.push(
+        item(
+          'worker',
+          inspection.status === 'unavailable' ? 'blocked' : 'ok',
+          `Worker sidecar: ${inspection.workerPath}`,
+        ),
+      );
+    }
+    if (inspection.storageRoot) {
+      diagnostics.push(
+        item(
+          'storage',
+          inspection.status === 'limited' ? 'warn' : 'ok',
+          `Cache directory: ${inspection.storageRoot}`,
+        ),
+      );
+    }
+    for (const warning of inspection.warnings) {
+      diagnostics.push(item('warning', 'warn', warning));
+    }
+    if (inspection.error) {
+      diagnostics.push(item('error', sdkStatus(inspection.status), inspection.error));
+    }
+    return {
+      warmSupported: inspection.requestedMode !== 'off',
+      warmReason:
+        inspection.requestedMode === 'off'
+          ? 'Repo intelligence is disabled by KodaX config.'
+          : WARM_SUPPORTED_REASON,
+      diagnostics,
+    };
+  } catch (err) {
+    return {
+      warmSupported: false,
+      warmReason: `KodaX repo-intelligence inspection is unavailable: ${err instanceof Error ? err.message : String(err)}`,
+      diagnostics: [
+        item(
+          'repo-intelligence',
+          'blocked',
+          `KodaX repo-intelligence inspection failed: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      ],
+    };
+  }
+}
+
+async function buildStatus(projectRoot: string | undefined): Promise<RepointelStatusOutput> {
   const normalizedProjectRoot = projectRoot ? path.resolve(projectRoot) : null;
   const projectExists = normalizedProjectRoot !== null && canReadDirectory(normalizedProjectRoot);
   const gitRoot = projectExists ? findGitRoot(normalizedProjectRoot) : null;
+  const sdk = await sdkDiagnostics(normalizedProjectRoot);
 
   const diagnostics: RepointelStatusItemT[] = [
     normalizedProjectRoot
@@ -56,7 +133,8 @@ function buildStatus(projectRoot: string | undefined): RepointelStatusOutput {
       'ok',
       'Space consumes KodaX repo-intelligence trace events from active session events.',
     ),
-    item('warm', 'blocked', WARM_UNSUPPORTED_REASON),
+    item('warm', sdk.warmSupported ? 'ok' : 'warn', sdk.warmReason),
+    ...sdk.diagnostics,
   ];
 
   return {
@@ -64,12 +142,15 @@ function buildStatus(projectRoot: string | undefined): RepointelStatusOutput {
     projectExists,
     gitRoot,
     traceSource: 'session-events',
-    warmSupported: false,
-    warmReason: WARM_UNSUPPORTED_REASON,
+    warmSupported: sdk.warmSupported,
+    warmReason: sdk.warmReason,
     diagnostics,
   };
 }
 
 export function registerRepointelChannels(): void {
-  registerChannel('repointel.status', (input): RepointelStatusOutput => buildStatus(input.projectRoot));
+  registerChannel(
+    'repointel.status',
+    (input): Promise<RepointelStatusOutput> => buildStatus(input.projectRoot),
+  );
 }

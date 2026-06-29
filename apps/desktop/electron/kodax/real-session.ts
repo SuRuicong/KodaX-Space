@@ -127,6 +127,7 @@ import {
   drainQueueForSession,
   enqueueUserPrompt,
 } from '../ipc/queue.js';
+import { reasoningModeToEffort } from './reasoning-effort.js';
 
 type SpaceReasoning = 'off' | 'auto' | 'quick' | 'balanced' | 'deep';
 
@@ -871,8 +872,8 @@ export class RealKodaXSession implements ManagedSession {
       // ---- Repointel trace ----
       onRepoIntelligenceTrace: (event) => {
         // SDK KodaXRepoIntelligenceTraceEvent: { stage, summary, capability?, trace? }
-        // IPC repointelTraceSchema: { kind, mode?, engine?, bridge?, status?, latencyMs?, cacheHit? }
-        // Mapping: stage→kind; capability.{mode,engine,bridge,status}→IPC optionals; trace.{daemonLatencyMs,cacheHit}→IPC optionals
+        // IPC repointelTraceSchema keeps the historic repointel_* name but now
+        // carries the built-in repo-intelligence mode/engine/status fields.
         emitLive({
           kind: 'repointel_trace',
           sessionId: sid,
@@ -882,13 +883,11 @@ export class RealKodaXSession implements ManagedSession {
               ? {
                   mode: event.capability.mode,
                   engine: event.capability.engine,
-                  bridge: event.capability.bridge,
                   status: event.capability.status,
                 }
               : {}),
             ...(event.trace !== undefined
               ? {
-                  latencyMs: event.trace.daemonLatencyMs ?? event.trace.cliLatencyMs,
                   cacheHit: event.trace.cacheHit,
                 }
               : {}),
@@ -1127,7 +1126,7 @@ export class RealKodaXSession implements ManagedSession {
 
     const options: KodaXOptions = {
       provider: this.provider,
-      reasoningMode: this.reasoningMode,
+      effort: reasoningModeToEffort(this.reasoningMode),
       // KodaX agent 形态：AMA / AMAW / SA。显式传以便用户切换生效。
       agentMode: this.agentMode,
       // SDK 0.7.42 wired (P0): /model + /thinking 设置在下一 turn 生效

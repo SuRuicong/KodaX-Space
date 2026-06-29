@@ -27,20 +27,28 @@ import { useEffect, useState } from 'react';
 import type { ProviderInfo, SessionMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 import { pushToast } from '../store/toastStore.js';
+import { useI18n } from '../i18n/I18nProvider.js';
+import type { MessageKey } from '../i18n/messages.js';
 import { resolveActiveModel } from './resolveActiveModel.js';
 
 type ReasoningMode = SessionMeta['reasoningMode'];
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
-const EFFORT_LABEL: Record<ReasoningMode, string> = {
-  off: 'Low',
-  quick: 'Med',
-  balanced: 'High',
-  auto: 'Higher',
-  deep: 'Max',
+const EFFORT_LABEL_KEYS: Record<ReasoningMode, MessageKey> = {
+  off: 'modelPicker.effort.off',
+  quick: 'modelPicker.effort.quick',
+  balanced: 'modelPicker.effort.balanced',
+  auto: 'modelPicker.effort.auto',
+  deep: 'modelPicker.effort.deep',
 };
 const EFFORT_ORDER: readonly ReasoningMode[] = ['off', 'quick', 'balanced', 'auto', 'deep'];
 
+function effortLabel(mode: ReasoningMode, t: Translate): string {
+  return t(EFFORT_LABEL_KEYS[mode]);
+}
+
 export function ModelEffortSelector(): JSX.Element {
+  const { t } = useI18n();
   const sessions = useAppStore((s) => s.sessions);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const providers = useAppStore((s) => s.providers);
@@ -181,11 +189,11 @@ export function ModelEffortSelector(): JSX.Element {
         const r = await window.kodaxSpace.invoke('settings.setRuntimeDefaults', {
           runtimeDefaults: { reasoningMode: mode },
         });
-        if (!r.ok) pushToast(r.error?.message ?? 'Failed to save runtime defaults', 'error');
+        if (!r.ok) pushToast(r.error?.message ?? t('modelPicker.saveDefaultsFailed'), 'error');
         else setRuntimeDefaults(r.data.runtimeDefaults ?? {});
       }
     } catch (err) {
-      pushToast(err instanceof Error ? err.message : 'Failed to save runtime defaults', 'error');
+      pushToast(err instanceof Error ? err.message : t('modelPicker.saveDefaultsFailed'), 'error');
     } finally {
       setBusy(false);
     }
@@ -213,12 +221,13 @@ export function ModelEffortSelector(): JSX.Element {
   // Button label 拆两行：long provider name 不再挤掉 model/effort
   // Top: provider displayName
   // Bottom: model · effort + (next) 后缀
-  const providerLabel = activeProvider?.displayName ?? activeProviderId ?? 'pick provider';
+  const providerLabel =
+    activeProvider?.displayName ?? activeProviderId ?? t('modelPicker.pickProvider');
   // 同 ModeSelector：用 currentSessionId 判定，避免 sessions[] race 误显示 (next)
-  const effortLabel = EFFORT_LABEL[activeEffort];
+  const activeEffortLabel = effortLabel(activeEffort, t);
   const modelEffortLine = currentSessionId
-    ? `${activeModel} · ${effortLabel}`
-    : `${activeModel} · ${effortLabel} (next)`;
+    ? `${activeModel} · ${activeEffortLabel}`
+    : `${activeModel} · ${activeEffortLabel} (${t('modelPicker.nextSuffix')})`;
 
   // 打开时把 preview 重置到 active provider
   function openPicker(): void {
@@ -234,9 +243,7 @@ export function ModelEffortSelector(): JSX.Element {
         type="button"
         onClick={openPicker}
         className="font-mono text-[11px] hover:text-fg-primary flex items-center gap-1.5"
-        title={
-          session ? 'Change provider/model/effort' : 'Pick provider/model/effort for next session'
-        }
+        title={session ? t('modelPicker.title.active') : t('modelPicker.title.next')}
       >
         {/* 两行：上行 provider displayName（强调），下行 model · effort（次要） */}
         <span className="flex flex-col items-end leading-tight text-right">
@@ -257,7 +264,7 @@ export function ModelEffortSelector(): JSX.Element {
           <div className="grid grid-cols-2 gap-0">
             <div className="border-r border-border-default">
               <div className="px-3 py-1 flex justify-between items-center text-fg-muted text-[11px] uppercase tracking-wider">
-                <span>Provider</span>
+                <span>{t('modelPicker.provider')}</span>
                 <span className="font-mono text-fg-muted flex items-center gap-1">
                   <kbd className="px-1 border border-border-strong rounded">Ctrl</kbd>
                   <kbd className="px-1 border border-border-strong rounded">I</kbd>
@@ -266,7 +273,7 @@ export function ModelEffortSelector(): JSX.Element {
               <div className="max-h-64 overflow-y-auto">
                 {configuredProviders.length === 0 ? (
                   <div className="px-3 py-1 text-fg-muted text-[11px]">
-                    No configured providers — open Settings to add key
+                    {t('modelPicker.noConfiguredProviders')}
                   </div>
                 ) : (
                   configuredProviders.map((p, idx) => {
@@ -302,12 +309,16 @@ export function ModelEffortSelector(): JSX.Element {
 
             <div>
               <div className="px-3 py-1 flex justify-between items-center text-fg-muted text-[11px] uppercase tracking-wider">
-                <span>Model</span>
-                {!session && <span className="text-warn normal-case">for next session</span>}
+                <span>{t('modelPicker.model')}</span>
+                {!session && (
+                  <span className="text-warn normal-case">{t('modelPicker.nextSession')}</span>
+                )}
               </div>
               <div className="max-h-64 overflow-y-auto">
                 {previewModels.length === 0 ? (
-                  <div className="px-3 py-1 text-fg-muted text-[11px]">No models</div>
+                  <div className="px-3 py-1 text-fg-muted text-[11px]">
+                    {t('modelPicker.noModels')}
+                  </div>
                 ) : (
                   previewModels.map((m) => {
                     const isActive = activeProviderId === previewProvider?.id && activeModel === m;
@@ -338,7 +349,7 @@ export function ModelEffortSelector(): JSX.Element {
           {/* Effort 行（横跨 2 列底部） */}
           <div className="border-t border-border-default pt-1">
             <div className="px-3 py-1 flex justify-between items-center text-fg-muted text-[11px] uppercase tracking-wider">
-              <span>Effort</span>
+              <span>{t('modelPicker.effort')}</span>
               <span className="font-mono text-fg-muted flex items-center gap-1">
                 <kbd className="px-1 border border-border-strong rounded">⇧</kbd>
                 <kbd className="px-1 border border-border-strong rounded">Ctrl</kbd>
@@ -357,7 +368,7 @@ export function ModelEffortSelector(): JSX.Element {
                       selected ? 'bg-surface-3 text-fg-primary' : 'text-fg-secondary'
                     }`}
                   >
-                    {EFFORT_LABEL[m]}
+                    {effortLabel(m, t)}
                     {selected && (
                       <span className="ml-0.5 text-ok" aria-hidden>
                         ✓

@@ -18,6 +18,7 @@
 
 import { validateApiKeyEnv } from '../providers/env-guard.js';
 import { validateBaseUrl } from '../providers/url-guard.js';
+import { effortToReasoningMode, isSpaceReasoningMode } from './reasoning-effort.js';
 
 type SdkRootModule = typeof import('@kodax-ai/kodax');
 type SdkLoadConfigReturn = ReturnType<SdkRootModule['loadConfig']>;
@@ -73,7 +74,9 @@ export interface KodaxUserConfigImpl {
   /** SDK saveConfig — 写回 ~/.kodax/config.json */
   readonly saveConfig?: (config: SdkLoadConfigReturn) => void;
   /** SDK registerConfiguredCustomProviders — 注册到运行时 LLM registry */
-  readonly registerCustomProviders: (config: { customProviders?: SdkCustomProviderConfig[] }) => void;
+  readonly registerCustomProviders: (config: {
+    customProviders?: SdkCustomProviderConfig[];
+  }) => void;
 }
 
 let sdkModuleCache: SdkRootModule | null = null;
@@ -124,10 +127,7 @@ export async function prewarmKodaxUserConfig(): Promise<void> {
   try {
     await loadSdkRootModule();
   } catch (err) {
-    console.warn(
-      '[kodax-user-config] prewarm failed:',
-      err instanceof Error ? err.message : err,
-    );
+    console.warn('[kodax-user-config] prewarm failed:', err instanceof Error ? err.message : err);
   }
 }
 
@@ -191,13 +191,15 @@ async function computeUserDefaults(): Promise<KodaxUserDefaults> {
     return { customProvidersCount: 0 };
   }
 
-  // reasoningCeiling 是 v0.7.29 后的 preferred name；reasoningMode 是旧名。
-  // 都映射到同一 Space 字段，preferred wins。
-  const reasoningRaw = raw.reasoningCeiling ?? raw.reasoningMode;
-  const reasoningMode = normalizeReasoningMode(reasoningRaw);
+  // KodaX 0.7.57 起首选 effort；reasoningCeiling/reasoningMode 仅作为旧配置兼容。
+  // Space IPC 仍暴露旧 5 档枚举，因此这里先映射回现有字段。
+  const reasoningMode =
+    effortToReasoningMode(raw.effort) ??
+    normalizeReasoningMode(raw.reasoningCeiling ?? raw.reasoningMode);
 
   return {
-    provider: typeof raw.provider === 'string' && raw.provider.length > 0 ? raw.provider : undefined,
+    provider:
+      typeof raw.provider === 'string' && raw.provider.length > 0 ? raw.provider : undefined,
     model: typeof raw.model === 'string' && raw.model.length > 0 ? raw.model : undefined,
     thinking: typeof raw.thinking === 'boolean' ? raw.thinking : undefined,
     reasoningMode,
@@ -340,14 +342,9 @@ export async function registerKodaxCustomProviders(
 // ---- helpers ----
 
 /** SDK 可能返回 string 标记的 reasoningMode；mapped 到 Space 的 union；其它值丢弃。*/
-function normalizeReasoningMode(
-  v: unknown,
-): KodaxUserDefaults['reasoningMode'] {
+function normalizeReasoningMode(v: unknown): KodaxUserDefaults['reasoningMode'] {
   if (typeof v !== 'string') return undefined;
-  const allowed = ['off', 'auto', 'quick', 'balanced', 'deep'] as const;
-  return (allowed as readonly string[]).includes(v)
-    ? (v as KodaxUserDefaults['reasoningMode'])
-    : undefined;
+  return isSpaceReasoningMode(v) ? v : undefined;
 }
 
 /**
@@ -388,12 +385,12 @@ function normalizeKodaxConfigCustomProvider(
   const apiKeyEnv = raw.apiKeyEnv;
   const model = raw.model;
   if (
-    !isNonEmptyString(name)
-    || !isSafeProviderId(name)
-    || !isSupportedCustomProtocol(protocol)
-    || !isNonEmptyString(baseUrl)
-    || !isNonEmptyString(apiKeyEnv)
-    || !isNonEmptyString(model)
+    !isNonEmptyString(name) ||
+    !isSafeProviderId(name) ||
+    !isSupportedCustomProtocol(protocol) ||
+    !isNonEmptyString(baseUrl) ||
+    !isNonEmptyString(apiKeyEnv) ||
+    !isNonEmptyString(model)
   ) {
     return null;
   }
@@ -484,11 +481,12 @@ function normalizeModelList(models: unknown): readonly string[] | undefined {
   if (!Array.isArray(models)) return undefined;
   const seen = new Set<string>();
   for (const item of models) {
-    const id = typeof item === 'string'
-      ? item
-      : item && typeof item === 'object'
-        ? (item as { id?: unknown }).id
-        : undefined;
+    const id =
+      typeof item === 'string'
+        ? item
+        : item && typeof item === 'object'
+          ? (item as { id?: unknown }).id
+          : undefined;
     if (isNonEmptyString(id)) seen.add(id);
   }
   return seen.size > 0 ? [...seen] : undefined;

@@ -21,15 +21,71 @@ interface CustomProviderFormProps {
   readonly onCancel: () => void;
 }
 type CustomProtocol = 'openai' | 'anthropic';
+type CredentialMode = 'apiKey' | 'env';
 type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
 function providerProtocol(provider: ProviderInfo | undefined): CustomProtocol {
   return provider?.protocol === 'anthropic' ? 'anthropic' : 'openai';
 }
 
+function providerCredentialMode(provider: ProviderInfo | undefined): CredentialMode {
+  return provider?.configuredSource === 'env' ? 'env' : 'apiKey';
+}
+
+function providerHasManagedKey(provider: ProviderInfo | undefined): boolean {
+  return provider?.configuredSource === 'keychain' || provider?.configuredSource === 'both';
+}
+
 function providerModelsCsv(provider: ProviderInfo | undefined): string {
   return (provider?.models ?? []).join(', ');
 }
+
+function suggestedApiKeyEnv(displayName: string): string {
+  const stem = displayName
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  const namedStem = stem.length > 0 ? stem : 'CUSTOM_PROVIDER';
+  const safeStem = /^[A-Z_]/.test(namedStem) ? namedStem : `CUSTOM_${namedStem}`;
+  const suffix = safeStem.endsWith('_API_KEY') ? '' : '_API_KEY';
+  return `${safeStem.slice(0, 128 - suffix.length)}${suffix}`;
+}
+
+function normalizeModels(defaultModel: string, csv: string): string[] | undefined {
+  const rawModels = csv
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  if (rawModels.length === 0) return undefined;
+
+  const models: string[] = [];
+  const seen = new Set<string>();
+  const add = (model: string): void => {
+    if (model.length === 0 || seen.has(model)) return;
+    seen.add(model);
+    models.push(model);
+  };
+
+  add(defaultModel);
+  rawModels.forEach(add);
+  return models;
+}
+
+const MODEL_PLACEHOLDERS: Record<
+  CustomProtocol,
+  { readonly defaultModel: string; readonly models: string }
+> = {
+  openai: {
+    defaultModel: 'gpt-5.3-codex',
+    models: 'gpt-5.3-codex, gpt-5.3',
+  },
+  anthropic: {
+    defaultModel: 'claude-sonnet-4-6',
+    models: 'claude-sonnet-4-6, claude-opus-4-7',
+  },
+};
+
 const FIELD_IDS = {
   displayName: 'custom-provider-display-name',
   displayNameHint: 'custom-provider-display-name-hint',
@@ -39,6 +95,8 @@ const FIELD_IDS = {
   baseUrlHint: 'custom-provider-base-url-hint',
   skipBaseUrlValidation: 'custom-provider-skip-base-url-validation',
   skipBaseUrlValidationHint: 'custom-provider-skip-base-url-validation-hint',
+  credentialModeLabel: 'custom-provider-credential-mode-label',
+  credentialModeHint: 'custom-provider-credential-mode-hint',
   apiKeyEnv: 'custom-provider-api-key-env',
   apiKeyEnvHint: 'custom-provider-api-key-env-hint',
   defaultModel: 'custom-provider-default-model',
@@ -61,9 +119,11 @@ export function CustomProviderForm({
   const mountedRef = useRef(true);
   const isEditing = provider !== undefined;
   const initialProtocol = useMemo(() => providerProtocol(provider), [provider]);
+  const initialCredentialMode = useMemo(() => providerCredentialMode(provider), [provider]);
   const initialModelsCsv = useMemo(() => providerModelsCsv(provider), [provider]);
   const [displayName, setDisplayName] = useState(provider?.displayName ?? '');
   const [protocol, setProtocol] = useState<CustomProtocol>(initialProtocol);
+  const [credentialMode, setCredentialMode] = useState<CredentialMode>(initialCredentialMode);
   const [baseUrl, setBaseUrl] = useState(provider?.baseUrl ?? '');
   const [skipBaseUrlValidation, setSkipBaseUrlValidation] = useState(
     provider?.skipBaseUrlValidation ?? false,
@@ -76,7 +136,7 @@ export function CustomProviderForm({
   const [setAsDefault, setSetAsDefault] = useState(!isEditing);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [step, setStep] = useState<'idle' | 'provider' | 'key' | 'default'>('idle');
+  const [step, setStep] = useState<'idle' | 'provider' | 'key' | 'removeKey' | 'default'>('idle');
   const [createdProviderId, setCreatedProviderId] = useState<string | null>(null);
 
   useEffect(
@@ -94,23 +154,21 @@ export function CustomProviderForm({
     setErr(null);
     setStep('provider');
 
-    const submittedKey = apiKey.trim();
+    const submittedKey = credentialMode === 'apiKey' ? apiKey.trim() : '';
     setApiKey('');
     setRevealKey(false);
 
     try {
-      const models = modelsCsv
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
+      const trimmedDefaultModel = defaultModel.trim();
+      const models = normalizeModels(trimmedDefaultModel, modelsCsv);
       const config = {
         displayName: displayName.trim(),
         protocol,
         baseUrl: baseUrl.trim(),
         skipBaseUrlValidation: skipBaseUrlValidation ? true : undefined,
-        apiKeyEnv: apiKeyEnv.trim(),
-        defaultModel: defaultModel.trim(),
-        models: models.length > 0 ? models : undefined,
+        apiKeyEnv: effectiveApiKeyEnv,
+        defaultModel: trimmedDefaultModel,
+        models,
       };
 
       if (isEditing) {
@@ -139,6 +197,18 @@ export function CustomProviderForm({
                 message: keyResult.error.message,
               }),
             );
+            return;
+          }
+        }
+
+        if (credentialMode === 'env' && providerHasManagedKey(provider)) {
+          setStep('removeKey');
+          const removeResult = await window.kodaxSpace.invoke('provider.removeKey', {
+            providerId,
+          });
+          if (!removeResult.ok) {
+            await onPartialSaved?.(providerId);
+            setErr(`${removeResult.error.code}: ${removeResult.error.message}`);
             return;
           }
         }
@@ -208,14 +278,24 @@ export function CustomProviderForm({
     if (!busy) onCancel();
   }
 
+  const hasExistingManagedKey = providerHasManagedKey(provider);
+  const hasDraftKey = apiKey.trim().length > 0;
+  const effectiveApiKeyEnv =
+    credentialMode === 'apiKey'
+      ? apiKeyEnv.trim() || suggestedApiKeyEnv(displayName)
+      : apiKeyEnv.trim();
+  const credentialValid =
+    credentialMode === 'apiKey'
+      ? hasDraftKey || (isEditing && hasExistingManagedKey)
+      : apiKeyEnv.trim().length > 0;
   const valid =
     displayName.trim().length > 0 &&
     baseUrl.trim().length > 0 &&
-    apiKeyEnv.trim().length > 0 &&
+    credentialValid &&
     defaultModel.trim().length > 0;
-  const hasDraftKey = apiKey.trim().length > 0;
   const canSubmit = valid && !createdProviderId;
   const formLocked = busy || createdProviderId !== null;
+  const modelPlaceholders = MODEL_PLACEHOLDERS[protocol];
 
   return (
     <form
@@ -243,6 +323,7 @@ export function CustomProviderForm({
           hint={t('customProvider.displayName.hint')}
           inputId={FIELD_IDS.displayName}
           hintId={FIELD_IDS.displayNameHint}
+          requiredLabel={t('common.required')}
         >
           <input
             id={FIELD_IDS.displayName}
@@ -289,6 +370,7 @@ export function CustomProviderForm({
           hint={t('customProvider.baseUrl.hint')}
           inputId={FIELD_IDS.baseUrl}
           hintId={FIELD_IDS.baseUrlHint}
+          requiredLabel={t('common.required')}
         >
           <input
             id={FIELD_IDS.baseUrl}
@@ -330,36 +412,76 @@ export function CustomProviderForm({
         </label>
 
         <Field
-          label={t('customProvider.apiKeyEnv.label')}
-          hint={t('customProvider.apiKeyEnv.hint')}
-          inputId={FIELD_IDS.apiKeyEnv}
-          hintId={FIELD_IDS.apiKeyEnvHint}
+          label={t('customProvider.credentialMode.label')}
+          hint={t('customProvider.credentialMode.hint')}
+          labelId={FIELD_IDS.credentialModeLabel}
+          hintId={FIELD_IDS.credentialModeHint}
+          className="lg:col-span-2"
+          requiredLabel={t('common.required')}
         >
-          <input
-            id={FIELD_IDS.apiKeyEnv}
-            type="text"
-            value={apiKeyEnv}
-            onChange={(e) => setApiKeyEnv(e.target.value.toUpperCase())}
-            placeholder="OPENROUTER_API_KEY"
-            className={`${inputClass} font-mono`}
-            required
-            disabled={formLocked}
-            aria-describedby={FIELD_IDS.apiKeyEnvHint}
-          />
+          <div
+            role="group"
+            aria-labelledby={FIELD_IDS.credentialModeLabel}
+            aria-describedby={FIELD_IDS.credentialModeHint}
+            className="grid grid-cols-2 gap-2"
+          >
+            <ProtocolButton
+              active={credentialMode === 'apiKey'}
+              label={t('customProvider.credentialMode.apiKey')}
+              onClick={() => {
+                setCredentialMode('apiKey');
+                if (!isEditing) setApiKeyEnv('');
+              }}
+              disabled={formLocked}
+            />
+            <ProtocolButton
+              active={credentialMode === 'env'}
+              label={t('customProvider.credentialMode.env')}
+              onClick={() => {
+                setCredentialMode('env');
+                setApiKey('');
+                setRevealKey(false);
+              }}
+              disabled={formLocked}
+            />
+          </div>
         </Field>
+
+        {credentialMode === 'env' && (
+          <Field
+            label={t('customProvider.apiKeyEnv.label')}
+            hint={t('customProvider.apiKeyEnv.hint')}
+            inputId={FIELD_IDS.apiKeyEnv}
+            hintId={FIELD_IDS.apiKeyEnvHint}
+            requiredLabel={t('common.required')}
+          >
+            <input
+              id={FIELD_IDS.apiKeyEnv}
+              type="text"
+              value={apiKeyEnv}
+              onChange={(e) => setApiKeyEnv(e.target.value.toUpperCase())}
+              placeholder="OPENROUTER_API_KEY"
+              className={`${inputClass} font-mono`}
+              required
+              disabled={formLocked}
+              aria-describedby={FIELD_IDS.apiKeyEnvHint}
+            />
+          </Field>
+        )}
 
         <Field
           label={t('customProvider.defaultModel.label')}
           hint={t('customProvider.defaultModel.hint')}
           inputId={FIELD_IDS.defaultModel}
           hintId={FIELD_IDS.defaultModelHint}
+          requiredLabel={t('common.required')}
         >
           <input
             id={FIELD_IDS.defaultModel}
             type="text"
             value={defaultModel}
             onChange={(e) => setDefaultModel(e.target.value)}
-            placeholder="openai/gpt-5.3-codex"
+            placeholder={modelPlaceholders.defaultModel}
             className={`${inputClass} font-mono`}
             required
             disabled={formLocked}
@@ -378,60 +500,67 @@ export function CustomProviderForm({
             type="text"
             value={modelsCsv}
             onChange={(e) => setModelsCsv(e.target.value)}
-            placeholder="openai/gpt-5.3-codex, anthropic/claude-sonnet-4-6"
+            placeholder={modelPlaceholders.models}
             className={`${inputClass} font-mono`}
             disabled={formLocked}
             aria-describedby={FIELD_IDS.modelsHint}
           />
         </Field>
 
-        <Field
-          label={t('customProvider.apiKey.label')}
-          hint={isEditing ? t('customProvider.apiKey.editHint') : t('customProvider.apiKey.hint')}
-          inputId={FIELD_IDS.apiKey}
-          hintId={FIELD_IDS.apiKeyHint}
-          className="lg:col-span-2"
-        >
-          <div className="flex gap-2">
-            <div className="relative min-w-0 flex-1">
-              <KeyRound
-                className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-muted"
-                strokeWidth={1.8}
-                aria-hidden
-              />
-              <input
-                id={FIELD_IDS.apiKey}
-                type={revealKey ? 'text' : 'password'}
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={t('customProvider.apiKey.placeholder')}
-                className={`${inputClass} pl-9 pr-3 font-mono`}
-                autoComplete="off"
+        {credentialMode === 'apiKey' && (
+          <Field
+            label={t('customProvider.apiKey.label')}
+            hint={isEditing ? t('customProvider.apiKey.editHint') : t('customProvider.apiKey.hint')}
+            inputId={FIELD_IDS.apiKey}
+            hintId={FIELD_IDS.apiKeyHint}
+            className="lg:col-span-2"
+            requiredLabel={!isEditing && !hasExistingManagedKey ? t('common.required') : undefined}
+          >
+            <div className="flex gap-2">
+              <div className="relative min-w-0 flex-1">
+                <KeyRound
+                  className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-muted"
+                  strokeWidth={1.8}
+                  aria-hidden
+                />
+                <input
+                  id={FIELD_IDS.apiKey}
+                  type={revealKey ? 'text' : 'password'}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={t('customProvider.apiKey.placeholder')}
+                  className={`${inputClass} pl-9 pr-3 font-mono`}
+                  autoComplete="off"
+                  required={!isEditing && !hasExistingManagedKey}
+                  disabled={formLocked}
+                  aria-describedby={FIELD_IDS.apiKeyHint}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setRevealKey((v) => !v)}
                 disabled={formLocked}
-                aria-describedby={FIELD_IDS.apiKeyHint}
-              />
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border-default bg-surface-3 text-fg-muted hover:bg-hover-bg hover:text-fg-primary disabled:opacity-50"
+                aria-label={
+                  revealKey ? t('customProvider.hideApiKey') : t('customProvider.showApiKey')
+                }
+                title={revealKey ? t('customProvider.hideApiKey') : t('customProvider.showApiKey')}
+              >
+                {revealKey ? (
+                  <EyeOff className="h-4 w-4" strokeWidth={1.8} aria-hidden />
+                ) : (
+                  <Eye className="h-4 w-4" strokeWidth={1.8} aria-hidden />
+                )}
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setRevealKey((v) => !v)}
-              disabled={formLocked}
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border-default bg-surface-3 text-fg-muted hover:bg-hover-bg hover:text-fg-primary disabled:opacity-50"
-              aria-label={
-                revealKey ? t('customProvider.hideApiKey') : t('customProvider.showApiKey')
-              }
-              title={revealKey ? t('customProvider.hideApiKey') : t('customProvider.showApiKey')}
-            >
-              {revealKey ? (
-                <EyeOff className="h-4 w-4" strokeWidth={1.8} aria-hidden />
-              ) : (
-                <Eye className="h-4 w-4" strokeWidth={1.8} aria-hidden />
-              )}
-            </button>
-          </div>
-        </Field>
+            <span className="mt-2 block rounded-lg border border-info/25 bg-info/10 px-3 py-2 text-[11px] leading-4 text-fg-muted">
+              {t('customProvider.apiKey.storageHint', { env: effectiveApiKeyEnv })}
+            </span>
+          </Field>
+        )}
       </div>
 
-      {!isEditing && (
+      {!isEditing && credentialMode === 'apiKey' && (
         <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-border-default bg-surface/70 px-3 py-3">
           <input
             type="checkbox"
@@ -471,7 +600,8 @@ export function CustomProviderForm({
           className="btn-accent inline-flex min-h-9 items-center justify-center gap-2 rounded-lg px-4 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
         >
           {busy ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} aria-hidden />          ) : createdProviderId ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} aria-hidden />
+          ) : createdProviderId ? (
             <Check className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
           ) : isEditing ? (
             <Save className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
@@ -506,11 +636,12 @@ export function CustomProviderForm({
 }
 
 function progressLabel(
-  step: 'idle' | 'provider' | 'key' | 'default',
+  step: 'idle' | 'provider' | 'key' | 'removeKey' | 'default',
   t: Translate,
   isEditing: boolean,
 ): string {
   if (step === 'key') return t('customProvider.progress.savingKey');
+  if (step === 'removeKey') return t('customProvider.progress.removingStoredKey');
   if (step === 'default') return t('customProvider.progress.settingDefault');
   if (step === 'provider') {
     return isEditing
@@ -556,6 +687,7 @@ function Field({
   labelId,
   hintId,
   className,
+  requiredLabel,
   children,
 }: {
   readonly label: string;
@@ -564,6 +696,7 @@ function Field({
   readonly labelId?: string;
   readonly hintId?: string;
   readonly className?: string;
+  readonly requiredLabel?: string;
   readonly children: ReactNode;
 }): JSX.Element {
   const labelNode = inputId ? (
@@ -581,7 +714,17 @@ function Field({
 
   return (
     <div className={`block ${className ?? ''}`}>
-      <span className="flex items-baseline justify-between gap-2">{labelNode}</span>
+      <span className="flex items-baseline justify-between gap-2">
+        {labelNode}
+        {requiredLabel && (
+          <span
+            aria-hidden
+            className="rounded border border-warning/35 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-warning"
+          >
+            {requiredLabel}
+          </span>
+        )}
+      </span>
       <span className="mt-1 block">{children}</span>
       <span id={hintId} className="mt-1 block text-[11px] leading-4 text-fg-muted">
         {hint}

@@ -60,7 +60,7 @@ function buildCapabilityLedger(): SpaceCapability[] {
       label: 'Repointel local status',
       status: 'supported',
       detail:
-        'Space exposes a local status/doctor readout for project, git root, trace source, and warm support; standalone warm remains SDK-gated.',
+        'Space exposes KodaX 0.7.57 built-in repo-intelligence inspection for project, git root, trace source, worker/cache health, and best-effort warm support.',
     },
     {
       id: 'quickAsk.tempSession',
@@ -73,8 +73,16 @@ function buildCapabilityLedger(): SpaceCapability[] {
     {
       id: 'quickAsk.sideQuery',
       label: 'Quick Ask side query',
-      status: 'blocked',
-      detail: 'A true sideQuery API is not exposed by the current KodaX SDK contract.',
+      status: 'partial',
+      detail:
+        'KodaX exposes sideQuery through @kodax-ai/kodax/llm; Space still uses temporary sessions until Quick Ask promotion/history semantics are matched.',
+    },
+    {
+      id: 'reasoning.effortV2',
+      label: 'Reasoning effort v2',
+      status: 'supported',
+      detail:
+        'Space maps its five existing effort choices to KodaX 0.7.57 canonical effort values at SDK boundaries and reads the new KodaX config effort default with legacy reasoning fallback.',
     },
     {
       id: 'handoff.receive',

@@ -1641,7 +1641,8 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
     argsHint: '[status|mode|trace|warm|endpoint|bin]',
     source: 'builtin',
     handler: async (ctx) => {
-      if (!kodaxHost.get(ctx.sessionId)) {
+      const session = kodaxHost.get(ctx.sessionId);
+      if (!session) {
         return { ok: false, message: `session not found: ${ctx.sessionId}` };
       }
       // renderer 端 dispatchSlashAction 读 events buffer 抽 repointel_trace
@@ -1661,10 +1662,15 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
         return { ok: true, message: '__action__:show-repointel-trace', echo: false };
       }
       if (detailMode === 'warm') {
+        const sdk = await loadSpaceSdkCoding();
+        sdk.prewarmRepoIntelligenceCaches({
+          gitRoot: session.projectRoot,
+          executionCwd: session.projectRoot,
+        });
         return {
           ok: true,
           message:
-            '[repointel] warm is not available: the current KodaX SDK does not expose a standalone warm API. Send a session message to trigger repo-intelligence trace events.',
+            '[repointel] repo-intelligence prewarm started for this project. It is best-effort; use /repointel status or /repointel trace to inspect results.',
           echo: true,
         };
       }

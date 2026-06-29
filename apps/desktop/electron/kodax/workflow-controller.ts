@@ -22,6 +22,7 @@ import { getSpaceDataDir } from './data-paths.js';
 import { pushToRenderer } from '../ipc/push.js';
 import { artifactStore } from '../artifact/store.js';
 import { detectArtifactKind } from '../artifact/workflow-artifact-bridge.js';
+import { reasoningModeToEffort } from './reasoning-effort.js';
 
 // ---- SDK 形状(只取本控制器用到的子集,避免硬依赖 SDK 类型导出) ----
 interface SdkProcessSnapshot {
@@ -1303,7 +1304,7 @@ export class WorkflowController {
     // 不带主对话的 events/storage/compact 等 per-run 状态(那些是 real-session 对话回路专用)。
     const options: Record<string, unknown> = {
       provider: s.provider,
-      reasoningMode: s.reasoningMode,
+      effort: reasoningModeToEffort(s.reasoningMode),
       agentMode: s.agentMode,
       ...(s.model ? { model: s.model } : {}),
       context: { gitRoot: s.projectRoot, executionCwd: s.projectRoot },
@@ -1652,7 +1653,7 @@ export class WorkflowController {
   private launchOptions(s: LaunchSession): Record<string, unknown> {
     return {
       provider: s.provider,
-      reasoningMode: s.reasoningMode,
+      effort: reasoningModeToEffort(s.reasoningMode),
       agentMode: s.agentMode,
       ...(s.model ? { model: s.model } : {}),
       context: { gitRoot: s.projectRoot, executionCwd: s.projectRoot },

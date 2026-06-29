@@ -14,6 +14,15 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 
 ## [Unreleased]
 
+### Changed
+
+- **KodaX 0.7.57 SDK catch-up** - Root and desktop workspace dependencies now resolve `@kodax-ai/kodax` `^0.7.57`. Space maps its existing five effort choices to the SDK's canonical `effort` field at real-session and workflow SDK boundaries, and reads the new KodaX config `effort` default before falling back to legacy `reasoningCeiling` / `reasoningMode`.
+- **Built-in repo-intelligence diagnostics** - `/repointel status` now uses the KodaX 0.7.57 built-in repo-intelligence inspection API for worker/cache/mode diagnostics, and `/repointel warm` triggers the SDK's best-effort prewarm path for the current project.
+
+### Fixed
+
+- **Repo-intelligence trace compatibility** - `session.event` now accepts the 0.7.57 built-in repo-intelligence modes (`off` / `light` / `full`) while preserving the older Repointel mode values for historical events.
+
 ## [0.1.26] - 2026-06-27
 
 ### Theme

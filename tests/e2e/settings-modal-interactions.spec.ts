@@ -44,11 +44,16 @@ async function addCustomProvider(
     await page.getByRole('button', { name: 'Anthropic compatible' }).click();
   }
   await page.getByLabel('Display name').fill(name);
-  await page.getByLabel('Base URL').fill(`https://${env.toLowerCase().replaceAll('_', '-')}.example.com/v1`);
-  await page.getByLabel('API key env var').fill(env);
+  await page
+    .getByLabel('Base URL')
+    .fill(`https://${env.toLowerCase().replaceAll('_', '-')}.example.com/v1`);
+  if (!key) {
+    await page.getByRole('button', { name: 'Use environment variable' }).click();
+    await page.getByLabel('Environment variable name').fill(env);
+  }
   await page.getByLabel('Default model').fill(model);
   if (models) {
-    await page.getByLabel('Model aliases').fill(models);
+    await page.getByLabel('Model list').fill(models);
   }
   if (key) {
     await page.getByPlaceholder('Paste API key').fill(key);
@@ -176,18 +181,15 @@ test('Settings preferences controls are keyboardable, minimal, and persist edits
     await expect(page.getByText('Path cannot be empty.')).toBeVisible();
 
     const pickedWorkspace = `${space.testDataDir}\\picked-workspace`;
-    await space.app.evaluate(
-      async ({ dialog }, selectedPath) => {
-        const patchedDialog = dialog as unknown as {
-          showOpenDialog: () => Promise<{ canceled: boolean; filePaths: string[] }>;
-        };
-        patchedDialog.showOpenDialog = async () => ({
-          canceled: false,
-          filePaths: [selectedPath as string],
-        });
-      },
-      pickedWorkspace,
-    );
+    await space.app.evaluate(async ({ dialog }, selectedPath) => {
+      const patchedDialog = dialog as unknown as {
+        showOpenDialog: () => Promise<{ canceled: boolean; filePaths: string[] }>;
+      };
+      patchedDialog.showOpenDialog = async () => ({
+        canceled: false,
+        filePaths: [selectedPath as string],
+      });
+    }, pickedWorkspace);
     await dialog.getByRole('button', { name: 'Browse' }).click();
     await expect(workspaceInput).toHaveValue(pickedWorkspace);
     await saveWorkspace.click();
@@ -276,9 +278,10 @@ test('Settings interactive inventory has no unnamed controls across dynamic stat
       'Anthropic compatible',
       'Base URL',
       'Skip URL safety checks',
-      'API key env var',
+      'Paste API key',
+      'Use environment variable',
       'Default model',
-      'Model aliases',
+      'Model list',
       'API key',
       'Show API key',
       'Set as default after saving key',
@@ -288,7 +291,8 @@ test('Settings interactive inventory has no unnamed controls across dynamic stat
 
     await page.getByLabel('Display name').fill('Inventory Gateway');
     await page.getByLabel('Base URL').fill('https://inventory-gateway-api-key.example.com/v1');
-    await page.getByLabel('API key env var').fill('INVENTORY_GATEWAY_API_KEY');
+    await page.getByRole('button', { name: 'Use environment variable' }).click();
+    await page.getByLabel('Environment variable name').fill('INVENTORY_GATEWAY_API_KEY');
     await page.getByLabel('Default model').fill('inventory-model');
     await page.getByRole('button', { name: 'Add provider' }).click();
     const card = page.locator('article', { hasText: 'Inventory Gateway' });
@@ -306,6 +310,33 @@ test('Settings interactive inventory has no unnamed controls across dynamic stat
   }
 });
 
+test('Settings language switch localizes provider settings and custom form', async () => {
+  const space = await launchSpace(`${TEST_ID}-language-switch`);
+  try {
+    const { page } = space;
+    await openSettings(page);
+
+    await page.getByRole('button', { name: '简体中文' }).click();
+    await expect(page.getByRole('tab', { name: '偏好' })).toBeVisible();
+
+    await page.getByRole('tab', { name: '服务商' }).click();
+    await expect(page.locator('#settings-panel-providers')).toBeVisible();
+    await expect(page.getByText('已配置', { exact: true })).toBeVisible();
+    await expect(page.getByText('密钥存储', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: '添加自定义' }).click();
+    await expect(page.getByRole('heading', { name: '添加自定义服务商' })).toBeVisible();
+    await expect(page.getByText('凭证来源', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '粘贴 API Key' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '使用环境变量' })).toBeVisible();
+    await expect(page.getByText('默认模型', { exact: true })).toBeVisible();
+    await expect(page.getByText('模型列表', { exact: true })).toBeVisible();
+    await expect(page.getByText('Model aliases')).toHaveCount(0);
+  } finally {
+    await space.close();
+  }
+});
+
 test('Settings providers toolbar and custom form stay compact but complete', async () => {
   const space = await launchSpace(`${TEST_ID}-provider-form`);
   try {
@@ -315,7 +346,9 @@ test('Settings providers toolbar and custom form stay compact but complete', asy
     const providersPanel = page.locator('#settings-panel-providers');
 
     await providersPanel.getByRole('button', { name: 'Refresh', exact: true }).click();
-    await expect(providersPanel.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
+    await expect(
+      providersPanel.getByRole('button', { name: 'Refresh', exact: true }),
+    ).toBeEnabled();
 
     await page.getByRole('button', { name: 'Add custom' }).click();
     await expect(page.getByRole('heading', { name: 'Add custom provider' })).toBeVisible();
@@ -398,7 +431,8 @@ test('Custom provider form failures remain clear and non-destructive', async () 
     await page.getByRole('button', { name: 'Add custom' }).click();
     await page.getByLabel('Display name').fill('Invalid Gateway');
     await page.getByLabel('Base URL').fill('http://invalid.example.com/v1');
-    await page.getByLabel('API key env var').fill('INVALID_GATEWAY_API_KEY');
+    await page.getByRole('button', { name: 'Use environment variable' }).click();
+    await page.getByLabel('Environment variable name').fill('INVALID_GATEWAY_API_KEY');
     await page.getByLabel('Default model').fill('invalid-model');
     await expect(page.getByRole('button', { name: 'Add provider' })).toBeEnabled();
     await page.getByRole('button', { name: 'Add provider' }).click();
@@ -407,7 +441,7 @@ test('Custom provider form failures remain clear and non-destructive', async () 
     await expect(page.getByLabel('Display name')).toHaveValue('Invalid Gateway');
 
     await page.getByLabel('Base URL').fill('https://invalid.example.com/v1');
-    await page.getByLabel('API key env var').fill('PATH');
+    await page.getByLabel('Environment variable name').fill('PATH');
     await page.getByRole('button', { name: 'Add provider' }).click();
     await expect(page.getByText('apiKeyEnv "PATH" is reserved')).toBeVisible();
     await expect(page.locator('article', { hasText: 'Invalid Gateway' })).toHaveCount(0);

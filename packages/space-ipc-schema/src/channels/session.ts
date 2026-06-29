@@ -628,7 +628,9 @@ const todoItemSchema = z.object({
 
 const repointelTraceSchema = z.object({
   kind: z.string().min(1).max(64),
-  mode: z.enum(['auto', 'off', 'oss', 'premium-shared', 'premium-native']).optional(),
+  mode: z
+    .enum(['auto', 'off', 'light', 'full', 'oss', 'premium-shared', 'premium-native'])
+    .optional(),
   engine: z.string().max(64).optional(),
   bridge: z.string().max(64).optional(),
   status: z.string().max(64).optional(),

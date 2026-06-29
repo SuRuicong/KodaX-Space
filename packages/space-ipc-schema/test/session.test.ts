@@ -159,6 +159,26 @@ test('session.create output includes resolved runtime settings', () => {
   assert.equal(sessionCreateChannel.output.safeParse({ ...output, createdAt: -1 }).success, false);
 });
 
+test('repo-intelligence trace accepts KodaX 0.7.57 built-in modes', () => {
+  for (const mode of ['off', 'light', 'full'] as const) {
+    assert.equal(
+      sessionEventChannel.payload.safeParse({
+        kind: 'repointel_trace',
+        sessionId: 's_1',
+        event: {
+          kind: 'preturn',
+          mode,
+          engine: mode === 'off' ? 'light' : mode,
+          status: mode === 'off' ? 'disabled' : 'ok',
+          cacheHit: true,
+        },
+      }).success,
+      true,
+      `repointel_trace should accept ${mode}`,
+    );
+  }
+});
+
 test('session.send output is { accepted: true } literal', () => {
   assert.equal(sessionSendChannel.output.safeParse({ accepted: true }).success, true);
   // accepted: false 不被允许——失败走 envelope error，不走业务 ack
