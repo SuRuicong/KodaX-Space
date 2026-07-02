@@ -33,6 +33,7 @@ export async function probeKodaxSdk(): Promise<void> {
     ['getBuiltinRegisteredToolDefinition', 'function', codingModule.getBuiltinRegisteredToolDefinition],
     ['getKodaxGlobalDir', 'function', codingModule.getKodaxGlobalDir],
     ['getRegisteredToolDefinition', 'function', codingModule.getRegisteredToolDefinition],
+    ['isToolNetworkRead', 'function', codingModule.isToolNetworkRead],
     ['loadAutoRules', 'function', codingModule.loadAutoRules],
     ['resolveProvider', 'function', codingModule.resolveProvider],
   ];
@@ -57,6 +58,11 @@ export async function probeKodaxSdk(): Promise<void> {
   // 让 release pipeline 全平台死。降级成 console.warn — 缺失时 test-connection.ts
   // 走 fallback 返回 "SDK 不支持此功能"，UI 仍能用。
   const llmModule = await import('@kodax-ai/kodax/llm');
+  if (typeof llmModule.resolveModelCapabilities !== 'function') {
+    failures.push(
+      `@kodax-ai/kodax/llm.resolveModelCapabilities: expected function, got ${typeof llmModule.resolveModelCapabilities}`,
+    );
+  }
   if (typeof llmModule.verifyProviderCredential !== 'function') {
     console.warn(
       '[kodax-sdk-probe] @kodax-ai/kodax/llm.verifyProviderCredential not present in this SDK build. ' +

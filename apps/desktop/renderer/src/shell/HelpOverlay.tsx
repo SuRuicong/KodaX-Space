@@ -71,7 +71,7 @@ const GROUPS: readonly ShortcutGroup[] = [
       { keys: ['/cost'], label: 'Show token usage' },
       { keys: ['/tree'], label: 'Show session lineage' },
       { keys: ['/history'], label: 'Show user message history' },
-      { keys: ['/compact'], label: 'Compact context on next turn' },
+      { keys: ['/compact'], label: 'Compact context now' },
       { keys: ['/clear'], label: 'Clear conversation' },
     ],
   },

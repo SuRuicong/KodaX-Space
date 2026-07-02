@@ -6,7 +6,7 @@
 //
 // 纯函数（无副作用）以便单测。
 
-import type { ArtifactKindT } from '@kodax-space/space-ipc-schema';
+import { looksLikeInteractiveHtml, type ArtifactKindT } from '@kodax-space/space-ipc-schema';
 
 export interface DetectedArtifact {
   readonly kind: ArtifactKindT;
@@ -28,7 +28,9 @@ function clip(s: string): string {
 function detectStringKind(s: string): ArtifactKindT {
   const head = s.trimStart().slice(0, 256).toLowerCase();
   if (head.startsWith('<svg') || head.includes('<svg ')) return 'svg';
-  if (head.startsWith('<!doctype html') || head.startsWith('<html') || head.includes('<html')) return 'html';
+  if (head.startsWith('<!doctype html') || head.startsWith('<html') || head.includes('<html')) {
+    return looksLikeInteractiveHtml(s) ? 'interactive-html' : 'html';
+  }
   // markdown 启发：标题 / 列表 / 围栏代码块 等标记
   if (/^#{1,6}\s|\n#{1,6}\s|^[-*]\s|\n[-*]\s|```/.test(s.slice(0, 512))) return 'markdown';
   return 'code';

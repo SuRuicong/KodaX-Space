@@ -593,8 +593,24 @@ const ACTIVITY_ICON: Record<WorkflowActivityPayload['kind'], string> = {
   tool_use: '▸',
   tool_result: '✓',
   end: '■',
+  digest: '≡',
 };
 const ACTIVITY_WINDOW = 6;
+
+function workflowActivityLabel(activity: WorkflowActivityPayload): string {
+  if (activity.kind === 'end') return '完成';
+  if (activity.kind === 'digest') {
+    if (activity.summary) return `摘要: ${activity.summary}`;
+    if (activity.verification) {
+      const reason = activity.verification.reasons[0];
+      return activity.verification.ok
+        ? '验证通过'
+        : `验证未通过${reason ? `: ${reason}` : ''}`;
+    }
+    return '摘要';
+  }
+  return activity.toolName ?? activity.kind;
+}
 
 /** 子 agent 活动条：显示最近几条 discrete 活动（工具调用/结果/封口），按子 agent 标注。 */
 function WorkflowActivityStrip({ runId }: { runId: string }): JSX.Element | null {
@@ -616,7 +632,7 @@ function WorkflowActivityStrip({ runId }: { runId: string }): JSX.Element | null
               {a.childAgentName}
             </span>
           )}
-          <span className="truncate">{a.kind === 'end' ? '完成' : (a.toolName ?? a.kind)}</span>
+          <span className="truncate">{workflowActivityLabel(a)}</span>
         </div>
       ))}
     </div>

@@ -1,29 +1,14 @@
-// Per-run artifact attribution context (F058).
+// Back-compat shim for the original artifact-specific run context.
 //
-// A globally-registered tool handler (create_artifact) has no sessionId/surface
-// in its KodaXToolExecutionContext. We carry them via AsyncLocalStorage: each
-// run wraps sdk.runManagedTask in withArtifactContext({sessionId, surface}); the
-// tool handler (executing within that run's async context) reads it. ALS is
-// concurrency-safe — two sessions running in parallel each see their own context
-// (a single module-global "active run" would be ambiguous under concurrency).
+// Space-owned SDK tools now share one per-session run context so artifacts,
+// Partner sources, and future Partner KB tools all read the same attribution
+// boundary. Keep the old names for existing tests/imports.
 
-import { AsyncLocalStorage } from 'node:async_hooks';
+import type { SessionRunContext } from '../kodax/session-run-context.js';
 
-export interface ArtifactRunContext {
-  sessionId: string;
-  surface: 'code' | 'partner';
-  /** The run's project root — used to scope-validate doc-kind artifact paths. */
-  projectRoot: string;
-}
+export type ArtifactRunContext = SessionRunContext;
 
-const storage = new AsyncLocalStorage<ArtifactRunContext>();
-
-/** Run `fn` with the given artifact attribution context bound for its async subtree. */
-export function withArtifactContext<T>(ctx: ArtifactRunContext, fn: () => Promise<T>): Promise<T> {
-  return storage.run(ctx, fn);
-}
-
-/** The active run's attribution context, or undefined when not inside withArtifactContext. */
-export function currentArtifactContext(): ArtifactRunContext | undefined {
-  return storage.getStore();
-}
+export {
+  withSessionRunContext as withArtifactContext,
+  currentSessionRunContext as currentArtifactContext,
+} from '../kodax/session-run-context.js';

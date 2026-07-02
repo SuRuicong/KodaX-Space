@@ -5,7 +5,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ChartArtifact } from '../../apps/desktop/renderer/src/features/artifact/renderers/ChartArtifact';
-import { HtmlArtifact } from '../../apps/desktop/renderer/src/features/artifact/renderers/HtmlArtifact';
+import {
+  HtmlArtifact,
+  InteractiveHtmlArtifact,
+} from '../../apps/desktop/renderer/src/features/artifact/renderers/HtmlArtifact';
 import { SvgArtifact, ImageArtifact } from '../../apps/desktop/renderer/src/features/artifact/renderers/MediaArtifact';
 // markdown artifact path: ArtifactView renders <Markdown content/> in a div, so
 // testing the Markdown component directly faithfully covers it.
@@ -28,6 +31,24 @@ const chartSpec = {
 const svg =
   '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" fill="#f59e0b"/></svg>';
 
+const interactiveHtml = `<!doctype html>
+<html>
+  <body style="margin:0;background:#111827;color:white">
+    <canvas id="c" width="120" height="80"></canvas>
+    <b id="ran">waiting</b>
+    <script>
+      try { window.parent.__ARTIFACT_PARENT_PWNED__ = true; } catch (e) {}
+      const canvas = document.getElementById('c');
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#111827';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillRect(12, 10, 70, 42);
+      document.getElementById('ran').textContent = 'ran';
+    </script>
+  </body>
+</html>`;
+
 function App(): JSX.Element {
   return (
     <div>
@@ -39,6 +60,9 @@ function App(): JSX.Element {
       </div>
       <div data-testid="html" style={{ width: 460, height: 160, display: 'flex' }}>
         <HtmlArtifact html={'<h1 id="hdr">Hello HTML</h1><p>static body</p>'} />
+      </div>
+      <div data-testid="interactive-html" style={{ width: 460, height: 160, display: 'flex' }}>
+        <InteractiveHtmlArtifact html={interactiveHtml} />
       </div>
       <div data-testid="svg" style={{ width: 200, height: 200, display: 'flex' }}>
         <SvgArtifact svg={svg} />

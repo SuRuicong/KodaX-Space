@@ -110,6 +110,7 @@ export {
 } from './channels/project.js';
 
 export {
+  ASK_USER_BACK_SIGNAL,
   askUserRequestChannel,
   askUserReplyChannel,
   askUserCancelledChannel,
@@ -117,6 +118,7 @@ export {
   type AskUserSignal,
   type AskUserToolCall,
   type AskUserQuestionOption,
+  type AskUserQuestionAnswer,
   type AskUserReplyInput,
   type AskUserRequestPayload,
 } from './channels/ask-user.js';
@@ -192,8 +194,10 @@ export {
   providerUpdateCustomChannel,
   providerRemoveCustomChannel,
   providerModelContextWindowChannel,
+  customProviderReasoningSchema,
   type ProviderInfo,
   type ProviderProtocol,
+  type CustomProviderReasoning,
 } from './channels/provider.js';
 
 export {
@@ -206,6 +210,18 @@ export {
   MAX_TREE_NODES,
   type FileNodeT,
 } from './channels/files.js';
+
+export {
+  partnerSourceKindSchema,
+  partnerSourceTargetKindSchema,
+  partnerSourceSchema,
+  partnerSourcesListChannel,
+  partnerSourcesAddChannel,
+  partnerSourcesRemoveChannel,
+  type PartnerSourceKindT,
+  type PartnerSourceTargetKindT,
+  type PartnerSourceT,
+} from './channels/partner-source.js';
 
 export { titlebarSetOverlayChannel } from './channels/titlebar.js';
 
@@ -289,6 +305,7 @@ export {
 
 export {
   artifactKindSchema,
+  artifactHtmlPermissionsSchema,
   artifactRefSchema,
   artifactCreateChannel,
   artifactListChannel,
@@ -297,9 +314,12 @@ export {
   artifactExportChannel,
   artifactOpenWindowChannel,
   artifactChangedChannel,
+  looksLikeInteractiveHtml,
   MAX_ARTIFACT_CONTENT_BYTES,
   ARTIFACT_MAX_VERSIONS,
+  ARTIFACT_PERMISSION_MAX_SOURCES,
   type ArtifactKindT,
+  type ArtifactHtmlPermissionsT,
   type ArtifactRefT,
 } from './channels/artifact.js';
 

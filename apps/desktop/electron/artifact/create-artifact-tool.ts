@@ -9,11 +9,16 @@
 // with an injected store + notifier.
 
 import path from 'node:path';
-import { artifactCreateChannel, type ArtifactKindT } from '@kodax-space/space-ipc-schema';
+import {
+  artifactCreateChannel,
+  looksLikeInteractiveHtml,
+  type ArtifactKindT,
+} from '@kodax-space/space-ipc-schema';
 import type { ArtifactStore } from './store.js';
 import { artifactStore } from './store.js';
-import { currentArtifactContext } from './run-context.js';
+import { resolveSessionRunContext, type SdkToolExecutionContextLike } from '../kodax/session-run-context.js';
 import { pushToRenderer } from '../ipc/push.js';
+import { registerPartnerSpaceToolPolicy } from '../kodax/partner-tools.js';
 
 /** True if `p` (relative or absolute) resolves inside `root`. */
 function isInsideProject(root: string, p: string): boolean {
@@ -39,6 +44,7 @@ const CREATE_ARTIFACT_KINDS = [
   'markdown',
   'code',
   'html',
+  'interactive-html',
   'svg',
   'image',
   'chart',
@@ -50,10 +56,13 @@ const CREATE_ARTIFACT_KINDS = [
 const DESCRIPTION = [
   'Create or update a rich ARTIFACT shown in a dedicated preview panel (not inline in chat).',
   'Use for substantial, self-contained deliverables the user will want to preview, iterate, and export:',
-  'reports/docs (markdown), charts, code, static HTML, SVG, or referencing a generated pdf/docx/xlsx file.',
+  'reports/docs (markdown), charts, code, static HTML, interactive HTML, SVG, or referencing a generated pdf/docx/xlsx file.',
   '',
   'kinds:',
-  '- markdown/code/html/svg: pass `content` (the text/source).',
+  '- markdown/code/html/interactive-html/svg: pass `content` (the text/source).',
+  '- html is static and runs with scripts disabled. Use interactive-html for canvas, animations, playback controls, DOM event handlers, requestAnimationFrame, or any <script>-driven deliverable.',
+  '- interactive-html runs in an opaque-origin iframe sandbox with scripts allowed, same-origin disabled, no top-navigation, and an injected CSP. By default it blocks network, external scripts, forms, popups, frames, and objects.',
+  '- Optional `permissions` for interactive-html can allow limited HTTPS origins: connect/style/img/media/font/forms arrays contain HTTPS origins; scripts contains exact HTTPS script URLs plus SRI integrity; popups can be "confirm-external" (main-window navigation guards still deny in-app popups and route https externally).',
   '- chart: pass `content` as a JSON string: {"type":"line"|"bar"|"area","xKey":"<field>","data":[{...}],"series":[{"key":"<field>","label"?,"color"?}],"title"?}.',
   '- pdf/docx/xlsx: write the file first, then pass its workspace `path` (no inline content).',
   '- image: pass `content` as a data: URI.',
@@ -67,7 +76,10 @@ export interface CreateArtifactHandlerDeps {
   notifyChanged: (payload: { id: string; sessionId: string; reason: 'created' | 'version' }) => void;
 }
 
-type ToolHandler = (input: Record<string, unknown>) => Promise<string>;
+type ToolHandler = (
+  input: Record<string, unknown>,
+  context?: SdkToolExecutionContextLike,
+) => Promise<string>;
 
 /** The tool definition sans handler — reused for registration + introspection/tests. */
 export const CREATE_ARTIFACT_TOOL = {
@@ -93,6 +105,65 @@ export const CREATE_ARTIFACT_TOOL = {
         type: 'string',
         description: 'Existing artifact id to append a new version (iterate). Omit to create new.',
       },
+      permissions: {
+        type: 'object',
+        description:
+          'Optional allow-list for interactive-html only. Network/form entries are HTTPS origins. External scripts require exact HTTPS URL plus SRI integrity.',
+        additionalProperties: false,
+        properties: {
+          connect: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'HTTPS origins allowed for fetch/XHR plus matching wss:// WebSocket hosts.',
+          },
+          style: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'HTTPS origins allowed for external stylesheets, in addition to inline styles.',
+          },
+          img: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'HTTPS origins allowed for images, in addition to data: and blob:.',
+          },
+          media: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'HTTPS origins allowed for audio/video, in addition to data: and blob:.',
+          },
+          font: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'HTTPS origins allowed for fonts, in addition to data:.',
+          },
+          forms: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'HTTPS origins allowed as form-action targets.',
+          },
+          scripts: {
+            type: 'array',
+            description: 'External CDN scripts allowed by exact URL. Each entry must include SRI.',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                url: { type: 'string', description: 'Exact HTTPS script URL without query/hash.' },
+                integrity: {
+                  type: 'string',
+                  description: 'SRI hash, for example sha384-...',
+                },
+              },
+              required: ['url', 'integrity'],
+            },
+          },
+          popups: {
+            type: 'string',
+            enum: ['confirm-external'],
+            description: 'Allow popup attempts; app navigation guards deny in-app windows and route https externally.',
+          },
+        },
+      },
     },
     required: ['kind', 'title'],
   },
@@ -100,8 +171,11 @@ export const CREATE_ARTIFACT_TOOL = {
 
 /** Build the handler with injected deps (store + change notifier) for testability. */
 export function makeCreateArtifactHandler(deps: CreateArtifactHandlerDeps): ToolHandler {
-  return async (input: Record<string, unknown>): Promise<string> => {
-    const ctx = currentArtifactContext();
+  return async (
+    input: Record<string, unknown>,
+    toolContext?: SdkToolExecutionContextLike,
+  ): Promise<string> => {
+    const ctx = resolveSessionRunContext(toolContext);
     if (!ctx) {
       return 'Error: create_artifact was called outside an active session run; cannot attribute the artifact.';
     }
@@ -111,15 +185,24 @@ export function makeCreateArtifactHandler(deps: CreateArtifactHandlerDeps): Tool
 
     // Validate the full payload through the shared IPC input schema (kind/
     // content/path coherence, byte cap, path control-char rejection).
+    const hasPermissions = input.permissions !== null && typeof input.permissions === 'object';
+    const normalizedKind =
+      input.kind === 'html' &&
+      typeof input.content === 'string' &&
+      (looksLikeInteractiveHtml(input.content) || hasPermissions)
+        ? 'interactive-html'
+        : input.kind;
+
     const parsed = artifactCreateChannel.input.safeParse({
       sessionId: ctx.sessionId,
       surface: ctx.surface,
-      kind: input.kind,
+      kind: normalizedKind,
       title: input.title,
       ...(typeof input.content === 'string' ? { content: input.content } : {}),
       ...(typeof input.path === 'string' ? { path: input.path } : {}),
       ...(typeof input.summary === 'string' ? { summary: input.summary } : {}),
       ...(typeof input.artifactId === 'string' ? { id: input.artifactId } : {}),
+      ...(hasPermissions ? { permissions: input.permissions } : {}),
     });
     if (!parsed.success) {
       const issue = parsed.error.issues[0];
@@ -178,6 +261,12 @@ export function ensureCreateArtifactToolRegistered(sdk: unknown): void {
       store: artifactStore,
       notifyChanged: (payload) => pushToRenderer('artifact.changed', payload),
     }),
+  });
+  registerPartnerSpaceToolPolicy({
+    name: CREATE_ARTIFACT_TOOL.name,
+    scope: 'artifact',
+    sideEffect: CREATE_ARTIFACT_TOOL.sideEffect,
+    description: 'Creates or updates Space artifacts for Partner deliverables.',
   });
   registered = true;
 }

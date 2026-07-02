@@ -175,6 +175,7 @@ test('appendEvent turns todo drift warnings into session notifications', () => {
   assert.equal(state.notifications.length, 1);
   assert.equal(state.notifications[0]?.severity, 'info');
   assert.equal(state.notifications[0]?.sessionId, SID);
+  assert.equal(state.notifications[0]?.dismissOnOutsideInteraction, true);
   assert.match(state.notifications[0]?.text ?? '', /Todo list drift detected/);
   assert.match(state.notifications[0]?.text ?? '', /Update tests/);
 });

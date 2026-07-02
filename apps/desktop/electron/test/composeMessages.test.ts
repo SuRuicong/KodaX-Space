@@ -446,3 +446,30 @@ test('sidecar_message renders as a sidecar system notice without ending the turn
     assert.match(notice.text, /Run npm test/);
   }
 });
+
+test('sidecar_message arriving after session_complete still renders as sidecar notice', () => {
+  const events: SessionEvent[] = [
+    { kind: 'text_delta', sessionId: sid, text: 'Initial answer.' },
+    { kind: 'session_complete', sessionId: sid },
+    {
+      kind: 'sidecar_message',
+      sessionId: sid,
+      message: {
+        source: 'sidecar-verifier',
+        verdict: 'blocked',
+        recipient: 'user',
+        delivery: 'terminal-block',
+        content: 'The answer claimed tests passed without evidence.',
+      },
+    },
+  ];
+  const out = composeMessages({ events, userMessages: [userMsg('u1', 'q')] });
+  assert.deepEqual(kindsOf(out), ['user', 'assistant_text', 'system_notice']);
+  const notice = out[2];
+  assert.equal(notice.kind, 'system_notice');
+  if (notice.kind === 'system_notice') {
+    assert.equal(notice.variant, 'sidecar');
+    assert.match(notice.text, /Sidecar verifier blocked completion/);
+    assert.match(notice.text, /without evidence/);
+  }
+});

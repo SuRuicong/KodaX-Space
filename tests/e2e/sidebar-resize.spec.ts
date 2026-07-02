@@ -18,6 +18,7 @@ test('sidebar width writes to localStorage and survives reload', async () => {
   const space = await launchSpace(TEST_ID);
   try {
     const { page } = space;
+    await page.setViewportSize({ width: 1440, height: 760 });
     await page.waitForTimeout(2000);
 
     await page.evaluate(() => {
@@ -70,6 +71,7 @@ test('sidebar width clamps localStorage values to current bounds', async () => {
   const space = await launchSpace(`${TEST_ID}-clamp`);
   try {
     const { page } = space;
+    await page.setViewportSize({ width: 1440, height: 760 });
     await page.waitForTimeout(2000);
 
     await page.evaluate(() => {

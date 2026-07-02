@@ -2,10 +2,13 @@
 // Kept in a JSX-free module so non-React code (toArtifactContent, node:test) can
 // import the type without pulling ArtifactView.tsx (React/recharts) into scope.
 
+import type { ArtifactHtmlPermissionsT } from '@kodax-space/space-ipc-schema';
+
 export type ArtifactContent =
   | { kind: 'markdown'; content: string }
   | { kind: 'code'; content: string; filename?: string }
   | { kind: 'html'; content: string }
+  | { kind: 'interactive-html'; content: string; permissions?: ArtifactHtmlPermissionsT }
   | { kind: 'svg'; content: string }
   | { kind: 'image'; src: string; alt?: string }
   | { kind: 'chart'; spec: unknown }

@@ -11,6 +11,7 @@ export function extForKind(kind: ArtifactKindT): string {
     case 'code':
       return 'txt';
     case 'html':
+    case 'interactive-html':
       return 'html';
     case 'svg':
       return 'svg';

@@ -9,14 +9,18 @@ import type { ArtifactVersionPayload } from './toArtifactContent';
 export function useArtifacts(sessionId: string | null): {
   artifacts: readonly ArtifactRefT[];
   loading: boolean;
+  error: string | null;
 } {
   const [artifacts, setArtifacts] = useState<readonly ArtifactRefT[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const bridge = window.kodaxSpace;
     if (!bridge || !sessionId) {
       setArtifacts([]);
+      setLoading(false);
+      setError(null);
       return;
     }
     let alive = true;
@@ -27,11 +31,18 @@ export function useArtifacts(sessionId: string | null): {
         .invoke('artifact.list', { sessionId })
         .then((res) => {
           if (!alive) return;
-          setArtifacts(res.ok ? res.data.artifacts : []);
+          if (res.ok) {
+            setArtifacts(res.data.artifacts);
+            setError(null);
+          } else {
+            setError(res.error.message || 'Unable to load artifacts');
+          }
           setLoading(false);
         })
-        .catch(() => {
-          if (alive) setLoading(false);
+        .catch((err: unknown) => {
+          if (!alive) return;
+          setError(err instanceof Error ? err.message : 'Unable to load artifacts');
+          setLoading(false);
         });
     };
     // Trailing debounce — bounds IPC churn under high-cadence agent writes.
@@ -53,7 +64,7 @@ export function useArtifacts(sessionId: string | null): {
     };
   }, [sessionId]);
 
-  return { artifacts, loading };
+  return { artifacts, loading, error };
 }
 
 /**

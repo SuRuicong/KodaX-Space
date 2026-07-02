@@ -9,9 +9,16 @@ import { FileOutput, Copy, Check, Download, RefreshCw, Maximize2 } from 'lucide-
 import { useAppStore } from '../../store/appStore';
 import { ArtifactView } from './ArtifactView';
 import { useArtifacts, useArtifactContent } from './useArtifacts';
-import { toArtifactContent } from './toArtifactContent';
+import { useTranscriptArtifacts } from './useTranscriptArtifacts';
+import { toArtifactContent, type ArtifactVersionPayload } from './toArtifactContent';
 import { TEXT_COPY_KINDS } from './artifactKind';
 import type { ArtifactRefT } from '@kodax-space/space-ipc-schema';
+import {
+  FOCUS_ARTIFACT_EVENT,
+  mergeTransientArtifactSnapshots,
+  type FocusArtifactEventDetail,
+  type TransientArtifactSnapshot,
+} from './transientArtifact';
 
 export function ArtifactsEmptyState(): JSX.Element {
   return (
@@ -25,22 +32,51 @@ export function ArtifactsEmptyState(): JSX.Element {
   );
 }
 
+export function ArtifactsErrorState({ error }: { error: string }): JSX.Element {
+  return (
+    <div className="h-full flex flex-col items-center justify-center gap-2 p-6 text-center">
+      <FileOutput className="w-6 h-6 text-danger" strokeWidth={1.5} aria-hidden />
+      <div className="text-[12px] text-fg-primary font-medium">Artifact load failed</div>
+      <div
+        className="text-[11px] text-fg-muted leading-relaxed max-w-[240px] break-words"
+        title={error}
+      >
+        {error}
+      </div>
+    </div>
+  );
+}
+
 /** Reads + renders one artifact's selected version. */
-function ArtifactViewer({ artifact, projectRoot }: { artifact: ArtifactRefT; projectRoot: string | null }): JSX.Element {
+function ArtifactViewer({
+  artifact,
+  projectRoot,
+  payloadOverrides,
+}: {
+  artifact: ArtifactRefT;
+  projectRoot: string | null;
+  payloadOverrides?: ReadonlyMap<number, ArtifactVersionPayload>;
+}): JSX.Element {
   const [version, setVersion] = useState<number | undefined>(undefined); // undefined = current
-  const { payload, loading } = useArtifactContent(artifact.id, version);
   const effectiveVersion = version ?? artifact.currentVersion;
+  const isTransient = payloadOverrides !== undefined;
+  const payloadOverride = payloadOverrides?.get(effectiveVersion);
+  const { payload: loadedPayload, loading } = useArtifactContent(isTransient ? null : artifact.id, version);
+  const payload = payloadOverride ?? loadedPayload;
   const [copied, setCopied] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const setActivePopoutKind = useAppStore((s) => s.setActivePopoutKind);
 
   const content = useMemo(
-    () => (payload ? toArtifactContent(artifact.kind, payload, projectRoot) : null),
-    [payload, artifact.kind, projectRoot],
+    () =>
+      payload
+        ? toArtifactContent(artifact.kind, payload, projectRoot, artifact.permissions)
+        : null,
+    [payload, artifact.kind, artifact.permissions, projectRoot],
   );
 
   const canCopy = payload?.content !== undefined && TEXT_COPY_KINDS.has(artifact.kind);
-  const canSave = payload?.content !== undefined; // content kinds incl. image; doc has no content
+  const canSave = payload?.content !== undefined && !isTransient; // content kinds incl. image; doc has no content
 
   async function onCopy(): Promise<void> {
     if (payload?.content == null) return;
@@ -158,15 +194,17 @@ function ArtifactViewer({ artifact, projectRoot }: { artifact: ArtifactRefT; pro
                 <Download className="w-3.5 h-3.5" strokeWidth={1.75} />
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => void onOpenWindow()}
-              title="单独打开（独立最大化窗口）"
-              aria-label="单独打开"
-              className="w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
-            >
-              <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.75} />
-            </button>
+            {!isTransient && (
+              <button
+                type="button"
+                onClick={() => void onOpenWindow()}
+                title="单独打开（独立最大化窗口）"
+                aria-label="单独打开"
+                className="w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
+              >
+                <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.75} />
+              </button>
+            )}
           </div>
         </div>
       {loading && !content ? (
@@ -182,45 +220,161 @@ function ArtifactViewer({ artifact, projectRoot }: { artifact: ArtifactRefT; pro
   );
 }
 
+function transientRefFromSnapshot(
+  snapshot: TransientArtifactSnapshot,
+  sessionId: string | null,
+): ArtifactRefT {
+  const now = Date.now();
+  const versions =
+    snapshot.versions && snapshot.versions.length > 0
+      ? snapshot.versions
+      : [
+          {
+            v: snapshot.version ?? 1,
+            ...(snapshot.summary !== undefined ? { summary: snapshot.summary } : {}),
+            ...(snapshot.content !== undefined ? { content: snapshot.content } : {}),
+            ...(snapshot.path !== undefined ? { path: snapshot.path } : {}),
+          },
+        ];
+  const version = snapshot.version ?? Math.max(...versions.map((v) => v.v));
+  return {
+    id: snapshot.id,
+    sessionId: sessionId ?? '__transient__',
+    surface: 'code',
+    kind: snapshot.kind,
+    title: snapshot.title,
+    ...(snapshot.permissions !== undefined ? { permissions: snapshot.permissions } : {}),
+    currentVersion: version,
+    versions: versions.map((v) => ({
+      v: v.v,
+      createdAt: now + v.v,
+      hasContent: v.content !== undefined,
+      ...(v.path !== undefined ? { path: v.path } : {}),
+      ...(v.summary !== undefined ? { summary: v.summary } : {}),
+    })),
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function transientPayloadsFromSnapshot(
+  snapshot: TransientArtifactSnapshot,
+): ReadonlyMap<number, ArtifactVersionPayload> {
+  const versions =
+    snapshot.versions && snapshot.versions.length > 0
+      ? snapshot.versions
+      : [
+          {
+            v: snapshot.version ?? 1,
+            ...(snapshot.content !== undefined ? { content: snapshot.content } : {}),
+            ...(snapshot.path !== undefined ? { path: snapshot.path } : {}),
+          },
+        ];
+  return new Map(
+    versions.map((v) => [
+      v.v,
+      {
+        ...(v.content !== undefined ? { content: v.content } : {}),
+        ...(v.path !== undefined ? { path: v.path } : {}),
+      },
+    ]),
+  );
+}
+
 /**
  * @param focusedId 由宿主（RightSidebar）锁存的"要聚焦的 artifact id"。用于"从概览 tab 点
  *   对话卡片"场景：此组件当时还没挂载、错过 window 事件，靠这个 prop 在挂载时认领选中。
  *   其它已挂载实例（popout / Partner）仍靠 window 事件实时响应。
  */
-export function ArtifactsView({ focusedId }: { focusedId?: string | null } = {}): JSX.Element {
+export function ArtifactsView({
+  focusedId,
+  focusedSnapshot,
+}: {
+  focusedId?: string | null;
+  focusedSnapshot?: TransientArtifactSnapshot | null;
+} = {}): JSX.Element {
   const sessionId = useAppStore((s) => s.currentSessionId);
   const projectRoot = useAppStore((s) => {
     const cur = s.currentSessionId;
     return cur ? (s.sessions.find((x) => x.sessionId === cur)?.projectRoot ?? null) : null;
   });
-  const { artifacts, loading } = useArtifacts(sessionId);
+  const { artifacts, loading, error } = useArtifacts(sessionId);
+  const transcriptArtifacts = useTranscriptArtifacts(sessionId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [transientSnapshot, setTransientSnapshot] =
+    useState<TransientArtifactSnapshot | null>(null);
 
   // Reset selection when switching sessions (this view isn't remounted on switch).
   useEffect(() => {
     setSelectedId(null);
+    setTransientSnapshot(null);
   }, [sessionId]);
 
   // 宿主锁存的 focusedId（挂载时 / 变化时）→ 选中（修"从概览点卡片选不中"）。
   useEffect(() => {
     if (focusedId) setSelectedId(focusedId);
-  }, [focusedId]);
+    if (focusedSnapshot) setTransientSnapshot(focusedSnapshot);
+  }, [focusedId, focusedSnapshot]);
 
   // F059c: 对话里点 artifact 卡片 → 选中该 id（RightSidebar 同时把 tab 切到 Artifact）。
   // 给已挂载的实例（popout / Partner）实时响应；侧栏新挂载实例靠上面的 focusedId prop。
   useEffect(() => {
     const onFocus = (e: Event): void => {
-      const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+      const detail = (e as CustomEvent<FocusArtifactEventDetail>).detail;
+      const id = detail?.id;
       if (id) setSelectedId(id);
+      setTransientSnapshot(detail?.snapshot ?? null);
     };
-    window.addEventListener('kodax-space.focus-artifact', onFocus);
-    return () => window.removeEventListener('kodax-space.focus-artifact', onFocus);
+    window.addEventListener(FOCUS_ARTIFACT_EVENT, onFocus);
+    return () => window.removeEventListener(FOCUS_ARTIFACT_EVENT, onFocus);
   }, []);
 
-  // Default selection = most recently updated (list is sorted updatedAt desc).
-  const selected = artifacts.find((a) => a.id === selectedId) ?? artifacts[0] ?? null;
+  const transientArtifacts = useMemo(() => {
+    const byId = new Map<string, TransientArtifactSnapshot>();
+    for (const snapshot of transcriptArtifacts) byId.set(snapshot.id, snapshot);
+    if (transientSnapshot) {
+      const existing = byId.get(transientSnapshot.id);
+      byId.set(
+        transientSnapshot.id,
+        existing
+          ? mergeTransientArtifactSnapshots(existing, transientSnapshot)
+          : transientSnapshot,
+      );
+    }
+    return [...byId.values()];
+  }, [transcriptArtifacts, transientSnapshot]);
 
-  if (artifacts.length === 0) {
+  const transientRefs = useMemo(
+    () => transientArtifacts.map((snapshot) => transientRefFromSnapshot(snapshot, sessionId)),
+    [transientArtifacts, sessionId],
+  );
+
+  const artifactChoices = useMemo(() => {
+    const storeIds = new Set(artifacts.map((artifact) => artifact.id));
+    return [...artifacts, ...transientRefs.filter((artifact) => !storeIds.has(artifact.id))];
+  }, [artifacts, transientRefs]);
+
+  // Default selection = most recently updated store artifact, or recovered transcript artifact.
+  const selectedFromStore =
+    selectedId !== null ? (artifacts.find((a) => a.id === selectedId) ?? null) : artifacts[0] ?? null;
+  const selectedTransientSnapshot =
+    selectedFromStore === null
+      ? selectedId !== null
+        ? (transientArtifacts.find((a) => a.id === selectedId) ?? null)
+        : artifacts.length === 0
+          ? (transientArtifacts[0] ?? null)
+          : null
+      : null;
+  const transientSelected = selectedTransientSnapshot
+    ? transientRefFromSnapshot(selectedTransientSnapshot, sessionId)
+    : null;
+  const selected = selectedFromStore ?? transientSelected ?? artifacts[0] ?? null;
+  const selectedPayloadOverrides = selectedTransientSnapshot
+    ? transientPayloadsFromSnapshot(selectedTransientSnapshot)
+    : undefined;
+
+  if (artifacts.length === 0 && !selected) {
+    if (!loading && error) return <ArtifactsErrorState error={error} />;
     return loading ? (
       <div className="h-full flex items-center justify-center text-[11px] text-fg-muted">加载中…</div>
     ) : (
@@ -230,14 +384,22 @@ export function ArtifactsView({ focusedId }: { focusedId?: string | null } = {})
 
   return (
     <div className="h-full min-h-0 flex flex-col">
-      {artifacts.length > 1 && (
+      {error && (
+        <div
+          className="px-3 py-1.5 border-b border-border-default text-[11px] text-danger flex-shrink-0 truncate"
+          title={error}
+        >
+          Artifact refresh failed
+        </div>
+      )}
+      {artifactChoices.length > 1 && (
         <div className="px-3 py-1.5 border-b border-border-default flex-shrink-0">
           <select
             className="w-full text-[11px] bg-surface-raised border border-border-default rounded px-1.5 py-1 text-fg-secondary"
             value={selected?.id ?? ''}
             onChange={(e) => setSelectedId(e.target.value)}
           >
-            {artifacts.map((a) => (
+            {artifactChoices.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.title}
               </option>
@@ -245,7 +407,16 @@ export function ArtifactsView({ focusedId }: { focusedId?: string | null } = {})
           </select>
         </div>
       )}
-      {selected ? <ArtifactViewer key={selected.id} artifact={selected} projectRoot={projectRoot} /> : <ArtifactsEmptyState />}
+      {selected ? (
+        <ArtifactViewer
+          key={selected.id}
+          artifact={selected}
+          projectRoot={projectRoot}
+          payloadOverrides={selectedPayloadOverrides}
+        />
+      ) : (
+        <ArtifactsEmptyState />
+      )}
     </div>
   );
 }

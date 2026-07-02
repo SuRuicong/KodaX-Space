@@ -76,7 +76,10 @@ export function ArtifactWindow({ params }: { params: ArtifactHashParams }): JSX.
   const [actionMsg, setActionMsg] = useState<string | null>(null);
 
   const content = useMemo(
-    () => (ref && payload ? toArtifactContent(ref.kind, payload, params.projectRoot) : null),
+    () =>
+      ref && payload
+        ? toArtifactContent(ref.kind, payload, params.projectRoot, ref.permissions)
+        : null,
     [ref, payload, params.projectRoot],
   );
 

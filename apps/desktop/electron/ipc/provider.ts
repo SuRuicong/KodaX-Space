@@ -266,6 +266,7 @@ export function registerProviderChannels(): void {
         isCustom: true,
         baseUrl: c.baseUrl,
         skipBaseUrlValidation: c.skipBaseUrlValidation,
+        ...(c.reasoning !== undefined ? { reasoning: c.reasoning } : {}),
       });
     }
     for (const c of await loadKodaxCustomProviders()) {
@@ -285,6 +286,7 @@ export function registerProviderChannels(): void {
         isCustom: true,
         baseUrl: c.baseUrl,
         skipBaseUrlValidation: c.skipBaseUrlValidation,
+        ...(c.reasoning !== undefined ? { reasoning: c.reasoning } : {}),
       });
     }
 
@@ -381,6 +383,7 @@ export function registerProviderChannels(): void {
       apiKeyEnv: input.apiKeyEnv,
       defaultModel: input.defaultModel,
       models: input.models,
+      ...(input.reasoning !== undefined ? { reasoning: input.reasoning } : {}),
     });
     await refreshSdkCustomProviderRegistry();
     return { ok: true, providerId: id };
@@ -407,6 +410,7 @@ export function registerProviderChannels(): void {
       apiKeyEnv: input.apiKeyEnv,
       defaultModel: input.defaultModel,
       models: input.models,
+      ...(input.reasoning !== undefined ? { reasoning: input.reasoning } : {}),
     };
 
     let nextProviderId = input.providerId;
@@ -509,25 +513,29 @@ export function registerProviderChannels(): void {
       if (input.providerId !== 'mock' && !isBuiltinId(input.providerId)) {
         await refreshSdkCustomProviderRegistry();
       }
-      const [{ resolveProvider }, { resolveContextWindow }] = await Promise.all([
+      const [{ resolveProvider }, { resolveContextWindow }, { resolveModelCapabilities }] = await Promise.all([
         import('@kodax-ai/kodax/coding'),
         import('@kodax-ai/kodax/agent'),
+        import('@kodax-ai/kodax/llm'),
       ]);
       const provider = resolveProvider(input.providerId);
+      const capabilities = resolveModelCapabilities(input.providerId, input.model);
       // SDK 内部级联：CompactionConfig.contextWindow → provider.getEffectiveContextWindow(model)
       //   → provider.getContextWindow() → 200_000 hard fallback
       // 我们传 enabled:false 因为不需要 compaction 配置——只是用 resolver 拿数字
-      const cw = resolveContextWindow(
-        { enabled: false, triggerPercent: 80 },
-        provider,
-        input.model,
-      );
+      const cw =
+        capabilities?.contextWindow ??
+        resolveContextWindow(
+          { enabled: false, triggerPercent: 80 },
+          provider,
+          input.model,
+        );
       // 是 provider-advertised 还是 SDK fallback (200k)？没法直接区分；按值判断：
       //   - 命中 200_000 且 provider 没有 getEffectiveContextWindow/getContextWindow → fallback
       //   - 其他情况一律 provider
       // 简化：只要 != 200_000 就 'provider'；== 200_000 时再判 capability function 存在与否
       let source: 'provider' | 'fallback' = 'provider';
-      if (cw === 200_000) {
+      if (capabilities?.contextWindow === undefined && cw === 200_000) {
         const p = provider as {
           getEffectiveContextWindow?: unknown;
           getContextWindow?: unknown;
@@ -536,7 +544,18 @@ export function registerProviderChannels(): void {
           source = 'fallback';
         }
       }
-      return { contextWindow: cw, source };
+      const supportedEfforts = capabilities?.reasoningProfile?.supportedEfforts
+        ?.filter((effort) => effort.isUserVisible !== false)
+        .map((effort) => effort.value);
+      const defaultEffort =
+        capabilities?.reasoningProfile?.defaultEffort ??
+        capabilities?.reasoningProfile?.supportedEfforts?.find((effort) => effort.isDefault)?.value;
+      return {
+        contextWindow: cw,
+        source,
+        ...(supportedEfforts && supportedEfforts.length > 0 ? { supportedEfforts } : {}),
+        ...(defaultEffort ? { defaultEffort } : {}),
+      };
     } catch (err) {
       // resolveProvider 不识别 custom_* id 时会 throw — 报 fallback 200k 让 UI 渲染
       // 而不是阻断。renderer 自己的 modelContextCaps.ts 还能作为二级 fallback (从 SDK 升上

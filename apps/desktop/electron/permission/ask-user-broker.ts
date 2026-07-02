@@ -6,6 +6,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type {
+  AskUserQuestionAnswer,
   AskUserQuestionOption,
   AskUserReplyInput,
   AskUserSignal,
@@ -33,6 +34,8 @@ export interface AskUserQuestionRequestInput {
   readonly header?: string;
   readonly options?: readonly AskUserQuestionOption[];
   readonly multiSelect?: boolean;
+  readonly minSelections?: number;
+  readonly maxSelections?: number;
   readonly default?: string;
   /** Test-only override. */
   readonly timeoutMs?: number;
@@ -50,7 +53,7 @@ type PendingAskUser =
       readonly kind: 'question';
       readonly reqId: string;
       readonly sessionId: string;
-      readonly resolve: (answer: string | undefined) => void;
+      readonly resolve: (answer: AskUserQuestionAnswer | undefined) => void;
       readonly timer: NodeJS.Timeout;
     };
 
@@ -65,6 +68,11 @@ function normalizeOption(option: AskUserQuestionOption): AskUserQuestionOption {
     value,
     ...(description !== undefined ? { description } : {}),
   };
+}
+
+function normalizeSelectionBound(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value) || value < 0) return undefined;
+  return Math.min(20, Math.floor(value));
 }
 
 class AskUserBroker {
@@ -112,7 +120,7 @@ class AskUserBroker {
   }
 
   /** SDK ask_user_question prompt. Timeout/cancel resolves to undefined. */
-  requestQuestion(req: AskUserQuestionRequestInput): Promise<string | undefined> {
+  requestQuestion(req: AskUserQuestionRequestInput): Promise<AskUserQuestionAnswer | undefined> {
     if (req.kind === 'select' && (!req.options || req.options.length === 0)) {
       console.warn('[ask-user-broker] select question requested without options; cancelling prompt');
       return Promise.resolve(undefined);
@@ -120,7 +128,7 @@ class AskUserBroker {
 
     const reqId = randomUUID();
 
-    return new Promise<string | undefined>((resolve) => {
+    return new Promise<AskUserQuestionAnswer | undefined>((resolve) => {
       const timer = this.createTimer(reqId, req.sessionId, req.timeoutMs, () => resolve(undefined));
       this.pending.set(reqId, {
         kind: 'question',
@@ -133,6 +141,13 @@ class AskUserBroker {
         timer,
       });
 
+      const minSelections = normalizeSelectionBound(req.minSelections);
+      const maxSelections = normalizeSelectionBound(req.maxSelections);
+      const safeMaxSelections =
+        minSelections !== undefined && maxSelections !== undefined && maxSelections < minSelections
+          ? undefined
+          : maxSelections;
+
       pushToRenderer('askUser.request', {
         kind: req.kind,
         reqId,
@@ -141,6 +156,8 @@ class AskUserBroker {
         ...(req.header !== undefined ? { header: sanitizeForDisplay(req.header, 96) } : {}),
         ...(req.kind === 'select' ? { options: (req.options ?? []).map(normalizeOption) } : {}),
         ...(req.multiSelect !== undefined ? { multiSelect: req.multiSelect } : {}),
+        ...(minSelections !== undefined ? { minSelections } : {}),
+        ...(safeMaxSelections !== undefined ? { maxSelections: safeMaxSelections } : {}),
         ...(req.default !== undefined ? { default: sanitizeForDisplay(req.default, 4096) } : {}),
       });
     });

@@ -16,6 +16,7 @@
 
 // 不直接 import Space 的 PermissionMode（含 'auto'，KodaX 不会产生），改用窄子集。
 
+import type { CustomProviderReasoning } from '@kodax-space/space-ipc-schema';
 import { validateApiKeyEnv } from '../providers/env-guard.js';
 import { validateBaseUrl } from '../providers/url-guard.js';
 import { effortToReasoningMode, isSpaceReasoningMode } from './reasoning-effort.js';
@@ -47,6 +48,7 @@ export interface KodaxConfigCustomProvider {
   readonly apiKeyEnv: string;
   readonly defaultModel: string;
   readonly models?: readonly string[];
+  readonly reasoning?: CustomProviderReasoning;
 }
 
 export interface KodaxConfigCustomProviderUpdate {
@@ -57,6 +59,7 @@ export interface KodaxConfigCustomProviderUpdate {
   readonly apiKeyEnv: string;
   readonly defaultModel: string;
   readonly models?: readonly string[];
+  readonly reasoning?: CustomProviderReasoning;
 }
 export interface SpaceCustomProviderForSdk {
   readonly id: string;
@@ -66,6 +69,7 @@ export interface SpaceCustomProviderForSdk {
   readonly apiKeyEnv: string;
   readonly defaultModel: string;
   readonly models?: readonly string[];
+  readonly reasoning?: CustomProviderReasoning;
 }
 
 export interface KodaxUserConfigImpl {
@@ -263,7 +267,22 @@ export async function updateKodaxConfigCustomProvider(
     throw new Error(`KodaX config custom provider name already exists: ${nextProviderId}`);
   }
 
-  providers[index] = customProviderUpdateToSdk(nextProviderId, update);
+  // Merge, don't replace: this config record is shared with the KodaX CLI, which may
+  // have set fields Space does not model (reasoning / reasoningProfile / supportsThinking,
+  // custom headers, etc.). A full rebuild from the narrow form field set would silently
+  // discard them. Space's modeled fields are fully replaced by the rebuild (so clearing
+  // e.g. the model list still takes effect); every other field on the existing record is
+  // preserved.
+  const existing = providers[index] as unknown as Record<string, unknown>;
+  const rebuilt = customProviderUpdateToSdk(nextProviderId, update) as unknown as Record<
+    string,
+    unknown
+  >;
+  const preserved: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(existing)) {
+    if (!CUSTOM_PROVIDER_MODELED_KEYS.has(key)) preserved[key] = value;
+  }
+  providers[index] = { ...preserved, ...rebuilt } as unknown as SdkCustomProviderConfig;
   const nextConfig = {
     ...raw,
     provider: raw.provider === providerId ? nextProviderId : raw.provider,
@@ -402,6 +421,7 @@ function normalizeKodaxConfigCustomProvider(
   if (!urlCheck.ok || !urlCheck.normalizedUrl) return null;
 
   const models = normalizeModelList(raw.models);
+  const reasoning = normalizeReasoningConfig(raw.reasoning);
   return {
     id: name,
     displayName: name,
@@ -411,7 +431,26 @@ function normalizeKodaxConfigCustomProvider(
     apiKeyEnv,
     defaultModel: model,
     ...(models ? { models } : {}),
+    ...(reasoning ? { reasoning } : {}),
   };
+}
+
+/**
+ * Parse a raw config `reasoning` value into Space's friendly form. Accepts the
+ * canonical `'none'` or `{ efforts: string[]; default?: string }`; anything else
+ * (a raw `reasoningProfile` override, deprecated fields, garbage) → undefined so
+ * it is treated as unmodeled and preserved verbatim by the update merge.
+ */
+function normalizeReasoningConfig(raw: unknown): CustomProviderReasoning | undefined {
+  if (raw === 'none') return 'none';
+  if (!raw || typeof raw !== 'object') return undefined;
+  const efforts = (raw as { efforts?: unknown }).efforts;
+  if (!Array.isArray(efforts)) return undefined;
+  const cleaned = efforts.filter((e): e is string => isNonEmptyString(e)).slice(0, 16);
+  if (cleaned.length === 0) return undefined;
+  const rawDefault = (raw as { default?: unknown }).default;
+  const defaultEffort = isNonEmptyString(rawDefault) ? rawDefault : undefined;
+  return { efforts: cleaned, ...(defaultEffort ? { default: defaultEffort } : {}) };
 }
 
 function spaceCustomProviderToSdk(provider: SpaceCustomProviderForSdk): SdkCustomProviderConfig {
@@ -424,6 +463,18 @@ function spaceCustomProviderToSdk(provider: SpaceCustomProviderForSdk): SdkCusto
   };
   if (provider.models && provider.models.length > 0) {
     config.models = [...provider.models];
+  }
+  // Canonical SDK friendly form: reasoning: { efforts, default } | 'none'.
+  if (provider.reasoning !== undefined) {
+    config.reasoning =
+      provider.reasoning === 'none'
+        ? 'none'
+        : {
+            efforts: [...provider.reasoning.efforts],
+            ...(provider.reasoning.default !== undefined
+              ? { default: provider.reasoning.default }
+              : {}),
+          };
   }
   return config as unknown as SdkCustomProviderConfig;
 }
@@ -458,6 +509,27 @@ function saveWritableKodaxConfig(config: SdkLoadConfigReturn): void {
   invalidateUserDefaultsCache();
 }
 
+/**
+ * The SdkCustomProviderConfig keys that {@link customProviderUpdateToSdk} /
+ * {@link spaceCustomProviderToSdk} own (i.e. driven by Space's provider form).
+ * On update these are fully replaced; every other key on the existing record is
+ * preserved so CLI-set fields (reasoning / supportsThinking / …) survive an edit.
+ * Keep in sync with `spaceCustomProviderToSdk`'s output shape.
+ */
+// NB: `reasoning` is intentionally NOT modeled here. The update rebuild only emits
+// a `reasoning` key when the form supplies one, and the merge spreads rebuild over
+// preserved — so a form-supplied reasoning wins, while an existing declaration
+// (including an advanced raw `reasoningProfile` the form can't express) survives an
+// edit that leaves reasoning untouched.
+const CUSTOM_PROVIDER_MODELED_KEYS: ReadonlySet<string> = new Set([
+  'name',
+  'protocol',
+  'baseUrl',
+  'apiKeyEnv',
+  'model',
+  'models',
+]);
+
 function customProviderUpdateToSdk(
   providerId: string,
   update: KodaxConfigCustomProviderUpdate,
@@ -470,6 +542,7 @@ function customProviderUpdateToSdk(
     apiKeyEnv: update.apiKeyEnv,
     defaultModel: update.defaultModel,
     models: update.models,
+    ...(update.reasoning !== undefined ? { reasoning: update.reasoning } : {}),
   });
 }
 

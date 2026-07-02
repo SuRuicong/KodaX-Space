@@ -5,7 +5,16 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeToolBlockReason, isPartnerToolAllowed, PARTNER_NETWORK_ALLOW } from '../kodax/partner-tools.js';
+import {
+  _clearPartnerSpaceToolPoliciesForTesting,
+  computeToolBlockReason,
+  getPartnerSpaceToolPolicy,
+  isPartnerToolAllowed,
+  listPartnerSpaceToolPolicies,
+  PARTNER_NETWORK_ALLOW,
+  partnerToolVisibilityPolicy,
+  registerPartnerSpaceToolPolicy,
+} from '../kodax/partner-tools.js';
 
 test('read-tier tools are allowed (read/grep/glob/repo-intel...)', () => {
   assert.equal(isPartnerToolAllowed('read', 'read'), true);
@@ -37,6 +46,89 @@ test('fail-closed: unknown tool (SDK resolves to "subagent") is blocked', () => 
   assert.equal(isPartnerToolAllowed('mystery_mcp_tool', 'subagent'), false);
 });
 
+test('registered readonly tools are allowed even when capability resolves to subagent', () => {
+  assert.equal(
+    isPartnerToolAllowed('partner_source_read', 'subagent', { sideEffect: 'readonly' }),
+    true,
+  );
+});
+
+test('registered reads-network tools are allowed for Partner research', () => {
+  assert.equal(
+    isPartnerToolAllowed('browser_snapshot', 'subagent', { sideEffect: 'reads-network' }),
+    true,
+  );
+});
+
+test('registered mutating tools remain blocked unless they have Partner policy', () => {
+  assert.equal(
+    isPartnerToolAllowed('partner_state_write', 'subagent', { sideEffect: 'mutates-state' }),
+    false,
+  );
+});
+
+test('Space Partner tool policy allows scoped state tools', () => {
+  _clearPartnerSpaceToolPoliciesForTesting();
+  registerPartnerSpaceToolPolicy({
+    name: 'partner_kb_write_page',
+    scope: 'knowledge-base',
+    sideEffect: 'mutates-state',
+    description: 'Write a Partner KB wiki page inside the selected KB root.',
+  });
+  assert.equal(
+    isPartnerToolAllowed('partner_kb_write_page', 'subagent', {
+      sideEffect: 'mutates-state',
+    }),
+    true,
+  );
+  assert.equal(getPartnerSpaceToolPolicy('partner_kb_write_page')?.scope, 'knowledge-base');
+  assert.deepEqual(listPartnerSpaceToolPolicies().map((p) => p.name), ['partner_kb_write_page']);
+  _clearPartnerSpaceToolPoliciesForTesting();
+});
+
+test('Partner tool visibility policy mirrors the execution whitelist', () => {
+  _clearPartnerSpaceToolPoliciesForTesting();
+  registerPartnerSpaceToolPolicy({
+    name: 'create_artifact',
+    scope: 'artifact',
+    sideEffect: 'mutates-state',
+    description: 'Creates or updates Space artifacts.',
+  });
+  assert.equal(
+    partnerToolVisibilityPolicy({
+      name: 'read',
+      sideEffect: 'readonly',
+      planModeAllowed: true,
+    }),
+    true,
+  );
+  assert.equal(
+    partnerToolVisibilityPolicy({
+      name: 'web_fetch',
+      sideEffect: 'reads-network',
+      planModeAllowed: false,
+    }),
+    true,
+  );
+  assert.equal(
+    partnerToolVisibilityPolicy({
+      name: 'create_artifact',
+      sideEffect: 'mutates-state',
+      planModeAllowed: false,
+    }),
+    true,
+  );
+  assert.equal(
+    partnerToolVisibilityPolicy({
+      name: 'bash',
+      sideEffect: 'mutates-shell',
+      planModeAllowed: false,
+    }),
+    false,
+  );
+  _clearPartnerSpaceToolPoliciesForTesting();
+});
+
 // ---- computeToolBlockReason: Partner 白名单 + plan-mode 交互（review HIGH）----
 
 const cap = (c: string) => () => c;
@@ -60,6 +152,18 @@ test('Partner: web tools allowed even in plan mode (HIGH fix — plan-mode 不�
     resolveCapability: cap('bash:network'), isPlanModeAllowed: planAllowed(false),
   });
   assert.equal(r, null, 'Partner+plan-mode 下 web_fetch 必须仍可用');
+});
+
+test('Partner: registered readonly custom tool is allowed in plan mode', () => {
+  const r = computeToolBlockReason({
+    surface: 'partner',
+    permissionMode: 'plan',
+    tool: 'partner_source_read',
+    resolveCapability: cap('subagent'),
+    resolveRegisteredTool: () => ({ sideEffect: 'readonly' }),
+    isPlanModeAllowed: planAllowed(false),
+  });
+  assert.equal(r, null);
 });
 
 test('Partner: non-whitelisted tool blocked with [partner] reason', () => {

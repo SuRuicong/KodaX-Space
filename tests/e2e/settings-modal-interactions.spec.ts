@@ -201,21 +201,12 @@ test('Settings preferences controls are keyboardable, minimal, and persist edits
     await smartToggle.check();
     await expect(smartToggle).toBeChecked();
 
-    await dialog.getByRole('button', { name: 'Off' }).click();
-    await expect(dialog.getByRole('button', { name: 'Off' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    await expect(dialog.getByText('Never start workflows from natural language.')).toBeVisible();
-
-    await dialog.getByRole('button', { name: 'Auto' }).click();
-    await expect(dialog.getByRole('button', { name: 'Auto' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    await expect(dialog.getByText('Start matching workflows without confirmation.')).toBeVisible();
-
+    // KodaX 0.7.58 removed host-side natural-language workflow auto-start, so the
+    // invocation-mode buttons (Off/Confirm/Auto) no longer exist — only the runtime
+    // caps under "Advanced limits" remain (expanded by default).
     const advanced = dialog.getByRole('button', { name: 'Advanced limits' });
+    await expect(advanced).toHaveAttribute('aria-expanded', 'true');
+    await advanced.click();
     await expect(advanced).toHaveAttribute('aria-expanded', 'false');
     await advanced.click();
     await expect(advanced).toHaveAttribute('aria-expanded', 'true');
@@ -250,13 +241,10 @@ test('Settings interactive inventory has no unnamed controls across dynamic stat
       'Browse',
       'Save workspace',
       'Auto-open Plan, Diff, and Tasks panels',
-      'Off',
-      'Confirm',
-      'Auto',
       'Advanced limits',
     ]);
 
-    await page.getByRole('button', { name: 'Advanced limits' }).click();
+    // Advanced limits is expanded by default in the 0.7.58 layout (no invocation modes).
     await expectNamedInteractionSurface(page, 'preferences advanced limits', [
       'Max agents',
       'Max concurrency',
@@ -282,6 +270,9 @@ test('Settings interactive inventory has no unnamed controls across dynamic stat
       'Use environment variable',
       'Default model',
       'Model list',
+      'This model has no thinking capability',
+      'Effort rungs (comma-separated)',
+      'Default effort',
       'API key',
       'Show API key',
       'Set as default after saving key',

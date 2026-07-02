@@ -1,5 +1,34 @@
 // F047 — Partner (non-bash-subset) 工具策略。
 import type { PermissionMode, Surface } from '@kodax-space/space-ipc-schema';
+import type {
+  KodaXToolVisibilityMeta,
+  KodaXToolVisibilityPolicy,
+  ToolSideEffect,
+} from '@kodax-ai/kodax/coding';
+
+export type PartnerToolSideEffect = ToolSideEffect;
+
+export type PartnerToolScope =
+  | 'artifact'
+  | 'knowledge-base'
+  | 'source'
+  | 'network-research'
+  | 'readonly';
+
+export interface PartnerRegisteredToolMetadata {
+  readonly sideEffect?: string;
+  readonly planModeAllowed?: boolean;
+}
+
+export type PartnerToolVisibilityMeta = KodaXToolVisibilityMeta;
+export type PartnerToolVisibilityPolicy = KodaXToolVisibilityPolicy;
+
+export interface PartnerSpaceToolPolicy {
+  readonly name: string;
+  readonly scope: PartnerToolScope;
+  readonly sideEffect: PartnerToolSideEffect;
+  readonly description: string;
+}
 
 //
 // Partner doc-workspace 是「读 + 研究」面：允许只读检索 + web 研究，阻断 bash / edit / write
@@ -28,17 +57,66 @@ export const PARTNER_NETWORK_ALLOW: ReadonlySet<string> = new Set(['web_fetch', 
  */
 export const PARTNER_SPACE_TOOL_ALLOW: ReadonlySet<string> = new Set(['create_artifact']);
 
+const partnerSpaceToolPolicies = new Map<string, PartnerSpaceToolPolicy>();
+
+export function registerPartnerSpaceToolPolicy(policy: PartnerSpaceToolPolicy): void {
+  partnerSpaceToolPolicies.set(policy.name, policy);
+}
+
+export function getPartnerSpaceToolPolicy(name: string): PartnerSpaceToolPolicy | undefined {
+  return partnerSpaceToolPolicies.get(name);
+}
+
+export function listPartnerSpaceToolPolicies(): PartnerSpaceToolPolicy[] {
+  return [...partnerSpaceToolPolicies.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Test hook: clears runtime policy registrations without changing legacy allow sets. */
+export function _clearPartnerSpaceToolPoliciesForTesting(): void {
+  partnerSpaceToolPolicies.clear();
+}
+
+function partnerPolicyAllows(toolName: string): boolean {
+  const policy = getPartnerSpaceToolPolicy(toolName);
+  if (!policy) return false;
+  if (policy.sideEffect === 'readonly' || policy.sideEffect === 'reads-network') return true;
+  if (policy.scope === 'artifact' || policy.scope === 'knowledge-base') {
+    return policy.sideEffect === 'mutates-state';
+  }
+  if (policy.scope === 'network-research') {
+    return policy.sideEffect === 'mutates-network';
+  }
+  return false;
+}
+
 /**
  * Partner surface 是否允许调用某工具。
  *
  * @param toolName  SDK 工具名（planModeBlockCheck 收到的同款名）
  * @param capability  SDK `resolveToolCapability(toolName)` 的结果（caller 注入，便于纯单测）
  */
-export function isPartnerToolAllowed(toolName: string, capability: string): boolean {
+export function isPartnerToolAllowed(
+  toolName: string,
+  capability: string,
+  registeredTool?: PartnerRegisteredToolMetadata,
+): boolean {
   if (PARTNER_NETWORK_ALLOW.has(toolName)) return true;
   if (PARTNER_SPACE_TOOL_ALLOW.has(toolName)) return true;
+  if (partnerPolicyAllows(toolName)) return true;
+  if (registeredTool?.sideEffect === 'readonly' || registeredTool?.sideEffect === 'reads-network') {
+    return true;
+  }
   return capability === 'read';
 }
+
+function capabilityFromVisibilityMeta(meta: PartnerToolVisibilityMeta): string {
+  if (meta.sideEffect === 'readonly') return 'read';
+  if (meta.sideEffect === 'reads-network') return 'read';
+  return 'subagent';
+}
+
+export const partnerToolVisibilityPolicy: PartnerToolVisibilityPolicy = (tool) =>
+  isPartnerToolAllowed(tool.name, capabilityFromVisibilityMeta(tool), tool);
 
 /**
  * 统一的工具拦截决策——real-session 的 `context.planModeBlockCheck` 闭包调它。返回 block
@@ -57,12 +135,20 @@ export function computeToolBlockReason(args: {
   readonly permissionMode: PermissionMode;
   readonly tool: string;
   readonly resolveCapability: () => string;
+  readonly resolveRegisteredTool?: () => PartnerRegisteredToolMetadata | undefined;
   readonly isPlanModeAllowed: () => boolean;
 }): string | null {
-  const { surface, permissionMode, tool, resolveCapability, isPlanModeAllowed } = args;
+  const {
+    surface,
+    permissionMode,
+    tool,
+    resolveCapability,
+    resolveRegisteredTool,
+    isPlanModeAllowed,
+  } = args;
   if (surface === 'partner') {
-    if (!isPartnerToolAllowed(tool, resolveCapability())) {
-      return `[partner] tool '${tool}' is not available in the Partner doc-workspace (read / search / web only). Describe the outcome instead of running it.`;
+    if (!isPartnerToolAllowed(tool, resolveCapability(), resolveRegisteredTool?.())) {
+      return `[partner] tool '${tool}' is not available in the Partner doc-workspace (read / search / web / artifact tools only). Describe the outcome instead of running it.`;
     }
     return null; // Partner 白名单已是最严约束；plan-mode 不再二次裁剪（否则误拦 web 研究）
   }

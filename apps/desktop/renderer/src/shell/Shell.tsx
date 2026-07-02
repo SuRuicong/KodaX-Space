@@ -83,6 +83,7 @@ const RIGHT_SIDEBAR_DEFAULT_WIDTH = 320;
 const SHELL_PANEL_HORIZONTAL_PADDING_PX = 20;
 const SHELL_PANEL_GAP_PX = 10;
 const RESIZE_HANDLE_WIDTH_PX = 4;
+const CODER_MIN_CENTER_PX = 520;
 
 function getViewportWidth(): number {
   return typeof window !== 'undefined' && window.innerWidth ? window.innerWidth : 1440;
@@ -100,6 +101,27 @@ function rightSidebarOpenWidth(
   const pairedWidth =
     viewportWidth - SHELL_PANEL_HORIZONTAL_PADDING_PX - leftSideChrome - rightSideChrome;
   return clampSidebarWidthPx(Math.round(pairedWidth / 2));
+}
+
+function coderCenterWidthPx(
+  leftSidebarVisible: boolean,
+  leftWidth: number,
+  rightSidebarVisible: boolean,
+  rightWidth: number,
+  viewportWidth = getViewportWidth(),
+): number {
+  let fixedWidth = 0;
+  let childCount = 1;
+  if (leftSidebarVisible) {
+    fixedWidth += leftWidth + RESIZE_HANDLE_WIDTH_PX;
+    childCount += 2;
+  }
+  if (rightSidebarVisible) {
+    fixedWidth += rightWidth + RESIZE_HANDLE_WIDTH_PX;
+    childCount += 2;
+  }
+  const gapWidth = Math.max(0, childCount - 1) * SHELL_PANEL_GAP_PX;
+  return viewportWidth - SHELL_PANEL_HORIZONTAL_PADDING_PX - fixedWidth - gapWidth;
 }
 export function Shell({ version = null }: ShellProps): JSX.Element {
   const { t } = useI18n();
@@ -166,20 +188,71 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
     return () => window.removeEventListener('kodax-space.license-changed', refreshLicenseStatus);
   }, [refreshLicenseStatus]);
 
+  // P4a: Ctrl+\ toggles focus mode in Coder. Partner avoids this global shortcut
+  // because it has a different header/side-panel structure.
+  const [fullscreenRead, setFullscreenRead] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (currentSurface === 'partner') return;
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === '\\') {
+        e.preventDefault();
+        setFullscreenRead((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [currentSurface]);
+
+  const preferredLeftSidebarVisible = leftSidebarOpen && !fullscreenRead;
+  const preferredRightSidebarVisible =
+    currentSurface === 'code' && rightSidebarOpen && !fullscreenRead;
+  const preliminaryRightSidebarExpandedWidth = rightSidebarOpenWidth(
+    preferredLeftSidebarVisible,
+    leftWidth,
+    viewportWidth,
+  );
+  const preliminaryRightWidth = Math.min(
+    clampSidebarWidthPx(rightWidthDraft ?? persistedRightWidth),
+    preliminaryRightSidebarExpandedWidth,
+  );
+  const responsiveHideRightSidebar =
+    currentSurface === 'code' &&
+    preferredRightSidebarVisible &&
+    coderCenterWidthPx(
+      preferredLeftSidebarVisible,
+      leftWidth,
+      true,
+      preliminaryRightWidth,
+      viewportWidth,
+    ) < CODER_MIN_CENTER_PX;
+  const rightSidebarVisibleBeforeLeft =
+    preferredRightSidebarVisible && !responsiveHideRightSidebar;
+  const responsiveHideLeftSidebar =
+    currentSurface === 'code' &&
+    preferredLeftSidebarVisible &&
+    coderCenterWidthPx(
+      true,
+      leftWidth,
+      rightSidebarVisibleBeforeLeft,
+      preliminaryRightWidth,
+      viewportWidth,
+    ) < CODER_MIN_CENTER_PX;
+  const leftSidebarVisible = preferredLeftSidebarVisible && !responsiveHideLeftSidebar;
+
   const openRightSidebarAtBalancedWidth = useCallback((): void => {
-    const targetWidth = rightSidebarOpenWidth(leftSidebarOpen, leftWidth, viewportWidth);
+    const targetWidth = rightSidebarOpenWidth(leftSidebarVisible, leftWidth, viewportWidth);
     setRightWidthDraft(null);
     setRightSidebarWidth(targetWidth);
     setRightSidebarOpen(true);
-  }, [leftSidebarOpen, leftWidth, setRightSidebarOpen, setRightSidebarWidth, viewportWidth]);
+  }, [leftSidebarVisible, leftWidth, setRightSidebarOpen, setRightSidebarWidth, viewportWidth]);
 
   const openRightSidebarAtDefaultWidth = useCallback((): void => {
-    const maxComfortWidth = rightSidebarOpenWidth(leftSidebarOpen, leftWidth, viewportWidth);
+    const maxComfortWidth = rightSidebarOpenWidth(leftSidebarVisible, leftWidth, viewportWidth);
     const targetWidth = Math.min(clampSidebarWidthPx(RIGHT_SIDEBAR_DEFAULT_WIDTH), maxComfortWidth);
     setRightWidthDraft(null);
     setRightSidebarWidth(targetWidth);
     setRightSidebarOpen(true);
-  }, [leftSidebarOpen, leftWidth, setRightSidebarOpen, setRightSidebarWidth, viewportWidth]);
+  }, [leftSidebarVisible, leftWidth, setRightSidebarOpen, setRightSidebarWidth, viewportWidth]);
 
   // 右侧栏跟 KodaX 计划列表（todoListBySession）联动：plan 出现 → 自动打开；
   // plan 清空 → 自动折叠。只在 hasPlan 状态切换的瞬间动一次，中间段用户的手动 toggle 不会被打扰。
@@ -353,26 +426,6 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
     }
     setRequestedPopout(null); // 消费完清回 null,允许下次 slash command 再次触发
   }, [requestedPopout, setRequestedPopout, setActivePopout, currentSurface]);
-
-  // P4a: Ctrl+\ 进入/退出"专注阅读"模式 — 隐藏 Left / Right Sidebar，让主区域满宽。
-  //   - BottomBar / Breadcrumb / titlebar 保留（用户仍要发消息 + 窗口操作）
-  //   - Esc 退出（如果 Help overlay / 搜索框等都已关）
-  const [fullscreenRead, setFullscreenRead] = useState(false);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      // F046 review HIGH-2: 专注阅读模式的退出按钮只在 Coder 分支渲染；Partner 面没有可见
-      // 退出 affordance（且 RightSidebar 本就不挂）。Partner 面不接 Ctrl+\，避免把左栏藏掉后
-      // 用户找不到退出入口。Partner 想要专注阅读是后续 doc-workspace 的独立设计。
-      if (currentSurface === 'partner') return;
-      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === '\\') {
-        e.preventDefault();
-        setFullscreenRead((v) => !v);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [currentSurface]);
-
   const toggleRightSidebar = useCallback((): void => {
     if (fullscreenRead) {
       setFullscreenRead(false);
@@ -385,7 +438,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
   }, [fullscreenRead, openRightSidebarAtDefaultWidth, rightSidebarOpen, setRightSidebarOpen]);
 
   const rightSidebarExpandedWidth = rightSidebarOpenWidth(
-    leftSidebarOpen,
+    leftSidebarVisible,
     leftWidth,
     viewportWidth,
   );
@@ -394,6 +447,10 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
     [rightSidebarExpandedWidth],
   );
   const rightWidth = clampRightSidebarWidth(rightWidthDraft ?? persistedRightWidth);
+  const rightSidebarVisible =
+    rightSidebarVisibleBeforeLeft &&
+    coderCenterWidthPx(leftSidebarVisible, leftWidth, true, rightWidth, viewportWidth) >=
+      CODER_MIN_CENTER_PX;
 
   return (
     <div className="h-screen flex flex-col bg-surface text-fg-primary overflow-hidden relative isolate">
@@ -405,8 +462,8 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
           Mac 上 traffic lights 占 ~78px (hiddenInset)；Windows 上 OS 把 close/min/max 画在右侧 ~138px (titleBarOverlay)。 */}
       <div className="app-titlebar glass ix-zone h-9 flex items-center px-3 flex-shrink-0 select-none relative z-20">
         <AppTopMenu
-          leftSidebarOpen={leftSidebarOpen && !fullscreenRead}
-          rightSidebarOpen={rightSidebarOpen && !fullscreenRead}
+          leftSidebarOpen={leftSidebarVisible}
+          rightSidebarOpen={rightSidebarVisible}
           focusMode={fullscreenRead}
           diagnosticsOpen={diagnosticsOpen}
           onToggleLeftSidebar={() => {
@@ -466,7 +523,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
       {/* F060: 面板区。Liquid Glass —— 立体感来自光影材质（光向描边 + 光标 specular + 分层柔影），
           不靠运动；模态/命令面板放在面板区之外保持 position:fixed 正常。 */}
       <div className="flex flex-1 min-h-0 gap-2.5 p-2.5">
-        {!fullscreenRead && leftSidebarOpen && (
+        {leftSidebarVisible && (
           <>
             <LeftSidebar width={leftWidth} />
             <ResizeHandle
@@ -490,12 +547,15 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
           <>
             {/* 中央阅读区：悬浮圆角卡片。保持实色（bg-surface）—— aurora 只在卡片四周缝隙
                 透出，对话流不被极光动画触发 re-composite，性能护栏。 */}
-            <div className="center-pane flex-1 flex flex-col min-w-0 relative bg-surface rounded-xl border border-border-default overflow-hidden lift">
+            <div
+              className="center-pane flex-1 flex flex-col min-w-0 relative bg-surface rounded-xl border border-border-default overflow-hidden lift"
+              data-testid="coder-workspace"
+            >
               <div className="ix-zone flex items-center px-3 h-10 border-b border-border-default flex-shrink-0 gap-1">
                 {/* 左侧栏切换按钮 — 始终常驻，让收起后仍能一键展开 */}
                 <SidebarToggleButton
                   side="left"
-                  open={leftSidebarOpen && !fullscreenRead}
+                  open={leftSidebarVisible}
                   onClick={() => {
                     if (fullscreenRead) {
                       setFullscreenRead(false);
@@ -520,7 +580,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
                 {/* 右侧栏切换按钮 */}
                 <SidebarToggleButton
                   side="right"
-                  open={rightSidebarOpen && !fullscreenRead}
+                  open={rightSidebarVisible}
                   onClick={toggleRightSidebar}
                 />
               </div>
@@ -536,7 +596,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
               <BottomBar />
             </div>
 
-            {!fullscreenRead && rightSidebarOpen && (
+            {rightSidebarVisible && (
               <>
                 <ResizeHandle
                   side="right"

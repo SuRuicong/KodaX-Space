@@ -11,7 +11,8 @@
 //
 // session 过滤: notice.sessionId 与 currentSessionId 不匹配且非全局 (undefined sessionId) 时不显示。
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { X } from 'lucide-react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useAppStore } from '../store/appStore.js';
 import type { Notification } from '../store/appStore.js';
 
@@ -34,45 +35,25 @@ interface NotificationRowProps {
 }
 
 function NotificationRow({ notification, onDismiss }: NotificationRowProps): JSX.Element {
-  const rowRef = useRef<HTMLDivElement | null>(null);
-  const [closeSide, setCloseSide] = useState(28);
-
-  useLayoutEffect(() => {
-    const row = rowRef.current;
-    if (!row) return;
-
-    const updateCloseSide = (): void => {
-      const next = Math.max(24, Math.ceil(row.getBoundingClientRect().height));
-      setCloseSide((prev) => (prev === next ? prev : next));
-    };
-
-    updateCloseSide();
-    if (typeof ResizeObserver === 'undefined') return;
-
-    const observer = new ResizeObserver(updateCloseSide);
-    observer.observe(row);
-    return () => observer.disconnect();
-  }, [notification.text]);
-
   return (
     <div
-      ref={rowRef}
-      className={`relative overflow-hidden pl-2 py-1 rounded border text-xs flex items-start gap-2 ${SEVERITY_BG[notification.severity]}`}
-      style={{ paddingRight: closeSide }}
+      data-testid="notification-row"
+      data-notification-id={notification.id}
+      className={`rounded border px-2 py-1 text-xs flex items-start gap-2 ${SEVERITY_BG[notification.severity]}`}
     >
       <span aria-hidden className="mt-px">
         {SEVERITY_ICON[notification.severity]}
       </span>
-      <span className="flex-1 leading-snug">{notification.text}</span>
+      <span className="min-w-0 flex-1 break-words leading-snug">{notification.text}</span>
       <button
         type="button"
+        data-testid="notification-dismiss"
         onClick={() => onDismiss(notification.id)}
-        className="absolute right-0 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-r text-base leading-none text-fg-muted hover:bg-surface-3 hover:text-fg-primary"
-        style={{ width: closeSide, height: closeSide }}
+        className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-hover-bg hover:text-fg-primary"
         title="Dismiss"
         aria-label="Dismiss notification"
       >
-        {'\u00d7'}
+        <X className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
       </button>
     </div>
   );
@@ -111,7 +92,13 @@ export function NotificationsSurface(): JSX.Element | null {
   if (visible.length === 0) return null;
 
   return (
-    <div ref={rootRef} className="px-3 space-y-1" role="region" aria-label="System notifications">
+    <div
+      ref={rootRef}
+      className="px-3 space-y-1"
+      role="region"
+      aria-label="System notifications"
+      data-testid="notifications-surface"
+    >
       {visible.map((n) => (
         <NotificationRow key={n.id} notification={n} onDismiss={dismissNotification} />
       ))}

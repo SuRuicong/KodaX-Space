@@ -64,6 +64,45 @@ test('create → list (meta only) → read (content)', async () => {
   }
 });
 
+test('interactive-html permissions persist through list/read and catalog reload', async () => {
+  const { store, dir, file } = freshStore();
+  let store2: ArtifactStore | null = null;
+  const permissions = {
+    connect: ['https://api.example.com'],
+    style: ['https://styles.example.com'],
+    scripts: [
+      {
+        url: 'https://cdn.example.com/lib/v1.js',
+        integrity: 'sha384-AbCdEf0123456789+/=',
+      },
+    ],
+    forms: ['https://forms.example.com'],
+    popups: 'confirm-external' as const,
+  };
+  try {
+    const { id } = await store.upsert({
+      sessionId: 's1',
+      surface: 'partner',
+      kind: 'interactive-html',
+      title: 'Interactive',
+      content: '<canvas></canvas><script></script>',
+      permissions,
+    });
+
+    assert.deepEqual((await store.list())[0]?.permissions, permissions);
+    assert.deepEqual((await store.read(id))?.ref.permissions, permissions);
+
+    store.invalidate();
+    store2 = new ArtifactStore(file, dir);
+    assert.deepEqual((await store2.list())[0]?.permissions, permissions);
+    assert.deepEqual((await store2.read(id))?.ref.permissions, permissions);
+  } finally {
+    store2?.invalidate();
+    store.invalidate();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('upsert with existing id appends a version (iterate)', async () => {
   const { store, dir } = freshStore();
   try {
@@ -549,6 +588,98 @@ test('create schema: valid content artifact passes', () => {
       content: '# x',
     }).success,
     true,
+  );
+  assert.equal(
+    parseCreate({
+      sessionId: 's',
+      surface: 'partner',
+      kind: 'interactive-html',
+      title: 'Playable',
+      content: '<canvas></canvas><script></script>',
+    }).success,
+    true,
+  );
+});
+
+test('create schema: validates interactive-html permissions', () => {
+  assert.equal(
+    parseCreate({
+      sessionId: 's',
+      surface: 'partner',
+      kind: 'interactive-html',
+      title: 'Playable',
+      content: '<script src="https://cdn.example.com/lib/v1.js"></script>',
+      permissions: {
+        connect: ['https://api.example.com'],
+        style: ['https://styles.example.com'],
+        img: ['https://images.example.com'],
+        media: ['https://media.example.com'],
+        font: ['https://fonts.example.com'],
+        forms: ['https://forms.example.com'],
+        scripts: [
+          {
+            url: 'https://cdn.example.com/lib/v1.js',
+            integrity: 'sha384-AbCdEf0123456789+/=',
+          },
+        ],
+        popups: 'confirm-external',
+      },
+    }).success,
+    true,
+  );
+
+  assert.equal(
+    parseCreate({
+      sessionId: 's',
+      surface: 'partner',
+      kind: 'markdown',
+      title: 'T',
+      content: '# x',
+      permissions: { connect: ['https://api.example.com'] },
+    }).success,
+    false,
+  );
+  assert.equal(
+    parseCreate({
+      sessionId: 's',
+      surface: 'partner',
+      kind: 'interactive-html',
+      title: 'T',
+      content: '<script></script>',
+      permissions: { connect: ['http://api.example.com'] },
+    }).success,
+    false,
+  );
+  assert.equal(
+    parseCreate({
+      sessionId: 's',
+      surface: 'partner',
+      kind: 'interactive-html',
+      title: 'T',
+      content: '<script></script>',
+      permissions: {
+        scripts: [
+          {
+            url: 'https://cdn.example.com/lib.js?v=1',
+            integrity: 'sha384-AbCdEf0123456789+/=',
+          },
+        ],
+      },
+    }).success,
+    false,
+  );
+  assert.equal(
+    parseCreate({
+      sessionId: 's',
+      surface: 'partner',
+      kind: 'interactive-html',
+      title: 'T',
+      content: '<script></script>',
+      permissions: {
+        scripts: [{ url: 'https://cdn.example.com/lib.js', integrity: 'not-sri' }],
+      },
+    }).success,
+    false,
   );
 });
 

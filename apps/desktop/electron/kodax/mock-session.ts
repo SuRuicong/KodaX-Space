@@ -140,8 +140,6 @@ export class MockKodaXSession implements ManagedSession {
   /** FEATURE_033 fork 元数据；root session 都为 undefined。*/
   parentSessionId?: string;
   forkPointTurnIdx?: number;
-  /** /compact one-shot flag (mock 不真正触发 compaction,只让 interface 符合)。 */
-  compactRequested = false;
 
   private readonly emit: (e: SessionEvent) => void;
   private readonly requestPermission: PermissionRequestFn;

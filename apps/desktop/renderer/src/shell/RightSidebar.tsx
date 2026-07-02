@@ -35,6 +35,12 @@ import { Caret } from '../components/Caret.js';
 import { buildWorkerTree } from './popouts/worker-tree.js';
 import { ArtifactsView } from '../features/artifact/ArtifactsView.js';
 import { useArtifacts, useArtifactCreated } from '../features/artifact/useArtifacts.js';
+import { useTranscriptArtifacts } from '../features/artifact/useTranscriptArtifacts.js';
+import {
+  FOCUS_ARTIFACT_EVENT,
+  type FocusArtifactEventDetail,
+  type TransientArtifactSnapshot,
+} from '../features/artifact/transientArtifact.js';
 import { WorkflowPanel, useSessionWorkflowRuns } from '../features/workflow/WorkflowPanel.js';
 import {
   buildSidebarPlanView,
@@ -61,9 +67,16 @@ export function RightSidebar({
 }: RightSidebarProps = {}): JSX.Element {
   const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
-  const { artifacts } = useArtifacts(currentSessionId);
+  const { artifacts, error: artifactError } = useArtifacts(currentSessionId);
+  const transcriptArtifacts = useTranscriptArtifacts(currentSessionId);
   const hasArtifacts = artifacts.length > 0;
+  const hasTranscriptArtifacts = transcriptArtifacts.length > 0;
+  const artifactCount = hasArtifacts ? artifacts.length : transcriptArtifacts.length;
   const [tab, setTab] = useState<'overview' | 'artifact'>('overview');
+  const hasArtifactSurface =
+    hasArtifacts || hasTranscriptArtifacts || artifactError !== null || tab === 'artifact';
+  const [focusedArtifactSnapshot, setFocusedArtifactSnapshot] =
+    useState<TransientArtifactSnapshot | null>(null);
   // 锁存"对话卡片点选的 artifact id"，传给 ArtifactsView——它从概览切过来时是新挂载、
   // 错过 window 事件，靠这个 prop 在挂载时认领选中。
   const [focusedArtifactId, setFocusedArtifactId] = useState<string | null>(null);
@@ -72,7 +85,11 @@ export function RightSidebar({
   useEffect(() => {
     setTab('overview');
     setFocusedArtifactId(null);
+    setFocusedArtifactSnapshot(null);
   }, [currentSessionId]);
+  useEffect(() => {
+    if (!hasArtifacts && hasTranscriptArtifacts) setTab('artifact');
+  }, [hasArtifacts, hasTranscriptArtifacts, currentSessionId]);
   // agent 新产出 artifact → 自动切到 Artifact（精确信号：reason==='created'，
   // 不被版本更新 / 删除 / 切会话误触发）。
   useArtifactCreated(currentSessionId, () => setTab('artifact'));
@@ -80,15 +97,17 @@ export function RightSidebar({
   useEffect(() => {
     const onFocus = (e: Event): void => {
       setTab('artifact');
-      const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+      const detail = (e as CustomEvent<FocusArtifactEventDetail>).detail;
+      const id = detail?.id;
       if (id) setFocusedArtifactId(id);
+      setFocusedArtifactSnapshot(detail?.snapshot ?? null);
     };
-    window.addEventListener('kodax-space.focus-artifact', onFocus);
-    return () => window.removeEventListener('kodax-space.focus-artifact', onFocus);
+    window.addEventListener(FOCUS_ARTIFACT_EVENT, onFocus);
+    return () => window.removeEventListener(FOCUS_ARTIFACT_EVENT, onFocus);
   }, []);
 
   // 产物被删空 → 强制回概览（tab 卡在 artifact 时兜底）。
-  const showArtifact = hasArtifacts && tab === 'artifact';
+  const showArtifact = hasArtifactSurface && tab === 'artifact';
 
   return (
     <aside
@@ -103,13 +122,13 @@ export function RightSidebar({
         defaultWidth={defaultWidth}
         expandedWidth={expandedWidth}
       />
-      {hasArtifacts && (
+      {hasArtifactSurface && (
         <div className="flex items-stretch border-b border-border-default flex-shrink-0">
           <SidebarTab active={!showArtifact} onClick={() => setTab('overview')}>
             {t('right.overview')}
           </SidebarTab>
           <SidebarTab active={showArtifact} onClick={() => setTab('artifact')}>
-            {t('right.artifact')} ({artifacts.length})
+            {t('right.artifact')} {artifactCount > 0 ? `(${artifactCount})` : artifactError ? '(!)' : ''}
           </SidebarTab>
           {showArtifact && (
             <button
@@ -140,7 +159,7 @@ export function RightSidebar({
       )}
       {showArtifact ? (
         <div className="flex-1 min-h-0">
-          <ArtifactsView focusedId={focusedArtifactId} />
+          <ArtifactsView focusedId={focusedArtifactId} focusedSnapshot={focusedArtifactSnapshot} />
         </div>
       ) : (
         // 概览：原任务态多节堆叠（自身滚动）。

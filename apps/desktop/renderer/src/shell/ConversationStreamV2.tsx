@@ -29,6 +29,11 @@ import {
   type WorkflowNoticeMessage,
 } from '../store/appStore.js';
 import { composeMessages, type ConversationMessage } from '../features/session/composeMessages.js';
+import {
+  FOCUS_ARTIFACT_EVENT,
+  snapshotFromCreateArtifactTool,
+  type TransientArtifactSnapshot,
+} from '../features/artifact/transientArtifact.js';
 
 // **稳定空数组**：useAppStore selector 里返回 `?? []` literal 会每次 render 创建新引用，
 // zustand 默认 Object.is 比对触发 subscribe re-render → re-eval selector → 又新 [] → 无限循环
@@ -107,6 +112,7 @@ type ArtifactMessage = {
   version?: number;
   status: 'running' | 'done';
   summary?: string;
+  snapshot?: TransientArtifactSnapshot;
 };
 
 /**
@@ -161,6 +167,11 @@ function artifactMessageFromTool(tool: ToolCallMsg): ArtifactMessage | null {
   const title = pickToolString(tool.input, 'title') ?? 'Artifact';
   const artifactKind = pickToolString(tool.input, 'kind') ?? 'artifact';
   const summary = pickToolString(tool.input, 'summary');
+  const snapshot = snapshotFromCreateArtifactTool({
+    status: tool.status,
+    input: tool.input,
+    result: tool.result,
+  });
 
   return {
     kind: 'artifact',
@@ -171,6 +182,7 @@ function artifactMessageFromTool(tool: ToolCallMsg): ArtifactMessage | null {
     ...(version !== undefined ? { version } : {}),
     status: tool.status,
     ...(summary ? { summary } : {}),
+    ...(snapshot ? { snapshot } : {}),
   };
 }
 
@@ -893,7 +905,9 @@ function ArtifactInlineCallout({ artifact }: { artifact: ArtifactMessage }): JSX
   function focusInPanel(): void {
     if (!artifact.artifactId) return;
     window.dispatchEvent(
-      new CustomEvent('kodax-space.focus-artifact', { detail: { id: artifact.artifactId } }),
+      new CustomEvent(FOCUS_ARTIFACT_EVENT, {
+        detail: { id: artifact.artifactId, snapshot: artifact.snapshot },
+      }),
     );
   }
 

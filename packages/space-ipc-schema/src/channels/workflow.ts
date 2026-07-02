@@ -172,6 +172,15 @@ export const workflowEventChannel = {
 } as const;
 export type WorkflowEventPayload = z.infer<typeof workflowEventChannel.payload>;
 
+const workflowTaskVerificationResultSchema = z.object({
+  ok: z.boolean(),
+  enforcement: z.enum(['hard', 'warn']).optional(),
+  reasons: z.array(z.string().max(MSG)).max(32),
+  changedPaths: z.array(z.string().max(4096)).max(128).optional(),
+  mutationToolCalls: z.array(z.string().max(SHORT)).max(64).optional(),
+  mutationEvidence: z.boolean().optional(),
+});
+
 // ---- Push: workflow.activity（F065 子 agent 活动遥测） ----
 // SDK 0.7.50 给 KodaXEvents 回调加了 workflowCorrelation 尾参——带 workflowRunId 的事件
 // 来自工作流子 agent。Space 把这些归到对应 run + 子 agent 的有界活动桶，不淹主 transcript。
@@ -183,8 +192,11 @@ export const workflowActivityChannel = {
     childAgentId: z.string().max(SHORT).optional(),
     childAgentName: z.string().max(SHORT).optional(),
     // 仅 discrete 事件（text/thinking 流不推——控量、由 snapshot.latestMessage 体现）。
-    kind: z.enum(['tool_use', 'tool_result', 'end']),
+    kind: z.enum(['tool_use', 'tool_result', 'end', 'digest']),
     toolName: z.string().max(SHORT).optional(),
+    summary: z.string().max(MSG).optional(),
+    summaryKind: z.enum(['digest', 'excerpt', 'digest-failed']).optional(),
+    verification: workflowTaskVerificationResultSchema.optional(),
   }),
 } as const;
 export type WorkflowActivityPayload = z.infer<typeof workflowActivityChannel.payload>;
@@ -401,12 +413,10 @@ export const workflowSavedDeleteChannel = {
 } as const;
 
 // ============================================================================
-// F064 — Workflow Host Policy（AMAW 自然语言自启治理 + caps）。
+// F064 — Workflow Host Policy（runtime caps only; KodaX 0.7.58 removed host NL autostart）。
 // ============================================================================
 
-const workflowAutoStartSchema = z.enum(['off', 'confirm', 'on']);
 const workflowPolicySchema = z.object({
-  autoStart: workflowAutoStartSchema,
   maxAgents: z.number().int().positive(),
   maxConcurrency: z.number().int().positive(),
   tokenBudget: z.number().int().positive(),
@@ -435,7 +445,6 @@ export const workflowPolicySetChannel = {
   direction: 'invoke',
   // 部分更新（main 侧 normalize + 钳到硬上限后回完整策略）。
   input: z.object({
-    autoStart: workflowAutoStartSchema.optional(),
     // 上界不强约束（main 侧 normalize 钳到硬上限）；floor 与 normalizeWorkflowPolicy 对齐。
     maxAgents: z.number().int().min(1).optional(),
     maxConcurrency: z.number().int().min(1).optional(),

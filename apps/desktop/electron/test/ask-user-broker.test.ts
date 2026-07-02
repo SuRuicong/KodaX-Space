@@ -204,17 +204,79 @@ test('requestQuestion select resolves renderer value', async () => {
       { label: 'A', value: 'a' },
       { label: 'B', value: 'b' },
     ],
+    multiSelect: true,
+    minSelections: 1,
+    maxSelections: 2,
   });
   await new Promise((r) => setImmediate(r));
   const evt = captured.find((c) => c.channel === 'askUser.request');
   assert.ok(evt);
-  const payload = evt.payload as { reqId: string; kind: string; question: string; options?: unknown[] };
+  const payload = evt.payload as {
+    reqId: string;
+    kind: string;
+    question: string;
+    options?: unknown[];
+    multiSelect?: boolean;
+    minSelections?: number;
+    maxSelections?: number;
+  };
   assert.equal(payload.kind, 'select');
   assert.equal(payload.question, 'Pick one');
   assert.equal(payload.options?.length, 2);
+  assert.equal(payload.multiSelect, true);
+  assert.equal(payload.minSelections, 1);
+  assert.equal(payload.maxSelections, 2);
 
   assert.equal(askUserBroker.resolve(payload.reqId, { reqId: payload.reqId, value: 'b' }), true);
   assert.equal(await pending, 'b');
+});
+
+test('requestQuestion multi-select resolves renderer array value', async () => {
+  const pending = askUserBroker.requestQuestion({
+    sessionId: 's_question_multi',
+    kind: 'select',
+    question: 'Pick up to two',
+    options: [
+      { label: 'A', value: 'a' },
+      { label: 'B', value: 'b' },
+      { label: 'C', value: 'c' },
+    ],
+    multiSelect: true,
+  });
+  await new Promise((r) => setImmediate(r));
+  const evt = captured.find((c) => c.channel === 'askUser.request');
+  assert.ok(evt);
+  const payload = evt.payload as { reqId: string };
+
+  assert.equal(
+    askUserBroker.resolve(payload.reqId, { reqId: payload.reqId, value: ['a', 'c'] }),
+    true,
+  );
+  assert.deepEqual(await pending, ['a', 'c']);
+});
+
+test('requestQuestion drops inverted max selection bound before push validation', async () => {
+  const pending = askUserBroker.requestQuestion({
+    sessionId: 's_question_bounds',
+    kind: 'select',
+    question: 'Pick many',
+    options: [
+      { label: 'A', value: 'a' },
+      { label: 'B', value: 'b' },
+    ],
+    multiSelect: true,
+    minSelections: 2,
+    maxSelections: 1,
+  });
+  await new Promise((r) => setImmediate(r));
+  const evt = captured.find((c) => c.channel === 'askUser.request');
+  assert.ok(evt);
+  const payload = evt.payload as { reqId: string; minSelections?: number; maxSelections?: number };
+  assert.equal(payload.minSelections, 2);
+  assert.equal(payload.maxSelections, undefined);
+
+  assert.equal(askUserBroker.resolve(payload.reqId, { reqId: payload.reqId, value: ['a', 'b'] }), true);
+  assert.deepEqual(await pending, ['a', 'b']);
 });
 
 test('requestQuestion select without options cancels without pending push', async () => {

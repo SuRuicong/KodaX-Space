@@ -49,7 +49,7 @@ import {
 } from '../kodax/user-config.js';
 import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
-import { loadPersistedSession } from '../kodax/session-store.js';
+import { loadPersistedTranscript } from '../kodax/session-store.js';
 import { resolveRuntimeDefaults } from '../kodax/runtime-defaults.js';
 import { getSessionRuntimeStore } from '../kodax/session-runtime-store.js';
 import { assertArtifactPathInClipboardSandbox } from './clipboard.js';
@@ -550,7 +550,9 @@ export function registerSessionChannels(): void {
   // 失配 (tool_use 没等到 tool_result, 或 tool_result 没找到对应 tool_use) 仍 emit
   // tool_call item,result 字段缺失 → renderer 会渲染为 "running" 状态卡片。
   registerChannel('session.history', async (input) => {
-    const data = await loadPersistedSession(input.sessionId);
+    // Full append-order transcript (not just the active branch) so pre-compaction
+    // turns stay visible in scrollback — fixes "history disappears after compaction".
+    const data = await loadPersistedTranscript(input.sessionId);
     if (!data || !Array.isArray(data.messages)) {
       return { items: [] };
     }
@@ -574,7 +576,31 @@ export function registerSessionChannels(): void {
 
     // 第二步: 按顺序拍平 messages 成 items
     for (const msg of data.messages) {
-      if ((msg as { _synthetic?: boolean })._synthetic) continue; // SDK 合成消息隐藏
+      const meta = msg as {
+        _source?: unknown;
+        source?: unknown;
+        _synthetic?: unknown;
+        synthetic?: unknown;
+      };
+      const source = meta.source ?? meta._source;
+      const synthetic = meta.synthetic === true || meta._synthetic === true;
+      if (msg.role === 'user' && source === 'sidecar-verifier') {
+        const sidecarText = extractUserText(msg.content);
+        if (sidecarText.length > 0) {
+          items.push({
+            kind: 'sidecar_message',
+            message: {
+              source: 'sidecar-verifier',
+              verdict: 'revise',
+              recipient: 'main-agent',
+              delivery: 'synthetic-user-message',
+              content: sidecarText,
+            },
+          });
+        }
+        continue;
+      }
+      if (synthetic) continue; // SDK 合成消息隐藏
       if (msg.role === 'system') continue; // system prompts 内部
 
       if (msg.role === 'user') {

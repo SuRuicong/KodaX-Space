@@ -16,6 +16,7 @@ export const artifactKindSchema = z.enum([
   'markdown',
   'code',
   'html',
+  'interactive-html',
   'svg',
   'image',
   'pdf',
@@ -31,6 +32,7 @@ const artifactSurfaceSchema = z.enum(['code', 'partner']);
 /** Max inline content per version (text/code/html/svg/chart-json/react/image-data-uri). */
 export const MAX_ARTIFACT_CONTENT_BYTES = 1_048_576; // 1 MB (UTF-8 bytes)
 export const ARTIFACT_MAX_VERSIONS = 100;
+export const ARTIFACT_PERMISSION_MAX_SOURCES = 8;
 
 // UTF-8 byte length (portable: TextEncoder exists in node + browser).
 const utf8Bytes = (s: string): number => new TextEncoder().encode(s).length;
@@ -63,6 +65,85 @@ const artifactPathSchema = z
 
 const DOC_KINDS = ['pdf', 'docx', 'xlsx'] as const;
 
+function parseUrl(raw: string): URL | null {
+  try {
+    return new URL(raw);
+  } catch {
+    return null;
+  }
+}
+
+const artifactPermissionOriginSchema = z
+  .string()
+  .url()
+  .max(2048)
+  .refine((raw) => {
+    const url = parseUrl(raw);
+    if (!url) return false;
+    return (
+      url.protocol === 'https:' &&
+      url.username === '' &&
+      url.password === '' &&
+      url.search === '' &&
+      url.hash === '' &&
+      (url.pathname === '' || url.pathname === '/')
+    );
+  }, 'source must be an https origin without credentials, path, query, or hash');
+
+const artifactPermissionScriptSchema = z.object({
+  url: z
+    .string()
+    .url()
+    .max(2048)
+    .refine((raw) => {
+      const url = parseUrl(raw);
+      return Boolean(
+        url &&
+          url.protocol === 'https:' &&
+          url.username === '' &&
+          url.password === '' &&
+          url.search === '' &&
+          url.hash === '',
+      );
+    }, 'script url must be https without credentials, query, or hash'),
+  integrity: z
+    .string()
+    .min(1)
+    .max(256)
+    .regex(/^sha(256|384|512)-[A-Za-z0-9+/=]+$/, 'integrity must be an SRI sha256/384/512 value'),
+});
+
+export const artifactHtmlPermissionsSchema = z
+  .object({
+    connect: z.array(artifactPermissionOriginSchema).max(ARTIFACT_PERMISSION_MAX_SOURCES).optional(),
+    style: z.array(artifactPermissionOriginSchema).max(ARTIFACT_PERMISSION_MAX_SOURCES).optional(),
+    img: z.array(artifactPermissionOriginSchema).max(ARTIFACT_PERMISSION_MAX_SOURCES).optional(),
+    media: z.array(artifactPermissionOriginSchema).max(ARTIFACT_PERMISSION_MAX_SOURCES).optional(),
+    font: z.array(artifactPermissionOriginSchema).max(ARTIFACT_PERMISSION_MAX_SOURCES).optional(),
+    scripts: z.array(artifactPermissionScriptSchema).max(ARTIFACT_PERMISSION_MAX_SOURCES).optional(),
+    forms: z.array(artifactPermissionOriginSchema).max(ARTIFACT_PERMISSION_MAX_SOURCES).optional(),
+    popups: z.enum(['confirm-external']).optional(),
+  })
+  .strict();
+
+export type ArtifactHtmlPermissionsT = z.infer<typeof artifactHtmlPermissionsSchema>;
+
+/**
+ * Heuristic for HTML that needs a script-capable sandbox to be useful. This is
+ * intentionally conservative in the "make it usable" direction: if generated
+ * HTML includes scripts, canvas, or inline DOM handlers, the renderer should use
+ * the interactive HTML tier instead of the static no-script tier.
+ */
+export function looksLikeInteractiveHtml(content: string): boolean {
+  const head = content.slice(0, Math.min(content.length, 64_000));
+  return (
+    /<script\b/i.test(head) ||
+    /<canvas\b/i.test(head) ||
+    /\son[a-z]+\s*=/i.test(head) ||
+    /\b(requestAnimationFrame|setInterval|setTimeout)\s*\(/i.test(head)
+  );
+}
+
 /** Per-version metadata returned by list/read — never carries the heavy content. */
 const artifactVersionMetaSchema = z.object({
   v: z.number().int().positive(),
@@ -81,6 +162,7 @@ export const artifactRefSchema = z.object({
   surface: artifactSurfaceSchema,
   kind: artifactKindSchema,
   title: z.string().min(1).max(256),
+  permissions: artifactHtmlPermissionsSchema.optional(),
   currentVersion: z.number().int().positive(),
   versions: z.array(artifactVersionMetaSchema).min(1).max(ARTIFACT_MAX_VERSIONS),
   createdAt: z.number().int().nonnegative(),
@@ -102,6 +184,7 @@ export const artifactCreateChannel = {
       content: artifactContentSchema.optional(),
       /** File reference for doc kinds. */
       path: artifactPathSchema.optional(),
+      permissions: artifactHtmlPermissionsSchema.optional(),
       summary: z.string().max(512).optional(),
       /** When set and existing, appends a new version (iterate) instead of creating new. */
       id: z.string().min(1).max(128).optional(),
@@ -135,6 +218,13 @@ export const artifactCreateChannel = {
           code: z.ZodIssueCode.custom,
           message: 'content kinds do not accept a path',
           path: ['path'],
+        });
+      }
+      if (val.permissions !== undefined && val.kind !== 'html' && val.kind !== 'interactive-html') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'permissions are only supported for html artifacts',
+          path: ['permissions'],
         });
       }
     }),

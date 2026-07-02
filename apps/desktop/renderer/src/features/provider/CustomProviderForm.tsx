@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Check, Eye, EyeOff, KeyRound, Loader2, Plus, Save, Server } from 'lucide-react';
-import type { ProviderInfo } from '@kodax-space/space-ipc-schema';
+import type { CustomProviderReasoning, ProviderInfo } from '@kodax-space/space-ipc-schema';
 import { useI18n } from '../../i18n/I18nProvider.js';
 import type { MessageKey } from '../../i18n/messages.js';
 
@@ -50,6 +50,26 @@ function suggestedApiKeyEnv(displayName: string): string {
   const safeStem = /^[A-Z_]/.test(namedStem) ? namedStem : `CUSTOM_${namedStem}`;
   const suffix = safeStem.endsWith('_API_KEY') ? '' : '_API_KEY';
   return `${safeStem.slice(0, 128 - suffix.length)}${suffix}`;
+}
+
+function reasoningEffortsCsv(reasoning: CustomProviderReasoning | undefined): string {
+  return reasoning && reasoning !== 'none' ? reasoning.efforts.join(', ') : '';
+}
+
+function reasoningDefaultOf(reasoning: CustomProviderReasoning | undefined): string {
+  return reasoning && reasoning !== 'none' ? (reasoning.default ?? '') : '';
+}
+
+/** Build the SDK friendly reasoning declaration from the form fields (undefined = not declared). */
+function buildReasoning(none: boolean, effortsCsv: string, defaultEffort: string): CustomProviderReasoning | undefined {
+  if (none) return 'none';
+  const efforts = effortsCsv
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  if (efforts.length === 0) return undefined;
+  const def = defaultEffort.trim();
+  return { efforts, ...(def.length > 0 ? { default: def } : {}) };
 }
 
 function normalizeModels(defaultModel: string, csv: string): string[] | undefined {
@@ -103,6 +123,9 @@ const FIELD_IDS = {
   defaultModelHint: 'custom-provider-default-model-hint',
   models: 'custom-provider-models',
   modelsHint: 'custom-provider-models-hint',
+  reasoningHint: 'custom-provider-reasoning-hint',
+  reasoningEfforts: 'custom-provider-reasoning-efforts',
+  reasoningDefault: 'custom-provider-reasoning-default',
   apiKey: 'custom-provider-api-key',
   apiKeyHint: 'custom-provider-api-key-hint',
 } as const;
@@ -131,6 +154,9 @@ export function CustomProviderForm({
   const [apiKeyEnv, setApiKeyEnv] = useState(provider?.apiKeyEnv ?? '');
   const [defaultModel, setDefaultModel] = useState(provider?.defaultModel ?? '');
   const [modelsCsv, setModelsCsv] = useState(initialModelsCsv);
+  const [reasoningNone, setReasoningNone] = useState(provider?.reasoning === 'none');
+  const [reasoningEfforts, setReasoningEfforts] = useState(reasoningEffortsCsv(provider?.reasoning));
+  const [reasoningDefault, setReasoningDefault] = useState(reasoningDefaultOf(provider?.reasoning));
   const [apiKey, setApiKey] = useState('');
   const [revealKey, setRevealKey] = useState(false);
   const [setAsDefault, setSetAsDefault] = useState(!isEditing);
@@ -161,6 +187,7 @@ export function CustomProviderForm({
     try {
       const trimmedDefaultModel = defaultModel.trim();
       const models = normalizeModels(trimmedDefaultModel, modelsCsv);
+      const reasoning = buildReasoning(reasoningNone, reasoningEfforts, reasoningDefault);
       const config = {
         displayName: displayName.trim(),
         protocol,
@@ -169,6 +196,7 @@ export function CustomProviderForm({
         apiKeyEnv: effectiveApiKeyEnv,
         defaultModel: trimmedDefaultModel,
         models,
+        ...(reasoning !== undefined ? { reasoning } : {}),
       };
 
       if (isEditing) {
@@ -505,6 +533,49 @@ export function CustomProviderForm({
             disabled={formLocked}
             aria-describedby={FIELD_IDS.modelsHint}
           />
+        </Field>
+
+        <Field
+          label={t('customProvider.reasoning.label')}
+          hint={t('customProvider.reasoning.hint')}
+          hintId={FIELD_IDS.reasoningHint}
+          labelId="custom-provider-reasoning-label"
+          className="lg:col-span-2"
+        >
+          <label className="mb-2 flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              checked={reasoningNone}
+              onChange={(e) => setReasoningNone(e.target.checked)}
+              className="h-4 w-4 accent-accent"
+              disabled={formLocked}
+            />
+            <span className="text-xs text-fg-secondary">{t('customProvider.reasoning.none')}</span>
+          </label>
+          {!reasoningNone && (
+            <div className="grid gap-2 lg:grid-cols-2">
+              <input
+                id={FIELD_IDS.reasoningEfforts}
+                type="text"
+                value={reasoningEfforts}
+                onChange={(e) => setReasoningEfforts(e.target.value)}
+                placeholder="off, low, medium, high"
+                className={`${inputClass} font-mono`}
+                disabled={formLocked}
+                aria-label={t('customProvider.reasoning.efforts.label')}
+              />
+              <input
+                id={FIELD_IDS.reasoningDefault}
+                type="text"
+                value={reasoningDefault}
+                onChange={(e) => setReasoningDefault(e.target.value)}
+                placeholder={t('customProvider.reasoning.default.placeholder')}
+                className={`${inputClass} font-mono`}
+                disabled={formLocked}
+                aria-label={t('customProvider.reasoning.default.label')}
+              />
+            </div>
+          )}
         </Field>
 
         {credentialMode === 'apiKey' && (

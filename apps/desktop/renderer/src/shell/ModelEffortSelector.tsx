@@ -47,6 +47,50 @@ function effortLabel(mode: ReasoningMode, t: Translate): string {
   return t(EFFORT_LABEL_KEYS[mode]);
 }
 
+/**
+ * Map an SDK effort rung (from resolveModelCapabilities' reasoningProfile) to
+ * Space's persisted ReasoningMode bucket. Mirrors the main-process
+ * reasoning-effort.ts `effortToReasoningMode`. Returns null for an unmappable rung.
+ */
+export function sdkEffortToReasoningMode(effort: string): ReasoningMode | null {
+  switch (effort.trim().toLowerCase()) {
+    case 'off':
+    case 'none':
+    case 'minimal':
+      return 'off';
+    case 'auto':
+      return 'auto';
+    case 'low':
+      return 'quick';
+    case 'medium':
+      return 'balanced';
+    case 'high':
+    case 'xhigh':
+    case 'max':
+      return 'deep';
+    default:
+      return null;
+  }
+}
+
+/**
+ * Build the visible effort ladder from the active model's SDK-declared efforts.
+ * `off` and `auto` are universal Space options (disable thinking / let the model
+ * decide) so they are always available; the depth buckets (quick/balanced/deep)
+ * are shown only when the model actually supports a rung that maps to them.
+ * When the SDK reports no efforts (unknown / non-reasoning model) we fall back to
+ * the full fixed ladder — never more restrictive than the prior behavior.
+ */
+export function visibleEffortLadder(supportedEfforts: readonly string[] | undefined): readonly ReasoningMode[] {
+  if (!supportedEfforts || supportedEfforts.length === 0) return EFFORT_ORDER;
+  const allowed = new Set<ReasoningMode>(['off', 'auto']);
+  for (const effort of supportedEfforts) {
+    const mode = sdkEffortToReasoningMode(effort);
+    if (mode) allowed.add(mode);
+  }
+  return EFFORT_ORDER.filter((mode) => allowed.has(mode));
+}
+
 export function ModelEffortSelector(): JSX.Element {
   const { t } = useI18n();
   const sessions = useAppStore((s) => s.sessions);
@@ -70,6 +114,12 @@ export function ModelEffortSelector(): JSX.Element {
   // 右列展示哪个 provider 的 models — 默认跟随 active provider；
   // 用户在左列点别的 provider 时只改这个，不立即 commit (等点 model 才 commit)。
   const [previewProviderId, setPreviewProviderId] = useState<string | null>(null);
+  // Per-model reasoning ladder from the SDK (resolveModelCapabilities), fetched
+  // lazily when the picker opens. null → not yet known (full fixed ladder shown).
+  const [modelEfforts, setModelEfforts] = useState<{
+    readonly supported: readonly string[];
+    readonly default?: string;
+  } | null>(null);
 
   // Ctrl+I 打开/关闭
   useEffect(() => {
@@ -108,6 +158,14 @@ export function ModelEffortSelector(): JSX.Element {
     runtimeDefaults.reasoningMode ??
     kodaxDefaults?.reasoningMode ??
     'auto';
+
+  // Effort ladder built from the active model's SDK-declared efforts (falls back
+  // to the full fixed ladder when unknown). The model's own default rung is
+  // annotated so the user can see "what this model prefers".
+  const visibleEfforts = visibleEffortLadder(modelEfforts?.supported);
+  const modelDefaultMode = modelEfforts?.default
+    ? sdkEffortToReasoningMode(modelEfforts.default)
+    : null;
 
   // 右列正在预览的 provider — 打开时初始化为 active；用户左列点别的就更新 preview
   const previewProvider = providers.find((p) => p.id === (previewProviderId ?? activeProviderId));
@@ -199,8 +257,39 @@ export function ModelEffortSelector(): JSX.Element {
     }
   }
 
+  // Lazily fetch the active model's reasoning ladder (SDK resolveModelCapabilities,
+  // via provider.modelContextWindow) when the picker opens or the model changes.
+  useEffect(() => {
+    // Clear any prior model's ladder synchronously on provider/model change so a
+    // slow/failed fetch never leaves the previous model's efforts attributed to the
+    // new one (falls back to the full fixed ladder until the fresh fetch resolves).
+    setModelEfforts(null);
+    if (!open || !activeProviderId || !activeModel || activeModel === '—') return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        if (!window.kodaxSpace) return;
+        const r = await window.kodaxSpace.invoke('provider.modelContextWindow', {
+          providerId: activeProviderId,
+          model: activeModel,
+        });
+        if (cancelled || !r.ok) return;
+        setModelEfforts({
+          supported: r.data.supportedEfforts ?? [],
+          ...(r.data.defaultEffort ? { default: r.data.defaultEffort } : {}),
+        });
+      } catch {
+        // Non-fatal — the selector falls back to the full fixed ladder.
+        if (!cancelled) setModelEfforts(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, activeProviderId, activeModel]);
+
   // Ctrl+Shift+E matches the Effort shortcut shown in the picker.
-  // Keep Ctrl+T as a legacy cycle shortcut.
+  // Keep Ctrl+T as a legacy cycle shortcut. Cycles only the model-supported rungs.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const key = e.key.toLowerCase();
@@ -208,15 +297,16 @@ export function ModelEffortSelector(): JSX.Element {
       const isEffortCycle = e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && key === 'e';
       if (isLegacyCycle || isEffortCycle) {
         e.preventDefault();
-        const idx = EFFORT_ORDER.indexOf(activeEffort);
-        const next = EFFORT_ORDER[(idx + 1) % EFFORT_ORDER.length];
-        void pickEffort(next);
+        const ladder = visibleEffortLadder(modelEfforts?.supported);
+        const idx = ladder.indexOf(activeEffort);
+        const next = ladder[(idx + 1) % ladder.length] ?? ladder[0];
+        if (next) void pickEffort(next);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeEffort, session, busy]);
+  }, [activeEffort, session, busy, modelEfforts]);
 
   // Button label 拆两行：long provider name 不再挤掉 model/effort
   // Top: provider displayName
@@ -356,15 +446,17 @@ export function ModelEffortSelector(): JSX.Element {
                 <kbd className="px-1 border border-border-strong rounded">E</kbd>
               </span>
             </div>
-            <div className="grid grid-cols-5 px-2 pb-1 gap-1">
-              {EFFORT_ORDER.map((m) => {
+            <div className="flex px-2 pb-1 gap-1">
+              {visibleEfforts.map((m) => {
                 const selected = activeEffort === m;
+                const isModelDefault = modelDefaultMode === m;
                 return (
                   <button
                     key={m}
                     type="button"
                     onClick={() => void pickEffort(m)}
-                    className={`text-center px-1 py-1 rounded hover:bg-hover-bg ${
+                    title={isModelDefault ? t('modelPicker.effort.modelDefault') : undefined}
+                    className={`flex-1 text-center px-1 py-1 rounded hover:bg-hover-bg ${
                       selected ? 'bg-surface-3 text-fg-primary' : 'text-fg-secondary'
                     }`}
                   >
@@ -372,6 +464,11 @@ export function ModelEffortSelector(): JSX.Element {
                     {selected && (
                       <span className="ml-0.5 text-ok" aria-hidden>
                         ✓
+                      </span>
+                    )}
+                    {isModelDefault && !selected && (
+                      <span className="ml-0.5 text-fg-muted" aria-hidden>
+                        ·
                       </span>
                     )}
                   </button>

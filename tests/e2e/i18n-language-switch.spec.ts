@@ -13,12 +13,12 @@ test('language switch updates settings, sidebar, and command palette copy', asyn
     await page.getByTestId('settings-button').click();
     await expect(page.locator('#settings-modal-title')).toHaveText('Settings');
     await expect(page.getByRole('tab', { name: 'License' })).toBeVisible();
-    await expect(page.getByText('Workflow autostart')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Workflow host' })).toBeVisible();
 
     await page.getByRole('button', { name: '简体中文' }).click();
     await expect(page.locator('#settings-modal-title')).toHaveText('设置');
     await expect(page.getByRole('tab', { name: '许可证' })).toBeVisible();
-    await expect(page.getByText('工作流自动启动')).toBeVisible();
+    await expect(page.getByRole('heading', { name: '工作流宿主' })).toBeVisible();
     await expect(page.getByTestId('settings-button')).toContainText('设置');
     await expect(page.getByText('项目', { exact: true }).first()).toBeVisible();
 
@@ -39,7 +39,7 @@ test('language switch updates settings, sidebar, and command palette copy', asyn
     await page.getByRole('button', { name: 'English' }).click();
     await expect(page.locator('#settings-modal-title')).toHaveText('Settings');
     await expect(page.getByRole('tab', { name: 'License' })).toBeVisible();
-    await expect(page.getByText('Workflow autostart')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Workflow host' })).toBeVisible();
     await expect(page.getByTestId('settings-button')).toContainText('Settings');
     await expect(page.locator('button[aria-label^="Theme"]').first()).toBeVisible();
   } finally {

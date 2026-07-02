@@ -23,9 +23,11 @@ import DatabaseConstructor from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 import { z } from 'zod';
 import {
+  artifactHtmlPermissionsSchema,
   artifactKindSchema,
   MAX_ARTIFACT_CONTENT_BYTES,
   ARTIFACT_MAX_VERSIONS as MAX_VERSIONS,
+  type ArtifactHtmlPermissionsT,
   type ArtifactKindT,
   type ArtifactRefT,
 } from '@kodax-space/space-ipc-schema';
@@ -74,6 +76,7 @@ const storedArtifactSchema = z.object({
   surface: z.enum(['code', 'partner']),
   kind: artifactKindSchema,
   title: z.string().min(1).max(256),
+  permissions: artifactHtmlPermissionsSchema.optional(),
   currentVersion: z.number().int().positive(),
   versions: z.array(storedVersionSchema).min(1).max(MAX_VERSIONS),
   createdAt: z.number().int().nonnegative(),
@@ -111,6 +114,7 @@ const legacyArtifactSchema = z.object({
   surface: z.enum(['code', 'partner']),
   kind: artifactKindSchema,
   title: z.string().min(1).max(256),
+  permissions: artifactHtmlPermissionsSchema.optional(),
   currentVersion: z.number().int().positive(),
   versions: z.array(legacyVersionSchema).min(1).max(MAX_VERSIONS),
   createdAt: z.number().int().nonnegative(),
@@ -151,6 +155,7 @@ export interface UpsertInput {
   title: string;
   content?: string;
   path?: string;
+  permissions?: ArtifactHtmlPermissionsT;
   summary?: string;
   /** When set + found, append a version (iterate) instead of creating new. */
   id?: string;
@@ -173,6 +178,7 @@ interface CatalogRow {
   createdAt: number;
   updatedAt: number;
   versionsJson: string;
+  permissionsJson: string | null;
   metaPath: string;
   bytes: number;
   metaMtimeMs: number;
@@ -191,6 +197,7 @@ function toMeta(a: StoredArtifact): ArtifactRefT {
     surface: a.surface,
     kind: a.kind,
     title: a.title,
+    ...(a.permissions !== undefined ? { permissions: a.permissions } : {}),
     currentVersion: a.currentVersion,
     versions: a.versions.map((v) => ({
       v: v.v,
@@ -220,6 +227,7 @@ function versionExt(kind: ArtifactKindT): string {
     case 'markdown':
       return 'md';
     case 'html':
+    case 'interactive-html':
       return 'html';
     case 'svg':
       return 'svg';
@@ -246,6 +254,9 @@ function versionFileName(kind: ArtifactKindT, version: number): string {
 }
 
 function validateUpsertPayload(input: UpsertInput): void {
+  if (input.permissions !== undefined && input.kind !== 'html' && input.kind !== 'interactive-html') {
+    throw new Error('artifact permissions are only supported for html artifacts');
+  }
   const isDoc = DOC_ARTIFACT_KINDS.has(input.kind);
   const hasContent = input.content !== undefined;
   const hasPath = input.path !== undefined;
@@ -441,6 +452,9 @@ export class ArtifactStore {
         const next: StoredArtifact = {
           ...existing,
           title: input.title || existing.title,
+          ...((input.permissions ?? existing.permissions) !== undefined
+            ? { permissions: input.permissions ?? existing.permissions }
+            : {}),
           currentVersion: v,
           versions: [...existing.versions, version],
           updatedAt: now,
@@ -471,6 +485,7 @@ export class ArtifactStore {
         surface: input.surface,
         kind: input.kind,
         title: input.title,
+        ...(input.permissions !== undefined ? { permissions: input.permissions } : {}),
         currentVersion: 1,
         versions: [],
         createdAt: now,
@@ -630,6 +645,7 @@ export class ArtifactStore {
         createdAt INTEGER NOT NULL,
         updatedAt INTEGER NOT NULL,
         versionsJson TEXT NOT NULL,
+        permissionsJson TEXT,
         metaPath TEXT NOT NULL,
         bytes INTEGER NOT NULL DEFAULT 0,
         metaMtimeMs INTEGER NOT NULL DEFAULT -1,
@@ -642,6 +658,9 @@ export class ArtifactStore {
     const columns = db.prepare('PRAGMA table_info(artifacts)').all() as Array<{ name: string }>;
     if (!columns.some((column) => column.name === 'bytes')) {
       db.exec('ALTER TABLE artifacts ADD COLUMN bytes INTEGER NOT NULL DEFAULT 0');
+    }
+    if (!columns.some((column) => column.name === 'permissionsJson')) {
+      db.exec('ALTER TABLE artifacts ADD COLUMN permissionsJson TEXT');
     }
     if (!columns.some((column) => column.name === 'metaMtimeMs')) {
       db.exec('ALTER TABLE artifacts ADD COLUMN metaMtimeMs INTEGER NOT NULL DEFAULT -1');
@@ -710,6 +729,7 @@ export class ArtifactStore {
       surface: legacy.surface,
       kind: legacy.kind,
       title: legacy.title,
+      ...(legacy.permissions !== undefined ? { permissions: legacy.permissions } : {}),
       currentVersion: legacy.currentVersion,
       versions,
       createdAt: legacy.createdAt,
@@ -756,9 +776,9 @@ export class ArtifactStore {
 
     const insert = db.prepare(`
       INSERT INTO artifacts
-        (id, sessionId, surface, kind, title, currentVersion, createdAt, updatedAt, versionsJson, metaPath, bytes, metaMtimeMs, metaSize)
+        (id, sessionId, surface, kind, title, currentVersion, createdAt, updatedAt, versionsJson, permissionsJson, metaPath, bytes, metaMtimeMs, metaSize)
       VALUES
-        (@id, @sessionId, @surface, @kind, @title, @currentVersion, @createdAt, @updatedAt, @versionsJson, @metaPath, @bytes, @metaMtimeMs, @metaSize)
+        (@id, @sessionId, @surface, @kind, @title, @currentVersion, @createdAt, @updatedAt, @versionsJson, @permissionsJson, @metaPath, @bytes, @metaMtimeMs, @metaSize)
     `);
     const tx = db.transaction(
       (
@@ -827,7 +847,7 @@ export class ArtifactStore {
     const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
     return this.requireDb()
       .prepare(
-        `SELECT id, sessionId, surface, kind, title, currentVersion, createdAt, updatedAt, versionsJson, metaPath, bytes, metaMtimeMs, metaSize
+        `SELECT id, sessionId, surface, kind, title, currentVersion, createdAt, updatedAt, versionsJson, permissionsJson, metaPath, bytes, metaMtimeMs, metaSize
          FROM artifacts ${where} ORDER BY updatedAt DESC`,
       )
       .all(params) as CatalogRow[];
@@ -853,7 +873,7 @@ export class ArtifactStore {
   private async loadArtifactById(id: string): Promise<StoredArtifact | null> {
     const row = this.requireDb()
       .prepare(
-        'SELECT id, sessionId, surface, kind, title, currentVersion, createdAt, updatedAt, versionsJson, metaPath, bytes, metaMtimeMs, metaSize FROM artifacts WHERE id = ?',
+        'SELECT id, sessionId, surface, kind, title, currentVersion, createdAt, updatedAt, versionsJson, permissionsJson, metaPath, bytes, metaMtimeMs, metaSize FROM artifacts WHERE id = ?',
       )
       .get(id) as CatalogRow | undefined;
     if (!row) return null;
@@ -864,12 +884,14 @@ export class ArtifactStore {
   private artifactFromCatalogRow(row: CatalogRow): StoredArtifact | null {
     try {
       const versions = JSON.parse(row.versionsJson);
+      const permissions = row.permissionsJson ? JSON.parse(row.permissionsJson) : undefined;
       const parsed = storedArtifactSchema.safeParse({
         id: row.id,
         sessionId: row.sessionId,
         surface: row.surface,
         kind: row.kind,
         title: row.title,
+        ...(permissions !== undefined ? { permissions } : {}),
         currentVersion: row.currentVersion,
         versions,
         createdAt: row.createdAt,
@@ -988,9 +1010,9 @@ export class ArtifactStore {
       .prepare(
         `
         INSERT INTO artifacts
-          (id, sessionId, surface, kind, title, currentVersion, createdAt, updatedAt, versionsJson, metaPath, bytes, metaMtimeMs, metaSize)
+          (id, sessionId, surface, kind, title, currentVersion, createdAt, updatedAt, versionsJson, permissionsJson, metaPath, bytes, metaMtimeMs, metaSize)
         VALUES
-          (@id, @sessionId, @surface, @kind, @title, @currentVersion, @createdAt, @updatedAt, @versionsJson, @metaPath, @bytes, @metaMtimeMs, @metaSize)
+          (@id, @sessionId, @surface, @kind, @title, @currentVersion, @createdAt, @updatedAt, @versionsJson, @permissionsJson, @metaPath, @bytes, @metaMtimeMs, @metaSize)
         ON CONFLICT(id) DO UPDATE SET
           sessionId = excluded.sessionId,
           surface = excluded.surface,
@@ -1000,6 +1022,7 @@ export class ArtifactStore {
           createdAt = excluded.createdAt,
           updatedAt = excluded.updatedAt,
           versionsJson = excluded.versionsJson,
+          permissionsJson = excluded.permissionsJson,
           metaPath = excluded.metaPath,
           bytes = excluded.bytes,
           metaMtimeMs = excluded.metaMtimeMs,
@@ -1024,6 +1047,8 @@ export class ArtifactStore {
       createdAt: artifact.createdAt,
       updatedAt: artifact.updatedAt,
       versionsJson: JSON.stringify(artifact.versions),
+      permissionsJson:
+        artifact.permissions !== undefined ? JSON.stringify(artifact.permissions) : null,
       metaPath: relativePortable(this.v2Root, path.join(this.artifactDir(artifact), 'meta.json')),
       bytes,
       metaMtimeMs: metaFingerprint.metaMtimeMs,

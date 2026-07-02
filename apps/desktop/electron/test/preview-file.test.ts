@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ArtifactStore } from '../artifact/store.js';
-import { previewKindForPath } from '../ipc/artifact.js';
+import { previewKindForContent, previewKindForPath } from '../ipc/artifact.js';
 
 test('previewKindForPath: html/svg/md → 对应 kind，其它 → code', () => {
   assert.equal(previewKindForPath('a/index.html'), 'html');
@@ -73,4 +73,13 @@ test('previewFile 去重：同 (session,title,kind) 复用 id 升版本，不同
     store.invalidate();
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('previewKindForContent promotes script-driven html to interactive-html', () => {
+  assert.equal(previewKindForContent('a/index.html', '<h1>static</h1>'), 'html');
+  assert.equal(
+    previewKindForContent('a/index.html', '<canvas></canvas><script>requestAnimationFrame(() => {})</script>'),
+    'interactive-html',
+  );
+  assert.equal(previewKindForContent('app.ts', '<script>not html path</script>'), 'code');
 });

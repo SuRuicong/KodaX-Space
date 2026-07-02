@@ -48,3 +48,40 @@ test('provider.updateCustom still rejects http URL when URL safety checks are no
 
   assert.equal(result.success, false);
 });
+
+test('provider.addCustom accepts a friendly reasoning declaration', () => {
+  const result = providerAddCustomChannel.input.safeParse({
+    ...BASE_INPUT,
+    baseUrl: 'https://gw.example.com/v1',
+    reasoning: { efforts: ['off', 'low', 'high'], default: 'high' },
+  });
+  assert.equal(result.success, true);
+});
+
+test("provider.addCustom accepts reasoning 'none'", () => {
+  const result = providerAddCustomChannel.input.safeParse({
+    ...BASE_INPUT,
+    baseUrl: 'https://gw.example.com/v1',
+    reasoning: 'none',
+  });
+  assert.equal(result.success, true);
+});
+
+test('provider.addCustom rejects a reasoning declaration with an empty efforts list', () => {
+  const result = providerAddCustomChannel.input.safeParse({
+    ...BASE_INPUT,
+    baseUrl: 'https://gw.example.com/v1',
+    reasoning: { efforts: [] },
+  });
+  assert.equal(result.success, false);
+});
+
+test('provider.updateCustom carries the reasoning declaration', () => {
+  const result = providerUpdateCustomChannel.input.safeParse({
+    ...BASE_INPUT,
+    providerId: 'custom_00000000000000ff',
+    baseUrl: 'https://gw.example.com/v1',
+    reasoning: { efforts: ['low', 'high'] },
+  });
+  assert.equal(result.success, true);
+});

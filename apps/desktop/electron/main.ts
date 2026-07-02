@@ -41,6 +41,7 @@ import { getPortableOrTestUserDataDir } from './kodax/data-paths.js';
 import { registerProviderChannels, injectAllKeysToEnv } from './ipc/provider.js';
 import { autoActivateProvidersFromEnv } from './providers/auto-activate.js';
 import { registerFilesChannels } from './ipc/files.js';
+import { registerPartnerSourceChannels } from './ipc/partner-sources.js';
 import { registerTitlebarChannels } from './ipc/titlebar.js';
 import { registerSettingsChannels } from './ipc/settings.js';
 import { registerLicenseChannels } from './ipc/license.js';
@@ -675,6 +676,7 @@ app
       .then(() => registerKodaxCustomProviders(providerConfigStore.listCustom()));
     registerProviderChannels();
     registerFilesChannels();
+    registerPartnerSourceChannels();
     registerTitlebarChannels();
     registerSettingsChannels();
     registerLicenseChannels();

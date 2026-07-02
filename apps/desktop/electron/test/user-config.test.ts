@@ -474,3 +474,66 @@ test('removeKodaxConfigCustomProvider writes back customProviders and clears sel
     },
   ]);
 });
+
+test('updateKodaxConfigCustomProvider preserves CLI-set reasoning + unmodeled fields when the form omits them', async () => {
+  const config: Record<string, unknown> = {
+    customProviders: [
+      {
+        name: 'my-gw',
+        protocol: 'openai',
+        baseUrl: 'https://gw.example.com/v1',
+        apiKeyEnv: 'MY_GW_API_KEY',
+        model: 'm1',
+        reasoning: { efforts: ['off', 'high'], default: 'high' },
+        // unmodeled field set outside Space (e.g. hand-edited config.json / CLI)
+        customHeaders: { 'x-team': 'a' },
+      },
+    ],
+  };
+  mockUserConfig(config);
+
+  const res = await updateKodaxConfigCustomProvider('my-gw', {
+    displayName: 'my-gw',
+    protocol: 'openai',
+    baseUrl: 'https://gw.example.com/v2',
+    apiKeyEnv: 'MY_GW_API_KEY',
+    defaultModel: 'm2',
+  });
+  assert.equal(res.updated, true);
+
+  const saved = (config.customProviders as Array<Record<string, unknown>>)[0];
+  // Modeled fields updated by the form:
+  assert.equal(saved.baseUrl, 'https://gw.example.com/v2');
+  assert.equal(saved.model, 'm2');
+  // Reasoning + unmodeled fields preserved (not clobbered by the rebuild):
+  assert.deepEqual(saved.reasoning, { efforts: ['off', 'high'], default: 'high' });
+  assert.deepEqual(saved.customHeaders, { 'x-team': 'a' });
+});
+
+test('updateKodaxConfigCustomProvider applies a form-supplied reasoning declaration', async () => {
+  const config: Record<string, unknown> = {
+    customProviders: [
+      {
+        name: 'gw',
+        protocol: 'openai',
+        baseUrl: 'https://x.example.com/v1',
+        apiKeyEnv: 'GW_KEY',
+        model: 'm',
+        reasoning: 'none',
+      },
+    ],
+  };
+  mockUserConfig(config);
+
+  await updateKodaxConfigCustomProvider('gw', {
+    displayName: 'gw',
+    protocol: 'openai',
+    baseUrl: 'https://x.example.com/v1',
+    apiKeyEnv: 'GW_KEY',
+    defaultModel: 'm',
+    reasoning: { efforts: ['low', 'high'], default: 'low' },
+  });
+
+  const saved = (config.customProviders as Array<Record<string, unknown>>)[0];
+  assert.deepEqual(saved.reasoning, { efforts: ['low', 'high'], default: 'low' });
+});

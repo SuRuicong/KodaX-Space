@@ -14,7 +14,7 @@ import { PartnerWelcome } from './PartnerWelcome.js';
 export function PartnerConversation(): JSX.Element {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   return (
-    <div className="flex-1 flex flex-col min-w-0 relative">
+    <div className="flex-1 flex flex-col min-w-0 relative" data-testid="partner-conversation">
       {currentSessionId ? <ConversationStreamV2 /> : <PartnerWelcome />}
       <BottomBar />
     </div>

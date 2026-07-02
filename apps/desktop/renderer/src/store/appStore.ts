@@ -33,6 +33,12 @@ import {
   applyVisualQualityToDocument,
 } from '../lib/visualQuality.js';
 import { replaceSessionsInScope, type SessionScope } from '../lib/sessionScope.js';
+import {
+  collectTransientArtifactsFromEvents,
+  snapshotFromCreateArtifactTool,
+  upsertTransientArtifact,
+  type TransientArtifactSnapshot,
+} from '../features/artifact/transientArtifact.js';
 
 export type MascotMode = 'legacy' | 'sprite' | 'off';
 
@@ -178,6 +184,14 @@ interface AppState {
   tokensBySession: Readonly<
     Record<string, { tokens: number; source: 'iteration_end' | 'estimate' } | undefined>
   >;
+  /**
+   * Derived: transient (transcript-only) artifacts per session, minted from
+   * completed `create_artifact` tool calls. Updated incrementally on tool_result
+   * — the always-mounted RightSidebar/ArtifactsView subscribe to this table
+   * instead of raw eventsBySession, so they don't re-scan the full event log on
+   * every streamed text_delta (mirrors tokensBySession's rationale).
+   */
+  transientArtifactsBySession: Readonly<Record<string, readonly TransientArtifactSnapshot[]>>;
   /** F008: 每个 session 的当前 harness profile（H0/H1/H2）+ round。
    *  alpha.1：也从 managed_task_status.harnessProfile/currentRound 派生（profile 名映射）。
    */
@@ -842,6 +856,7 @@ export const useAppStore = create<AppState>((set) => ({
   sessions: [],
   currentSessionId: null,
   eventsBySession: {},
+  transientArtifactsBySession: {},
   userMessagesBySession: {},
   queuedUserMessagesBySession: {},
   workflowNoticesBySession: {},
@@ -1195,6 +1210,14 @@ export const useAppStore = create<AppState>((set) => ({
             histEvents.push({ kind: 'text_delta', sessionId, text: item.text });
           }
           assistantPendingComplete = true;
+        } else if (item.kind === 'sidecar_message') {
+          ensureLeadingUserSentinel();
+          histEvents.push({
+            kind: 'sidecar_message',
+            sessionId,
+            message: item.message,
+          });
+          assistantPendingComplete = true;
         } else {
           // tool_call: emit tool_start + (optional) tool_result。 result 缺失时 (history 损坏
           // 或 tool_use 没匹配上 tool_result) 仍 emit tool_start 让 UI 显示一张 "running" 卡片。
@@ -1251,6 +1274,10 @@ export const useAppStore = create<AppState>((set) => ({
         eventsBySession: {
           ...state.eventsBySession,
           [sessionId]: [...histEvents, ...currentEvents],
+        },
+        transientArtifactsBySession: {
+          ...state.transientArtifactsBySession,
+          [sessionId]: collectTransientArtifactsFromEvents([...histEvents, ...currentEvents]),
         },
         promotedPopoutsBySession: {
           ...state.promotedPopoutsBySession,
@@ -1480,6 +1507,7 @@ export const useAppStore = create<AppState>((set) => ({
             `${subject} KodaX nudged the agent to update todos.`,
           sessionId: event.sessionId,
           createdAt: Date.now(),
+          dismissOnOutsideInteraction: true,
         });
       } else if (event.kind === 'auto_engine_change') {
         // FEATURE_029: auto-mode engine 切换（user manual / denial threshold / circuit breaker
@@ -1534,6 +1562,37 @@ export const useAppStore = create<AppState>((set) => ({
           const { [event.toolId]: _drop, ...restPending } = state.pendingToolPaths;
           next.pendingToolPaths = restPending;
         }
+        // Derived transient-artifact table (see AppState.transientArtifactsBySession):
+        // when a create_artifact tool completes, mint/merge its snapshot once, here,
+        // rather than re-scanning the whole event log per streamed token in the view.
+        // The matching tool_start (with input) is already in `bucket` — start always
+        // precedes result — so we read it back (scanning from the end: it's recent).
+        let artifactInput: Record<string, unknown> | undefined;
+        let isArtifactResult = false;
+        for (let i = bucket.length - 1; i >= 0; i--) {
+          const started = bucket[i];
+          if (started.kind === 'tool_start' && started.toolId === event.toolId) {
+            isArtifactResult = started.toolName === 'create_artifact';
+            artifactInput = started.input;
+            break;
+          }
+        }
+        if (isArtifactResult) {
+          const snapshot = snapshotFromCreateArtifactTool({
+            status: 'done',
+            input: artifactInput,
+            result: event.content,
+          });
+          if (snapshot) {
+            next.transientArtifactsBySession = {
+              ...state.transientArtifactsBySession,
+              [event.sessionId]: upsertTransientArtifact(
+                state.transientArtifactsBySession[event.sessionId] ?? [],
+                snapshot,
+              ),
+            };
+          }
+        }
       }
       return next;
     }),
@@ -1553,6 +1612,7 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => {
       // 同时清掉对应事件 buffer 和 user message buffer——session 不在了，留着就是泄漏
       const { [sessionId]: _evt, ...restEvents } = state.eventsBySession;
+      const { [sessionId]: _ta, ...restTransientArtifacts } = state.transientArtifactsBySession;
       const { [sessionId]: _msg, ...restMsgs } = state.userMessagesBySession;
       const { [sessionId]: _queuedMsg, ...restQueuedMsgs } = state.queuedUserMessagesBySession;
       const { [sessionId]: _wfn, ...restWorkflowNotices } = state.workflowNoticesBySession;
@@ -1574,6 +1634,7 @@ export const useAppStore = create<AppState>((set) => ({
       return {
         sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
         eventsBySession: restEvents,
+        transientArtifactsBySession: restTransientArtifacts,
         userMessagesBySession: restMsgs,
         queuedUserMessagesBySession: restQueuedMsgs,
         workflowNoticesBySession: restWorkflowNotices,
@@ -1818,6 +1879,7 @@ export const useAppStore = create<AppState>((set) => ({
     set({
       currentSessionId: null,
       eventsBySession: {},
+      transientArtifactsBySession: {},
       userMessagesBySession: {},
       queuedUserMessagesBySession: {},
       workflowNoticesBySession: {},
@@ -1849,6 +1911,7 @@ export const useAppStore = create<AppState>((set) => ({
       }
       return {
         eventsBySession: { ...state.eventsBySession, [sessionId]: [] },
+        transientArtifactsBySession: { ...state.transientArtifactsBySession, [sessionId]: [] },
         userMessagesBySession: { ...state.userMessagesBySession, [sessionId]: [] },
         queuedUserMessagesBySession: { ...state.queuedUserMessagesBySession, [sessionId]: [] },
         workflowNoticesBySession: { ...state.workflowNoticesBySession, [sessionId]: [] },
@@ -1875,6 +1938,10 @@ export const useAppStore = create<AppState>((set) => ({
       const remapped = srcEvents.map((e) => ({ ...e, sessionId: newSessionId }) as SessionEvent);
       return {
         eventsBySession: { ...state.eventsBySession, [newSessionId]: remapped },
+        transientArtifactsBySession: {
+          ...state.transientArtifactsBySession,
+          [newSessionId]: collectTransientArtifactsFromEvents(remapped),
+        },
         userMessagesBySession: { ...state.userMessagesBySession, [newSessionId]: srcMsgs.slice() },
         queuedUserMessagesBySession: {
           ...state.queuedUserMessagesBySession,
@@ -1939,6 +2006,10 @@ export const useAppStore = create<AppState>((set) => ({
           [sessionId]: newNotices,
         },
         eventsBySession: { ...state.eventsBySession, [sessionId]: events.slice(0, sliceEnd) },
+        transientArtifactsBySession: {
+          ...state.transientArtifactsBySession,
+          [sessionId]: collectTransientArtifactsFromEvents(events.slice(0, sliceEnd)),
+        },
         todoListBySession: restTodos,
         workBudgetBySession: restBudgets,
         managedTaskStatusBySession: restMts,

@@ -18,6 +18,7 @@ import { promises as fs } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { z } from 'zod';
+import { customProviderReasoningSchema } from '@kodax-space/space-ipc-schema';
 import { isBuiltinId } from './catalog.js';
 import { getKodaxDir, getSpaceDataDir } from '../kodax/data-paths.js';
 
@@ -56,6 +57,7 @@ const customProviderSchema = z.object({
   apiKeyEnv: z.string().min(1).max(128),
   defaultModel: z.string().min(1).max(128),
   models: z.array(z.string().min(1).max(128)).max(64).optional(),
+  reasoning: customProviderReasoningSchema.optional(),
   createdAt: z.number().int().nonnegative(),
 });
 

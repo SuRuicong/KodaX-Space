@@ -23,6 +23,7 @@ import {
   rewindPersistedSession,
   deletePersistedSession,
   loadPersistedSession,
+  compactPersistedSession,
   sdkTagToSurface,
 } from './session-store.js';
 import { loadKodaxUserDefaults, registerKodaxCustomProviders } from './user-config.js';
@@ -217,6 +218,8 @@ class KodaXHost {
           toolName: req.toolName,
           input: req.input,
           mode: current?.permissionMode,
+          surface: req.surface ?? current?.surface,
+          partnerToolAllowed: req.partnerToolAllowed,
         });
         return resolved.decision;
       },
@@ -479,17 +482,49 @@ class KodaXHost {
   }
 
   /**
-   * /compact slash command: 标记 session 下一次 send 时触发 SDK auto-compaction。
-   * real-session 看到这个 flag → 在 KodaXOptions.context.contextTokenSnapshot 把
-   * currentTokens 顶到 999B 让 SDK needsCompaction 立即返回 true → compact_start 事件发出。
-   * 完成后 real-session 自己清 flag。
-   * NB: 必须用户至少再发一条消息才生效 —— SDK 当前没暴露"立刻 compact 不需要 prompt"的 API。
+   * /compact slash command: SDK 0.7.58 provides immediate persisted-session
+   * compaction, so Space no longer spikes a fake token snapshot on the next turn.
    */
-  requestCompact(sessionId: string): boolean {
+  async requestCompact(
+    sessionId: string,
+    customInstructions?: string,
+  ): Promise<{
+    ok: boolean;
+    compacted?: boolean;
+    tokensBefore?: number;
+    tokensAfter?: number;
+    reason?: string;
+  }> {
     const s = this.sessions.get(sessionId);
-    if (!s) return false;
-    s.compactRequested = true;
-    return true;
+    if (!s) return { ok: false, reason: `session not found: ${sessionId}` };
+
+    pushToRenderer('session.event', { kind: 'compact_start', sessionId });
+    try {
+      const result = await compactPersistedSession(sessionId, {
+        provider: s.provider,
+        ...(s.model !== undefined ? { model: s.model } : {}),
+        ...(customInstructions?.trim()
+          ? { customInstructions: customInstructions.trim() }
+          : {}),
+      });
+      if (result.compacted) {
+        pushToRenderer('session.event', {
+          kind: 'compact_stats',
+          sessionId,
+          tokensBefore: result.tokensBefore,
+          tokensAfter: result.tokensAfter,
+        });
+      }
+      return {
+        ok: true,
+        compacted: result.compacted,
+        tokensBefore: result.tokensBefore,
+        tokensAfter: result.tokensAfter,
+        ...(result.reason ? { reason: result.reason } : {}),
+      };
+    } finally {
+      pushToRenderer('session.event', { kind: 'compact_end', sessionId });
+    }
   }
 
   /**
@@ -611,6 +646,8 @@ class KodaXHost {
             toolName: req.toolName,
             input: req.input,
             mode: current?.permissionMode,
+            surface: req.surface ?? current?.surface,
+            partnerToolAllowed: req.partnerToolAllowed,
           });
           return resolved.decision;
         },

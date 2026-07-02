@@ -1,8 +1,9 @@
 // PermissionBroker mode-aware policy tests — FEATURE_029 canonical 3 mode
 //
 // 对齐 KodaX REPL canonical (ADR-005)：
-//   'plan'         → 全 deny（broker 层不区分 tool；plan-mode 拦截在 KodaX 入口
-//                    `planModeBlockCheck` → SDK isToolPlanModeAllowed v0.7.42）
+//   'plan'         → Coder 全 deny（broker 层不区分 tool；plan-mode 拦截在 KodaX 入口
+//                    `planModeBlockCheck` → SDK isToolPlanModeAllowed v0.7.42）。
+//                    Partner 例外：只有已通过 Partner tool policy 的工具可执行。
 //   'accept-edits' → edit/write/multi_edit/insert_after_anchor 自动批；
 //                    其他 (bash/web_fetch/...) 走 ask modal；
 //                    dangerous (rm -rf 等) 即便是 edit 工具也 ask
@@ -80,6 +81,37 @@ test('plan denies even safe tools (no allowlist short-circuit)', async () => {
     mode: 'plan',
   });
   assert.equal(result.decision, 'deny', 'plan mode broker deny is conservative');
+});
+
+test('Partner plan allows tools already admitted by Partner policy without modal', async () => {
+  const result = await permissionBroker.request({
+    sessionId: 's_partner_plan',
+    toolId: 't_create_artifact',
+    toolName: 'create_artifact',
+    input: { kind: 'markdown', title: 'Report' },
+    mode: 'plan',
+    surface: 'partner',
+    partnerToolAllowed: true,
+  });
+  assert.equal(result.decision, 'allow_once');
+  assert.equal(
+    captured.filter((c) => c.channel === 'permission.request').length,
+    0,
+    'Partner policy-admitted tools should not show the generic permission modal',
+  );
+});
+
+test('Partner plan still denies tools not admitted by Partner policy', async () => {
+  const result = await permissionBroker.request({
+    sessionId: 's_partner_plan_block',
+    toolId: 't_bash',
+    toolName: 'bash',
+    input: { command: 'echo hi' },
+    mode: 'plan',
+    surface: 'partner',
+    partnerToolAllowed: false,
+  });
+  assert.equal(result.decision, 'deny');
 });
 
 // ---------------------------- accept-edits mode ----------------------------

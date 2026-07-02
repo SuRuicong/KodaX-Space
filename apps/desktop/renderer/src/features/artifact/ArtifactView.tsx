@@ -10,7 +10,7 @@
 import { Markdown } from '../session/messages/Markdown';
 import { MonacoViewer } from '../code/MonacoViewer';
 import { RichPreview } from '../preview/RichPreview';
-import { HtmlArtifact } from './renderers/HtmlArtifact';
+import { HtmlArtifact, InteractiveHtmlArtifact } from './renderers/HtmlArtifact';
 import { ChartArtifact } from './renderers/ChartArtifact';
 import { SvgArtifact, ImageArtifact } from './renderers/MediaArtifact';
 
@@ -59,6 +59,13 @@ export function ArtifactView(props: ArtifactContent): JSX.Element {
       );
     case 'html':
       return <HtmlArtifact html={props.content} />;
+    case 'interactive-html':
+      return (
+        <InteractiveHtmlArtifact
+          html={props.content}
+          {...(props.permissions !== undefined ? { permissions: props.permissions } : {})}
+        />
+      );
     case 'svg':
       return <SvgArtifact svg={props.content} />;
     case 'image':

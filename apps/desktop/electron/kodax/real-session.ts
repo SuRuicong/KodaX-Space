@@ -93,15 +93,29 @@ import type {
   Guardrail,
   KodaXOptions,
   KodaXEvents,
+  KodaXInputArtifact,
   KodaXSessionStorage,
   ToolCallSignal,
 } from '@kodax-ai/kodax/coding';
 import type { InputArtifact, SessionEvent, Surface } from '@kodax-space/space-ipc-schema';
+import { ASK_USER_BACK_SIGNAL } from '@kodax-space/space-ipc-schema';
 import { askUserBroker } from '../permission/ask-user-broker.js';
 import { bootstrapAutoMode } from './auto-mode-bootstrap.js';
-import { computeToolBlockReason, isPartnerToolAllowed } from './partner-tools.js';
+import {
+  computeToolBlockReason,
+  isPartnerToolAllowed,
+  partnerToolVisibilityPolicy,
+} from './partner-tools.js';
+import {
+  buildPartnerAgentProfile,
+  buildPartnerRuntimeContextOverlay,
+  type PartnerVerificationContract,
+} from './partner-profile.js';
 import { ensureCreateArtifactToolRegistered } from '../artifact/create-artifact-tool.js';
-import { withArtifactContext } from '../artifact/run-context.js';
+import { ensurePartnerKbToolsRegistered } from './partner-kb-tools.js';
+import { ensurePartnerSourceToolRegistered } from './partner-source-tool.js';
+import { partnerSourceStore } from './partner-source-store.js';
+import { withSessionRunContext } from './session-run-context.js';
 import { runWithSessionQueueScope } from './session-queue-guard.js';
 import { getSessionStorageHandle } from './session-store.js';
 import { wrapSdkError } from './sdk-errors.js';
@@ -113,8 +127,13 @@ import {
 } from './sdk-extensions.js';
 import { SPACE_MANUAL_TOPICS, SPACE_PRODUCT_NAME } from './space-manual-topics.js';
 import { workflowPolicyStore } from './workflow-policy.js';
+import { workflowController } from './workflow-controller.js';
 import { pushToRenderer } from '../ipc/push.js';
-import { childRunId, buildChildActivity } from './workflow-activity.js';
+import {
+  childRunId,
+  buildChildActivity,
+  buildWorkflowDigestActivity,
+} from './workflow-activity.js';
 import type {
   ManagedSession,
   PermissionRequestFn,
@@ -131,6 +150,76 @@ import { reasoningModeToEffort } from './reasoning-effort.js';
 
 type SpaceReasoning = 'off' | 'auto' | 'quick' | 'balanced' | 'deep';
 
+interface AgentProfileEventSummary {
+  readonly surface?: string;
+  readonly id?: string;
+  readonly version?: string;
+  readonly name?: string;
+}
+
+type AskUserSelectionAnswer = string | string[];
+
+function supportsAskUserArrayResults(sdk: SdkCodingModule): boolean {
+  const maybeTool = (sdk as { toolAskUserQuestion?: unknown }).toolAskUserQuestion;
+  if (typeof maybeTool !== 'function') return false;
+  const source = Function.prototype.toString.call(maybeTool);
+  return source.includes('choices') && source.includes('Array.isArray');
+}
+
+function legacyAskUserAnswer(answer: AskUserSelectionAnswer): string {
+  return Array.isArray(answer) ? answer.join(', ') : answer;
+}
+
+const WORKFLOW_TOOL_RUN_ID_RE =
+  /(?:^|\n)\s*(?:task_id|run_id):([A-Za-z0-9][A-Za-z0-9._-]*)\b/;
+
+function parseWorkflowRunIdFromToolResult(
+  name: string | undefined,
+  content: unknown,
+): string | undefined {
+  if (name !== 'run_workflow' || typeof content !== 'string') return undefined;
+  return WORKFLOW_TOOL_RUN_ID_RE.exec(content)?.[1];
+}
+
+function toAgentProfileSummary(profile: unknown): AgentProfileEventSummary | undefined {
+  if (profile === null || typeof profile !== 'object') return undefined;
+  const record = profile as Record<string, unknown>;
+  const summary: AgentProfileEventSummary = {
+    ...(typeof record.surface === 'string' ? { surface: record.surface } : {}),
+    ...(typeof record.id === 'string' ? { id: record.id } : {}),
+    ...(typeof record.version === 'string' ? { version: record.version } : {}),
+    ...(typeof record.name === 'string' ? { name: record.name } : {}),
+  };
+  return Object.keys(summary).length > 0 ? summary : undefined;
+}
+
+function toVerificationSummary(
+  verification: PartnerVerificationContract | undefined,
+): { summary?: string; rubricFamily?: string; requiredChecks?: string[] } | undefined {
+  if (!verification) return undefined;
+  const summary = {
+    ...(verification.summary !== undefined ? { summary: verification.summary } : {}),
+    ...(verification.rubricFamily !== undefined ? { rubricFamily: verification.rubricFamily } : {}),
+    ...(verification.requiredChecks !== undefined
+      ? { requiredChecks: [...verification.requiredChecks].slice(0, 32) }
+      : {}),
+  };
+  return Object.keys(summary).length > 0 ? summary : undefined;
+}
+
+function buildInputArtifacts(
+  sdk: SdkCodingModule,
+  artifacts: readonly InputArtifact[] | undefined,
+): KodaXInputArtifact[] | undefined {
+  if (!artifacts || artifacts.length === 0) return undefined;
+  return artifacts.map((artifact) =>
+    sdk.createImageArtifactFromPath(artifact.path, {
+      mediaType: artifact.mediaType,
+      source: artifact.source,
+    }),
+  );
+}
+
 /** F065：推一条子 agent 活动到 renderer（仅 discrete 事件调用——控 IPC 量，不推每个 text delta）。 */
 function pushChildActivity(
   meta: Parameters<typeof buildChildActivity>[0],
@@ -138,6 +227,13 @@ function pushChildActivity(
   extra: { toolName?: string },
 ): void {
   const payload = buildChildActivity(meta, kind, extra);
+  if (payload) pushToRenderer('workflow.activity', payload);
+}
+
+function pushWorkflowDigestActivity(
+  event: Parameters<typeof buildWorkflowDigestActivity>[0],
+): void {
+  const payload = buildWorkflowDigestActivity(event);
   if (payload) pushToRenderer('workflow.activity', payload);
 }
 
@@ -182,8 +278,6 @@ export class RealKodaXSession implements ManagedSession {
   /** FEATURE_033 fork 元数据；root session 都为 undefined。*/
   parentSessionId?: string;
   forkPointTurnIdx?: number;
-  /** /compact one-shot flag (见 ManagedSession.compactRequested 注释)。 */
-  compactRequested = false;
 
   private readonly emit: (e: SessionEvent) => void;
   private readonly requestPermission: PermissionRequestFn;
@@ -554,16 +648,27 @@ export class RealKodaXSession implements ManagedSession {
     // F058: register the in-process create_artifact tool once (global registry).
     // Lazy here (first run) so the agent's tool schema includes it; idempotent.
     ensureCreateArtifactToolRegistered(sdk);
+    ensurePartnerSourceToolRegistered(sdk);
+    ensurePartnerKbToolsRegistered(sdk);
 
     type SdkAskUserQuestionOptions = Parameters<NonNullable<KodaXEvents['askUser']>>[0];
     type SdkAskUserMultiOptions = Parameters<NonNullable<KodaXEvents['askUserMulti']>>[0];
     type SdkAskUserInputOptions = Parameters<NonNullable<KodaXEvents['askUserInput']>>[0];
+    type FutureSdkAskUserQuestionOptions = SdkAskUserQuestionOptions & {
+      readonly minSelections?: number;
+      readonly maxSelections?: number;
+    };
+    type FutureSdkAskUserQuestionItem = SdkAskUserMultiOptions['questions'][number] & {
+      readonly minSelections?: number;
+      readonly maxSelections?: number;
+    };
 
     const cancelledToolResult =
       sdk.CANCELLED_TOOL_RESULT_MESSAGE ?? '[Cancelled] Operation cancelled by user';
+    const askUserArrayResultsSupported = supportsAskUserArrayResults(sdk);
     const requestSdkUserQuestion = async (
-      options: SdkAskUserQuestionOptions,
-    ): Promise<string | undefined> => {
+      options: FutureSdkAskUserQuestionOptions,
+    ): Promise<AskUserSelectionAnswer | undefined> => {
       const kind = options.kind ?? 'select';
       if (kind === 'select' && (!options.options || options.options.length === 0)) {
         console.warn(
@@ -571,45 +676,78 @@ export class RealKodaXSession implements ManagedSession {
         );
         return undefined;
       }
-      return askUserBroker.requestQuestion({
+      const answer = await askUserBroker.requestQuestion({
         sessionId: sid,
         kind,
         question: options.question,
         ...(kind === 'select' ? { options: options.options } : {}),
         ...(options.multiSelect !== undefined ? { multiSelect: options.multiSelect } : {}),
+        ...(options.minSelections !== undefined ? { minSelections: options.minSelections } : {}),
+        ...(options.maxSelections !== undefined ? { maxSelections: options.maxSelections } : {}),
         ...(options.default !== undefined ? { default: options.default } : {}),
       });
+      if (answer === undefined) return undefined;
+      return askUserArrayResultsSupported ? answer : legacyAskUserAnswer(answer);
     };
 
-    const requestSdkUserInput = (options: SdkAskUserInputOptions): Promise<string | undefined> =>
-      askUserBroker.requestQuestion({
+    const requestSdkUserInput = async (
+      options: SdkAskUserInputOptions,
+    ): Promise<string | undefined> => {
+      const answer = await askUserBroker.requestQuestion({
         sessionId: sid,
         kind: 'input',
         question: options.question,
         ...(options.default !== undefined ? { default: options.default } : {}),
       });
+      return Array.isArray(answer) ? answer[0] : answer;
+    };
 
     const requestSdkUserMulti = async (
       options: SdkAskUserMultiOptions,
-    ): Promise<Record<string, string> | undefined> => {
-      const answers: Record<string, string> = {};
-      for (const question of options.questions) {
+    ): Promise<Record<string, AskUserSelectionAnswer> | undefined> => {
+      const answers: Record<string, AskUserSelectionAnswer> = {};
+      let questionIndex = 0;
+      while (questionIndex < options.questions.length) {
+        const question = options.questions[questionIndex] as FutureSdkAskUserQuestionItem;
         if (!question.options || question.options.length === 0) {
           console.warn(
             `[real-session ${sid}] SDK askUserMulti select request had no options; cancelling prompt`,
           );
           return undefined;
         }
+        const askOptions =
+          questionIndex > 0
+            ? [
+                ...question.options,
+                {
+                  label: 'Back',
+                  description: 'Return to previous question',
+                  value: ASK_USER_BACK_SIGNAL,
+                },
+              ]
+            : question.options;
+        const header = question.header !== undefined
+          ? `[${questionIndex + 1}/${options.questions.length}] ${question.header}`
+          : `[${questionIndex + 1}/${options.questions.length}]`;
         const answer = await askUserBroker.requestQuestion({
           sessionId: sid,
           kind: 'select',
           question: question.question,
-          ...(question.header !== undefined ? { header: question.header } : {}),
-          options: question.options,
+          header,
+          options: askOptions,
           ...(question.multiSelect !== undefined ? { multiSelect: question.multiSelect } : {}),
+          ...(question.minSelections !== undefined ? { minSelections: question.minSelections } : {}),
+          ...(question.maxSelections !== undefined ? { maxSelections: question.maxSelections } : {}),
         });
         if (answer === undefined) return undefined;
-        answers[question.question] = answer;
+        if (!Array.isArray(answer) && answer === ASK_USER_BACK_SIGNAL) {
+          questionIndex = Math.max(0, questionIndex - 1);
+          continue;
+        }
+        answers[question.question] = askUserArrayResultsSupported
+          ? answer
+          : legacyAskUserAnswer(answer);
+        questionIndex += 1;
       }
       return answers;
     };
@@ -637,17 +775,22 @@ export class RealKodaXSession implements ManagedSession {
       // F047 defense-in-depth (security review MEDIUM)：Partner 白名单已在 planModeBlockCheck
       // 拦下（LLM 拿到 reason）。这里再兜一道 fail-closed——万一 SDK 改 hook 顺序 / 新增不经
       // planModeBlockCheck 的调用路径（如 MCP 工具），Partner 仍不会执行非白名单工具。
-      if (
-        this.surface === 'partner' &&
-        !isPartnerToolAllowed(tool, sdk.resolveToolCapability(tool))
-      ) {
-        return false;
+      let partnerToolAllowed: boolean | undefined;
+      if (this.surface === 'partner') {
+        partnerToolAllowed = isPartnerToolAllowed(
+          tool,
+          sdk.resolveToolCapability(tool),
+          sdk.getRegisteredToolDefinition(tool),
+        );
+        if (!partnerToolAllowed) return false;
       }
       try {
         const decision = await this.requestPermission({
           toolId: meta?.toolId ?? `auto_${tool}_${Date.now()}`,
           toolName: tool,
           input,
+          surface: this.surface,
+          partnerToolAllowed,
         });
         // session-adapter PermissionRequestFn 返回 'allow_once' | 'allow_always' | 'deny'
         return decision !== 'deny';
@@ -675,6 +818,7 @@ export class RealKodaXSession implements ManagedSession {
         permissionMode: this.permissionMode,
         tool,
         resolveCapability: () => sdk.resolveToolCapability(tool),
+        resolveRegisteredTool: () => sdk.getRegisteredToolDefinition(tool),
         isPlanModeAllowed: () => sdk.isToolPlanModeAllowed(tool),
       });
 
@@ -764,6 +908,14 @@ export class RealKodaXSession implements ManagedSession {
           toolName: result.name,
           content: result.content,
         });
+        const inlineWorkflowRunId = parseWorkflowRunIdFromToolResult(result.name, result.content);
+        if (inlineWorkflowRunId) {
+          workflowController.registerOrigin(inlineWorkflowRunId, {
+            sessionId: sid,
+            surface: this.surface,
+            projectRoot: this.projectRoot,
+          });
+        }
       },
       onToolProgress: (update) => {
         emitLive({
@@ -779,6 +931,9 @@ export class RealKodaXSession implements ManagedSession {
       // F065: 子 agent 离开 executor 边界——封口其活动流（不进主 transcript）。
       onChildActivityEnd: (meta) => {
         pushChildActivityLive(meta, 'end', {});
+      },
+      onWorkflowAgentDigest: (event) => {
+        pushWorkflowDigestActivity(event);
       },
 
       // ---- Session / iteration lifecycle ----
@@ -915,7 +1070,7 @@ export class RealKodaXSession implements ManagedSession {
       onSidecarMessage: (message) => {
         emitLive({
           kind: 'sidecar_message',
-          sessionId: sid,
+          sessionId: message.sessionId ?? sid,
           message: {
             source: message.source,
             verdict: message.verdict,
@@ -927,6 +1082,13 @@ export class RealKodaXSession implements ManagedSession {
               : {}),
             ...(message.trace !== undefined
               ? { trace: clampSessionEventText(message.trace)! }
+              : {}),
+            ...(toAgentProfileSummary((message as { agentProfile?: unknown }).agentProfile)
+              ? {
+                  agentProfile: toAgentProfileSummary(
+                    (message as { agentProfile?: unknown }).agentProfile,
+                  )!,
+                }
               : {}),
           },
         });
@@ -960,6 +1122,13 @@ export class RealKodaXSession implements ManagedSession {
             // Space now keeps the SDK's three agent modes intact: ama / amaw / sa.
             agentMode: status.agentMode,
             harnessProfile: status.harnessProfile,
+            ...(toAgentProfileSummary((status as { agentProfile?: unknown }).agentProfile)
+              ? {
+                  agentProfile: toAgentProfileSummary(
+                    (status as { agentProfile?: unknown }).agentProfile,
+                  )!,
+                }
+              : {}),
             activeWorkerId: status.activeWorkerId,
             activeWorkerTitle: status.activeWorkerTitle,
             childFanoutClass: status.childFanoutClass,
@@ -1004,13 +1173,31 @@ export class RealKodaXSession implements ManagedSession {
       },
 
       // ---- Interactive user questions ----
-      askUser: async (options) => (await requestSdkUserQuestion(options)) ?? cancelledToolResult,
-      askUserMulti: requestSdkUserMulti,
+      askUser: async (options) =>
+        ((await requestSdkUserQuestion(options)) ?? cancelledToolResult) as string,
+      askUserMulti: requestSdkUserMulti as NonNullable<KodaXEvents['askUserMulti']>,
       askUserInput: requestSdkUserInput,
 
       // ---- Permission 钩子 ----
       beforeToolExecute,
       exitPlanMode,
+      onEffectiveConfig: (config) => {
+        emitLive({
+          kind: 'effective_config',
+          sessionId: sid,
+          config: {
+            agentMode: config.agentMode,
+            ...(toAgentProfileSummary(config.agentProfile)
+              ? { agentProfile: toAgentProfileSummary(config.agentProfile)! }
+              : {}),
+            toolScope: [...config.toolScope].slice(0, 512),
+            ...(toVerificationSummary(config.verification)
+              ? { verification: toVerificationSummary(config.verification)! }
+              : {}),
+            ...(config.verifier !== undefined ? { verifier: config.verifier } : {}),
+          },
+        });
+      },
     };
 
     // FEATURE_030: AutoModeToolGuardrail bootstrap — 仅 mode='auto' 时构造并注入
@@ -1122,7 +1309,42 @@ export class RealKodaXSession implements ManagedSession {
     // 字段——KodaX prompt builder 同样会跳过 skills-addendum section。
     // 失败完全静默（buildSkillsPrompt 内部 catch 并返空串），不阻塞主对话回路。
     const skillsPrompt = await buildSkillsPrompt(this.projectRoot);
+    const partnerSources =
+      this.surface === 'partner'
+        ? await partnerSourceStore.list(this.sessionId).catch((err) => {
+            console.warn(
+              `[real-session ${sid}] failed to load Partner sources:`,
+              err instanceof Error ? err.message : err,
+            );
+            return [];
+          })
+        : undefined;
+    const partnerAgentProfile =
+      this.surface === 'partner' ? buildPartnerAgentProfile() : undefined;
+    const partnerRuntimeContextOverlay =
+      this.surface === 'partner'
+        ? buildPartnerRuntimeContextOverlay({ sources: partnerSources })
+        : undefined;
     const extensionRuntimeHandle = await this.ensureExtensionRuntime();
+    const inputArtifacts = buildInputArtifacts(sdk, artifacts);
+    const workflowPolicy = workflowPolicyStore.get();
+
+    const context: NonNullable<KodaXOptions['context']> = {
+      // gitRoot 用 projectRoot——Space 不再单独求 git root，KodaX 自己会处理边界
+      gitRoot: this.projectRoot,
+      executionCwd: this.projectRoot,
+      planModeBlockCheck,
+      ...(partnerAgentProfile ? { agentProfile: partnerAgentProfile } : {}),
+      ...(partnerAgentProfile ? { toolVisibilityPolicy: partnerToolVisibilityPolicy } : {}),
+      ...(partnerRuntimeContextOverlay ? { promptOverlay: partnerRuntimeContextOverlay } : {}),
+      // skillsPrompt 仅在非空时挂——避免在 SDK 视角注入空字符串字段。
+      ...(skillsPrompt ? { skillsPrompt } : {}),
+      // OC-31 v0.1.9 — 用户粘贴 / 拖拽的图片走这条路径。SDK
+      // buildPromptMessageContent(prompt, inputArtifacts) 会自动把每张图拼成
+      // multimodal content block ({type:'image', path, mediaType})。空数组就不传
+      // —— 让 SDK 走纯文本 fast path，不额外做 type checking 开销。
+      ...(inputArtifacts ? { inputArtifacts } : {}),
+    };
 
     const options: KodaXOptions = {
       provider: this.provider,
@@ -1150,54 +1372,26 @@ export class RealKodaXSession implements ManagedSession {
         tag: this.surface,
         storage: sessionStorage as KodaXSessionStorage | undefined,
       },
-      context: {
-        // gitRoot 用 projectRoot——Space 不再单独求 git root，KodaX 自己会处理边界
-        gitRoot: this.projectRoot,
-        executionCwd: this.projectRoot,
-        planModeBlockCheck,
-        // skillsPrompt 仅在非空时挂——避免在 SDK 视角注入空字符串字段。
-        ...(skillsPrompt ? { skillsPrompt } : {}),
-        // OC-31 v0.1.9 — 用户粘贴 / 拖拽的图片走这条路径。SDK
-        // buildPromptMessageContent(prompt, inputArtifacts) 会自动把每张图拼成
-        // multimodal content block ({type:'image', path, mediaType})。空数组就不传
-        // —— 让 SDK 走纯文本 fast path，不额外做 type checking 开销。
-        ...(artifacts && artifacts.length > 0
-          ? {
-              inputArtifacts: artifacts.map((a) => ({
-                kind: 'image' as const,
-                path: a.path,
-                ...(a.mediaType ? { mediaType: a.mediaType } : {}),
-                source: a.source,
-              })),
-            }
-          : {}),
-        // /compact 标记: 把 currentTokens 顶到 999B,SDK needsCompaction 立即触发
-        // 完事后 finally 清掉 flag (不管成功还是失败)
-        ...(this.compactRequested
-          ? {
-              contextTokenSnapshot: {
-                currentTokens: 999_000_000,
-                baselineEstimatedTokens: 999_000_000,
-                source: 'estimate' as const,
-              },
-            }
-          : {}),
-      },
+      context,
       guardrails,
-      // FEATURE_221 (SDK 0.7.47): 注入 Space 自己的产品手册,让内建 kodax_manual
-      // tool 在用户问"怎么粘图/怎么开 popout/怎么配 provider"时返回 Space 形态的
-      // 答案 —— 不是默认 KodaX REPL 视角 (~/.kodax/config / npm install).
-      // 同 id (overview / install / quickstart / providers / config / sessions /
-      // commands / skills / permissions / troubleshooting) override KodaX base 条目;
-      // 新 id (popouts / smart-popout-director / image-paste / sidebar-resize /
-      // keyboard-shortcuts) 纯增量. SDK 4KB body cap 之内.
+      // FEATURE_221 (SDK 0.7.58): 全白标自知识手册。让内建 kodax_manual tool 在用户问
+      // "怎么粘图/怎么配 provider/有什么工具"时只返回 Space 形态的答案。
+      // baseTopics: [] —— 完全替换,不 seed 任何 KodaX base 条目。此前只设 productName+topics
+      // 时,Space 没覆盖的 base 条目(doctor / agents / sdk / tools / mcp / repo-intelligence /
+      // custom-providers)仍会向模型吐 ~/.kodax/config.json 手改、`kodax doctor` CLI 这类
+      // 对 GUI 产品无意义、且泄漏 KodaX 名的内容。全白标后 Space 自己的 topics 是唯一来源
+      // (SPACE_MANUAL_TOPICS 已含 tools / mcp / repo-intelligence / custom-providers 增量条目)。
+      // CLI-only 的 doctor / agents / sdk 主题不再存在(GUI 产品不需要)。SDK 4KB body cap 内。
       selfManual: {
         productName: SPACE_PRODUCT_NAME,
+        baseTopics: [],
         topics: SPACE_MANUAL_TOPICS,
       },
-      // F064: Workflow Host Policy —— 治理自然语言 AMAW 自启（off/confirm/on，默认 confirm）
-      // + caps（已 clamp 到 SDK 硬上限）。SDK 据此决定是否自启 + 钳运行时上限/审批/进程上限。
-      workflowHostPolicy: workflowPolicyStore.get(),
+      // KodaX 0.7.58 removed host-side natural-language workflow auto-start.
+      // Space passes only runtime caps plus the durable run dir for AMAW run_workflow.
+      workflowHostPolicy: workflowPolicy,
+      workflowRunsBaseDir: workflowController.getRunBaseDir(),
+      workflow: { maxConcurrency: workflowPolicy.maxConcurrency },
     };
 
     try {
@@ -1209,7 +1403,7 @@ export class RealKodaXSession implements ManagedSession {
       // F058: bind artifact attribution context for this run so the
       // create_artifact tool handler (global registration) knows which
       // session/surface to attribute to (ALS — concurrency-safe across sessions).
-      await withArtifactContext(
+      await withSessionRunContext(
         { sessionId: sid, surface: this.surface, projectRoot: this.projectRoot },
         () => runWithSessionQueueScope(sid, () => sdk.runManagedTask(options, prompt)),
       );
@@ -1251,9 +1445,6 @@ export class RealKodaXSession implements ManagedSession {
       }
     } finally {
       flushStreamDeltas();
-      // /compact 标记是 one-shot — 不论本轮成功 / 中断 / 报错，consume 后清掉
-      // 避免下一轮还误触发
-      if (this.compactRequested) this.compactRequested = false;
     }
   }
 }

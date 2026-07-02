@@ -1,42 +1,12 @@
-// F064 — Workflow Host Policy 设置节（挂在 Settings › Preferences）。
-//
-// autoStart 三档（off / confirm / on，默认 confirm）治理自然语言 AMAW 自启：
-//   - confirm（默认）：识别到值得起工作流时确认一次再 fan-out，不静默吃大把 token
-//   - on：透明自启   - off：禁 AMAW 自启（仍可从库显式启动）
-// caps 折叠在「高级」——智能默认、不当裸旋钮；main 侧已 clamp 到 SDK 硬上限。
-
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { WorkflowPolicyT } from '@kodax-space/space-ipc-schema';
 import { useI18n } from '../../i18n/I18nProvider.js';
-import type { MessageKey } from '../../i18n/messages.js';
-
-const AUTOSTART_OPTS: {
-  value: WorkflowPolicyT['autoStart'];
-  labelKey: MessageKey;
-  hintKey: MessageKey;
-}[] = [
-  {
-    value: 'off',
-    labelKey: 'workflow.autoStart.off',
-    hintKey: 'workflow.autoStart.off.hint',
-  },
-  {
-    value: 'confirm',
-    labelKey: 'workflow.autoStart.confirm',
-    hintKey: 'workflow.autoStart.confirm.hint',
-  },
-  {
-    value: 'on',
-    labelKey: 'workflow.autoStart.on',
-    hintKey: 'workflow.autoStart.on.hint',
-  },
-];
 
 export function WorkflowPolicySection(): JSX.Element {
   const { t } = useI18n();
   const [policy, setPolicy] = useState<WorkflowPolicyT | null>(null);
-  const [advanced, setAdvanced] = useState(false);
+  const [advanced, setAdvanced] = useState(true);
 
   useEffect(() => {
     void window.kodaxSpace?.invoke('workflow.policy.get', undefined).then((r) => {
@@ -46,40 +16,12 @@ export function WorkflowPolicySection(): JSX.Element {
 
   async function patch(p: Partial<WorkflowPolicyT>): Promise<void> {
     const r = await window.kodaxSpace?.invoke('workflow.policy.set', p).catch(() => null);
-    if (r?.ok) setPolicy(r.data); // 回写 main 侧 normalize + clamp 后的值
+    if (r?.ok) setPolicy(r.data);
   }
 
   return (
     <section className="space-y-3">
-      <label className="block text-[11px] font-medium uppercase tracking-wide text-fg-muted">
-        {t('workflow.autoStart.title')}
-      </label>
-      <div className="inline-flex overflow-hidden rounded-lg border border-border-default bg-surface">
-        {AUTOSTART_OPTS.map((o) => {
-          const active = policy?.autoStart === o.value;
-          const hint = t(o.hintKey);
-          return (
-            <button
-              key={o.value}
-              type="button"
-              title={hint}
-              aria-pressed={active}
-              disabled={!policy}
-              onClick={() => void patch({ autoStart: o.value })}
-              className={`px-3 py-1.5 text-xs ${
-                active ? 'bg-accent/20 text-accent' : 'text-fg-secondary hover:bg-surface-3'
-              }`}
-            >
-              {t(o.labelKey)}
-            </button>
-          );
-        })}
-      </div>
-      <div className="text-xs leading-5 text-fg-muted">
-        {policy
-          ? t(AUTOSTART_OPTS.find((o) => o.value === policy.autoStart)?.hintKey ?? 'workflow.policy.hint')
-          : t('workflow.policy.hint')}
-      </div>
+      <div className="text-xs leading-5 text-fg-muted">{t('workflow.policy.hint')}</div>
 
       <button
         type="button"
@@ -153,7 +95,7 @@ function CapInput({
         onKeyDown={(e) => {
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
         }}
-        className="h-8 w-32 rounded-lg border border-border-default bg-surface px-2 text-fg-primary font-mono focus:outline-none focus:border-border-strong"
+        className="h-8 w-32 rounded-lg border border-border-default bg-surface px-2 font-mono text-fg-primary focus:border-border-strong focus:outline-none"
       />
       <span className="text-[10px] text-fg-faint">&lt;= {max}</span>
     </div>

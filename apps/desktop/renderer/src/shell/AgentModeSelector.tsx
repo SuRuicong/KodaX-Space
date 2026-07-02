@@ -155,7 +155,7 @@ export function AgentModeSelector(): JSX.Element {
             </button>
           ))}
           <div className="border-t border-border-default mt-1 pt-1 px-3 py-1 text-[11px] text-fg-muted leading-tight">
-            AMA uses explicit /workflow. AMAW can auto-start workflows from natural language.
+            AMA uses explicit /workflow. AMAW may choose run_workflow from natural language.
           </div>
         </div>
       )}

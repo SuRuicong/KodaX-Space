@@ -16,7 +16,12 @@ import {
   ensureCreateArtifactToolRegistered,
   _resetCreateArtifactRegistrationForTesting,
 } from '../artifact/create-artifact-tool.js';
-import { isPartnerToolAllowed, PARTNER_SPACE_TOOL_ALLOW } from '../kodax/partner-tools.js';
+import {
+  _clearPartnerSpaceToolPoliciesForTesting,
+  getPartnerSpaceToolPolicy,
+  isPartnerToolAllowed,
+  PARTNER_SPACE_TOOL_ALLOW,
+} from '../kodax/partner-tools.js';
 
 function freshStore(): { store: ArtifactStore; dir: string } {
   const dir = mkdtempSync(join(tmpdir(), 'create-artifact-tool-'));
@@ -51,6 +56,88 @@ test('handler: creates a markdown artifact within run context + notifies', async
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('handler: accepts interactive-html and normalizes script-driven html', async () => {
+  const { store, dir, handler } = harness();
+  try {
+    const explicit = await withArtifactContext(CTX, () =>
+      handler({
+        kind: 'interactive-html',
+        title: 'Canvas',
+        content: '<canvas id="c"></canvas><script>document.body.dataset.ran="1"</script>',
+      }),
+    );
+    assert.match(explicit, /created/i);
+
+    const auto = await withArtifactContext(CTX, () =>
+      handler({
+        kind: 'html',
+        title: 'Auto Canvas',
+        content: '<html><body><canvas></canvas><script>requestAnimationFrame(() => {})</script></body></html>',
+      }),
+    );
+    assert.match(auto, /created/i);
+
+    const kinds = (await store.list()).map((artifact) => artifact.kind).sort();
+    assert.deepEqual(kinds, ['interactive-html', 'interactive-html']);
+  } finally {
+    store.invalidate();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('handler: normalizes html with permissions to interactive-html', async () => {
+  const { store, dir, handler } = harness();
+  const permissions = {
+    connect: ['https://api.example.com'],
+    scripts: [
+      {
+        url: 'https://cdn.example.com/lib/v1.js',
+        integrity: 'sha384-AbCdEf0123456789+/=',
+      },
+    ],
+  };
+  try {
+    const out = await withArtifactContext(CTX, () =>
+      handler({
+        kind: 'html',
+        title: 'Networked Demo',
+        content: '<html><body>demo</body></html>',
+        permissions,
+      }),
+    );
+    assert.match(out, /created/i);
+    const artifact = (await store.list())[0];
+    assert.equal(artifact?.kind, 'interactive-html');
+    assert.deepEqual(artifact?.permissions, permissions);
+  } finally {
+    store.invalidate();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('handler: can attribute from SDK tool execution context without ALS', async () => {
+  const { store, dir, changes, handler } = harness();
+  try {
+    const out = await handler(
+      { kind: 'markdown', title: 'Report', content: '# hi' },
+      {
+        sessionId: 's_sdk',
+        executionCwd: '/proj',
+        agentProfile: { surface: 'partner', id: 'kodax-space.partner' },
+      },
+    );
+    assert.match(out, /created/i);
+    const list = await store.list();
+    assert.equal(list[0]?.sessionId, 's_sdk');
+    assert.equal(list[0]?.surface, 'partner');
+    assert.equal(changes[0]?.sessionId, 's_sdk');
+  } finally {
+    store.invalidate();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 
 test('handler: artifactId appends a version (reason=version)', async () => {
   const { store, dir, changes, handler } = harness();
@@ -140,11 +227,13 @@ test('handler: doc path outside the project is rejected', async () => {
 
 test('ensureCreateArtifactToolRegistered: idempotent (registers once)', () => {
   _resetCreateArtifactRegistrationForTesting();
+  _clearPartnerSpaceToolPoliciesForTesting();
   let calls = 0;
   const sdk = { registerTool: () => { calls++; return () => {}; } };
   ensureCreateArtifactToolRegistered(sdk);
   ensureCreateArtifactToolRegistered(sdk);
   assert.equal(calls, 1);
+  assert.equal(getPartnerSpaceToolPolicy('create_artifact')?.scope, 'artifact');
 });
 
 test('ensureCreateArtifactToolRegistered: no registerTool → soft no-op, can retry later', () => {
@@ -173,7 +262,9 @@ test('CREATE_ARTIFACT_TOOL: shape + react excluded + mutates-state', () => {
   assert.deepEqual(CREATE_ARTIFACT_TOOL.input_schema.required, ['kind', 'title']);
   const kinds = (CREATE_ARTIFACT_TOOL.input_schema.properties.kind as { enum: string[] }).enum;
   assert.ok(kinds.includes('markdown') && kinds.includes('chart'));
-  assert.ok(!kinds.includes('react')); // static tier only
+  assert.ok(kinds.includes('interactive-html'));
+  assert.ok(!kinds.includes('react')); // legacy LiveCanvas/React tier remains unavailable
+  assert.ok('permissions' in CREATE_ARTIFACT_TOOL.input_schema.properties);
 });
 
 test('Partner allows create_artifact even though its capability is non-read', () => {

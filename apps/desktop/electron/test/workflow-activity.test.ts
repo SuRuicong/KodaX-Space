@@ -2,7 +2,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { childRunId, buildChildActivity } from '../kodax/workflow-activity.js';
+import {
+  childRunId,
+  buildChildActivity,
+  buildWorkflowDigestActivity,
+} from '../kodax/workflow-activity.js';
 
 test('childRunId: 带 workflowRunId 的 meta 识别为子事件；否则 undefined', () => {
   assert.equal(childRunId({ workflowCorrelation: { workflowRunId: 'wf_1' } }), 'wf_1');
@@ -41,4 +45,99 @@ test('buildChildActivity: childAgentId 回退到 correlation.childAgentId；end 
   assert.equal(p?.childAgentId, 'c9');
   assert.equal(p?.kind, 'end');
   assert.equal(p?.toolName, undefined);
+});
+
+test('buildWorkflowDigestActivity: agent_completed summary becomes digest activity', () => {
+  const p = buildWorkflowDigestActivity({
+    runId: 'wf_3',
+    event: {
+      seq: 1,
+      type: 'agent_completed',
+      data: {
+        taskId: 'task_1',
+        name: 'Reviewer',
+        status: 'completed',
+        summary: 'Found two risks.',
+        summaryKind: 'digest',
+      },
+    },
+  });
+  assert.deepEqual(p, {
+    runId: 'wf_3',
+    childAgentId: 'task_1',
+    childAgentName: 'Reviewer',
+    kind: 'digest',
+    summary: 'Found two risks.',
+    summaryKind: 'digest',
+  });
+});
+
+test('buildWorkflowDigestActivity: filters pending, empty, and non-completed completion events', () => {
+  assert.equal(
+    buildWorkflowDigestActivity({
+      runId: 'wf_4',
+      event: {
+        seq: 1,
+        type: 'agent_summary_updated',
+        data: { taskId: 'task_1', summary: 'still running', summaryKind: 'pending' },
+      },
+    }),
+    null,
+  );
+  assert.equal(
+    buildWorkflowDigestActivity({
+      runId: 'wf_4',
+      event: { seq: 2, type: 'agent_failed', data: { taskId: 'task_1' } },
+    }),
+    null,
+  );
+  assert.equal(
+    buildWorkflowDigestActivity({
+      runId: 'wf_4',
+      event: {
+        seq: 3,
+        type: 'agent_completed',
+        data: { taskId: 'task_1', status: 'completed_unverified', summary: 'maybe' },
+      },
+    }),
+    null,
+  );
+});
+
+test('buildWorkflowDigestActivity: preserves verification even when digest is pending', () => {
+  const p = buildWorkflowDigestActivity({
+    runId: 'wf_5',
+    event: {
+      seq: 1,
+      type: 'agent_completed',
+      data: {
+        taskId: 'task_verify',
+        name: 'Writer',
+        status: 'completed',
+        summaryKind: 'pending',
+        verification: {
+          ok: false,
+          enforcement: 'warn',
+          reasons: ['expected file mutations'],
+          changedPaths: ['src/app.ts'],
+          mutationToolCalls: ['write'],
+          mutationEvidence: true,
+        },
+      },
+    },
+  });
+  assert.deepEqual(p, {
+    runId: 'wf_5',
+    childAgentId: 'task_verify',
+    childAgentName: 'Writer',
+    kind: 'digest',
+    verification: {
+      ok: false,
+      enforcement: 'warn',
+      reasons: ['expected file mutations'],
+      changedPaths: ['src/app.ts'],
+      mutationToolCalls: ['write'],
+      mutationEvidence: true,
+    },
+  });
 });

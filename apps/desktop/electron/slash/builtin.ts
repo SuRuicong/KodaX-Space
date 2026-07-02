@@ -578,6 +578,26 @@ type WorkflowInvocation =
   | { readonly kind: 'create'; readonly request: string }
   | { readonly kind: 'start'; readonly name: string; readonly rawArgs: string };
 
+/**
+ * Read-only `/workflow` subcommands that never spawn child agents. Everything
+ * else is execution-class (create/start/rerun/revise) or run-lifecycle
+ * (pause/resume/stop/delete/prune/save/rename) and is fenced off from the
+ * Partner surface — a Partner workflow would spawn full-tool-access children
+ * that bypass the Partner toolVisibilityPolicy / agentProfile entirely. This
+ * mirrors the SDK's own posture (SA strips the workflow tool cluster and rejects
+ * execution-class `/workflow` subcommands; FEATURE_246 / ADR-047).
+ */
+const WORKFLOW_INSPECTION_KINDS: ReadonlySet<WorkflowInvocation['kind']> = new Set([
+  'help',
+  'list',
+  'runs',
+  'show',
+]);
+
+export function isPartnerAllowedWorkflowKind(kind: WorkflowInvocation['kind']): boolean {
+  return WORKFLOW_INSPECTION_KINDS.has(kind);
+}
+
 const DEFAULT_WORKFLOW_RUNS_LIMIT = 20;
 const DEFAULT_WORKFLOW_PRUNE_KEEP = 50;
 const MAX_WORKFLOW_RUNS_LIMIT = 200;
@@ -1271,6 +1291,19 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
 
       const invocation = parseWorkflowInvocation(ctx.args);
 
+      // Partner boundary: only read-only inspection is reachable from a Partner
+      // session. Blocks the /workflow create|start|rerun|revise|pause|resume|
+      // stop|delete|prune|save|rename escape hatch that would otherwise spawn
+      // full-tool-access child agents outside the Partner tool policy.
+      if (session.surface === 'partner' && !isPartnerAllowedWorkflowKind(invocation.kind)) {
+        return {
+          ok: false,
+          message:
+            '[partner] Workflows run under the Coder surface. In Partner, /workflow supports only inspection (list / runs / show / help). Switch to a Coder session to create, run, or manage a workflow.',
+          echo: true,
+        };
+      }
+
       if (invocation.kind === 'help') {
         return { ok: true, message: workflowHelp(), echo: true };
       }
@@ -1487,10 +1520,17 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
       const builtin = library.builtin.find((w) => w.name === targetName || w.name.toLowerCase() === targetLower);
       const saved = library.saved.find((w) => w.name === targetName || w.name.toLowerCase() === targetLower || w.path === targetName);
       if (!builtin && !saved) {
-        return {
-          ok: false,
-          message: compactSlashMessage(`workflow not found: ${targetName}\n\n${workflowHelp()}`),
-        };
+        // SDK parity (FEATURE_246 / ADR-047): `/workflow <free text>` whose first
+        // word is neither a subcommand nor a known builtin/saved name is shorthand
+        // for `create` — author a workflow from the request rather than hard-failing
+        // as "not found". (In an AMAW session, authoring natural-language workflow
+        // requests to the Worker via run_workflow is the richer scout-then-author
+        // path; this host command uses the SDK generator, its sanctioned fallback.)
+        const request = `${targetName} ${invocation.rawArgs}`.trim();
+        const created = await workflowController.createGeneratedWorkflow(request, launchSession);
+        return 'error' in created
+          ? { ok: false, message: created.error }
+          : { ok: true, message: `workflow started: generated (${created.runId})`, echo: true };
       }
 
       const result = await workflowController.start({
@@ -1555,21 +1595,29 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
 
   {
     name: 'compact',
-    description: 'Request context compaction on next turn (spikes token budget to force trigger)',
+    description: 'Compact the current persisted session now',
     argsHint: '[instructions]',
     source: 'builtin',
     handler: async (ctx) => {
       const s = kodaxHost.get(ctx.sessionId);
       if (!s) return { ok: false, message: `session not found: ${ctx.sessionId}` };
-      // 设置 flag — real-session 下一次 runKodaX 时通过 contextTokenSnapshot 把 currentTokens
-      // 顶到 999B (远超任何 contextWindow),让 SDK 的 needsCompaction 立即返回 true → 触发
-      // auto-compaction。完事后 real-session 清掉 flag。
-      // 比真正 manual SDK 调用 (DefaultSummaryCompaction + applySessionCompaction) 简单太多,
-      // 缺点是必须用户至少再输入一条消息才生效。后续如 SDK 出"compactNow"原子调用再升级。
-      kodaxHost.requestCompact(ctx.sessionId);
+      const instructions = ctx.args.join(' ').trim();
+      const result = await kodaxHost.requestCompact(ctx.sessionId, instructions);
+      if (!result.ok) {
+        return { ok: false, message: result.reason ?? 'Compaction failed.' };
+      }
+      if (!result.compacted) {
+        return {
+          ok: true,
+          message: `Compaction skipped${result.reason ? `: ${result.reason}` : '.'}`,
+          echo: true,
+        };
+      }
       return {
         ok: true,
-        message: 'Compaction requested — will trigger on your next message.',
+        message: `Compacted context: ${result.tokensBefore ?? 0} -> ${
+          result.tokensAfter ?? 0
+        } tokens.`,
         echo: true,
       };
     },

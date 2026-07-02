@@ -10,8 +10,30 @@ test('content kinds map content through; missing content → null', () => {
   assert.deepEqual(toArtifactContent('markdown', { content: '# x' }, null), { kind: 'markdown', content: '# x' });
   assert.deepEqual(toArtifactContent('code', { content: 'a=1' }, null), { kind: 'code', content: 'a=1' });
   assert.deepEqual(toArtifactContent('html', { content: '<b/>' }, null), { kind: 'html', content: '<b/>' });
+  assert.deepEqual(toArtifactContent('interactive-html', { content: '<script></script>' }, null), {
+    kind: 'interactive-html',
+    content: '<script></script>',
+  });
   assert.deepEqual(toArtifactContent('svg', { content: '<svg/>' }, null), { kind: 'svg', content: '<svg/>' });
   assert.equal(toArtifactContent('markdown', {}, null), null);
+});
+
+test('stored html with scripts stays static unless the store marked it interactive', () => {
+  const content = '<html><body><canvas></canvas><script>draw()</script></body></html>';
+  assert.deepEqual(toArtifactContent('html', { content }, null), {
+    kind: 'html',
+    content,
+  });
+});
+
+test('html with permissions maps to interactive-html and carries the allow-list', () => {
+  const permissions = { connect: ['https://api.example.com'] };
+  const content = '<html><body>uses fetch later</body></html>';
+  assert.deepEqual(toArtifactContent('html', { content }, null, permissions), {
+    kind: 'interactive-html',
+    content,
+    permissions,
+  });
 });
 
 test('image maps content → src', () => {

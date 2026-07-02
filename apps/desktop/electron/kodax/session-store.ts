@@ -27,6 +27,11 @@
 import type { Surface } from '@kodax-space/space-ipc-schema';
 
 type SdkSessionModule = typeof import('@kodax-ai/kodax/session');
+type SessionManager = ReturnType<SdkSessionModule['createSessionManager']>;
+type CompactSessionOptions = Parameters<SessionManager['compactSession']>[1];
+export type PersistedSessionCompactionResult = Awaited<
+  ReturnType<SessionManager['compactSession']>
+>;
 
 /**
  * F045: 把 SDK SessionSummary.tag（consumer 私有自由字符串）反推回 Space 的 surface。
@@ -43,9 +48,16 @@ export interface SessionStoreImpl {
   readonly rewindSession: SdkSessionModule['rewindSession'];
   readonly deleteSession: SdkSessionModule['deleteSession'];
   readonly loadSession: SdkSessionModule['loadSession'];
+  /**
+   * FEATURE_246/0.7.51 — append-order full transcript across compaction islands
+   * (for UI scrollback). Optional so older SDKs / test mocks that omit it fall
+   * back to `loadSession` (active branch only). See {@link loadPersistedTranscript}.
+   */
+  readonly loadFullTranscript?: SdkSessionModule['loadFullTranscript'];
   readonly watchSessions: SdkSessionModule['watchSessions'];
   /** optional — mock impls can omit; default impl wires via createSessionManager when present. */
   readonly createSessionManager?: SdkSessionModule['createSessionManager'];
+  readonly compactSession?: SessionManager['compactSession'];
 }
 
 // 生产路径：lazy 加载 SDK 模块。第一次某个 default 包装被调时才拉 SDK；
@@ -68,7 +80,6 @@ async function loadSdkModule(): Promise<SdkSessionModule> {
  * getSessionStorageHandle() 返回 undefined，real-session 透传给 SDK 仍安全（行为
  * 退回为"不落盘"）。新版 SDK 一就位自动生效。
  */
-type SessionManager = ReturnType<SdkSessionModule['createSessionManager']>;
 let managerCache: SessionManager | null = null;
 async function getManager(): Promise<SessionManager> {
   if (managerCache === null) {
@@ -101,6 +112,12 @@ const DEFAULT_IMPL: SessionStoreImpl = {
   rewindSession: async (id, opts) => (await loadSdkModule()).rewindSession(id, opts),
   deleteSession: async (id) => (await loadSdkModule()).deleteSession(id),
   loadSession: async (id) => (await loadSdkModule()).loadSession(id),
+  loadFullTranscript: async (id) => {
+    const sdk = await loadSdkModule();
+    // Guard against a spuriously-old SDK build without the method (never-throw contract).
+    return typeof sdk.loadFullTranscript === 'function' ? sdk.loadFullTranscript(id) : null;
+  },
+  compactSession: async (id, opts) => (await getManager()).compactSession(id, opts),
   createSessionManager: (opts?: { sessionsDir?: string }) => {
     // 默认 impl 路径返回 lazily — 但 caller (real-session) 通过 getSessionStorageHandle()
     // 拿 cached manager，不直接走这里。这条 entry 主要给测试 inject mock 用。
@@ -258,6 +275,37 @@ export async function deletePersistedSession(opts: {
 }
 
 /**
+ * 立即压缩已持久化 session。SDK 0.7.58 的 compactSession 负责读取、摘要、重写 lineage；
+ * Space 这里只做 DI 兼容与本地历史缓存失效。
+ */
+export async function compactPersistedSession(
+  sessionId: string,
+  options: CompactSessionOptions = {},
+): Promise<PersistedSessionCompactionResult> {
+  try {
+    const result = activeImpl.compactSession
+      ? await activeImpl.compactSession(sessionId, options)
+      : {
+          compacted: false,
+          tokensBefore: 0,
+          tokensAfter: 0,
+          messages: [],
+          reason: 'compact unavailable in injected session store',
+        };
+    if (result.compacted) invalidatePersistedSessionCache(sessionId);
+    return result;
+  } catch (err) {
+    return {
+      compacted: false,
+      tokensBefore: 0,
+      tokensAfter: 0,
+      messages: [],
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
  * 读单 session 完整数据（messages + title + lineage 等）。
  *
  * **LRU 缓存** (alpha.2)：session.history IPC 在用户点回旧 session 时调，无缓存时每次
@@ -296,14 +344,68 @@ export async function loadPersistedSession(
   return data;
 }
 
+/**
+ * 读单 session 的**完整 append-order transcript**（跨压缩边界），供 UI 滚动区回放。
+ *
+ * 背景（修 "压缩后历史消失"）：`loadSession` 只返回 active 分支——SDK 压缩会把压缩点
+ * 之前的 turn 切成 inactive lineage，active 分支只剩"摘要 + 压缩后"，于是用户切回旧
+ * session 时压缩前的对话在滚动区里凭空消失。SDK 0.7.51 起暴露 `loadFullTranscript`
+ * 专门给 UI 回放用：按 append 顺序返回每个 transcript 条目（含 inactive），active
+ * 分支另放 `activeMessages`。这里优先用它，`messages` 即完整历史。
+ *
+ * 向后兼容：injected mock / 老 SDK 无 loadFullTranscript 时回退到 `loadSession`
+ * （active-only，即旧行为，不会更差）。返回 null 当 session 不存在。
+ */
+type TranscriptData =
+  | NonNullable<Awaited<ReturnType<NonNullable<SessionStoreImpl['loadFullTranscript']>>>>
+  | NonNullable<LoadedSessionData>;
+
+const transcriptCache = new Map<string, TranscriptData>();
+
+export async function loadPersistedTranscript(
+  sessionId: string,
+): Promise<TranscriptData | null> {
+  const cached = transcriptCache.get(sessionId);
+  if (cached !== undefined) {
+    transcriptCache.delete(sessionId);
+    transcriptCache.set(sessionId, cached);
+    return cached;
+  }
+  let data: TranscriptData | null = null;
+  if (activeImpl.loadFullTranscript) {
+    try {
+      data = await activeImpl.loadFullTranscript(sessionId);
+    } catch (err) {
+      console.warn(
+        `[session-store] loadFullTranscript failed, falling back to active branch: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      data = null;
+    }
+  }
+  // Fallback: full transcript unavailable (old SDK / mock) → active branch only.
+  if (data === null) {
+    data = await activeImpl.loadSession(sessionId);
+  }
+  if (data === null) return null;
+  transcriptCache.set(sessionId, data);
+  while (transcriptCache.size > LOAD_CACHE_MAX) {
+    const oldestKey = transcriptCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    transcriptCache.delete(oldestKey);
+  }
+  return data;
+}
+
 /** Mutator 调用——deletePersistedSession / fork / rewind 后清对应缓存项。*/
 export function invalidatePersistedSessionCache(sessionId: string): void {
   loadCache.delete(sessionId);
+  transcriptCache.delete(sessionId);
 }
 
 /** 测试 / setStorageImpl 注入 mock 后清整张缓存。*/
 export function clearPersistedSessionCache(): void {
   loadCache.clear();
+  transcriptCache.clear();
 }
 
 /**

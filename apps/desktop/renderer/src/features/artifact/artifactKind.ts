@@ -12,6 +12,7 @@ export type ArtifactKind =
   | 'markdown'
   | 'code'
   | 'html'
+  | 'interactive-html'
   | 'svg'
   | 'image'
   | 'pdf'
@@ -25,6 +26,7 @@ export const STATIC_ARTIFACT_KINDS: readonly ArtifactKind[] = [
   'markdown',
   'code',
   'html',
+  'interactive-html',
   'svg',
   'image',
   'pdf',
@@ -44,6 +46,7 @@ export const TEXT_COPY_KINDS: ReadonlySet<string> = new Set([
   'markdown',
   'code',
   'html',
+  'interactive-html',
   'svg',
   'chart',
 ]);

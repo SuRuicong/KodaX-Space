@@ -497,6 +497,20 @@ const historyToolCallSchema = z.object({
   isError: z.boolean().optional(),
 });
 
+const historySidecarMessageSchema = z.object({
+  kind: z.literal('sidecar_message'),
+  message: z.object({
+    source: z.literal('sidecar-verifier'),
+    verdict: z.enum(['revise', 'blocked']),
+    recipient: z.enum(['main-agent', 'user']),
+    delivery: z.enum(['synthetic-user-message', 'budget-exhausted', 'terminal-block']),
+    content: z.string().max(MAX_TEXT_CHUNK),
+    suggestedFix: z.string().max(MAX_TEXT_CHUNK).optional(),
+    trace: z.string().max(MAX_TEXT_CHUNK).optional(),
+  }),
+  sentAt: z.number().int().nonnegative().optional(),
+});
+
 const sessionHistoryItemSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('user'),
@@ -512,6 +526,7 @@ const sessionHistoryItemSchema = z.discriminatedUnion('kind', [
     sentAt: z.number().int().nonnegative().optional(),
   }),
   historyToolCallSchema,
+  historySidecarMessageSchema,
 ]);
 
 export const sessionHistoryChannel = {
@@ -664,9 +679,23 @@ const managedLiveEventSchema = z.object({
   persistToHistory: z.boolean().optional(),
 });
 
+const agentProfileSummarySchema = z.object({
+  surface: z.string().min(1).max(64).optional(),
+  id: z.string().min(1).max(128).optional(),
+  version: z.string().min(1).max(64).optional(),
+  name: z.string().min(1).max(128).optional(),
+});
+
+const verificationSummarySchema = z.object({
+  summary: z.string().max(1024).optional(),
+  rubricFamily: z.string().max(64).optional(),
+  requiredChecks: z.array(z.string().min(1).max(128)).max(32).optional(),
+});
+
 const managedTaskStatusSchema = z.object({
   agentMode: agentModeSchema,
   harnessProfile: z.string().max(64),
+  agentProfile: agentProfileSummarySchema.optional(),
   activeWorkerId: z.string().max(128).optional(),
   activeWorkerTitle: z.string().max(256).optional(),
   childFanoutClass: z.string().max(64).optional(),
@@ -692,6 +721,7 @@ const sidecarMessageSchema = z.object({
   content: z.string().max(MAX_TEXT_CHUNK),
   suggestedFix: z.string().max(MAX_TEXT_CHUNK).optional(),
   trace: z.string().max(MAX_TEXT_CHUNK).optional(),
+  agentProfile: agentProfileSummarySchema.optional(),
 });
 
 const todoDriftWarningSchema = z.object({
@@ -885,6 +915,22 @@ export const sessionEventChannel = {
       kind: z.literal('todo_drift_warning'),
       sessionId: z.string().min(1),
       warning: todoDriftWarningSchema,
+    }),
+    z.object({
+      kind: z.literal('effective_config'),
+      sessionId: z.string().min(1),
+      config: z.object({
+        agentMode: agentModeSchema,
+        agentProfile: agentProfileSummarySchema.optional(),
+        toolScope: z.array(z.string().min(1).max(128)).max(512),
+        verification: verificationSummarySchema.optional(),
+        verifier: z
+          .object({
+            provider: z.string().min(1).max(64).optional(),
+            model: z.string().min(1).max(128).optional(),
+          })
+          .optional(),
+      }),
     }),
     // ---- Managed Task / Subagent status (Tasks popout) ----
     z.object({

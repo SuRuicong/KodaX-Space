@@ -13,6 +13,7 @@ test('extForKind maps content kinds', () => {
   assert.equal(extForKind('markdown'), 'md');
   assert.equal(extForKind('code'), 'txt');
   assert.equal(extForKind('html'), 'html');
+  assert.equal(extForKind('interactive-html'), 'html');
   assert.equal(extForKind('svg'), 'svg');
   assert.equal(extForKind('chart'), 'json');
 });

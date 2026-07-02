@@ -7,6 +7,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { useAppStore } from '../../renderer/src/store/appStore.js';
 import { decideAutoPromote, type SmartPopoutKind } from '../../renderer/src/features/popout-director/rules.js';
+import { composeMessages } from '../../renderer/src/features/session/composeMessages.js';
 import type { SessionHistoryItem } from '@kodax-space/space-ipc-schema';
 
 const SID = 'hist-test';
@@ -123,4 +124,37 @@ test('history replay with no relevant events leaves promoted untouched', () => {
   // promotedPopoutsBySession[SID] 被设成空 Set (即便没新增 kind, 也会创 entry)
   assert.ok(promoted !== undefined);
   assert.equal(promoted.size, 0);
+});
+
+test('history replay restores sidecar verifier messages as sidecar notices', () => {
+  const items: SessionHistoryItem[] = [
+    { kind: 'user', content: 'q' },
+    {
+      kind: 'sidecar_message',
+      message: {
+        source: 'sidecar-verifier',
+        verdict: 'revise',
+        recipient: 'main-agent',
+        delivery: 'synthetic-user-message',
+        content: 'Please rerun the focused test.',
+      },
+    },
+    { kind: 'assistant', text: 'Reran it and fixed the issue.' },
+  ];
+
+  useAppStore.getState().prependSessionHistory(SID, items, FALLBACK_SENT_AT);
+  const state = useAppStore.getState();
+  const events = state.eventsBySession[SID] ?? [];
+  assert.equal(events.some((event) => event.kind === 'sidecar_message'), true);
+
+  const out = composeMessages({
+    events,
+    userMessages: state.userMessagesBySession[SID] ?? [],
+  });
+  const notice = out.find((message) => message.kind === 'system_notice');
+  assert.equal(notice?.kind, 'system_notice');
+  if (notice?.kind === 'system_notice') {
+    assert.equal(notice.variant, 'sidecar');
+    assert.match(notice.text, /Please rerun the focused test/);
+  }
 });

@@ -116,6 +116,9 @@ test('askUser.request payload accepts select and input question shapes', () => {
       { label: 'A', value: 'a' },
       { label: 'B', description: 'second', value: 'b' },
     ],
+    multiSelect: true,
+    minSelections: 1,
+    maxSelections: 2,
   });
   assert.equal(selectResult.success, true);
 
@@ -139,8 +142,23 @@ test('askUser.request payload rejects select questions without options', () => {
   assert.equal(result.success, false);
 });
 
+test('askUser.request payload rejects invalid selection bounds', () => {
+  const result = askUserRequestChannel.payload.safeParse({
+    kind: 'select',
+    reqId: 'req-select-bounds',
+    sessionId: 's_1',
+    question: 'Pick one',
+    options: [{ label: 'A', value: 'a' }],
+    multiSelect: true,
+    minSelections: 2,
+    maxSelections: 1,
+  });
+  assert.equal(result.success, false);
+});
+
 test('askUser.reply input accepts value and cancelled replies', () => {
   assert.equal(askUserReplyChannel.input.safeParse({ reqId: 'r', value: 'answer' }).success, true);
+  assert.equal(askUserReplyChannel.input.safeParse({ reqId: 'r', value: ['a', 'b'] }).success, true);
   assert.equal(askUserReplyChannel.input.safeParse({ reqId: 'r', cancelled: true }).success, true);
   assert.equal(askUserReplyChannel.input.safeParse({ reqId: 'r', cancelled: false }).success, false);
 });

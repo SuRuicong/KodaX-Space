@@ -8,7 +8,7 @@
 
 import { promises as fs } from 'node:fs';
 import { createRequire } from 'node:module';
-import type { ArtifactKindT } from '@kodax-space/space-ipc-schema';
+import { looksLikeInteractiveHtml, type ArtifactKindT } from '@kodax-space/space-ipc-schema';
 import { registerChannel } from './register.js';
 import { pushToRenderer } from './push.js';
 import { artifactStore } from '../artifact/store.js';
@@ -45,6 +45,15 @@ export function previewKindForPath(p: string): ArtifactKindT {
     default:
       return 'code';
   }
+}
+
+function isHtmlPreviewKind(kind: ArtifactKindT): boolean {
+  return kind === 'html' || kind === 'interactive-html';
+}
+
+export function previewKindForContent(path: string, content: string): ArtifactKindT {
+  const kind = previewKindForPath(path);
+  return kind === 'html' && looksLikeInteractiveHtml(content) ? 'interactive-html' : kind;
 }
 
 // Lazy electron access (dialog/BrowserWindow) — avoids a top-level 'electron'
@@ -93,7 +102,7 @@ export function registerArtifactChannels(): void {
     if (read.isBinary) throw new Error('binary file cannot be previewed');
     if (read.truncated) throw new Error('file too large to preview');
 
-    const kind = previewKindForPath(input.path);
+    const kind = previewKindForContent(input.path, read.content);
     // 标题=相对路径（信息量足、用于 (session,title) 去重）；过长退回 basename。
     const slash = Math.max(input.path.lastIndexOf('/'), input.path.lastIndexOf('\\'));
     const base = slash >= 0 ? input.path.slice(slash + 1) : input.path;
@@ -101,9 +110,11 @@ export function registerArtifactChannels(): void {
 
     // 去重：同一 session 已有同 title+kind 的预览 artifact → 复用其 id 升版本，
     // 避免反复点"预览"刷出一堆副本（store.upsert 对未知 id 会生成新 UUID，故必须先查到真 id）。
-    const existing = (await artifactStore.list({ sessionId: input.sessionId })).find(
-      (a) => a.kind === kind && a.title === title,
-    );
+    const existing = (await artifactStore.list({ sessionId: input.sessionId })).find((a) => {
+      if (a.title !== title) return false;
+      if (a.kind === kind) return true;
+      return isHtmlPreviewKind(a.kind) && isHtmlPreviewKind(kind);
+    });
 
     const res = await artifactStore.upsert({
       sessionId: input.sessionId,

@@ -116,6 +116,24 @@ async function main() {
     ok((await page.locator('[data-testid="markdown"] strong').count()) >= 1, 'Markdown rendered <strong> (bold)');
     ok((await page.locator('[data-testid="markdown"] pre code').count()) >= 1, 'Markdown rendered a fenced code block');
 
+    const interactiveIframe = page.locator('[data-testid="interactive-html"] iframe');
+    ok((await interactiveIframe.count()) === 1, 'InteractiveHtmlArtifact rendered an <iframe>');
+    const interactiveSandbox = await interactiveIframe.getAttribute('sandbox');
+    ok(interactiveSandbox === 'allow-scripts', `interactive iframe sandbox is script-only (${interactiveSandbox})`);
+    const interactiveFrame = page.frameLocator('[data-testid="interactive-html"] iframe');
+    await interactiveFrame.locator('#ran').waitFor({ state: 'attached', timeout: 10_000 });
+    ok((await interactiveFrame.locator('#ran').innerText()) === 'ran', 'interactive iframe script executed');
+    const parentPolluted = await page.evaluate(() => Boolean(window.__ARTIFACT_PARENT_PWNED__));
+    ok(parentPolluted === false, 'interactive iframe did not write parent window');
+    const pixel = await interactiveFrame.locator('#c').evaluate((canvas) => {
+      const ctx = canvas.getContext('2d');
+      return Array.from(ctx.getImageData(20, 20, 1, 1).data);
+    });
+    ok(
+      pixel[0] > 200 && pixel[1] > 100 && pixel[2] < 80 && pixel[3] === 255,
+      `interactive canvas drew visible pixels (${pixel.join(',')})`,
+    );
+
     ok(consoleErrors.length === 0, `no browser console/page errors (${consoleErrors.length})`);
     if (consoleErrors.length) console.log('  errors:', consoleErrors.slice(0, 4));
   } finally {

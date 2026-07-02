@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AskUserRequestPayload, AskUserSignal, AskUserVerdict } from '@kodax-space/space-ipc-schema';
+import { ASK_USER_BACK_SIGNAL } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
 
 const SEVERITY_STYLE: Record<AskUserSignal['severity'], string> = {
@@ -26,6 +27,40 @@ function isGuardrail(payload: AskUserRequestPayload): payload is GuardrailPayloa
 
 function isQuestion(payload: AskUserRequestPayload): payload is QuestionPayload {
   return 'question' in payload;
+}
+
+/** A multi-select is optional when the model explicitly sets min_selections:0. */
+function isOptionalSelection(question: QuestionPayload): boolean {
+  return question.multiSelect === true && question.minSelections === 0;
+}
+
+function selectionError(question: QuestionPayload, count: number): string | null {
+  // Report the real minimum first (so a min>1 requirement doesn't degrade to the
+  // generic "at least one" when submitted empty via the Enter shortcut).
+  if (question.multiSelect && question.minSelections !== undefined && count < question.minSelections) {
+    return `Choose at least ${question.minSelections} option${question.minSelections === 1 ? '' : 's'}.`;
+  }
+  // Empty is only an error when a selection is actually required. min_selections:0
+  // marks a multi-select optional (FEATURE_222) — an empty submit is valid there.
+  if (count === 0 && !isOptionalSelection(question)) return 'Choose at least one option.';
+  if (question.multiSelect && question.maxSelections !== undefined && count > question.maxSelections) {
+    return `Choose no more than ${question.maxSelections} option${question.maxSelections === 1 ? '' : 's'}.`;
+  }
+  return null;
+}
+
+function selectionHint(question: QuestionPayload | null): string | null {
+  if (!question?.multiSelect) return null;
+  const min = question.minSelections;
+  const max = question.maxSelections;
+  if (min === 0) return max !== undefined ? `Optional — choose up to ${max}.` : 'Optional — choose any that apply.';
+  if (min !== undefined && max !== undefined) {
+    if (min === max) return `Choose ${min}.`;
+    return `Choose ${min}-${max}.`;
+  }
+  if (min !== undefined) return `Choose at least ${min}.`;
+  if (max !== undefined) return `Choose up to ${max}.`;
+  return null;
 }
 
 export function AskUserModal(): JSX.Element | null {
@@ -58,8 +93,12 @@ export function AskUserModal(): JSX.Element | null {
     }
   }, [guardrail]);
 
+  const selectHint = useMemo(() => selectionHint(question), [question]);
+
   const reply = useCallback(
-    async (payload: { verdict: AskUserVerdict } | { value: string } | { cancelled: true }): Promise<void> => {
+    async (
+      payload: { verdict: AskUserVerdict } | { value: string | string[] } | { cancelled: true },
+    ): Promise<void> => {
       if (!head || !window.kodaxSpace || busy) return;
       setBusy(true);
       setErr(null);
@@ -97,13 +136,15 @@ export function AskUserModal(): JSX.Element | null {
       void reply({ value: inputValue });
       return;
     }
+    if (!question) return;
     const values = [...selectedValues];
-    if (values.length === 0) {
-      setErr('Choose at least one option.');
+    const error = selectionError(question, values.length);
+    if (error) {
+      setErr(error);
       return;
     }
-    void reply({ value: values.join(', ') });
-  }, [head, kind, inputValue, selectedValues, reply]);
+    void reply({ value: question.multiSelect ? values : values[0] ?? '' });
+  }, [head, kind, inputValue, question, selectedValues, reply]);
 
   const cancelQuestion = useCallback((): void => {
     void reply({ cancelled: true });
@@ -136,14 +177,25 @@ export function AskUserModal(): JSX.Element | null {
 
   const toggleOption = (value: string): void => {
     if (!question || kind !== 'select') return;
+    if (value === ASK_USER_BACK_SIGNAL) {
+      void reply({ value });
+      return;
+    }
     if (question.multiSelect) {
       const next = new Set(selectedValues);
       if (next.has(value)) next.delete(value);
-      else next.add(value);
+      else {
+        if (question.maxSelections !== undefined && next.size >= question.maxSelections) {
+          setErr(`Choose no more than ${question.maxSelections} option${question.maxSelections === 1 ? '' : 's'}.`);
+          return;
+        }
+        next.add(value);
+      }
+      setErr(null);
       setSelectedValues(next);
     } else {
+      setErr(null);
       setSelectedValues(new Set([value]));
-      void reply({ value });
     }
   };
 
@@ -222,6 +274,9 @@ export function AskUserModal(): JSX.Element | null {
               <div className="text-sm text-fg-primary leading-relaxed whitespace-pre-wrap">
                 {question ? truncate(question.question, 1500) : ''}
               </div>
+              {selectHint && kind === 'select' && (
+                <div className="text-xs text-fg-muted">{selectHint}</div>
+              )}
               {kind === 'input' ? (
                 <textarea
                   autoFocus
@@ -252,6 +307,15 @@ export function AskUserModal(): JSX.Element | null {
                                 selected ? 'bg-ok border-ok' : 'border-fg-muted'
                               }`}
                             />
+                          )}
+                          {!question.multiSelect && (
+                            <span
+                              className={`h-3.5 w-3.5 rounded-full border flex items-center justify-center ${
+                                selected ? 'border-ok' : 'border-fg-muted'
+                              }`}
+                            >
+                              {selected && <span className="h-1.5 w-1.5 rounded-full bg-ok" />}
+                            </span>
                           )}
                           <span className="text-sm font-medium">{truncate(option.label, 160)}</span>
                         </div>
@@ -301,7 +365,12 @@ export function AskUserModal(): JSX.Element | null {
               </button>
               <button
                 type="button"
-                disabled={busy || (kind === 'select' && selectedValues.size === 0)}
+                disabled={
+                  busy ||
+                  (kind === 'select' &&
+                    selectedValues.size === 0 &&
+                    !(question ? isOptionalSelection(question) : false))
+                }
                 onClick={submitQuestion}
                 className="px-3 py-1.5 text-xs rounded font-medium bg-ok/15 text-ok border border-ok/50 hover:bg-ok/25 disabled:opacity-50 disabled:cursor-not-allowed"
               >

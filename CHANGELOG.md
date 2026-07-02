@@ -14,14 +14,41 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 
 ## [Unreleased]
 
+## [0.1.27] - 2026-07-03
+
+### Theme
+
+**KodaX 0.7.57 → 0.7.58 SDK catch-up — Partner surface (agent profile, Knowledge Base, workspace Sources), workflow-engine wiring with a hard Partner spawn fence, sandboxed interactive HTML artifacts, and multi-select `ask_user` — plus release hardening.**
+
+This release consumes the KodaX `0.7.57` and `0.7.58` SDK surfaces and lands the Partner three-column workspace as a real, capability-composed surface on the shared runtime (per [ADR-007](docs/ADR/ADR-007-partner-surface-model.md)), while keeping Space itself orchestration-free (it subscribes to SDK snapshots and enforces surface policy). Reviewed by code-reviewer + security-reviewer before tagging; both HIGH findings were fixed (transcript-artifact rescan, Partner UI i18n) and the Partner `/workflow` privilege-escalation boundary was verified enforced at the controller, slash, and IPC layers.
+
+### Added
+
+- **Partner Sources** - Attach workspace files/directories to a Partner session; the agent reads them through a read-only `partner_source_read` tool that re-validates the Partner surface and matching `projectRoot` from the trusted run context on every read. New `partner.sources.*` IPC channels validate paths (control-char rejection, project containment via `resolveInsideProject` + `assertAllowed`).
+- **Partner Knowledge Base** - A local, per-project persistent knowledge store (`partner-kb`) with dedicated tools, scoped by canonicalized `projectRoot` and persisted atomically to Space's data dir.
+- **Partner agent profile** - Partner runs bind a distinct identity + tool-visibility policy via the SDK `agentProfile` surface (KodaX FEATURE_247); `run_workflow`/subagent-spawning tools are excluded from the Partner tool schema.
+- **Multi-select `ask_user`** - The ask-user modal supports single- and multi-select questions with `min_selections` / `max_selections` bounds and an optional (`min_selections: 0`) mode (KodaX FEATURE_222), with schema-level consistency validation.
+- **Interactive HTML artifacts** - A new `interactive-html` artifact kind renders in a sandboxed iframe (`allow-scripts` without `allow-same-origin`, `no-referrer`) behind an injected `default-src 'none'` CSP. External scripts are HTTPS-only and require SRI; the permission schema is enforced both at the renderer→main IPC boundary and inside the `create_artifact` tool handler.
+- **Custom provider reasoning effort** - The custom-provider credential form can declare a reasoning-effort default, round-tripped through the provider config without dropping it on edit.
+
 ### Changed
 
-- **KodaX 0.7.57 SDK catch-up** - Root and desktop workspace dependencies now resolve `@kodax-ai/kodax` `^0.7.57`. Space maps its existing five effort choices to the SDK's canonical `effort` field at real-session and workflow SDK boundaries, and reads the new KodaX config `effort` default before falling back to legacy `reasoningCeiling` / `reasoningMode`.
-- **Built-in repo-intelligence diagnostics** - `/repointel status` now uses the KodaX 0.7.57 built-in repo-intelligence inspection API for worker/cache/mode diagnostics, and `/repointel warm` triggers the SDK's best-effort prewarm path for the current project.
+- **KodaX 0.7.58 SDK catch-up** - Root and desktop workspace dependencies now resolve `@kodax-ai/kodax` `0.7.58`. Space maps its existing five effort choices to the SDK's canonical `effort` field at the real-session and workflow boundaries, and reads the KodaX config `effort` default before falling back to legacy `reasoningCeiling` / `reasoningMode`.
+- **Workflow host limits** - The workflow policy section now exposes only runtime caps (max agents / concurrency / token budget, clamped to KodaX ceilings). Host-side natural-language workflow auto-start was removed in 0.7.58 — that decision now happens inside AMAW — and the Partner surface is fenced out of every workflow-spawn path (`assertCoderSurface` at the controller `start`/`create`/`rerun` methods, the `/workflow` slash command, and the trusted server-resolved surface at the IPC layer).
+- **White-label manual topics** - Space Manual topics can be white-labeled per the KodaX `0.7.58` manual surface (FEATURE_221).
+- **Built-in repo-intelligence diagnostics** - `/repointel status` uses the KodaX built-in repo-intelligence inspection API for worker/cache/mode diagnostics, and `/repointel warm` triggers the SDK's best-effort prewarm path for the current project.
+- **Transcript artifacts derived incrementally** - Transient (transcript-only) artifacts are now maintained in a per-session store table updated on `create_artifact` results, instead of re-scanning the full event log on every streamed token in the always-mounted right sidebar (fixes an O(n²) hot path; matches the existing derived-table pattern).
 
 ### Fixed
 
-- **Repo-intelligence trace compatibility** - `session.event` now accepts the 0.7.57 built-in repo-intelligence modes (`off` / `light` / `full`) while preserving the older Repointel mode values for historical events.
+- **Partner Sources / Knowledge Base i18n** - The Partner Sources panel and workspace toggles are now fully bilingual (en / zh-CN) instead of English-only.
+- **Repo-intelligence trace compatibility** - `session.event` accepts the built-in repo-intelligence modes (`off` / `light` / `full`) while preserving older Repointel mode values for historical events.
+- **e2e stabilization** - The language-switch spec now asserts on the still-present "Workflow host" section (the autostart control was removed upstream), and the notifications-surface close-affordance spec's hover/geometry checks were hardened against sub-pixel reflow and transient re-render.
+
+### Security
+
+- **Partner workflow spawn fence (verified)** - Confirmed the Partner surface cannot spawn workflows/subagents: the controller-level `assertCoderSurface` gate, the `/workflow` slash guard, the server-side (non-renderer-forgeable) session surface at the IPC layer, and the Partner tool-visibility policy all enforce it, backed by a dedicated test.
+- **Interactive HTML sandbox** - Scripted artifacts execute only in an opaque-origin sandboxed iframe (no `allow-same-origin`) under a strict injected CSP with HTTPS-only, SRI-pinned external scripts, so a hostile artifact cannot reach the host renderer, Node, or Electron APIs.
 
 ## [0.1.26] - 2026-06-27
 

@@ -14,6 +14,7 @@ import {
   sessionListChannel,
   sessionDeleteChannel,
   sessionEventChannel,
+  sessionHistoryChannel,
   sessionForkChannel,
   sessionRewindChannel,
   sessionAgentsMdChannel,
@@ -34,6 +35,28 @@ test('all 5 session invoke channels are registered', () => {
     );
     assert.ok(INVOKE_CHANNEL_NAMES.has(name), `${name} should be in INVOKE_CHANNEL_NAMES`);
   }
+});
+
+test('session.history output accepts restored sidecar verifier messages', () => {
+  assert.equal(
+    sessionHistoryChannel.output.safeParse({
+      items: [
+        { kind: 'user', content: 'q' },
+        {
+          kind: 'sidecar_message',
+          message: {
+            source: 'sidecar-verifier',
+            verdict: 'revise',
+            recipient: 'main-agent',
+            delivery: 'synthetic-user-message',
+            content: 'Please inspect the changed file.',
+          },
+        },
+        { kind: 'assistant', text: 'Fixed.' },
+      ],
+    }).success,
+    true,
+  );
 });
 
 test('session.event push channel is registered', () => {

@@ -42,7 +42,33 @@ export function formatWorkflowActivityNotice(payload: WorkflowActivityPayload): 
       return `[workflow] ${child}: ${payload.toolName ?? 'tool'} finished`;
     case 'end':
       return `[workflow] ${child}: completed`;
+    case 'digest': {
+      const body = workflowBlockText(payload.summary, AGENT_SUMMARY_MAX);
+      const verification = formatWorkflowVerification(payload.verification);
+      if (!body && !verification) return null;
+      const label =
+        payload.summaryKind === 'digest-failed'
+          ? 'agent summary excerpt'
+          : payload.summaryKind === 'excerpt'
+            ? 'agent excerpt'
+            : 'agent summary';
+      return `[workflow] ${label}: ${child}${body ? `\n${body}` : ''}${
+        verification ? `\n${verification}` : ''
+      }`;
+    }
   }
+}
+
+function formatWorkflowVerification(
+  verification: WorkflowActivityPayload['verification'],
+): string {
+  if (!verification) return '';
+  const label = verification.ok ? 'verification passed' : 'verification failed';
+  const mode = verification.enforcement ? ` (${verification.enforcement})` : '';
+  const reasons = verification.reasons.length
+    ? `: ${compactWorkflowText(verification.reasons.join('; '), AGENT_SUMMARY_MAX)}`
+    : '';
+  return `${label}${mode}${reasons}`;
 }
 
 export function formatWorkflowEventNotices(

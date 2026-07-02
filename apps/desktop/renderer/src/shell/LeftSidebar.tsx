@@ -868,6 +868,8 @@ function SessionRow({
   return (
     <button
       type="button"
+      data-testid="sidebar-session-row"
+      data-session-id={session.sessionId}
       onClick={() => onSelect(session.sessionId)}
       onMouseEnter={() => prefetchSessionHistory(session.sessionId, session.msgCount)}
       onDoubleClick={onStartRename}

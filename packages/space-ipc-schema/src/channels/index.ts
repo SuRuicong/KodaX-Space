@@ -92,6 +92,11 @@ import {
   filesReadBinaryChannel,
   filesDiffChannel,
 } from './files.js';
+import {
+  partnerSourcesListChannel,
+  partnerSourcesAddChannel,
+  partnerSourcesRemoveChannel,
+} from './partner-source.js';
 import { titlebarSetOverlayChannel } from './titlebar.js';
 import {
   settingsGetChannel,
@@ -227,6 +232,9 @@ export const invokeChannels = {
   [filesReadChannel.name]: filesReadChannel,
   [filesReadBinaryChannel.name]: filesReadBinaryChannel,
   [filesDiffChannel.name]: filesDiffChannel,
+  [partnerSourcesListChannel.name]: partnerSourcesListChannel,
+  [partnerSourcesAddChannel.name]: partnerSourcesAddChannel,
+  [partnerSourcesRemoveChannel.name]: partnerSourcesRemoveChannel,
   [titlebarSetOverlayChannel.name]: titlebarSetOverlayChannel,
   [settingsGetChannel.name]: settingsGetChannel,
   [settingsSetDefaultWorkspaceChannel.name]: settingsSetDefaultWorkspaceChannel,

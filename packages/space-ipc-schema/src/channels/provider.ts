@@ -17,6 +17,20 @@
 
 import { z } from 'zod';
 
+// --- 共享：自定义 provider 的 reasoning 声明 ---
+//
+// 对齐 SDK 的 friendly 形态 KodaXReasoningConfig：`{ efforts, default } | 'none'`
+// （wire strategy 由 protocol 推导，用户不碰 preset/strategy 枚举）。'none' = 无思考能力。
+// 这是 Space 表单可编辑的子集；SDK 还支持 advanced 的 raw profile，Space 表单不暴露。
+export const customProviderReasoningSchema = z.union([
+  z.literal('none'),
+  z.object({
+    efforts: z.array(z.string().min(1).max(32)).min(1).max(16),
+    default: z.string().min(1).max(32).optional(),
+  }),
+]);
+export type CustomProviderReasoning = z.infer<typeof customProviderReasoningSchema>;
+
 // --- 共享：单个 provider 描述 ---
 //
 // `id` 是稳定的标识符（如 'anthropic'、'zhipu-coding'）
@@ -39,6 +53,8 @@ const providerInfoSchema = z.object({
   // 自定义 provider 才有；built-in 走 SDK 内置 baseUrl
   baseUrl: z.string().min(1).max(512).optional(),
   skipBaseUrlValidation: z.boolean().optional(),
+  // 自定义 provider 的 reasoning 声明（friendly 形态）；缺省 = 未声明（走 SDK 默认能力表）
+  reasoning: customProviderReasoningSchema.optional(),
 });
 
 // --- Invoke: provider.list ---
@@ -140,6 +156,7 @@ const customProviderConfigInputSchema = z.object({
     .regex(/^[A-Z_][A-Z0-9_]{0,127}$/, { message: 'apiKeyEnv must be uppercase snake_case' }),
   defaultModel: z.string().min(1).max(128),
   models: z.array(z.string().min(1).max(128)).max(64).optional(),
+  reasoning: customProviderReasoningSchema.optional(),
 });
 
 function validateCustomProviderBaseUrl(
@@ -225,6 +242,8 @@ export const providerModelContextWindowChannel = {
     contextWindow: z.number().int().positive(),
     /** SDK fallback (200k) vs provider-advertised 区分；UI 显示用 "≈" 提示。*/
     source: z.enum(['provider', 'fallback']),
+    supportedEfforts: z.array(z.string().min(1).max(32)).max(16).optional(),
+    defaultEffort: z.string().min(1).max(32).optional(),
   }),
 } as const;
 

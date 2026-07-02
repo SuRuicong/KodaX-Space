@@ -22,6 +22,7 @@ import type {
   PermissionDecision,
   PermissionMode,
   PermissionRisk,
+  Surface,
 } from '@kodax-space/space-ipc-schema';
 import { pushToRenderer } from '../ipc/push.js';
 import { assessRisk, suggestAlwaysAllowPattern } from './risk.js';
@@ -37,6 +38,10 @@ export interface PermissionRequestInput {
   readonly input?: Record<string, unknown>;
   /** FEATURE_029：canonical 3 mode；缺省 'accept-edits'（schema 缺省同步）。*/
   readonly mode?: PermissionMode;
+  /** Surface-aware policy extension; omitted callers keep Coder semantics. */
+  readonly surface?: Surface;
+  /** True only after the owning session's Partner tool policy has allowed this call. */
+  readonly partnerToolAllowed?: boolean;
   /** 超时毫秒数；不传走 DEFAULT_TIMEOUT_MS。测试可调小。*/
   readonly timeoutMs?: number;
 }
@@ -94,8 +99,9 @@ class PermissionBroker {
 
     // FEATURE_029 mode-aware 短路 (canonical 3 mode)：
     //
-    //   plan         → 全 deny，agent 只能 plan 不能执行
-    //                  (planModeBlockCheck 也会拦下 mutating tools，本钩子双闸防 TOCTOU)
+    //   plan         → Coder 全 deny，agent 只能 plan 不能执行
+    //                  (planModeBlockCheck 也会拦下 mutating tools，本钩子双闸防 TOCTOU)。
+    //                  Partner 只放行已经由 Partner tool policy admitted 的工具。
     //   accept-edits → edit/write 自动批，readonly 自动批，其他走 always-allow 规则 + 弹窗
     //   auto         → 真正守门由 FEATURE_030 AutoModeToolGuardrail 接管 (走 KodaX
     //                  KodaXOptions.guardrails)，guardrail 不确定时由 askUserBroker (F032)
@@ -103,6 +109,9 @@ class PermissionBroker {
     //                  非 dangerous 工具一律 allow_once 让 SDK guardrail 接手 ——
     //                  否则 bash / web_fetch 等非 EDIT/READONLY 工具会被本 broker 强弹，
     //                  guardrail 根本没机会发言 (用户反馈：auto[LLM] 还是弹窗)。
+    if (req.surface === 'partner' && req.partnerToolAllowed === true && !assessment.dangerous) {
+      return { decision: 'allow_once', risk: assessment.risk };
+    }
     if (mode === 'plan') {
       return { decision: 'deny', risk: assessment.risk };
     }

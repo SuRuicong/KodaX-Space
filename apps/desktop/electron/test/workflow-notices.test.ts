@@ -170,3 +170,32 @@ test('workflow activity notices remain compact progress lines', () => {
     '[workflow] Reviewer: using grep',
   );
 });
+
+test('workflow activity digest notices include agent summary body', () => {
+  assert.equal(
+    formatWorkflowActivityNotice({
+      runId: 'wf-notice',
+      childAgentName: 'Reviewer',
+      kind: 'digest',
+      summary: 'Checked the patch and found one missing test.',
+      summaryKind: 'digest',
+    }),
+    '[workflow] agent summary: Reviewer\nChecked the patch and found one missing test.',
+  );
+});
+
+test('workflow activity digest notices preserve verifier result without summary', () => {
+  assert.equal(
+    formatWorkflowActivityNotice({
+      runId: 'wf-notice',
+      childAgentName: 'Writer',
+      kind: 'digest',
+      verification: {
+        ok: false,
+        enforcement: 'warn',
+        reasons: ['expected file mutations'],
+      },
+    }),
+    '[workflow] agent summary: Writer\nverification failed (warn): expected file mutations',
+  );
+});
