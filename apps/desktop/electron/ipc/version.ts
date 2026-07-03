@@ -6,6 +6,8 @@ import { app, type App } from 'electron';
 import { createRequire } from 'node:module';
 import { registerChannel } from './register.js';
 import type { SpaceCapability, SpaceVersionOutput } from '@kodax-space/space-ipc-schema';
+import { isLicenseActive } from '@kodax-space/space-ipc-schema';
+import { licenseManager } from '../license/manager.js';
 
 function readSpaceVersion(electronApp: App): string {
   // app.getVersion() 读 packaged 应用的 package.json；dev 模式下可能不是 0.1.0-alpha.0
@@ -45,22 +47,27 @@ function readKodaxDependencySpec(): string {
   }
 }
 
-function buildCapabilityLedger(): SpaceCapability[] {
+function buildCapabilityLedger(entitled: boolean): SpaceCapability[] {
   return [
     {
       id: 'repointel.trace',
       label: 'Repointel trace',
-      status: 'supported',
-      detail:
-        'KodaX SDK session trace events are mapped into Space session events and shown in the chip and /repointel trace view.',
+      // Repo-intelligence is a licensed capability — 'blocked' on community/unlicensed
+      // builds so the panel matches the runtime gate (real-session forces the engine
+      // off) and the chip's locked state.
+      status: entitled ? 'supported' : 'blocked',
+      detail: entitled
+        ? 'KodaX SDK session trace events are mapped into Space session events and shown in the chip and /repointel trace view.'
+        : 'Repo-intelligence is a licensed capability — activate a license to enable repo-intel and its trace events. Without a license Space forces the engine off and the chip shows a locked state.',
       since: '0.1.19',
     },
     {
       id: 'repointel.status',
       label: 'Repointel local status',
-      status: 'supported',
-      detail:
-        'Space exposes KodaX 0.7.57 built-in repo-intelligence inspection for project, git root, trace source, worker/cache health, and best-effort warm support.',
+      status: entitled ? 'supported' : 'blocked',
+      detail: entitled
+        ? 'Space exposes KodaX 0.7.57 built-in repo-intelligence inspection for project, git root, trace source, worker/cache health, and best-effort warm support.'
+        : 'Repo-intelligence is a licensed capability. /repointel status still inspects project/git/entitlement, but warm and repo-aware assistance require an active license.',
     },
     {
       id: 'quickAsk.tempSession',
@@ -111,11 +118,19 @@ function buildCapabilityLedger(): SpaceCapability[] {
 }
 
 export function registerVersionChannel(): void {
-  registerChannel('space.version', (): SpaceVersionOutput => {
+  registerChannel('space.version', async (): Promise<SpaceVersionOutput> => {
     const platform = process.platform;
     if (platform !== 'darwin' && platform !== 'linux' && platform !== 'win32') {
       throw new Error(`unsupported platform: ${platform}`);
     }
+    // Repo-intelligence rows are licensed — reflect entitlement so the capability
+    // panel matches the runtime gate + chip lock (community build → 'blocked').
+    // Fail-closed + fault-tolerant (mirrors real-session): getStatus() writes state.json
+    // on nearly every call; a transient disk error must not reject the version handler.
+    const entitled = await licenseManager
+      .getStatus()
+      .then(isLicenseActive)
+      .catch(() => false);
     return {
       spaceVersion: readSpaceVersion(app),
       nodeVersion: process.versions.node,
@@ -125,7 +140,7 @@ export function registerVersionChannel(): void {
       kodaxSdkVersion: readKodaxSdkVersion(),
       kodaxDependencySpec: readKodaxDependencySpec(),
       capabilityContract: 'space-v0.1.25',
-      capabilities: buildCapabilityLedger(),
+      capabilities: buildCapabilityLedger(entitled),
     };
   });
 }

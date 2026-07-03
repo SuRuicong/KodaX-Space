@@ -113,7 +113,12 @@ async function buildStatus(projectRoot: string | undefined): Promise<RepointelSt
   const gitRoot = projectExists ? findGitRoot(normalizedProjectRoot) : null;
   const sdk = await sdkDiagnostics(normalizedProjectRoot);
   // Repo-intelligence is a licensed capability — any active license unlocks it.
-  const entitled = isLicenseActive(await licenseManager.getStatus());
+  // Fail-closed + fault-tolerant (mirrors real-session): a transient getStatus()
+  // failure must not reject the status handler; on any error treat as unentitled.
+  const entitled = await licenseManager
+    .getStatus()
+    .then(isLicenseActive)
+    .catch(() => false);
 
   const diagnostics: RepointelStatusItemT[] = [
     item(

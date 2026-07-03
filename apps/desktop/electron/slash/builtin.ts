@@ -1715,7 +1715,12 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
         // Repo-intelligence is a licensed capability — don't prewarm the built-in
         // engine without an active license. Matches the runManagedTask gate in
         // real-session (repoIntelligenceMode:'off' when unentitled) and the chip lock.
-        if (!isLicenseActive(await licenseManager.getStatus())) {
+        // Fail-closed: a transient getStatus() failure treats the user as unentitled.
+        const licensed = await licenseManager
+          .getStatus()
+          .then(isLicenseActive)
+          .catch(() => false);
+        if (!licensed) {
           return {
             ok: true,
             message:
