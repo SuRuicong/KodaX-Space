@@ -46,7 +46,10 @@ export function ConfirmDialog(): JSX.Element | null {
   return (
     <Portal>
       <div
-        className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+        // z-[300]: a confirm can be raised from inside any overlay (e.g. the
+        // Settings modal at z-[200]); it must sit above every other surface or
+        // its buttons render behind that overlay and become unclickable.
+        className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm"
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"

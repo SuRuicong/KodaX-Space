@@ -21,18 +21,23 @@ import { useEffect, useState } from 'react';
 import type { AutoModeEngine, PermissionMode } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 import { pushToast } from '../store/toastStore.js';
+import { useI18n } from '../i18n/I18nProvider.js';
+import type { MessageKey } from '../i18n/messages.js';
 import { useIsStreaming } from './ActivitySpinner.js';
 
-const MODE_LABELS: Record<PermissionMode, string> = {
-  plan: 'Plan',
-  'accept-edits': 'Accept edits',
-  auto: 'Auto',
+// #14 fix: MODE_DESCRIPTIONS / ENGINE_DESCRIPTIONS / 底部说明之前硬编码中文，跟当前语言
+// 设置无关——英文界面下弹出中文 tooltip。llm/rules 是引擎配置项标识符（同 ~/.kodax/
+// auto-rules.jsonc 里的字面量），保持原样不翻译。
+const MODE_LABEL_KEYS: Record<PermissionMode, MessageKey> = {
+  plan: 'mode.label.plan',
+  'accept-edits': 'mode.label.acceptEdits',
+  auto: 'mode.label.auto',
 };
 
-const MODE_DESCRIPTIONS: Record<PermissionMode, string> = {
-  plan: '只规划不执行（全 deny mutating tools）',
-  'accept-edits': 'edit/write 自动批，bash/network 弹窗',
-  auto: '由 AutoModeToolGuardrail 守门（llm 分类器 或 rules）',
+const MODE_DESCRIPTION_KEYS: Record<PermissionMode, MessageKey> = {
+  plan: 'mode.description.plan',
+  'accept-edits': 'mode.description.acceptEdits',
+  auto: 'mode.description.auto',
 };
 
 const MODE_ORDER: readonly PermissionMode[] = ['plan', 'accept-edits', 'auto'];
@@ -42,12 +47,13 @@ const ENGINE_LABELS: Record<AutoModeEngine, string> = {
   rules: 'rules',
 };
 
-const ENGINE_DESCRIPTIONS: Record<AutoModeEngine, string> = {
-  llm: 'classifier sideQuery 让 LLM 判断 risk',
-  rules: '走 ~/.kodax/auto-rules.jsonc + 内置 signals',
+const ENGINE_DESCRIPTION_KEYS: Record<AutoModeEngine, MessageKey> = {
+  llm: 'mode.engineDescription.llm',
+  rules: 'mode.engineDescription.rules',
 };
 
 export function ModeSelector(): JSX.Element {
+  const { t } = useI18n();
   const sessions = useAppStore((s) => s.sessions);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const upsertSession = useAppStore((s) => s.upsertSession);
@@ -115,12 +121,12 @@ export function ModeSelector(): JSX.Element {
     try {
       const r = await window.kodaxSpace.invoke('settings.setRuntimeDefaults', { runtimeDefaults });
       if (!r.ok) {
-        pushToast(r.error?.message ?? 'Failed to save runtime defaults', 'error');
+        pushToast(r.error?.message ?? t('modelPicker.saveDefaultsFailed'), 'error');
       } else {
         setRuntimeDefaults(r.data.runtimeDefaults ?? {});
       }
     } catch (err) {
-      pushToast(err instanceof Error ? err.message : 'Failed to save runtime defaults', 'error');
+      pushToast(err instanceof Error ? err.message : t('modelPicker.saveDefaultsFailed'), 'error');
     }
   }
 
@@ -183,7 +189,8 @@ export function ModeSelector(): JSX.Element {
     }
   }
 
-  const baseLabel = current === 'auto' ? `Auto · ${ENGINE_LABELS[engine]}` : MODE_LABELS[current];
+  const baseLabel =
+    current === 'auto' ? `${t('mode.label.auto')} · ${ENGINE_LABELS[engine]}` : t(MODE_LABEL_KEYS[current]);
   // (next) 仅在真没 active session（welcome screen）时显示——之前判 `!session` 会撞
   // session.list 替换 sessions[] 把 in-flight stub 短暂 stomp 掉的 race，让对话中也
   // 误显示 (next)。currentSessionId 是 true source of truth。
@@ -195,7 +202,7 @@ export function ModeSelector(): JSX.Element {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="text-xs px-2 py-0.5 rounded bg-surface-2 border border-border-default text-fg-secondary hover:bg-hover-bg flex items-center gap-1"
-        title={`Mode: ${statusLabel} (Ctrl+M)`}
+        title={t('mode.buttonTitle', { status: statusLabel })}
       >
         <span>{statusLabel}</span>
         <span className="text-fg-muted" aria-hidden>
@@ -209,7 +216,7 @@ export function ModeSelector(): JSX.Element {
           onMouseLeave={() => setOpen(false)}
         >
           <div className="px-3 py-1 flex justify-between items-center text-fg-muted text-[11px] uppercase tracking-wider">
-            <span>Mode</span>
+            <span>{t('mode.header')}</span>
             <span className="font-mono text-fg-muted flex items-center gap-1">
               <kbd className="px-1 border border-border-strong rounded">Ctrl</kbd>
               <kbd className="px-1 border border-border-strong rounded">M</kbd>
@@ -223,9 +230,9 @@ export function ModeSelector(): JSX.Element {
               className={`w-full text-left px-3 py-1 hover:bg-hover-bg flex items-center gap-2 ${
                 current === m ? 'text-fg-primary' : 'text-fg-secondary'
               }`}
-              title={MODE_DESCRIPTIONS[m]}
+              title={t(MODE_DESCRIPTION_KEYS[m])}
             >
-              <span className="flex-1">{MODE_LABELS[m]}</span>
+              <span className="flex-1">{t(MODE_LABEL_KEYS[m])}</span>
               {current === m && (
                 <span className="text-ok" aria-hidden>
                   ✓
@@ -238,7 +245,7 @@ export function ModeSelector(): JSX.Element {
           {current === 'auto' && (
             <div className="border-t border-border-default mt-1 pt-1">
               <div className="px-3 py-1 text-fg-muted text-[11px] uppercase tracking-wider">
-                Auto engine
+                {t('mode.autoEngineHeader')}
               </div>
               {(['llm', 'rules'] as const).map((eng) => (
                 <button
@@ -248,7 +255,7 @@ export function ModeSelector(): JSX.Element {
                   className={`w-full text-left px-3 py-1 hover:bg-hover-bg flex items-center gap-2 ${
                     engine === eng ? 'text-fg-primary' : 'text-fg-secondary'
                   }`}
-                  title={ENGINE_DESCRIPTIONS[eng]}
+                  title={t(ENGINE_DESCRIPTION_KEYS[eng])}
                 >
                   <span className="flex-1">{ENGINE_LABELS[eng]}</span>
                   {engine === eng && (
@@ -263,7 +270,7 @@ export function ModeSelector(): JSX.Element {
 
           {/* 底部说明：Space Auto = KodaX guardrail；Claude Desktop "Bypass" 没有 1:1 对应 */}
           <div className="border-t border-border-default mt-1 pt-1 px-3 py-1 text-[11px] text-fg-muted leading-tight">
-            Auto 由 KodaX guardrail 接管 — 比 Claude Desktop 的 Bypass 更安全
+            {t('mode.footer')}
           </div>
         </div>
       )}

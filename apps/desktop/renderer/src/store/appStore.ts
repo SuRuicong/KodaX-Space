@@ -128,6 +128,28 @@ interface AppState {
   currentSessionId: string | null;
   /** 每个 sessionId 一桶事件；append-only。Map 用 plain object 避免 zustand referential 问题。*/
   eventsBySession: Readonly<Record<string, readonly SessionEvent[]>>;
+  /**
+   * 每个 sessionId「已查看到的事件条数」——用户切进该 session 时记下当时的事件长度。
+   * useSessionStatus 据此判定 error 状态点是否已被用户看过：若最新 session_error 的索引
+   * < 已查看长度，则视为已确认、不再亮红点（避免"看完红点还在"的困惑）。新一轮 error
+   * （索引 >= 已查看长度）仍会重新亮起。
+   */
+  errorSeenAtBySession: Readonly<Record<string, number>>;
+  /**
+   * #9 fix: 用户手动关掉 todo-drift 提示（NotificationsSurface × 按钮）时记下的"轮次基线"
+   * ——userMessagesBySession[sid].length。SDK 在同一轮对话里常常因为同一个"todo 没标
+   * in-progress"状态反复推 todo_drift_warning（每次工具调用都可能触发一次）；旧逻辑
+   * dismiss 只是把通知从数组里删掉，下一条同 id 事件一来又被当"新通知"塞回去，等于用户
+   * 点了关闭却立刻弹回来。有了这个基线，同一轮内的重复 drift 事件会被压下；开始新的
+   * 用户轮次（turn index 前进）后自动重新武装。
+   */
+  todoDriftDismissedAtBySession: Readonly<Record<string, number>>;
+  /**
+   * #9 fix 配套字段：dismiss 那一刻的 pending todo 数量，用于识别"同一轮但明显恶化"——
+   * 即便还在同一轮里，如果 pendingCount 比 dismiss 时更高，也重新弹出（不哑掉真正升级的
+   * 警告）。取自 todoListBySession（跟 SDK 计算 pendingCount 用的是同一份 todo 状态）。
+   */
+  todoDriftDismissedPendingCountBySession: Readonly<Record<string, number>>;
   lastEvent?: SessionEvent;
   /** 每个 sessionId 一桶用户消息（renderer 本地跟踪）。*/
   userMessagesBySession: Readonly<Record<string, readonly UserMessage[]>>;
@@ -856,6 +878,9 @@ export const useAppStore = create<AppState>((set) => ({
   sessions: [],
   currentSessionId: null,
   eventsBySession: {},
+  errorSeenAtBySession: {},
+  todoDriftDismissedAtBySession: {},
+  todoDriftDismissedPendingCountBySession: {},
   transientArtifactsBySession: {},
   userMessagesBySession: {},
   queuedUserMessagesBySession: {},
@@ -982,19 +1007,26 @@ export const useAppStore = create<AppState>((set) => ({
       if (sessionId === null) return { currentSessionId: null };
       const readFlags = setSessionFlagValue(state.sessionFlags, sessionId, 'unread', false);
       const found = state.sessions.find((s) => s.sessionId === sessionId);
-      const flagPatch = readFlags === state.sessionFlags ? {} : { sessionFlags: readFlags };
-      if (!found || !found.projectRoot) return { currentSessionId: sessionId, ...flagPatch };
+      // 查看即确认：记下当前事件长度，让已看过的 error 状态点熄灭（新 error 会再亮）。
+      const patch = {
+        ...(readFlags === state.sessionFlags ? {} : { sessionFlags: readFlags }),
+        errorSeenAtBySession: {
+          ...state.errorSeenAtBySession,
+          [sessionId]: state.eventsBySession[sessionId]?.length ?? 0,
+        },
+      };
+      if (!found || !found.projectRoot) return { currentSessionId: sessionId, ...patch };
       const targetCanon = canonProjectRootShared(found.projectRoot, IS_WIN_RENDERER);
       const currentCanon = state.currentProjectPath
         ? canonProjectRootShared(state.currentProjectPath, IS_WIN_RENDERER)
         : null;
-      if (targetCanon === currentCanon) return { currentSessionId: sessionId, ...flagPatch };
+      if (targetCanon === currentCanon) return { currentSessionId: sessionId, ...patch };
       // 跟 setCurrentProject 同款 LS 持久化 — 重启后 sidebar 仍在该项目
       lsSet(LS_KEY_PROJECT, found.projectRoot);
       return {
         currentSessionId: sessionId,
         currentProjectPath: found.projectRoot,
-        ...flagPatch,
+        ...patch,
       };
     }),
 
@@ -1218,6 +1250,18 @@ export const useAppStore = create<AppState>((set) => ({
             message: item.message,
           });
           assistantPendingComplete = true;
+        } else if (item.kind === 'lineage_notice') {
+          // #3 fix: fork/rewind 产生的 branch_summary / compaction 摘要——不是用户消息，
+          // 路由到非 user 的 lineage_notice 事件，composeMessages 渲染成 system_notice
+          // (variant='lineage')，不再显示成假的用户气泡。
+          ensureLeadingUserSentinel();
+          histEvents.push({
+            kind: 'lineage_notice',
+            sessionId,
+            noticeKind: item.noticeKind,
+            text: item.text,
+          });
+          assistantPendingComplete = true;
         } else {
           // tool_call: emit tool_start + (optional) tool_result。 result 缺失时 (history 损坏
           // 或 tool_use 没匹配上 tool_result) 仍 emit tool_start 让 UI 显示一张 "running" 卡片。
@@ -1301,9 +1345,28 @@ export const useAppStore = create<AppState>((set) => ({
     }),
 
   dismissNotification: (id) =>
-    set((state) => ({
-      notifications: state.notifications.filter((n) => n.id !== id),
-    })),
+    set((state) => {
+      const notifications = state.notifications.filter((n) => n.id !== id);
+      // #9 fix: dismiss 一条 todo-drift 提示时记下"轮次基线" + 当时的 pending 数——见
+      // AppState.todoDriftDismissedAtBySession 注释。appendEvent 的 todo_drift_warning
+      // 分支据此判断"同一轮未恶化"的重复事件要不要压下。
+      if (!id.startsWith('todo-drift:')) return { notifications };
+      const sessionId = id.slice('todo-drift:'.length);
+      const pendingCount = (state.todoListBySession[sessionId] ?? []).filter(
+        (item) => item.status === 'pending',
+      ).length;
+      return {
+        notifications,
+        todoDriftDismissedAtBySession: {
+          ...state.todoDriftDismissedAtBySession,
+          [sessionId]: state.userMessagesBySession[sessionId]?.length ?? 0,
+        },
+        todoDriftDismissedPendingCountBySession: {
+          ...state.todoDriftDismissedPendingCountBySession,
+          [sessionId]: pendingCount,
+        },
+      };
+    }),
 
   // F060 Workflow Harness：push workflow.event → 覆盖式 upsert（每事件带全量 snapshot）。
   upsertWorkflowRun: (payload) =>
@@ -1380,8 +1443,18 @@ export const useAppStore = create<AppState>((set) => ({
         },
         lastEvent: event,
       };
-      // P0: 任一事件到达 → 该 session 不再"等待中"，spinner 改吃 event-driven 状态
-      if (state.pendingSendBySession[event.sessionId]) {
+      // 只在"运行真正开始/结束"的生命周期事件到达时才清 pendingSend，把 spinner 交给 event-driven 状态。
+      // ⚠️ 不能"任一事件到达就清"：repo-intelligence（repointel_trace）/ managed_task_status 等**非生命周期**
+      // 事件可能先于 session_start 到达；若此时就清了 pendingSend，而 snapshotFromEvents 又只把
+      // session_start / queued_user_prompt_started 当 streaming，spinner 会在 session_start 到达前整段消失
+      // ——用户看到 query 气泡却没有任何"正在做什么"指示（新会话首个 query 期间 repo 分析最久，尤其明显）。
+      // 这里的生命周期 kind 必须与 ActivitySpinner.snapshotFromEvents 认的那组保持一致。
+      const clearsPendingSend =
+        event.kind === 'session_start' ||
+        event.kind === 'queued_user_prompt_started' ||
+        event.kind === 'session_complete' ||
+        event.kind === 'session_error';
+      if (clearsPendingSend && state.pendingSendBySession[event.sessionId]) {
         const { [event.sessionId]: _drop, ...restPending } = state.pendingSendBySession;
         next.pendingSendBySession = restPending;
       }
@@ -1445,6 +1518,23 @@ export const useAppStore = create<AppState>((set) => ({
             };
           }
         }
+        // #4 fix: run 结束时清掉 managed_task_status 快照——否则 AMA strip / BackgroundTaskBar /
+        // Workers popout 会一直把这个已完成的 run 当作 still-active 展示(快照从来没被清过,
+        // 一直停在最后一次收到的 status)。AmaWorkStrip / WorkersSection / TasksPanel 在
+        // snapshot 为 undefined 时已经渲染空闲态,直接删掉这个 key 即可。
+        if (state.managedTaskStatusBySession[event.sessionId] !== undefined) {
+          const { [event.sessionId]: _droppedMtsComplete, ...restMtsComplete } =
+            state.managedTaskStatusBySession;
+          next.managedTaskStatusBySession = restMtsComplete;
+        }
+      } else if (event.kind === 'session_error') {
+        // #4 fix: 同 session_complete——出错终止时也清掉 managed_task_status 快照,不让已经
+        // 结束(哪怕是异常结束)的 run 一直显示成活跃状态。
+        if (state.managedTaskStatusBySession[event.sessionId] !== undefined) {
+          const { [event.sessionId]: _droppedMtsError, ...restMtsError } =
+            state.managedTaskStatusBySession;
+          next.managedTaskStatusBySession = restMtsError;
+        }
       } else if (event.kind === 'work_budget') {
         next.workBudgetBySession = {
           ...state.workBudgetBySession,
@@ -1464,10 +1554,24 @@ export const useAppStore = create<AppState>((set) => ({
       } else if (event.kind === 'managed_task_status') {
         // alpha.1: 直接覆盖最新值。同时派生 legacy work_budget / harness_profile
         // 以便老 TasksPanel/Tabs 仍能渲染。
-        next.managedTaskStatusBySession = {
-          ...state.managedTaskStatusBySession,
-          [event.sessionId]: event.status,
-        };
+        //
+        // #4 fix: SDK 有时会在收尾时先推一条 phase==='completed' 的 managed_task_status
+        // 快照,再推 session_complete/session_error。若原样存下这条"completed"快照,
+        // 两条事件之间会有一帧 UI 显示"看起来还在跑但 phase=completed"的过渡怪状态。
+        // 这里直接不存 completed 快照(等同于清空),让下游的空闲态立即生效,不必等
+        // session_complete 分支来清。
+        if (event.status.phase === 'completed') {
+          if (state.managedTaskStatusBySession[event.sessionId] !== undefined) {
+            const { [event.sessionId]: _droppedMtsPhase, ...restMtsPhase } =
+              state.managedTaskStatusBySession;
+            next.managedTaskStatusBySession = restMtsPhase;
+          }
+        } else {
+          next.managedTaskStatusBySession = {
+            ...state.managedTaskStatusBySession,
+            [event.sessionId]: event.status,
+          };
+        }
         const ws = event.status;
         if (ws.budgetUsage !== undefined && ws.globalWorkBudget !== undefined) {
           next.workBudgetBySession = {
@@ -1490,25 +1594,53 @@ export const useAppStore = create<AppState>((set) => ({
           };
         }
       } else if (event.kind === 'todo_drift_warning') {
-        const subject = event.warning.firstPendingTodoSubject
-          ? ` Pending item: "${event.warning.firstPendingTodoSubject.slice(0, 120)}".`
-          : '';
         const driftNoticeId = `todo-drift:${event.sessionId}`;
         const legacyDriftNoticePrefix = `${driftNoticeId}:`;
         const notificationsWithoutLegacyDrift = (next.notifications ?? state.notifications).filter(
           (notice) => !notice.id.startsWith(legacyDriftNoticePrefix),
         );
-        next.notifications = pushNotificationLocal(notificationsWithoutLegacyDrift, {
-          id: driftNoticeId,
-          severity: 'info',
-          text:
-            `Todo list drift detected while running ${event.warning.toolName}: ` +
-            `${event.warning.pendingCount} pending item(s), none marked in progress.` +
-            `${subject} KodaX nudged the agent to update todos.`,
-          sessionId: event.sessionId,
-          createdAt: Date.now(),
-          dismissOnOutsideInteraction: true,
-        });
+        // #9 fix: 用户关掉这条提示后，SDK 同一轮里常因为同样的"todo 没标 in-progress"状态
+        // 反复再推 todo_drift_warning（每次工具调用都可能触发一次）——之前的实现里 dismiss
+        // 只是从 notifications 数组删掉，下一条同 id 事件一来 pushNotificationLocal 找不到
+        // 旧 id 就当"新通知"塞回去，等于用户点了关闭却立刻弹回来。这里按"同一轮 + 没有明显
+        // 恶化"压下重复事件；开始新一轮（用户发了新消息）或 pendingCount 涨了则照常弹出，
+        // 并清掉过期的 dismiss 标记（下次再关闭会用新的基线重新武装抑制）。
+        const dismissedTurn = state.todoDriftDismissedAtBySession[event.sessionId];
+        const dismissedPendingCount =
+          state.todoDriftDismissedPendingCountBySession[event.sessionId];
+        const currentTurn =
+          (next.userMessagesBySession ?? state.userMessagesBySession)[event.sessionId]?.length ??
+          0;
+        const sameTurn = dismissedTurn !== undefined && currentTurn <= dismissedTurn;
+        const notEscalated =
+          dismissedPendingCount !== undefined &&
+          event.warning.pendingCount <= dismissedPendingCount;
+        if (sameTurn && notEscalated) {
+          next.notifications = notificationsWithoutLegacyDrift;
+        } else {
+          const subject = event.warning.firstPendingTodoSubject
+            ? ` Pending item: "${event.warning.firstPendingTodoSubject.slice(0, 120)}".`
+            : '';
+          next.notifications = pushNotificationLocal(notificationsWithoutLegacyDrift, {
+            id: driftNoticeId,
+            severity: 'info',
+            text:
+              `Todo list drift detected while running ${event.warning.toolName}: ` +
+              `${event.warning.pendingCount} pending item(s), none marked in progress.` +
+              `${subject} KodaX nudged the agent to update todos.`,
+            sessionId: event.sessionId,
+            createdAt: Date.now(),
+            dismissOnOutsideInteraction: true,
+          });
+          if (dismissedTurn !== undefined || dismissedPendingCount !== undefined) {
+            const { [event.sessionId]: _droppedDriftTurn, ...restDriftTurn } =
+              state.todoDriftDismissedAtBySession;
+            const { [event.sessionId]: _droppedDriftPending, ...restDriftPending } =
+              state.todoDriftDismissedPendingCountBySession;
+            next.todoDriftDismissedAtBySession = restDriftTurn;
+            next.todoDriftDismissedPendingCountBySession = restDriftPending;
+          }
+        }
       } else if (event.kind === 'auto_engine_change') {
         // FEATURE_029: auto-mode engine 切换（user manual / denial threshold / circuit breaker
         // / bootstrap_failed）。更新 session.autoModeEngine 让 ModeSelector 立即反映；
@@ -1612,6 +1744,12 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => {
       // 同时清掉对应事件 buffer 和 user message buffer——session 不在了，留着就是泄漏
       const { [sessionId]: _evt, ...restEvents } = state.eventsBySession;
+      const { [sessionId]: _esa, ...restErrorSeen } = state.errorSeenAtBySession;
+      // #9 fix: todo-drift dismiss 基线也是 per-session 派生态，session 删了要一起清。
+      const { [sessionId]: _tdda, ...restTodoDriftDismissedAt } =
+        state.todoDriftDismissedAtBySession;
+      const { [sessionId]: _tddp, ...restTodoDriftDismissedPending } =
+        state.todoDriftDismissedPendingCountBySession;
       const { [sessionId]: _ta, ...restTransientArtifacts } = state.transientArtifactsBySession;
       const { [sessionId]: _msg, ...restMsgs } = state.userMessagesBySession;
       const { [sessionId]: _queuedMsg, ...restQueuedMsgs } = state.queuedUserMessagesBySession;
@@ -1634,6 +1772,9 @@ export const useAppStore = create<AppState>((set) => ({
       return {
         sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
         eventsBySession: restEvents,
+        errorSeenAtBySession: restErrorSeen,
+        todoDriftDismissedAtBySession: restTodoDriftDismissedAt,
+        todoDriftDismissedPendingCountBySession: restTodoDriftDismissedPending,
         transientArtifactsBySession: restTransientArtifacts,
         userMessagesBySession: restMsgs,
         queuedUserMessagesBySession: restQueuedMsgs,

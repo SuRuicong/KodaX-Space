@@ -11,6 +11,11 @@ export type ChildMeta =
       workflowCorrelation?: { workflowRunId?: string; childAgentId?: string };
       childAgentId?: string;
       childAgentName?: string;
+      /**
+       * SDK 标记：此事件仅供 live 展示、**不得**进持久 transcript（KodaXActivityEventMeta.liveOnly）。
+       * dispatch_child_task 子 agent 的流式事件带此标 + childAgentId，但**不带** workflowCorrelation。
+       */
+      liveOnly?: boolean;
     }
   | undefined;
 
@@ -18,6 +23,23 @@ export type ChildMeta =
 export function childRunId(meta: ChildMeta): string | undefined {
   const runId = meta?.workflowCorrelation?.workflowRunId;
   return typeof runId === 'string' && runId.length > 0 ? runId : undefined;
+}
+
+/**
+ * 此事件是否来自子 agent / 仅供 live 展示——**不应进主 transcript**。
+ *
+ * 之前只认 workflowCorrelation.workflowRunId（run_workflow 工作流子 agent），漏了
+ * `dispatch_child_task` 派生的子 agent：它们带 `childAgentId` + SDK 的 `liveOnly` 标，但
+ * 不带 workflowCorrelation，于是其流式文本/工具事件穿透到主对话，和主 agent 一样刷屏。
+ * 现按 SDK 设计：`liveOnly` 是"仅 live、不落 transcript"的权威信号；`childAgentId` 是子
+ * agent 身份。主 agent 事件两者皆无，故不受影响。子 agent 概览仍由 managed_task_status
+ * 事件驱动「子智能体」面板呈现。
+ */
+export function isTransientChildEvent(meta: ChildMeta): boolean {
+  if (meta?.liveOnly === true) return true;
+  if (childRunId(meta) !== undefined) return true;
+  const childId = meta?.childAgentId ?? meta?.workflowCorrelation?.childAgentId;
+  return typeof childId === 'string' && childId.length > 0;
 }
 
 /**

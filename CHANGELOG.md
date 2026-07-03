@@ -41,6 +41,7 @@ This release consumes the KodaX `0.7.57` and `0.7.58` SDK surfaces and lands the
 
 ### Fixed
 
+- **Confirmation dialogs no longer trap keyboard focus** - Native `window.confirm` steals the renderer's keyboard focus under Electron's `sandbox: true` and never returns it, leaving the composer unusable after confirming. All confirmation prompts (custom-provider delete, workflow run/saved-workflow delete, workflow preflight, project context-menu actions) now use the in-app `ConfirmDialog`, which returns focus to the composer on close. The dialog also renders above every other overlay (raised above the Settings modal) so confirmations triggered from within a modal stay visible and clickable.
 - **Partner Sources / Knowledge Base i18n** - The Partner Sources panel and workspace toggles are now fully bilingual (en / zh-CN) instead of English-only.
 - **Repo-intelligence trace compatibility** - `session.event` accepts the built-in repo-intelligence modes (`off` / `light` / `full`) while preserving older Repointel mode values for historical events.
 - **e2e stabilization** - The language-switch spec now asserts on the still-present "Workflow host" section (the autostart control was removed upstream), and the notifications-surface close-affordance spec's hover/geometry checks were hardened against sub-pixel reflow and transient re-render.

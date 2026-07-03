@@ -2067,6 +2067,11 @@ export function BottomBar(): JSX.Element {
   function handleCancel(): void {
     const sid = currentSessionId;
     if (!sid || !window.kodaxSpace) return;
+    // #13 fix: session.cancel 是异步 IPC——结果回来时用户可能已经切到别的 session。之前的
+    // toast 只有 "Stop signal sent"/"Cancel failed"，看不出说的是哪个 session，容易被
+    // 误当成"当前 session 出错了"。带上 session 标题消歧义。
+    const sessionTitle =
+      useAppStore.getState().sessions.find((s) => s.sessionId === sid)?.title ?? 'this session';
     appendEvent({
       kind: 'session_error',
       sessionId: sid,
@@ -2074,15 +2079,20 @@ export function BottomBar(): JSX.Element {
       category: 'cancelled',
       retriable: true,
     });
-    pushToast('Stop signal sent', 'info', 2000);
+    pushToast(`Stop signal sent - ${sessionTitle}`, 'info', 2000);
 
     void window.kodaxSpace
       .invoke('session.cancel', { sessionId: sid })
       .then((r) => {
-        if (!r.ok) pushToast(r.error?.message ?? 'Cancel failed', 'error');
+        if (!r.ok) {
+          pushToast(`Cancel failed (${sessionTitle}): ${r.error?.message ?? 'unknown error'}`, 'error');
+        }
       })
       .catch((err: unknown) => {
-        pushToast(err instanceof Error ? err.message : 'Cancel failed', 'error');
+        pushToast(
+          `Cancel failed (${sessionTitle}): ${err instanceof Error ? err.message : 'unknown error'}`,
+          'error',
+        );
       });
   }
 

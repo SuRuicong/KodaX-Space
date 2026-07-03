@@ -9,6 +9,7 @@ import { Caret } from '../../../components/Caret.js';
 import { Collapse } from '../../../components/Collapse.js';
 import { EASE_EXPO, usePrefersReducedMotion } from '../../../lib/motion.js';
 import { openFileSmart, looksLikeFilePath } from '../../../lib/openPath.js';
+import { useI18n } from '../../../i18n/I18nProvider.js';
 // OC-21: side-effect import 让内置 tool renderers (write/edit/multi_edit) 注册到 registry
 import './toolRenderers.js';
 import { getToolInputRenderer, getToolResultRenderer } from './toolRegistry.js';
@@ -547,7 +548,9 @@ export function SystemNotice({
   action,
   retryAvailableAt,
   sentAt,
+  historical,
 }: Extract<ConversationMessage, { kind: 'system_notice' }>): JSX.Element {
+  const { t } = useI18n();
   const isWorkflow = variant === 'workflow';
   const color =
     variant === 'error'
@@ -557,6 +560,13 @@ export function SystemNotice({
   const actionDef = action ? ACTION_BUTTONS[action] : undefined;
   const secondsLeft = useRetryCountdown(retryAvailableAt);
   const countdownActive = action === 'retry' && secondsLeft > 0;
+  // #12 fix: composeMessages 是纯函数、拿不到 i18n context，只透传 content + historical 标记
+  // 而不烤入英文标签；这里（有 useI18n）按 locale 拼出中性的"历史记录"前缀。Live 事件
+  // （historical 缺省）的 text 已经在 composeMessages 里烤好完整文案，原样展示不变。
+  const displayText =
+    variant === 'sidecar' && historical === true
+      ? `${t('session.sidecarHistoricalLabel')}: ${text}`
+      : text;
 
   if (isWorkflow) {
     return (
@@ -567,9 +577,9 @@ export function SystemNotice({
         data-testid="system-notice"
         data-notice-variant={variant}
       >
-        <div className="min-w-0 whitespace-pre-wrap break-words">{text}</div>
+        <div className="min-w-0 whitespace-pre-wrap break-words">{displayText}</div>
         <div className="font-sans">
-          <MessageFooter text={text} sentAt={sentAt} />
+          <MessageFooter text={displayText} sentAt={sentAt} />
         </div>
       </div>
     );
@@ -585,7 +595,7 @@ export function SystemNotice({
       data-testid="system-notice"
       data-notice-variant={variant}
     >
-      <span>{text}</span>
+      <span>{displayText}</span>
       {actionDef && (
         <button
           type="button"

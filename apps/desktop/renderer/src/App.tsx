@@ -16,6 +16,8 @@ import type {
   SpaceVersionOutput,
 } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from './store/appStore.js';
+import { pushToast } from './store/toastStore.js';
+import { useI18n } from './i18n/I18nProvider.js';
 import { SettingsModal } from './features/settings/SettingsModal.js';
 import { QuickAskPopover } from './features/quick-ask/QuickAskPopover.js';
 import { useSessionCompleteNotification } from './features/notifications/useSessionCompleteNotification.js';
@@ -123,6 +125,7 @@ export default function App(): JSX.Element {
   const [showSettings, setShowSettings] = useState(false);
   // F018 Quick Ask popover —— Cmd/Ctrl+K toggles
   const [showQuickAsk, setShowQuickAsk] = useState(false);
+  const { t } = useI18n();
   const appendEvent = useAppStore((s) => s.appendEvent);
   const enqueuePermission = useAppStore((s) => s.enqueuePermission);
   const dequeuePermission = useAppStore((s) => s.dequeuePermission);
@@ -274,6 +277,11 @@ export default function App(): JSX.Element {
     unsubsRef.current.push(
       bridge.on('permission.cancelled', (payload) => {
         dequeuePermission(payload.reqId);
+        // #5 fix: reason==='timeout' 之前是静默 dequeue——用户看不出弹窗为什么消失了，
+        // 容易误以为自己点漏了。补一条 toast 说明是超时自动处理的。
+        if (payload.reason === 'timeout') {
+          pushToast(t('toast.permissionTimeout'), 'warning');
+        }
       }),
     );
 
@@ -286,6 +294,10 @@ export default function App(): JSX.Element {
     unsubsRef.current.push(
       bridge.on('askUser.cancelled', (payload) => {
         dequeueAskUser(payload.reqId);
+        // #5 fix: 同 permission.cancelled——超时静默 dequeue 容易让用户困惑弹窗去哪了。
+        if (payload.reason === 'timeout') {
+          pushToast(t('toast.askUserTimeout'), 'warning');
+        }
       }),
     );
 
@@ -361,6 +373,7 @@ export default function App(): JSX.Element {
       sessionEventBatcher.dispose();
     };
   }, [
+    t,
     appendEvent,
     enqueuePermission,
     dequeuePermission,

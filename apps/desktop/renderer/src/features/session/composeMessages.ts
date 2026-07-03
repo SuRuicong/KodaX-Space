@@ -60,11 +60,15 @@ export type ConversationMessage =
   | {
       kind: 'system_notice';
       id: string;
-      variant: 'iteration' | 'error' | 'sidecar' | 'workflow';
-      /** iteration: "iter 1/30 · 1280 tokens"; error: 错误文本；sidecar: verifier 可读消息。
+      variant: 'iteration' | 'error' | 'sidecar' | 'workflow' | 'lineage';
+      /** iteration: "iter 1/30 · 1280 tokens"; error: 错误文本；sidecar: verifier 可读消息；
+       *  lineage: fork/rewind branch_summary 或 compaction 摘要的历史提示条（v0.1.x）。
        *  v0.1.x: 'complete' variant 已废弃——assistant bubble footer 自带 "Xd ago"，
        *  原来的横条 "✓ complete" 视觉太重、对每轮都打断阅读节奏。 */
       text: string;
+      /** sidecar variant 专用：true 表示这条是 session.history 回放（main 无法持久化真实
+       *  verdict/delivery），渲染方应该用中性"历史记录"标签而非断言具体 verdict（v0.1.x #12）。*/
+      historical?: boolean;
       /** OC-11: error variant 携带的 wrapSdkError 分类。SystemNotice 据此渲染按钮。*/
       action?: 'retry' | 'open_provider_settings' | 'check_network' | 'change_model';
       retriable?: boolean;
@@ -304,20 +308,51 @@ function composeAssistantSegment(
       }
       case 'sidecar_message': {
         flushTextBubble();
+        // #12 fix: historical=true 表示这条来自 session.history 回放——main 端没法持久化真实
+        // verdict/delivery/suggestedFix，硬编码的占位值不能拿来断言"这条是要求修改还是拦截"。
+        // composeMessages 是纯函数、没有 i18n context，这里只透传 content + historical 标记，
+        // 不烤入英文 title；SystemNotice 组件（有 useI18n）据 historical 决定标签文案 + 语言。
+        // 实时事件（historical 缺省）保持原样——title 直接烤进 text，Live path 完全不变。
+        const suggestedFix = evt.message.suggestedFix
+          ? ` Suggested fix: ${evt.message.suggestedFix}`
+          : '';
+        if (evt.message.historical === true) {
+          out.push({
+            kind: 'system_notice',
+            id: `${segmentTag}_sidecar${noticeCounter++}`,
+            variant: 'sidecar',
+            text: `${evt.message.content}${suggestedFix}`,
+            historical: true,
+          });
+          break;
+        }
         const title =
           evt.message.delivery === 'budget-exhausted'
             ? 'Sidecar budget exhausted'
             : evt.message.verdict === 'revise'
               ? 'Sidecar verifier requested revision'
               : 'Sidecar verifier blocked completion';
-        const suggestedFix = evt.message.suggestedFix
-          ? ` Suggested fix: ${evt.message.suggestedFix}`
-          : '';
         out.push({
           kind: 'system_notice',
           id: `${segmentTag}_sidecar${noticeCounter++}`,
           variant: 'sidecar',
           text: `${title}: ${evt.message.content}${suggestedFix}`,
+        });
+        break;
+      }
+      case 'lineage_notice': {
+        // #3 fix: branch_summary/compaction lineage entry 的历史提示条——不是用户消息,
+        // 复用 sidecar 的视觉样式(SystemNotice 的 warn 配色),文案区分是分支摘要还是压缩摘要。
+        flushTextBubble();
+        const label =
+          evt.noticeKind === 'branch_summary'
+            ? 'Returned from another branch'
+            : 'Conversation compacted';
+        out.push({
+          kind: 'system_notice',
+          id: `${segmentTag}_lineage${noticeCounter++}`,
+          variant: 'lineage',
+          text: `${label}: ${evt.text}`,
         });
         break;
       }

@@ -16,6 +16,7 @@ import {
 import type { ProviderInfo } from '@kodax-space/space-ipc-schema';
 import { useI18n } from '../../i18n/I18nProvider.js';
 import type { MessageKey } from '../../i18n/messages.js';
+import { requestConfirm } from '../../store/confirmStore.js';
 import { CustomProviderForm } from './CustomProviderForm.js';
 
 interface ProviderCardProps {
@@ -143,7 +144,14 @@ export function ProviderCard({ provider, onChanged }: ProviderCardProps): JSX.El
 
   async function handleRemoveCustom(): Promise<void> {
     if (!window.kodaxSpace || !provider.isCustom) return;
-    if (!window.confirm(t('provider.deleteConfirm', { name: provider.displayName }))) {
+    // #1 fix: window.confirm 在 Electron sandbox=true 下会夺走 webContents 键盘焦点且拿不回来
+    // （见 confirmStore.ts 顶部注释）——改用应用内 requestConfirm。
+    const confirmed = await requestConfirm({
+      message: t('provider.deleteConfirm', { name: provider.displayName }),
+      danger: true,
+      confirmLabel: t('common.delete'),
+    });
+    if (!confirmed) {
       return;
     }
     setBusy(true);

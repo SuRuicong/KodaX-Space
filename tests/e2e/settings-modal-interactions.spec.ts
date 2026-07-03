@@ -502,17 +502,20 @@ test('Provider cards support default switching, key editing, removal, and deleti
     await expect(beta.getByRole('button', { name: 'Remove key' })).toHaveCount(0);
     await expect(beta.getByRole('button', { name: 'Set default' })).toHaveCount(0);
 
-    page.once('dialog', async (dialog) => {
-      expect(dialog.message()).toContain('Delete custom provider "Beta Gateway"');
-      await dialog.dismiss();
-    });
+    // Delete now uses the in-app ConfirmDialog (window.confirm stole webContents
+    // focus under Electron sandbox). Cancel path: dialog shows, Cancel keeps card.
     await beta.getByRole('button', { name: 'Delete' }).click();
+    const betaConfirm = page.locator('[role="dialog"][aria-labelledby="confirm-dialog-title"]');
+    await expect(betaConfirm).toContainText('Delete custom provider "Beta Gateway"');
+    await betaConfirm.getByRole('button', { name: 'Cancel' }).click();
     await expect(beta).toBeVisible();
 
-    page.once('dialog', async (dialog) => {
-      await dialog.accept();
-    });
+    // Confirm path: dialog Delete button actually removes the card.
     await beta.getByRole('button', { name: 'Delete' }).click();
+    await page
+      .locator('[role="dialog"][aria-labelledby="confirm-dialog-title"]')
+      .getByRole('button', { name: 'Delete' })
+      .click();
     await expect(beta).toHaveCount(0);
   } finally {
     await space.close();
@@ -581,10 +584,12 @@ test('Provider cards cover add-key Enter, test failure, and default cleanup stat
     await expect(page.getByRole('group', { name: /Default: None\./ })).toBeVisible();
     await expect(gamma.getByRole('button', { name: 'Set default' })).toHaveCount(0);
 
-    page.once('dialog', async (dialog) => {
-      await dialog.accept();
-    });
+    // Delete now uses the in-app ConfirmDialog; click its confirm button.
     await gamma.getByRole('button', { name: 'Delete' }).click();
+    await page
+      .locator('[role="dialog"][aria-labelledby="confirm-dialog-title"]')
+      .getByRole('button', { name: 'Delete' })
+      .click();
     await expect(gamma).toHaveCount(0);
   } finally {
     await space.close();

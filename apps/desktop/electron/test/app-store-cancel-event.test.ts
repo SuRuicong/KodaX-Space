@@ -2,6 +2,7 @@ import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SessionMeta, WorkflowEventPayload } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../renderer/src/store/appStore.js';
+import { snapshotFromEvents } from '../../renderer/src/shell/ActivitySpinner.js';
 
 const SID = 's_cancel_dedupe';
 
@@ -54,6 +55,35 @@ test('appendEvent clears pending send and dedupes repeated cancelled terminal ev
   assert.equal(events.length, 1);
   assert.equal(events[0]?.kind, 'session_error');
   assert.equal(state.pendingSendBySession[SID], undefined);
+});
+
+test('appendEvent keeps pendingSend across a pre-session_start non-lifecycle event (spinner stays up)', () => {
+  // Regression: repo-intelligence (repointel_trace) / managed_task_status can arrive BEFORE
+  // session_start on a session's first query. pendingSend must NOT be cleared by such events, or the
+  // activity spinner vanishes (bubble shown, no "doing something" indicator) until session_start.
+  const store = useAppStore.getState();
+  store.appendEvent({ kind: 'repointel_trace', sessionId: SID, event: { kind: 'started' } });
+
+  let state = useAppStore.getState();
+  assert.equal(
+    state.pendingSendBySession[SID],
+    true,
+    'a pre-session_start non-lifecycle event must not clear pendingSend',
+  );
+  // Spinner recognizer still reports streaming ("Sending…") via the pending fallback.
+  const snap = snapshotFromEvents(
+    state.eventsBySession[SID] ?? [],
+    Boolean(state.pendingSendBySession[SID]),
+    undefined,
+  );
+  assert.equal(snap.streaming, true, 'spinner must stay visible while pending, even with events present');
+
+  // session_start finally arrives → hands off to event-driven streaming AND clears pendingSend.
+  store.appendEvent({ kind: 'session_start', sessionId: SID, provider: 'mock' });
+  state = useAppStore.getState();
+  assert.equal(state.pendingSendBySession[SID], undefined, 'session_start clears pendingSend');
+  const snap2 = snapshotFromEvents(state.eventsBySession[SID] ?? [], false, undefined);
+  assert.equal(snap2.streaming, true, 'still streaming after session_start (no gap)');
 });
 
 test('appendEvent accepts a later cancelled event after a new session_start', () => {

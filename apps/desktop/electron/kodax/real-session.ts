@@ -149,7 +149,7 @@ import { workflowPolicyStore } from './workflow-policy.js';
 import { workflowController } from './workflow-controller.js';
 import { pushToRenderer } from '../ipc/push.js';
 import {
-  childRunId,
+  isTransientChildEvent,
   buildChildActivity,
   buildWorkflowDigestActivity,
 } from './workflow-activity.js';
@@ -897,23 +897,26 @@ export class RealKodaXSession implements ManagedSession {
       // ---- 流式文本 / 思考 ----
       onTextDelta: (text, meta) => {
         this.lastActivityAt = Date.now();
-        // F065: 子 agent 文本不进主 transcript（不淹）；不逐 delta 推活动（控量），
-        // 子 agent 进度由 snapshot.latestMessage + discrete tool 活动体现。
-        if (childRunId(meta)) return;
+        // F065: 子 agent（工作流子 agent + dispatch_child_task 子 agent）文本不进主
+        // transcript（不淹）；子 agent 进度由 managed_task_status「子智能体」面板 +
+        // 工作流 snapshot/discrete tool 活动体现。见 isTransientChildEvent。
+        if (isTransientChildEvent(meta)) return;
         emitStreamDelta('text_delta', text);
       },
       onThinkingDelta: (text, meta) => {
-        if (childRunId(meta)) return;
+        if (isTransientChildEvent(meta)) return;
         emitStreamDelta('thinking_delta', text);
       },
       onThinkingEnd: (thinking, meta) => {
-        if (childRunId(meta)) return;
+        if (isTransientChildEvent(meta)) return;
         emitLive({ kind: 'thinking_end', sessionId: sid, thinking });
       },
 
       // ---- Tool 生命周期 ----
       onToolUseStart: (tool, meta) => {
-        if (childRunId(meta)) {
+        if (isTransientChildEvent(meta)) {
+          // 工作流子 agent → 活动面板；dispatch 子 agent（无 runId）→ pushChildActivityLive
+          // 内 buildChildActivity 返 null 自然 no-op（不进主 transcript）。
           pushChildActivityLive(meta, 'tool_use', { toolName: tool.name });
           return;
         }
@@ -926,8 +929,8 @@ export class RealKodaXSession implements ManagedSession {
         });
       },
       onToolInputDelta: (toolName, partialJson, meta) => {
-        // F065: 子 agent 的 partial-JSON 流不进主 transcript（不淹）；不逐 delta 推活动（控量）。
-        if (childRunId(meta)) return;
+        // F065: 子 agent 的 partial-JSON 流不进主 transcript（不淹）。
+        if (isTransientChildEvent(meta)) return;
         emitLive({
           kind: 'tool_input_delta',
           sessionId: sid,
@@ -937,7 +940,7 @@ export class RealKodaXSession implements ManagedSession {
         });
       },
       onToolResult: (result, meta) => {
-        if (childRunId(meta)) {
+        if (isTransientChildEvent(meta)) {
           pushChildActivityLive(meta, 'tool_result', { toolName: result.name });
           return;
         }

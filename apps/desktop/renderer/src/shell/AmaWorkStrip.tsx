@@ -8,10 +8,29 @@
 //   - 状态字段都缺时静默隐藏（避免空 strip 占位）
 //   - 部分字段缺时只显示已有的，无 placeholder dash
 //
-// 视觉：font-mono、zinc-500、紫色 ✦ 前缀；点击预留 TasksPanel popout (TODO 接 CommandToolbar)。
+// 视觉：font-mono、zinc-500、紫色 ✦ 前缀。
+//
+// #10 fix: 之前直接显示裸 harnessProfile 枚举值（"H1_EXECUTE_EVAL"），整行没有 title
+// tooltip（截断/等宽字体下不好读），budget-approval 提示只是纯文本、点不动。这里补人类
+// 可读映射 + 完整 tooltip + 让 budget-approval 段可点击跳 TasksPanel（同 Section ⤢ 用的
+// requestShellPopout）。
 
 import { Sparkles } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
+import { requestShellPopout } from './popoutControl.js';
+
+// SDK KodaXHarnessProfile 已知字面量的人类可读标签；未知/自定义 profile 原样透传兜底
+// （managedTaskStatusSchema.harnessProfile 是自由字符串，SDK 允许 consumer 扩展）。
+const HARNESS_PROFILE_LABELS: Readonly<Record<string, string>> = {
+  H0_DIRECT: 'Direct',
+  H1_EXECUTE_EVAL: 'Iterate',
+  H2_PLAN_EXECUTE_EVAL: 'Plan → Execute → Eval',
+  PLANNED: 'Planned',
+};
+
+function harnessProfileLabel(profile: string): string {
+  return HARNESS_PROFILE_LABELS[profile] ?? profile;
+}
 
 export function AmaWorkStrip(): JSX.Element | null {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
@@ -29,7 +48,7 @@ export function AmaWorkStrip(): JSX.Element | null {
     parts.push(status.activeWorkerTitle);
   }
   if (status.harnessProfile) {
-    parts.push(status.harnessProfile);
+    parts.push(harnessProfileLabel(status.harnessProfile));
   }
   if (status.currentRound !== undefined) {
     const round = status.maxRounds
@@ -46,22 +65,39 @@ export function AmaWorkStrip(): JSX.Element | null {
   if (status.idleWaiting) {
     parts.push(`idle (${status.idleWaitingPendingCount ?? 0} pending)`);
   }
-  if (status.budgetApprovalRequired) {
-    parts.push('budget approval ⚠');
-  }
 
-  if (parts.length === 0) return null;
+  if (parts.length === 0 && !status.budgetApprovalRequired) return null;
+
+  const modeLabel = session.agentMode.toUpperCase();
+  const tooltip = [modeLabel, ...parts, ...(status.budgetApprovalRequired ? ['budget approval needed'] : [])].join(
+    ' · ',
+  );
 
   return (
     <div
       className="px-3 text-[11px] font-mono text-fg-muted flex items-center gap-1.5 select-none"
       role="status"
       aria-label="agent work status"
+      title={tooltip}
     >
       <Sparkles className="w-3 h-3 text-thinking flex-shrink-0" strokeWidth={2} aria-hidden />
-      <span className="text-fg-muted">{session.agentMode.toUpperCase()}</span>
-      <span className="text-fg-faint">·</span>
-      <span className="truncate">{parts.join(' · ')}</span>
+      <span className="text-fg-muted">{modeLabel}</span>
+      {parts.length > 0 && (
+        <>
+          <span className="text-fg-faint">·</span>
+          <span className="truncate">{parts.join(' · ')}</span>
+        </>
+      )}
+      {status.budgetApprovalRequired && (
+        <button
+          type="button"
+          onClick={() => requestShellPopout('tasks')}
+          className="text-warn hover:underline flex-shrink-0"
+          title="Budget approval needed — open Tasks"
+        >
+          budget approval ⚠
+        </button>
+      )}
     </div>
   );
 }

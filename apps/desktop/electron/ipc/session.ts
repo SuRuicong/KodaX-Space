@@ -575,7 +575,43 @@ export function registerSessionChannels(): void {
     }
 
     // 第二步: 按顺序拍平 messages 成 items
-    for (const msg of data.messages) {
+    //
+    // v0.1.x 修复 "fork/rewind branch_summary 回放成假用户气泡": fork 回到某个分支点时,
+    // SDK 会在 lineage 里合成一条 role==='user' 的 context message,把"你之前探索过的另一条
+    // 分支"的摘要塞给 LLM 当上下文——但这段文字从来不是用户真的打的字。旧逻辑直接按
+    // msg.role 拍平,于是这段摘要在滚动区里显示成一条用户消息(压缩产生的 compaction 摘要
+    // 同理,role==='system')。
+    //
+    // loadFullTranscript (SDK 0.7.51+) 额外提供 transcriptEntries——每条 message 对应一个
+    // entry,entry.type 精确标出 'message' / 'compaction' / 'branch_summary',不需要靠猜 role。
+    // 有了它就按 entry.type 路由:branch_summary/compaction → 非 user 的 lineage_notice 历史
+    // 提示条(entry.summary 是没被模板包裹的干净文本,优先用它);其余(type==='message')走
+    // 原有逻辑不变。旧 SDK / 测试 mock 没有 transcriptEntries 时,整段回退成"每条 message
+    // 都当作 type:'message'"——即完全不变的旧行为。
+    const rawTranscriptEntries = (data as { transcriptEntries?: unknown }).transcriptEntries;
+    type TranscriptEntryLike = {
+      readonly type?: unknown;
+      readonly message: (typeof data.messages)[number];
+      readonly summary?: unknown;
+    };
+    const entries: readonly TranscriptEntryLike[] = Array.isArray(rawTranscriptEntries)
+      ? (rawTranscriptEntries as TranscriptEntryLike[])
+      : data.messages.map((message) => ({ type: 'message', message }));
+
+    for (const entry of entries) {
+      if (entry.type === 'branch_summary' || entry.type === 'compaction') {
+        const rawSummary =
+          typeof entry.summary === 'string' && entry.summary.trim().length > 0
+            ? entry.summary
+            : extractUserText((entry.message as { content?: unknown }).content);
+        const text = rawSummary.trim();
+        if (text.length > 0) {
+          items.push({ kind: 'lineage_notice', noticeKind: entry.type, text });
+        }
+        if (items.length >= 2000) break;
+        continue;
+      }
+      const msg = entry.message;
       const meta = msg as {
         _source?: unknown;
         source?: unknown;
@@ -595,6 +631,10 @@ export function registerSessionChannels(): void {
               recipient: 'main-agent',
               delivery: 'synthetic-user-message',
               content: sidecarText,
+              // #12 fix: SDK 不持久化真实 verdict/delivery/suggestedFix——上面几个字段都是
+              // 占位值,不是这条消息当时真实的判定结果。标 historical=true 让 renderer 用中性
+              // 的"历史记录"标签展示,不再断言 verdict==='revise'。
+              historical: true,
             },
           });
         }

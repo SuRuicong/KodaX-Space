@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { Play, ChevronDown, ChevronRight, ShieldCheck, RefreshCw, Lock } from 'lucide-react';
 import { useAppStore } from '../../store/appStore.js';
 import { pushToast } from '../../store/toastStore.js';
+import { requestConfirm } from '../../store/confirmStore.js';
 
 interface MetaLite {
   name: string;
@@ -68,7 +69,13 @@ export function WorkflowLauncher(): JSX.Element {
         }
         if (!pf.data.ok && pf.data.issues.length > 0) {
           const msg = pf.data.issues.map((i) => `• ${i.message}`).join('\n');
-          if (!window.confirm(`预检发现问题：\n${msg}\n\n仍然启动？`)) return;
+          // #1 fix: window.confirm 在 Electron sandbox=true 下会夺走 webContents 键盘焦点且拿不回来
+          // ——改用应用内 requestConfirm。非破坏性操作（仍然启动，不是删除），不走 danger 样式。
+          const proceed = await requestConfirm({
+            message: `预检发现问题：\n${msg}\n\n仍然启动？`,
+            confirmLabel: '启动',
+          });
+          if (!proceed) return;
         }
       }
       const r = await window.kodaxSpace?.invoke('workflow.start', { target, source, sessionId });

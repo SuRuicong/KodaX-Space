@@ -19,23 +19,28 @@ import { useEffect, useState } from 'react';
 import type { AgentMode } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 import { pushToast } from '../store/toastStore.js';
+import { useI18n } from '../i18n/I18nProvider.js';
+import type { MessageKey } from '../i18n/messages.js';
 
+// AMA/AMAW/SA 是协议层面的形态代号（同 provider id / harness profile 一样不做翻译）；
+// 完整名称 + 说明才是需要按 locale 切换的用户提示文案（#14 修复：之前 DESCRIPTIONS 混着
+// 中英文，跟当前语言设置无关，导致英文界面下弹出中文 tooltip）。
 const LABELS: Record<AgentMode, string> = {
   ama: 'AMA',
   amaw: 'AMAW',
   sa: 'SA',
 };
 
-const FULL_NAMES: Record<AgentMode, string> = {
-  ama: 'Adaptive Multi-Agent',
-  amaw: 'Adaptive Multi-Agent Workflow',
-  sa: 'Single Agent',
+const FULL_NAME_KEYS: Record<AgentMode, MessageKey> = {
+  ama: 'agentMode.fullName.ama',
+  amaw: 'agentMode.fullName.amaw',
+  sa: 'agentMode.fullName.sa',
 };
 
-const DESCRIPTIONS: Record<AgentMode, string> = {
-  amaw: 'Multi-agent work with natural-language workflow activation.',
-  ama: '多角色协作（scout / planner / generator / evaluator）— 复杂任务效果更好，但 token 消耗 + 并发更高',
-  sa: '单 agent loop — 资源 / 并发受限时的 fallback；省 token、省请求并发',
+const DESCRIPTION_KEYS: Record<AgentMode, MessageKey> = {
+  ama: 'agentMode.description.ama',
+  amaw: 'agentMode.description.amaw',
+  sa: 'agentMode.description.sa',
 };
 
 const OPTIONS: readonly AgentMode[] = ['ama', 'amaw', 'sa'];
@@ -46,6 +51,7 @@ function nextAgentMode(current: AgentMode): AgentMode {
 }
 
 export function AgentModeSelector(): JSX.Element {
+  const { t } = useI18n();
   const sessions = useAppStore((s) => s.sessions);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const upsertSession = useAppStore((s) => s.upsertSession);
@@ -83,11 +89,11 @@ export function AgentModeSelector(): JSX.Element {
         const r = await window.kodaxSpace.invoke('settings.setRuntimeDefaults', {
           runtimeDefaults: { agentMode: mode },
         });
-        if (!r.ok) pushToast(r.error?.message ?? 'Failed to save runtime defaults', 'error');
+        if (!r.ok) pushToast(r.error?.message ?? t('modelPicker.saveDefaultsFailed'), 'error');
         else setRuntimeDefaults(r.data.runtimeDefaults ?? {});
       }
     } catch (err) {
-      pushToast(err instanceof Error ? err.message : 'Failed to save runtime defaults', 'error');
+      pushToast(err instanceof Error ? err.message : t('modelPicker.saveDefaultsFailed'), 'error');
     } finally {
       setBusy(false);
       setOpen(false);
@@ -116,7 +122,7 @@ export function AgentModeSelector(): JSX.Element {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="text-xs px-2 py-0.5 rounded bg-surface-2 border border-border-default text-fg-secondary hover:bg-hover-bg flex items-center gap-1"
-        title={`Agent: ${FULL_NAMES[current]}`}
+        title={t('agentMode.buttonTitle', { name: t(FULL_NAME_KEYS[current]) })}
       >
         <span>{labelText}</span>
         <span className="text-fg-muted" aria-hidden>
@@ -130,7 +136,7 @@ export function AgentModeSelector(): JSX.Element {
           onMouseLeave={() => setOpen(false)}
         >
           <div className="px-3 py-1 text-fg-muted text-[11px] uppercase tracking-wider">
-            Agent mode
+            {t('agentMode.popupTitle')}
           </div>
           {OPTIONS.map((m) => (
             <button
@@ -140,22 +146,24 @@ export function AgentModeSelector(): JSX.Element {
               className={`w-full text-left px-3 py-1.5 hover:bg-hover-bg ${
                 current === m ? 'text-fg-primary' : 'text-fg-secondary'
               }`}
-              title={DESCRIPTIONS[m]}
+              title={t(DESCRIPTION_KEYS[m])}
             >
               <div className="flex items-center gap-2">
                 <span className="font-mono w-12">{LABELS[m]}</span>
-                <span className="flex-1 text-xs">{FULL_NAMES[m]}</span>
+                <span className="flex-1 text-xs">{t(FULL_NAME_KEYS[m])}</span>
                 {current === m && (
                   <span className="text-ok" aria-hidden>
                     ✓
                   </span>
                 )}
               </div>
-              <div className="ml-12 text-[11px] text-fg-muted leading-tight">{DESCRIPTIONS[m]}</div>
+              <div className="ml-12 text-[11px] text-fg-muted leading-tight">
+                {t(DESCRIPTION_KEYS[m])}
+              </div>
             </button>
           ))}
           <div className="border-t border-border-default mt-1 pt-1 px-3 py-1 text-[11px] text-fg-muted leading-tight">
-            AMA uses explicit /workflow. AMAW may choose run_workflow from natural language.
+            {t('agentMode.footer')}
           </div>
         </div>
       )}

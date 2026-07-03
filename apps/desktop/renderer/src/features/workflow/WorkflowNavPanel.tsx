@@ -26,6 +26,7 @@ import type {
 import { useSurfaceStore } from '../../store/surface.js';
 import { useAppStore } from '../../store/appStore.js';
 import { pushToast } from '../../store/toastStore.js';
+import { requestConfirm } from '../../store/confirmStore.js';
 import {
   selectableWorkflowRunSessionId,
   workflowRerunSessionId,
@@ -70,6 +71,12 @@ export function WorkflowNavPanel(): JSX.Element | null {
   const [library, setLibrary] = useState<WorkflowLibrary | null>(null);
   const [loadingLibrary, setLoadingLibrary] = useState(false);
   const [refreshNonce, setRefreshNonce] = useState(0);
+  // #2 fix: window.prompt 在 Electron sandbox=true 下是静默 no-op（不会真弹窗，rename 悄悄失败）。
+  // 改用 inline 输入替换行内标签，镜像 SessionList.tsx / SessionContextMenu.tsx 的
+  // renaming(id) + draft 模式：Enter 提交，Esc/blur 取消。
+  const [renamingRunId, setRenamingRunId] = useState<string | null>(null);
+  const [renamingSavedKey, setRenamingSavedKey] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
 
   const projectSessionIds = useMemo(() => {
     const ids = new Set<string>();
@@ -146,6 +153,58 @@ export function WorkflowNavPanel(): JSX.Element | null {
     [projectSessionIds, requestPopout, setCurrentSession],
   );
 
+  function startRenameRun(run: WorkflowRunT): void {
+    setRenamingSavedKey(null);
+    setRenamingRunId(run.runId);
+    setRenameDraft(run.displayName ?? run.workflowName);
+  }
+
+  async function commitRenameRun(run: WorkflowRunT): Promise<void> {
+    const current = run.displayName ?? run.workflowName;
+    const next = renameDraft.trim();
+    setRenamingRunId(null);
+    if (!next || next === current) return;
+    await invokeWorkflowControl(
+      window.kodaxSpace?.invoke('workflow.rename', { runId: run.runId, displayName: next }),
+      `Rename failed: ${current}`,
+    );
+  }
+
+  function startRenameSaved(saved: SavedWorkflow): void {
+    setRenamingRunId(null);
+    setRenamingSavedKey(`${saved.source ?? 'saved'}:${saved.name}`);
+    setRenameDraft(saved.name);
+  }
+
+  async function commitRenameSaved(saved: SavedWorkflow, sessionId: string | null): Promise<void> {
+    const next = renameDraft.trim();
+    setRenamingSavedKey(null);
+    if (!next || next === saved.name) return;
+    if (!sessionId) {
+      pushToast('Open a session before editing saved workflows', 'warning');
+      return;
+    }
+    const result = await invokeWorkflowControl(
+      window.kodaxSpace?.invoke('workflow.saved.rename', {
+        name: saved.name,
+        newName: next,
+        sessionId,
+        source: saved.source,
+      }),
+      `Rename failed: ${saved.name}`,
+    );
+    if (result) {
+      pushToast(`Saved workflow renamed: ${next}`, 'success');
+      refreshLibrary();
+    }
+  }
+
+  function cancelRename(): void {
+    setRenamingRunId(null);
+    setRenamingSavedKey(null);
+    setRenameDraft('');
+  }
+
   if (!currentProjectPath) return null;
 
   const saved = library?.saved ?? [];
@@ -206,6 +265,12 @@ export function WorkflowNavPanel(): JSX.Element | null {
                     onOpen={() =>
                       openWorkflowPanel(selectableWorkflowRunSessionId(run, projectSessionIds))
                     }
+                    renaming={renamingRunId === run.runId}
+                    renameDraft={renameDraft}
+                    onRenameDraftChange={setRenameDraft}
+                    onStartRename={() => startRenameRun(run)}
+                    onCommitRename={() => void commitRenameRun(run)}
+                    onCancelRename={cancelRename}
                   />
                 ))}
                 {runs.length > shownRuns.length && (
@@ -245,6 +310,14 @@ export function WorkflowNavPanel(): JSX.Element | null {
                     saved={savedWorkflow}
                     sessionId={currentSessionId}
                     onChanged={refreshLibrary}
+                    renaming={
+                      renamingSavedKey === `${savedWorkflow.source ?? 'saved'}:${savedWorkflow.name}`
+                    }
+                    renameDraft={renameDraft}
+                    onRenameDraftChange={setRenameDraft}
+                    onStartRename={() => startRenameSaved(savedWorkflow)}
+                    onCommitRename={() => void commitRenameSaved(savedWorkflow, currentSessionId)}
+                    onCancelRename={cancelRename}
                   />
                 ))}
                 {saved.length > shownSaved.length && (
@@ -266,11 +339,23 @@ function WorkflowRunNavRow({
   currentSessionId,
   projectSessionIds,
   onOpen,
+  renaming,
+  renameDraft,
+  onRenameDraftChange,
+  onStartRename,
+  onCommitRename,
+  onCancelRename,
 }: {
   run: WorkflowRunT;
   currentSessionId: string | null;
   projectSessionIds: ReadonlySet<string>;
   onOpen: () => void;
+  renaming: boolean;
+  renameDraft: string;
+  onRenameDraftChange: (value: string) => void;
+  onStartRename: () => void;
+  onCommitRename: () => void;
+  onCancelRename: () => void;
 }): JSX.Element {
   const Icon = STATUS_ICON[run.status];
   const active = run.status === 'running' || run.status === 'paused';
@@ -285,48 +370,69 @@ function WorkflowRunNavRow({
         strokeWidth={2}
         aria-hidden
       />
-      <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
-        <div className="truncate text-[11px] text-fg-secondary" title={name}>
-          {name}
+      {renaming ? (
+        <input
+          type="text"
+          autoFocus
+          value={renameDraft}
+          onChange={(e) => onRenameDraftChange(e.target.value)}
+          onBlur={onCommitRename}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter') onCommitRename();
+            else if (e.key === 'Escape') onCancelRename();
+          }}
+          maxLength={256}
+          className="min-w-0 flex-1 bg-surface border border-border-strong rounded px-1 py-0 text-[11px] text-fg-primary"
+          aria-label="Rename workflow run"
+        />
+      ) : (
+        <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
+          <div className="truncate text-[11px] text-fg-secondary" title={name}>
+            {name}
+          </div>
+          <div
+            className="truncate text-[10px] font-mono text-fg-faint"
+            title={run.latestMessage ?? run.status}
+          >
+            {run.latestMessage ?? run.status}
+          </div>
+        </button>
+      )}
+      {!renaming && (
+        <div className="flex items-center gap-0.5 flex-shrink-0">
+          <IconButton
+            label="Run again"
+            onClick={() => void rerunWorkflow(run, currentSessionId, projectSessionIds)}
+          >
+            <PlayCircle size={11} />
+          </IconButton>
+          {run.status === 'running' && (
+            <IconButton label="Pause" onClick={() => void pauseWorkflow(run.runId, name)}>
+              <Pause size={11} />
+            </IconButton>
+          )}
+          {run.status === 'paused' && (
+            <IconButton label="Resume" onClick={() => void resumeWorkflow(run.runId, name)}>
+              <Play size={11} />
+            </IconButton>
+          )}
+          {active && (
+            <IconButton label="Stop" danger onClick={() => void stopWorkflow(run.runId, name)}>
+              <Square size={11} />
+            </IconButton>
+          )}
+          <IconButton label="Rename" onClick={onStartRename}>
+            <Pencil size={11} />
+          </IconButton>
+          {terminal && (
+            <IconButton label="Delete" danger onClick={() => void deleteWorkflowRun(run)}>
+              <Trash2 size={11} />
+            </IconButton>
+          )}
         </div>
-        <div
-          className="truncate text-[10px] font-mono text-fg-faint"
-          title={run.latestMessage ?? run.status}
-        >
-          {run.latestMessage ?? run.status}
-        </div>
-      </button>
-      <div className="flex items-center gap-0.5 flex-shrink-0">
-        <IconButton
-          label="Run again"
-          onClick={() => void rerunWorkflow(run, currentSessionId, projectSessionIds)}
-        >
-          <PlayCircle size={11} />
-        </IconButton>
-        {run.status === 'running' && (
-          <IconButton label="Pause" onClick={() => void pauseWorkflow(run.runId)}>
-            <Pause size={11} />
-          </IconButton>
-        )}
-        {run.status === 'paused' && (
-          <IconButton label="Resume" onClick={() => void resumeWorkflow(run.runId)}>
-            <Play size={11} />
-          </IconButton>
-        )}
-        {active && (
-          <IconButton label="Stop" danger onClick={() => void stopWorkflow(run.runId)}>
-            <Square size={11} />
-          </IconButton>
-        )}
-        <IconButton label="Rename" onClick={() => void renameWorkflowRun(run)}>
-          <Pencil size={11} />
-        </IconButton>
-        {terminal && (
-          <IconButton label="Delete" danger onClick={() => void deleteWorkflowRun(run)}>
-            <Trash2 size={11} />
-          </IconButton>
-        )}
-      </div>
+      )}
     </li>
   );
 }
@@ -335,43 +441,71 @@ function SavedWorkflowNavRow({
   saved,
   sessionId,
   onChanged,
+  renaming,
+  renameDraft,
+  onRenameDraftChange,
+  onStartRename,
+  onCommitRename,
+  onCancelRename,
 }: {
   saved: SavedWorkflow;
   sessionId: string | null;
   onChanged: () => void;
+  renaming: boolean;
+  renameDraft: string;
+  onRenameDraftChange: (value: string) => void;
+  onStartRename: () => void;
+  onCommitRename: () => void;
+  onCancelRename: () => void;
 }): JSX.Element {
   return (
     <li className="group flex items-center gap-1 rounded px-1 py-1 hover:bg-hover-bg min-w-0">
       <Play className="w-3.5 h-3.5 flex-shrink-0 text-fg-muted" strokeWidth={2} aria-hidden />
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[11px] text-fg-secondary" title={saved.name}>
-          {saved.name}
+      {renaming ? (
+        <input
+          type="text"
+          autoFocus
+          value={renameDraft}
+          onChange={(e) => onRenameDraftChange(e.target.value)}
+          onBlur={onCommitRename}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onCommitRename();
+            else if (e.key === 'Escape') onCancelRename();
+          }}
+          maxLength={256}
+          className="min-w-0 flex-1 bg-surface border border-border-strong rounded px-1 py-0 text-[11px] text-fg-primary"
+          aria-label="Rename saved workflow"
+        />
+      ) : (
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[11px] text-fg-secondary" title={saved.name}>
+            {saved.name}
+          </div>
+          <div
+            className="truncate text-[10px] font-mono text-fg-faint"
+            title={saved.source ?? saved.path}
+          >
+            {saved.source ?? 'saved'}
+          </div>
         </div>
-        <div
-          className="truncate text-[10px] font-mono text-fg-faint"
-          title={saved.source ?? saved.path}
-        >
-          {saved.source ?? 'saved'}
+      )}
+      {!renaming && (
+        <div className="flex items-center gap-0.5 flex-shrink-0">
+          <IconButton label="Run" onClick={() => void startSavedWorkflow(saved, sessionId)}>
+            <Play size={11} />
+          </IconButton>
+          <IconButton label="Rename" onClick={onStartRename}>
+            <Pencil size={11} />
+          </IconButton>
+          <IconButton
+            label="Delete"
+            danger
+            onClick={() => void deleteSavedWorkflow(saved, sessionId, onChanged)}
+          >
+            <Trash2 size={11} />
+          </IconButton>
         </div>
-      </div>
-      <div className="flex items-center gap-0.5 flex-shrink-0">
-        <IconButton label="Run" onClick={() => void startSavedWorkflow(saved, sessionId)}>
-          <Play size={11} />
-        </IconButton>
-        <IconButton
-          label="Rename"
-          onClick={() => void renameSavedWorkflow(saved, sessionId, onChanged)}
-        >
-          <Pencil size={11} />
-        </IconButton>
-        <IconButton
-          label="Delete"
-          danger
-          onClick={() => void deleteSavedWorkflow(saved, sessionId, onChanged)}
-        >
-          <Trash2 size={11} />
-        </IconButton>
-      </div>
+      )}
     </li>
   );
 }
@@ -405,24 +539,27 @@ function IconButton({
   );
 }
 
-async function pauseWorkflow(runId: string): Promise<void> {
+// #13 fix: control actions are fire-and-forget IPC — the async result can land after the
+// user has switched to a different run/session. Every toast below names the run so a
+// "failed"/"succeeded" toast is never ambiguous about which run it refers to.
+async function pauseWorkflow(runId: string, name: string): Promise<void> {
   await invokeWorkflowControl(
     window.kodaxSpace?.invoke('workflow.pause', { runId }),
-    'Pause failed',
+    `Pause failed: ${name}`,
   );
 }
 
-async function resumeWorkflow(runId: string): Promise<void> {
+async function resumeWorkflow(runId: string, name: string): Promise<void> {
   await invokeWorkflowControl(
     window.kodaxSpace?.invoke('workflow.resume', { runId }),
-    'Resume failed',
+    `Resume failed: ${name}`,
   );
 }
 
-async function stopWorkflow(runId: string): Promise<void> {
+async function stopWorkflow(runId: string, name: string): Promise<void> {
   await invokeWorkflowControl(
     window.kodaxSpace?.invoke('workflow.stop', { runId, reason: 'stopped from workflow panel' }),
-    'Stop failed',
+    `Stop failed: ${name}`,
   );
 }
 
@@ -431,6 +568,7 @@ async function rerunWorkflow(
   currentSessionId: string | null,
   projectSessionIds: ReadonlySet<string>,
 ): Promise<void> {
+  const name = run.displayName ?? run.workflowName;
   const sessionId = workflowRerunSessionId({ run, currentSessionId, projectSessionIds });
   if (!sessionId) {
     pushToast('Open a session before rerunning a workflow', 'warning');
@@ -438,29 +576,26 @@ async function rerunWorkflow(
   }
   const result = await invokeWorkflowControl(
     window.kodaxSpace?.invoke('workflow.rerun', { runId: run.runId, sessionId }),
-    'Rerun failed',
+    `Rerun failed: ${name}`,
   );
-  if (result) pushToast('Workflow rerun started', 'success');
-}
-
-async function renameWorkflowRun(run: WorkflowRunT): Promise<void> {
-  const current = run.displayName ?? run.workflowName;
-  const next = window.prompt('Rename workflow run', current)?.trim();
-  if (!next || next === current) return;
-  await invokeWorkflowControl(
-    window.kodaxSpace?.invoke('workflow.rename', { runId: run.runId, displayName: next }),
-    'Rename failed',
-  );
+  if (result) pushToast(`Workflow rerun started: ${name}`, 'success');
 }
 
 async function deleteWorkflowRun(run: WorkflowRunT): Promise<void> {
   const name = run.displayName ?? run.workflowName;
-  if (!window.confirm(`Delete workflow run "${name}"?`)) return;
+  // #1 fix: window.confirm 在 Electron sandbox=true 下会夺走 webContents 键盘焦点且拿不回来
+  // ——改用应用内 requestConfirm。
+  const confirmed = await requestConfirm({
+    message: `Delete workflow run "${name}"?`,
+    danger: true,
+    confirmLabel: 'Delete',
+  });
+  if (!confirmed) return;
   const result = await invokeWorkflowControl(
     window.kodaxSpace?.invoke('workflow.delete', { runId: run.runId }),
-    'Delete failed',
+    `Delete failed: ${name}`,
   );
-  if (result) pushToast('Workflow run deleted', 'success');
+  if (result) pushToast(`Workflow run deleted: ${name}`, 'success');
 }
 
 async function startSavedWorkflow(saved: SavedWorkflow, sessionId: string | null): Promise<void> {
@@ -474,35 +609,9 @@ async function startSavedWorkflow(saved: SavedWorkflow, sessionId: string | null
       source: 'saved',
       sessionId,
     }),
-    'Start failed',
+    `Start failed: ${saved.name}`,
   );
-  if (result) pushToast('Workflow started', 'success');
-}
-
-async function renameSavedWorkflow(
-  saved: SavedWorkflow,
-  sessionId: string | null,
-  onChanged: () => void,
-): Promise<void> {
-  if (!sessionId) {
-    pushToast('Open a session before editing saved workflows', 'warning');
-    return;
-  }
-  const next = window.prompt('Rename saved workflow', saved.name)?.trim();
-  if (!next || next === saved.name) return;
-  const result = await invokeWorkflowControl(
-    window.kodaxSpace?.invoke('workflow.saved.rename', {
-      name: saved.name,
-      newName: next,
-      sessionId,
-      source: saved.source,
-    }),
-    'Rename failed',
-  );
-  if (result) {
-    pushToast('Saved workflow renamed', 'success');
-    onChanged();
-  }
+  if (result) pushToast(`Workflow started: ${saved.name}`, 'success');
 }
 
 async function deleteSavedWorkflow(
@@ -514,17 +623,24 @@ async function deleteSavedWorkflow(
     pushToast('Open a session before editing saved workflows', 'warning');
     return;
   }
-  if (!window.confirm(`Delete saved workflow "${saved.name}"?`)) return;
+  // #1 fix: window.confirm 在 Electron sandbox=true 下会夺走 webContents 键盘焦点且拿不回来
+  // ——改用应用内 requestConfirm。
+  const confirmed = await requestConfirm({
+    message: `Delete saved workflow "${saved.name}"?`,
+    danger: true,
+    confirmLabel: 'Delete',
+  });
+  if (!confirmed) return;
   const result = await invokeWorkflowControl(
     window.kodaxSpace?.invoke('workflow.saved.delete', {
       name: saved.name,
       sessionId,
       source: saved.source,
     }),
-    'Delete failed',
+    `Delete failed: ${saved.name}`,
   );
   if (result) {
-    pushToast('Saved workflow deleted', 'success');
+    pushToast(`Saved workflow deleted: ${saved.name}`, 'success');
     onChanged();
   }
 }

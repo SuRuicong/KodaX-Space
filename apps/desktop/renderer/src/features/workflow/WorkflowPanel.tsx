@@ -43,6 +43,7 @@ import type {
 } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
 import { pushToast } from '../../store/toastStore.js';
+import { requestConfirm } from '../../store/confirmStore.js';
 import { buildItemTree, type WorkflowTreeNode } from './buildItemTree.js';
 import { WorkflowRunGraph } from './WorkflowRunGraph.js';
 import { WorkflowLauncher } from './WorkflowLauncher.js';
@@ -220,6 +221,17 @@ function WorkflowControls({
 }): JSX.Element {
   const runId = run.runId;
   const active = run.status === 'running' || run.status === 'paused';
+  // #1 fix: window.confirm 在 Electron sandbox=true 下会夺走 webContents 键盘焦点且拿不回来
+  // ——改用应用内 requestConfirm。
+  async function handleDelete(): Promise<void> {
+    const confirmed = await requestConfirm({
+      message: `删除工作流 run「${run.displayName ?? run.workflowName}」？`,
+      danger: true,
+      confirmLabel: '删除',
+    });
+    if (!confirmed) return;
+    fireControl(window.kodaxSpace?.invoke('workflow.delete', { runId }), '删除失败');
+  }
   return (
     <div
       className={`flex items-center gap-0.5 flex-shrink-0 ${hasPhaseCounter ? 'ml-1.5' : 'ml-auto'}`}
@@ -261,15 +273,7 @@ function WorkflowControls({
         </CtlBtn>
       )}
       {variant === 'full' && isTerminal && (
-        <CtlBtn
-          label="删除"
-          danger
-          onClick={() => {
-            if (window.confirm(`删除工作流 run「${run.displayName ?? run.workflowName}」？`)) {
-              fireControl(window.kodaxSpace?.invoke('workflow.delete', { runId }), '删除失败');
-            }
-          }}
-        >
+        <CtlBtn label="删除" danger onClick={() => void handleDelete()}>
           <Trash2 size={11} />
         </CtlBtn>
       )}

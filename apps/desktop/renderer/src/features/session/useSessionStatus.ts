@@ -32,6 +32,9 @@ export function useSessionStatus(sessionId: string | null): SessionStatus {
   const awaitingAskUser = useAppStore((s) =>
     sessionId ? s.askUserQueue.some((p) => p.sessionId === sessionId) : false,
   );
+  const errorSeenAt = useAppStore((s) =>
+    sessionId ? (s.errorSeenAtBySession[sessionId] ?? 0) : 0,
+  );
 
   return useMemo<SessionStatus>(() => {
     if (!sessionId) return 'idle';
@@ -40,14 +43,18 @@ export function useSessionStatus(sessionId: string | null): SessionStatus {
     if (events) {
       for (let i = events.length - 1; i >= 0; i--) {
         const ev = events[i];
-        if (ev.kind === 'session_error') return 'error';
+        if (ev.kind === 'session_error') {
+          // 已被用户看过（含取消）的 error 不再亮红点；未看过的才算 'error'。
+          if (i >= errorSeenAt) return 'error';
+          break;
+        }
         if (ev.kind === 'session_complete') break; // session 结束但没错 → 看 pending/start
         if (ev.kind === 'session_start') return 'running';
       }
     }
     if (pending) return 'running';
     return 'idle';
-  }, [sessionId, pending, events, awaitingPermission, awaitingAskUser]);
+  }, [sessionId, pending, events, awaitingPermission, awaitingAskUser, errorSeenAt]);
 }
 
 /**
@@ -62,6 +69,7 @@ export function useSessionStatusMap(
   const eventsMap = useAppStore((s) => s.eventsBySession);
   const permissionQueue = useAppStore((s) => s.permissionQueue);
   const askUserQueue = useAppStore((s) => s.askUserQueue);
+  const errorSeenMap = useAppStore((s) => s.errorSeenAtBySession);
 
   return useMemo(() => {
     const permissionSids = new Set(permissionQueue.map((p) => p.sessionId));
@@ -75,10 +83,12 @@ export function useSessionStatusMap(
       const events = eventsMap[sid];
       let status: SessionStatus = pendingMap[sid] ? 'running' : 'idle';
       if (events) {
+        const seenAt = errorSeenMap[sid] ?? 0;
         for (let i = events.length - 1; i >= 0; i--) {
           const ev = events[i];
           if (ev.kind === 'session_error') {
-            status = 'error';
+            // 已看过（含取消）的 error 不再亮红点；保持 running/idle。未看过才标 'error'。
+            if (i >= seenAt) status = 'error';
             break;
           }
           if (ev.kind === 'session_complete') {
@@ -95,5 +105,5 @@ export function useSessionStatusMap(
       out[sid] = status;
     }
     return out;
-  }, [sessionIds, pendingMap, eventsMap, permissionQueue, askUserQueue]);
+  }, [sessionIds, pendingMap, eventsMap, permissionQueue, askUserQueue, errorSeenMap]);
 }

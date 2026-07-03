@@ -464,12 +464,24 @@ function planTodoTextClass(status: SidebarTodoStatus): string {
 function WorkflowSection(): JSX.Element | null {
   const { t } = useI18n();
   const runs = useSessionWorkflowRuns();
-  const currentRun =
-    runs.find((run) => run.status === 'running' || run.status === 'paused') ?? runs[0];
-  if (!currentRun) return null;
+  // #15 fix: 之前只挑 1 条 run（currentRun ?? runs[0]）传给 WorkflowPanel——多 run 时：
+  //   1) 标题没有 run 数后缀，看不出还有别的 run；
+  //   2) WorkflowPanel compact 视图自带的 "+N more in full panel" overflow 提示永远不触发
+  //      （它内部 slice(0,3)，但这里已经先把数组砍成 1 条了）。
+  // 现在把全部 runs 传下去，让 compact 的 slice + overflow 提示按真实数量工作；仍然让
+  // "正在跑/暂停"的 run 排到最前面，保留"当前活跃 run 优先可见"的原有体验。
+  const orderedRuns = useMemo(() => {
+    const active = runs.filter((run) => run.status === 'running' || run.status === 'paused');
+    if (active.length === 0 || active.length === runs.length) return runs;
+    const activeIds = new Set(active.map((run) => run.runId));
+    return [...active, ...runs.filter((run) => !activeIds.has(run.runId))];
+  }, [runs]);
+  if (orderedRuns.length === 0) return null;
+  const title =
+    runs.length > 1 ? `${t('right.workflow')} (${runs.length})` : t('right.workflow');
   return (
-    <Section title={t('right.workflow')} popoutKind="workflow">
-      <WorkflowPanel runs={[currentRun]} variant="compact" />
+    <Section title={title} popoutKind="workflow">
+      <WorkflowPanel runs={orderedRuns} variant="compact" />
     </Section>
   );
 }
@@ -491,6 +503,14 @@ function WorkersSection(): JSX.Element | null {
 
   // active = 当前真在动的 worker（isActive=true 或最近有事件流入）。idle/done 不放摘要。
   const active = workers.filter((w) => w.isActive);
+  // #7 fix: 之前"active.length===0 → All workers idle"没看 idleWaiting(等待子结果/审批,
+  // 不是真闲) / childFanoutCount(刚 fan-out,worker-tree 可能还没体现出来) /
+  // budgetApprovalRequired(卡在预算审批) 这几个 TasksPanel 已有的信号，导致这几种"进行中但
+  // 暂无 active worker"的状态被紧凑视图误显示成一片空闲。这里镜像 TasksPanel 的判断顺序。
+  const fanoutLabel =
+    status?.childFanoutCount !== undefined && status.childFanoutCount > 0
+      ? `${status.childFanoutCount} active${status.childFanoutClass ? ` · ${status.childFanoutClass}` : ''}`
+      : null;
 
   return (
     <Section
@@ -502,6 +522,9 @@ function WorkersSection(): JSX.Element | null {
         <div className="mb-2 text-[11px]">
           <div className="text-fg-secondary font-mono">
             budget {budget.used}/{budget.cap}
+            {status?.budgetApprovalRequired && (
+              <span className="ml-2 text-warn">· approval needed</span>
+            )}
           </div>
           <div className="h-1 bg-surface-3 rounded overflow-hidden mt-0.5">
             <div
@@ -512,7 +535,17 @@ function WorkersSection(): JSX.Element | null {
         </div>
       )}
       {active.length === 0 ? (
-        <div className="text-xs text-fg-muted">All workers idle.</div>
+        status?.idleWaiting ? (
+          <div className="text-xs text-fg-muted">
+            waiting · {status.idleWaitingPendingCount ?? 0} pending
+          </div>
+        ) : fanoutLabel ? (
+          <div className="text-xs text-fg-muted">{fanoutLabel}</div>
+        ) : status?.budgetApprovalRequired ? (
+          <div className="text-xs text-warn">budget approval needed</div>
+        ) : (
+          <div className="text-xs text-fg-muted">All workers idle.</div>
+        )
       ) : (
         <ul className="text-xs space-y-1">
           {active.slice(0, 5).map((w) => (
@@ -580,7 +613,11 @@ function ChangesSection(): JSX.Element | null {
 
   const [snapshot, setSnapshot] = useState<GitChangesSnapshot | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const inFlightRef = useRef<boolean>(false);
+  // #11 fix: 之前是 boolean guard——项目 A 的请求还没回来时，切到项目 B 触发的新请求会被这个
+  // guard 直接吞掉（不是"过期后丢弃"，是"根本没发出去"），Changes 就一直停在旧快照，直到下一次
+  // tool_result/focus/30s 兜底轮询才可能补救。改成记录"当前在飞的目标 projectPath"——同一个
+  // path 才去重跳过，换了新项目总能发出请求。
+  const inFlightPathRef = useRef<string | null>(null);
 
   // F054: 改动量大时按目录树折叠。collapsed = 已折叠目录的 path 集合（默认全展开）。
   // 跨 refetch 持久（keyed by dir path），30s 刷新不会重置用户的折叠态。
@@ -604,8 +641,8 @@ function ChangesSection(): JSX.Element | null {
 
   const fetchChanges = useCallback((path: string): void => {
     if (!window.kodaxSpace) return;
-    if (inFlightRef.current) return;
-    inFlightRef.current = true;
+    if (inFlightPathRef.current === path) return;
+    inFlightPathRef.current = path;
     void window.kodaxSpace
       .invoke('project.gitChanges', { projectRoot: path })
       .then((r) => {
@@ -620,13 +657,15 @@ function ChangesSection(): JSX.Element | null {
         });
       })
       .finally(() => {
-        inFlightRef.current = false;
+        if (inFlightPathRef.current === path) inFlightPathRef.current = null;
       });
   }, []);
 
   useEffect(() => {
+    // #11 fix: 项目切换时先同步清空快照——避免在新请求回来之前，右侧栏短暂（在旧 boolean
+    // guard 场景下甚至可能长期）显示上一个项目的改动文件列表。
+    setSnapshot(null);
     if (!currentProjectPath) {
-      setSnapshot(null);
       return;
     }
     fetchChanges(currentProjectPath);

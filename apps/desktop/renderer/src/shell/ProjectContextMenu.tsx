@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { Project } from '@kodax-space/space-ipc-schema';
 import { pushToast } from '../store/toastStore.js';
+import { requestConfirm } from '../store/confirmStore.js';
 import { Portal } from '../components/Portal.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 
@@ -67,7 +68,13 @@ export function ProjectContextMenu({
   const onRemove = useCallback(async (): Promise<void> => {
     if (!window.kodaxSpace) return;
     // review MED-3：confirm 先于 onClose — 用户取消则菜单仍可见，符合直觉
-    const confirmed = window.confirm(t('menu.project.removeConfirm', { name: project.name }));
+    // #1 fix: window.confirm 在 Electron sandbox=true 下会夺走 webContents 键盘焦点且拿不回来
+    // ——改用应用内 requestConfirm。
+    const confirmed = await requestConfirm({
+      message: t('menu.project.removeConfirm', { name: project.name }),
+      danger: true,
+      confirmLabel: t('menu.project.remove'),
+    });
     if (!confirmed) return;
     onClose();
     const r = await window.kodaxSpace.invoke('project.recent.remove', { path: project.path });

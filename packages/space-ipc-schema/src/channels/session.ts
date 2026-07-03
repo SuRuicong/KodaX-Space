@@ -507,8 +507,29 @@ const historySidecarMessageSchema = z.object({
     content: z.string().max(MAX_TEXT_CHUNK),
     suggestedFix: z.string().max(MAX_TEXT_CHUNK).optional(),
     trace: z.string().max(MAX_TEXT_CHUNK).optional(),
+    /**
+     * v0.1.x 修复：SDK 不持久化真实 verdict/delivery/suggestedFix——session.history 回放时
+     * 这几个字段都是 main 端硬编码的占位值（见 ipc/session.ts），不是这条 sidecar 消息
+     * 当时真实的判定结果。renderer 据此把回放的这条渲染成中性的"历史记录"标签，而不是
+     * 断言 verdict==='revise'。true = 来自 session.history 回放；缺省/false = 实时事件。
+     */
+    historical: z.boolean().optional(),
   }),
   sentAt: z.number().int().nonnegative().optional(),
+});
+
+/**
+ * v0.1.x 新增：fork/rewind 产生的 branch_summary、以及压缩产生的 compaction lineage entry。
+ * SDK 会在 lineage 里合成一条 role==='user'(branch_summary) 或 role==='system'(compaction)
+ * 的 context message 塞进 messages[]（保证 LLM 上下文正确）——但这不是用户真的打过的字，
+ * 按 role 直接拍平会在滚动区里显示成一条假的用户气泡。session.history handler 用
+ * loadFullTranscript 的 transcriptEntries[].type 识别出这类 entry 后改发这个 kind，
+ * renderer 路由到非 user 的历史提示条（复用 sidecar 的视觉样式，见 composeMessages.ts）。
+ */
+const historyLineageNoticeSchema = z.object({
+  kind: z.literal('lineage_notice'),
+  noticeKind: z.enum(['branch_summary', 'compaction']),
+  text: z.string().max(MAX_TEXT_CHUNK),
 });
 
 const sessionHistoryItemSchema = z.discriminatedUnion('kind', [
@@ -527,6 +548,7 @@ const sessionHistoryItemSchema = z.discriminatedUnion('kind', [
   }),
   historyToolCallSchema,
   historySidecarMessageSchema,
+  historyLineageNoticeSchema,
 ]);
 
 export const sessionHistoryChannel = {
@@ -722,6 +744,10 @@ const sidecarMessageSchema = z.object({
   suggestedFix: z.string().max(MAX_TEXT_CHUNK).optional(),
   trace: z.string().max(MAX_TEXT_CHUNK).optional(),
   agentProfile: agentProfileSummarySchema.optional(),
+  /** v0.1.x: 见 historySidecarMessageSchema 同名字段注释——true 时是 session.history 回放
+   *  出来的记录（verdict 等字段是占位值），renderer 渲染中性历史标签而非真实 verdict。
+   *  实时事件永远不设这个字段。 */
+  historical: z.boolean().optional(),
 });
 
 const todoDriftWarningSchema = z.object({
@@ -910,6 +936,16 @@ export const sessionEventChannel = {
       kind: z.literal('sidecar_message'),
       sessionId: z.string().min(1),
       message: sidecarMessageSchema,
+    }),
+    // ---- v0.1.x: fork/rewind branch_summary / compaction lineage notice (history replay only) ----
+    // 见 historyLineageNoticeSchema 注释——main 端从不实时 push 这个 kind；appStore.
+    // prependSessionHistory 在回放历史时把 session.history 的 lineage_notice item 转成这个
+    // SessionEvent 形态,喂给 composeMessages 走非 user 的 system_notice 展示路径。
+    z.object({
+      kind: z.literal('lineage_notice'),
+      sessionId: z.string().min(1),
+      noticeKind: z.enum(['branch_summary', 'compaction']),
+      text: z.string().max(MAX_TEXT_CHUNK),
     }),
     z.object({
       kind: z.literal('todo_drift_warning'),
