@@ -131,8 +131,9 @@ export const messages = {
     'workflow.maxAgents': 'Max agents',
     'workflow.maxConcurrency': 'Max concurrency',
     'workflow.tokenBudget': 'Token budget',
+    'workflow.tokenBudgetHint': '0 = unlimited',
     'workflow.limitsHint':
-      'Limits cannot exceed KodaX runtime caps: 64 agents, 16 concurrent, 200k tokens.',
+      'Limits cannot exceed KodaX runtime caps: 64 agents, 16 concurrent. Token budget defaults to 0 (unlimited); an explicit cap is limited to 100M.',
     'partner.subtitle': 'doc-workspace · knowledge work',
     'partner.kb.hiddenAtWidth': 'Knowledge base hidden at this width',
     'partner.kb.hide': 'Hide knowledge base',
@@ -638,7 +639,9 @@ export const messages = {
     'workflow.maxAgents': '最大 Agent 数',
     'workflow.maxConcurrency': '最大并发数',
     'workflow.tokenBudget': 'Token 预算',
-    'workflow.limitsHint': '限制不能超过 KodaX 运行时上限：64 个 Agent、16 并发、200k tokens。',
+    'workflow.tokenBudgetHint': '0 = 不限',
+    'workflow.limitsHint':
+      '限制不能超过 KodaX 运行时上限：64 个 Agent、16 并发。Token 预算默认 0（不限）；如设显式上限，最高 100M。',
     'partner.subtitle': '文档工作区 · 知识工作',
     'partner.kb.hiddenAtWidth': '当前宽度下已隐藏知识库',
     'partner.kb.hide': '隐藏知识库',

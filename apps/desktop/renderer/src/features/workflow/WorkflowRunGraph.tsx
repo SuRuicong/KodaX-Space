@@ -1,17 +1,10 @@
 import {
-  ArrowRight,
   CheckCircle2,
   Circle,
   CircleSlash,
-  Filter,
-  GitBranch,
   Loader2,
   MinusCircle,
   PauseCircle,
-  Repeat2,
-  Route,
-  ShieldCheck,
-  Trophy,
   XCircle,
   type LucideIcon,
 } from 'lucide-react';
@@ -20,8 +13,6 @@ import {
   buildWorkflowGraphModel,
   type WorkflowGraphNode,
   type WorkflowGraphPhase,
-  type WorkflowGraphPattern,
-  type WorkflowPatternTone,
   type WorkflowGraphStatus,
 } from './buildWorkflowGraph.js';
 
@@ -65,55 +56,19 @@ const CHIP_CLASS: Record<WorkflowGraphStatus, string> = {
   skipped: 'border-border-default/50 text-fg-faint bg-surface/20',
 };
 
-const PATTERN_ICON: Record<WorkflowPatternTone, LucideIcon> = {
-  route: Route,
-  parallel: GitBranch,
-  verify: ShieldCheck,
-  filter: Filter,
-  contest: Trophy,
-  loop: Repeat2,
-};
-
-const PATTERN_CLASS: Record<WorkflowPatternTone, string> = {
-  route: 'border-info/45 bg-info/10 text-info',
-  parallel: 'border-run/45 bg-run/10 text-run',
-  verify: 'border-ok/45 bg-ok/10 text-ok',
-  filter: 'border-warn/45 bg-warn/10 text-warn',
-  contest: 'border-accent/45 bg-accent/10 text-accent-ink',
-  loop: 'border-thinking/45 bg-thinking/10 text-thinking',
-};
-
 export function WorkflowRunGraph({
   run,
-  variant,
 }: {
   readonly run: WorkflowRunT;
-  readonly variant: 'compact' | 'full';
 }): JSX.Element | null {
   const model = buildWorkflowGraphModel(run);
   if (model.phases.length === 0) return null;
-  const phaseDone = model.phases.filter((phase) => phase.status === 'completed').length;
 
+  // Only RUNTIME STATUS remains — the WORKFLOW DIAGRAM (pattern topology + phase
+  // graph) was redundant with this live per-phase/per-agent list and was removed.
   return (
-    <div className="mt-2 border-t border-border-default/40 pt-2" aria-label="Workflow flow graph">
-      <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-mono text-fg-faint">
-        <span className="uppercase tracking-wider">Workflow diagram</span>
-        <span className="tabular-nums">
-          {phaseDone}/{model.phases.length}
-        </span>
-      </div>
-      {model.patterns.length > 0 && (
-        <div className="mb-1.5 flex flex-wrap gap-1">
-          {model.patterns.map((pattern) => (
-            <WorkflowPatternChip key={pattern.id} pattern={pattern} />
-          ))}
-        </div>
-      )}
-      {model.patterns.length > 0 && (
-        <WorkflowPatternTopology patterns={model.patterns} variant={variant} />
-      )}
-      <WorkflowTopologyDiagram phases={model.phases} variant={variant} />
-      <div className="mb-1 mt-2 text-[10px] font-mono uppercase tracking-wider text-fg-faint">
+    <div className="mt-2 border-t border-border-default/40 pt-2" aria-label="Workflow runtime status">
+      <div className="mb-1 text-[10px] font-mono uppercase tracking-wider text-fg-faint">
         Runtime status
       </div>
       <div className="space-y-0.5">
@@ -122,7 +77,6 @@ export function WorkflowRunGraph({
             key={phase.id}
             phase={phase}
             isLast={index === model.phases.length - 1}
-            maxBranches={variant === 'compact' ? 5 : 9}
           />
         ))}
       </div>
@@ -130,144 +84,12 @@ export function WorkflowRunGraph({
   );
 }
 
-function WorkflowPatternTopology({
-  patterns,
-  variant,
-}: {
-  readonly patterns: readonly WorkflowGraphPattern[];
-  readonly variant: 'compact' | 'full';
-}): JSX.Element {
-  const shown = patterns.slice(0, variant === 'compact' ? 1 : 2);
-  return (
-    <div
-      className="mb-2 space-y-1"
-      aria-label="Workflow pattern topology"
-      data-testid="workflow-pattern-topology"
-    >
-      {shown.map((pattern) => (
-        <div
-          key={pattern.id}
-          className="overflow-x-auto rounded-md border border-border-default/45 bg-surface/25 px-1.5 py-1"
-        >
-          <div className="flex min-w-max items-center gap-1.5">
-            {patternFlowLabels(pattern).map((label, index, labels) => (
-              <div key={`${pattern.id}:${label}:${index}`} className="flex items-center gap-1.5">
-                <span
-                  className={`rounded border px-1.5 py-0.5 text-[10px] font-mono ${PATTERN_CLASS[pattern.tone]}`}
-                >
-                  {label}
-                </span>
-                {index < labels.length - 1 && (
-                  <ArrowRight size={12} className="flex-shrink-0 text-fg-faint" aria-hidden />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-      {patterns.length > shown.length && (
-        <div className="px-1 text-[10px] font-mono text-fg-faint">
-          +{patterns.length - shown.length} more patterns
-        </div>
-      )}
-    </div>
-  );
-}
-
-function patternFlowLabels(pattern: WorkflowGraphPattern): readonly string[] {
-  switch (pattern.id) {
-    case 'classify-and-act':
-      return ['Input', 'Classify', 'Route', 'Act'];
-    case 'fan-out-and-synthesize':
-      return ['Input', 'Fan out', 'Workers', 'Synthesize'];
-    case 'adversarial-verification':
-      return ['Draft', 'Verify', 'Attack', 'Accept / fix'];
-    case 'generate-and-filter':
-      return ['Prompt', 'Generate', 'Filter', 'Best output'];
-    case 'tournament':
-      return ['Candidates', 'Compete', 'Judge', 'Winner'];
-    case 'loop-until-done':
-      return ['Plan', 'Act', 'Check', 'Repeat'];
-    default:
-      return ['Input', pattern.label, 'Output'];
-  }
-}
-
-function WorkflowTopologyDiagram({
-  phases,
-  variant,
-}: {
-  readonly phases: readonly WorkflowGraphPhase[];
-  readonly variant: 'compact' | 'full';
-}): JSX.Element {
-  const maxBranches = variant === 'compact' ? 4 : 8;
-  return (
-    <div
-      className="overflow-x-auto pb-1"
-      aria-label="Workflow topology diagram"
-      data-testid="workflow-topology-diagram"
-    >
-      <div className="flex min-w-max items-stretch gap-2">
-        {phases.map((phase, index) => (
-          <div key={phase.id} className="flex items-center gap-2">
-            <div className="min-w-[150px] max-w-[230px] rounded-md border border-border-default/55 bg-surface/35 p-2">
-              <div className="flex min-w-0 items-center gap-1.5">
-                <span className="flex-shrink-0 rounded border border-border-default/50 px-1 py-0.5 text-[9px] font-mono text-fg-faint">
-                  {phase.index}/{phase.total}
-                </span>
-                <span
-                  className="truncate text-[11px] font-medium text-fg-primary"
-                  title={phase.title}
-                >
-                  {phase.title}
-                </span>
-              </div>
-              {phase.nodes.length > 0 ? (
-                <div className="mt-1.5 flex flex-col gap-1">
-                  {phase.nodes.slice(0, maxBranches).map((node) => (
-                    <WorkflowBranchChip key={node.id} node={node} />
-                  ))}
-                  {phase.nodes.length > maxBranches && (
-                    <span className="rounded border border-border-default/50 px-1.5 py-0.5 text-[10px] font-mono text-fg-faint">
-                      +{phase.nodes.length - maxBranches} more
-                    </span>
-                  )}
-                </div>
-              ) : (
-                <div className="mt-1.5 text-[10px] text-fg-faint">{phase.status}</div>
-              )}
-            </div>
-            {index < phases.length - 1 && (
-              <ArrowRight size={14} className="flex-shrink-0 text-fg-faint" aria-hidden />
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function WorkflowPatternChip({ pattern }: { readonly pattern: WorkflowGraphPattern }): JSX.Element {
-  const Icon = PATTERN_ICON[pattern.tone];
-  return (
-    <span
-      className={`inline-flex min-w-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-mono ${PATTERN_CLASS[pattern.tone]}`}
-      title={`${pattern.id}: ${pattern.description}`}
-    >
-      <Icon size={9} strokeWidth={2.4} className="flex-shrink-0" aria-hidden />
-      <span className="truncate">{pattern.label}</span>
-    </span>
-  );
-}
-
 function WorkflowPhaseRow({
   phase,
   isLast,
-  maxBranches,
 }: {
   readonly phase: WorkflowGraphPhase;
   readonly isLast: boolean;
-  readonly maxBranches: number;
 }): JSX.Element {
   const Icon = STATUS_ICON[phase.status];
   const phaseClass = phase.status === 'running' ? 'text-fg-primary' : 'text-fg-secondary';
@@ -311,15 +133,13 @@ function WorkflowPhaseRow({
           </div>
         )}
         {phase.nodes.length > 0 && (
+          // Show every sub-agent name — the right sidebar live panel has vertical
+          // room (it scrolls). The old `+N` fold only existed for the REPL's cramped
+          // TUI live area and hides useful info here.
           <div className="mt-1 flex flex-wrap gap-1">
-            {phase.nodes.slice(0, maxBranches).map((node) => (
+            {phase.nodes.map((node) => (
               <WorkflowBranchChip key={node.id} node={node} />
             ))}
-            {phase.nodes.length > maxBranches && (
-              <span className="rounded border border-border-default/50 px-1.5 py-0.5 text-[10px] font-mono text-fg-faint">
-                +{phase.nodes.length - maxBranches}
-              </span>
-            )}
           </div>
         )}
       </div>

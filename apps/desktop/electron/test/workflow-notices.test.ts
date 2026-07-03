@@ -56,7 +56,7 @@ test('workflow event notices include completed child agent summaries', () => {
   );
 
   assert.equal(notices.length, 1);
-  assert.match(notices[0]?.key ?? '', /^item:wf-notice:a1:/);
+  assert.match(notices[0]?.key ?? '', /^item:wf-notice:a1$/);
   assert.equal(
     notices[0]?.text,
     '[workflow] agent summary: Security review\nChecked IPC handlers.\nNo high risk issue found.',
@@ -75,11 +75,31 @@ test('workflow finished notice preserves readable markdown instead of one-line c
   );
 
   assert.equal(notices.length, 1);
-  assert.match(notices[0]?.key ?? '', /^finished:wf-notice:completed:/);
+  assert.match(notices[0]?.key ?? '', /^finished:wf-notice:completed$/);
   assert.equal(
     notices[0]?.text,
-    '[workflow] completed: review\n# Final report\n\n- OK\n- Follow up later',
+    '[workflow] completed: review · wf-notice\n# Final report\n\n- OK\n- Follow up later',
   );
+});
+
+test('workflow finished notice names the run id so same-named runs are distinguishable', () => {
+  // User report: a failed run fixed + rerun leaves two same-named entries; a
+  // "[workflow] failed: <name>" notice was ambiguous about which run failed. The
+  // notice now carries the run id.
+  const failed = formatWorkflowEventNotices(
+    event({
+      type: 'workflow_finished',
+      snapshot: run({ runId: 'run-old', workflowName: 'deep-review', status: 'failed', error: 'boom' }),
+    }),
+  );
+  const rerun = formatWorkflowEventNotices(
+    event({
+      type: 'workflow_finished',
+      snapshot: run({ runId: 'run-new', workflowName: 'deep-review', status: 'completed', resultSummary: 'ok' }),
+    }),
+  );
+  assert.equal(failed[0]?.text, '[workflow] failed: deep-review · run-old\nboom');
+  assert.equal(rerun[0]?.text, '[workflow] completed: deep-review · run-new\nok');
 });
 
 test('workflow finished notice keeps full final report text', () => {
@@ -123,30 +143,30 @@ test('restored workflow runs hydrate child summaries and final report notices', 
   );
 
   assert.equal(notices.length, 2);
-  assert.match(notices[0]?.key ?? '', /^item:wf-notice:a1:/);
+  assert.match(notices[0]?.key ?? '', /^item:wf-notice:a1$/);
   assert.equal(
     notices[0]?.text,
     '[workflow] agent summary: Impact reviewer\nRecovered child digest.',
   );
   assert.equal(notices[0]?.sentAt, Date.parse('2026-06-21T00:01:00.000Z'));
-  assert.match(notices[1]?.key ?? '', /^finished:wf-notice:completed:/);
+  assert.match(notices[1]?.key ?? '', /^finished:wf-notice:completed$/);
   assert.equal(
     notices[1]?.text,
-    '[workflow] completed: review\n# Restored final report\n\nWorkflow completed.',
+    '[workflow] completed: review · wf-notice\n# Restored final report\n\nWorkflow completed.',
   );
   assert.equal(notices[1]?.sentAt, Date.parse('2026-06-21T00:02:00.000Z'));
 });
 
-test('workflow event notices surface meaningful progress messages', () => {
+test('workflow live progress messages are NOT pushed to the transcript (they belong to the right-sidebar ticker)', () => {
   const notices = formatWorkflowEventNotices(
     event({
       message: 'agent spawned: Collect changes',
     }),
   );
 
-  assert.equal(notices.length, 1);
-  assert.match(notices[0]?.key ?? '', /^progress:wf-notice:/);
-  assert.equal(notices[0]?.text, '[workflow] agent spawned: Collect changes');
+  // Live progress (agent spawned / phase started / …) no longer floods the
+  // conversation; only per-agent summaries + the final result reach history.
+  assert.equal(notices.length, 0);
 });
 
 test('workflow event notices ignore generic live refresh messages', () => {
@@ -159,16 +179,19 @@ test('workflow event notices ignore generic live refresh messages', () => {
   assert.equal(notices.length, 0);
 });
 
-test('workflow activity notices remain compact progress lines', () => {
-  assert.equal(
-    formatWorkflowActivityNotice({
-      runId: 'wf-notice',
-      childAgentName: 'Reviewer',
-      kind: 'tool_use',
-      toolName: 'grep',
-    }),
-    '[workflow] Reviewer: using grep',
-  );
+test('workflow live tool activity is NOT pushed to the transcript (right-sidebar live panel only)', () => {
+  for (const kind of ['tool_use', 'tool_result', 'end'] as const) {
+    assert.equal(
+      formatWorkflowActivityNotice({
+        runId: 'wf-notice',
+        childAgentName: 'Reviewer',
+        kind,
+        toolName: 'grep',
+      }),
+      null,
+      `${kind} activity should not become a transcript notice`,
+    );
+  }
 });
 
 test('workflow activity digest notices include agent summary body', () => {

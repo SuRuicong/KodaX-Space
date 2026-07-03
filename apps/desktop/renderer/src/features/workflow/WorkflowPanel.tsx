@@ -323,10 +323,6 @@ function WorkflowRunCard({
   const isTerminal = TERMINAL.has(run.status);
   const [detailsOpen, setDetailsOpen] = useState(defaultDetailsOpen ?? variant === 'full');
   const showTree = detailsOpen;
-  const tokenPct =
-    run.tokens?.total && run.tokens.total > 0
-      ? Math.min(100, (run.tokens.spent / run.tokens.total) * 100)
-      : null;
   const phaseCounter = workflowPhaseCounter(run);
 
   const [renaming, setRenaming] = useState(false);
@@ -407,31 +403,22 @@ function WorkflowRunCard({
           {workflowAgentProgressLabel(run)}
         </span>
         {run.tokens && (
-          <span className="inline-flex items-center gap-1" title="token：已花/预算">
+          <span className="inline-flex items-center gap-1" title="token：本次运行累计消耗">
             <Coins size={10} aria-hidden />
             {fmtTokens(run.tokens.spent)}
-            {run.tokens.total ? `/${fmtTokens(run.tokens.total)}` : ''}
           </span>
         )}
         {run.counts.failed > 0 && <span className="text-danger">✗ {run.counts.failed}</span>}
       </div>
-      {tokenPct !== null && (
-        <div className="mt-1 h-0.5 bg-surface-3 rounded overflow-hidden">
-          <div
-            className={`h-full ${tokenPct > 90 ? 'bg-danger' : 'bg-ok'}`}
-            style={{ width: `${tokenPct}%` }}
-          />
-        </div>
-      )}
 
-      {/* 最新活动行 */}
+      <WorkflowRunGraph run={run} />
+
+      {/* 最新活动行（live ticker）——单行原地刷新，放在 RUNTIME STATUS 下方 */}
       {run.latestMessage && !isTerminal && (
-        <div className="mt-1 text-[11px] text-fg-secondary truncate" title={run.latestMessage}>
+        <div className="mt-1.5 text-[11px] text-fg-secondary truncate" title={run.latestMessage}>
           {run.latestMessage}
         </div>
       )}
-
-      <WorkflowRunGraph run={run} variant={variant} />
 
       {(tree.length > 0 || !isTerminal) && (
         <button

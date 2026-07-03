@@ -444,10 +444,7 @@ test('workflow push events update the sidebar and transcript through completion'
     // First render after the workflow event round-trips main -> renderer -> store;
     // on the loaded Windows CI runner this can take longer than the default 5s.
     await expect(sidebar).toContainText('E2E Workflow Review', { timeout: 15_000 });
-    await expect(sidebar.getByLabel('Workflow flow graph')).toContainText('fan-out', {
-      timeout: 15_000,
-    });
-    await expect(sidebar.getByLabel('Workflow flow graph')).toContainText('Collect changes', {
+    await expect(sidebar.getByLabel('Workflow runtime status')).toContainText('Collect changes', {
       timeout: 15_000,
     });
     await expect(space.page.getByTestId('workflow-live-strip')).toContainText(
@@ -548,7 +545,7 @@ test('workflow push events update the sidebar and transcript through completion'
     await expect(space.page.getByTestId('workflow-live-strip')).toHaveCount(0);
     await expect(sidebar).toContainText('E2E Workflow Review');
     await expect(
-      sidebar.getByLabel('Workflow flow graph').getByLabel('phase status: running'),
+      sidebar.getByLabel('Workflow runtime status').getByLabel('phase status: running'),
     ).toHaveCount(0);
     const finalWorkflowNotice = stream.locator(
       '[data-testid="system-notice"][data-notice-variant="workflow"]',
@@ -605,12 +602,12 @@ test('workflow manager restores completed runs persisted on disk', async () => {
       .filter({ hasText: 'Persisted Workflow Review' })
       .click();
     await expect(panel).toContainText('completed');
-    await expect(panel.getByLabel('Workflow flow graph')).toContainText('Collect changes');
-    await expect(panel.getByLabel('Workflow flow graph')).toContainText('Synthesize report');
-    await expect(panel.getByTestId('workflow-pattern-topology')).toContainText('Fan out');
-    await expect(panel.getByTestId('workflow-pattern-topology')).toContainText('Workers');
-    await expect(panel.getByTestId('workflow-topology-diagram')).toContainText('Collect changes');
-    await expect(panel.getByTestId('workflow-topology-diagram')).toContainText('Change collector');
+    await expect(panel.getByLabel('Workflow runtime status')).toContainText('Collect changes');
+    await expect(panel.getByLabel('Workflow runtime status')).toContainText('Synthesize report');
+    // The WORKFLOW DIAGRAM (pattern-topology chips + full topology graph) was removed as
+    // redundant with the runtime-status list. Top-level phase nodes are asserted above;
+    // child-agent names ("Change collector") are asserted below via the expandable
+    // workflow-management-detail tree.
     await panel.getByTestId('workflow-details-toggle').click();
     await expect(panel.getByTestId('workflow-management-detail')).toContainText('Change collector');
     await panel.getByTestId('workflow-item-toggle').first().click();
@@ -641,9 +638,9 @@ test('workflow manager restores completed runs persisted on disk', async () => {
       .filter({ hasText: 'Events Only Workflow Review' })
       .click();
     await expect(panel.getByTestId('workflow-management-detail')).toContainText('completed');
-    await expect(panel.getByLabel('Workflow flow graph')).toContainText('Collect changes');
-    await expect(panel.getByLabel('Workflow flow graph')).toContainText('Synthesize report');
-    await expect(panel.getByTestId('workflow-topology-diagram')).toContainText('Events collector');
+    await expect(panel.getByLabel('Workflow runtime status')).toContainText('Collect changes');
+    await expect(panel.getByLabel('Workflow runtime status')).toContainText('Synthesize report');
+    // 'Events collector' (child agent) is asserted below via workflow-management-detail.
     await panel.getByTestId('workflow-details-toggle').click();
     await expect(panel.getByTestId('workflow-management-detail')).toContainText('Events collector');
     await expect(panel.getByTestId('workflow-management-detail')).not.toContainText(

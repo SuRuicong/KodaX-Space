@@ -13,7 +13,6 @@ export interface WorkflowNoticeCandidate {
 
 const AGENT_SUMMARY_MAX = 900;
 const ACTIVITY_MAX = 180;
-const PROGRESS_MAX = 260;
 
 export function compactWorkflowText(value: string | undefined, max = ACTIVITY_MAX): string {
   if (!value) return '';
@@ -36,12 +35,14 @@ function workflowBlockText(value: string | undefined, max?: number): string {
 export function formatWorkflowActivityNotice(payload: WorkflowActivityPayload): string | null {
   const child = payload.childAgentName ?? payload.childAgentId ?? 'child agent';
   switch (payload.kind) {
+    // Live per-tool activity (using X / X finished / completed) is shown in the
+    // right-sidebar Workflow live panel; it must NOT flood the main transcript
+    // during a run. Only the terminal agent `digest` (a meaningful summary) stays
+    // in history — matching KodaX REPL's "live in the panel, digest in history".
     case 'tool_use':
-      return `[workflow] ${child}: using ${payload.toolName ?? 'tool'}`;
     case 'tool_result':
-      return `[workflow] ${child}: ${payload.toolName ?? 'tool'} finished`;
     case 'end':
-      return `[workflow] ${child}: completed`;
+      return null;
     case 'digest': {
       const body = workflowBlockText(payload.summary, AGENT_SUMMARY_MAX);
       const verification = formatWorkflowVerification(payload.verification);
@@ -76,8 +77,9 @@ export function formatWorkflowEventNotices(
 ): WorkflowNoticeCandidate[] {
   const notices: WorkflowNoticeCandidate[] = [];
 
-  const progressNotice = formatWorkflowProgressNotice(payload);
-  if (progressNotice) notices.push(progressNotice);
+  // Live run progress (agent spawned / phase started / artifact written / …) is
+  // NOT pushed to the transcript — it belongs to the right-sidebar Workflow live
+  // ticker. Only per-agent summaries + the final result land in history below.
 
   if (payload.type === 'workflow_updated' || payload.type === 'workflow_finished') {
     const fallbackSentAt = timestampFromIso(payload.snapshot.updatedAt);
@@ -110,34 +112,6 @@ export function formatWorkflowRunRestoreNotices(run: WorkflowRunT): WorkflowNoti
   });
 }
 
-function formatWorkflowProgressNotice(
-  payload: WorkflowEventPayload,
-): WorkflowNoticeCandidate | null {
-  if (payload.type !== 'workflow_updated') return null;
-  const message = compactWorkflowText(payload.message, PROGRESS_MAX);
-  if (!message || !isTranscriptProgressMessage(message)) return null;
-  return {
-    key: `progress:${payload.snapshot.runId}:${fingerprintText(message)}`,
-    text: `[workflow] ${message}`,
-    sentAt: timestampFromIso(payload.snapshot.updatedAt),
-  };
-}
-
-function isTranscriptProgressMessage(message: string): boolean {
-  const lower = message.toLowerCase();
-  return (
-    lower.startsWith('agent spawned:') ||
-    lower.startsWith('agent completed:') ||
-    lower.startsWith('agent failed:') ||
-    lower.startsWith('agent summary updated:') ||
-    lower.startsWith('artifact written:') ||
-    lower.startsWith('phase started:') ||
-    lower.startsWith('phase completed:') ||
-    lower.startsWith('workflow paused') ||
-    lower.startsWith('workflow resumed')
-  );
-}
-
 function formatWorkflowFinishedNotice(
   payload: WorkflowEventPayload,
 ): WorkflowNoticeCandidate | null {
@@ -146,9 +120,17 @@ function formatWorkflowFinishedNotice(
   const detail = workflowBlockText(
     payload.snapshot.resultSummary ?? payload.snapshot.error ?? payload.message,
   );
-  const text = `[workflow] ${status}: ${name}${detail ? `\n${detail}` : ''}`;
+  // Include the run id so a failed/completed notice is unambiguous when several runs
+  // share the same workflow name. Users reported not being able to tell whether the
+  // *currently running* workflow failed or a *previous* same-named run did (e.g. a
+  // failed run fixed + rerun): the transcript notice now names the exact run.
+  const runTag = payload.snapshot.runId;
+  const text = `[workflow] ${status}: ${name} · ${runTag}${detail ? `\n${detail}` : ''}`;
   return {
-    key: `finished:${payload.snapshot.runId}:${status}:${fingerprintText(detail)}`,
+    // Per-run+status key (no body fingerprint): a run finishes once, and if the terminal
+    // notice is re-emitted (event replay / restore) it replaces in place instead of
+    // duplicating. Distinct runIds keep distinct notices (same-name reruns stay separate).
+    key: `finished:${payload.snapshot.runId}:${status}`,
     text,
     sentAt: timestampFromIso(payload.snapshot.updatedAt),
   };
@@ -171,9 +153,13 @@ function formatItemSummaryNotice(
 
   const title = item.title || item.agentId || item.childAgentId || item.id;
   const label = error || item.status === 'failed' ? 'agent failed' : 'agent summary';
-  const statusPart = `${item.status}:${item.summaryStatus ?? 'none'}`;
+  // Stable per-agent key: exactly ONE transcript notice per (run, item), replaced in
+  // place as that agent's summary evolves (excerpt → result, status transitions). When
+  // status/summaryStatus/body were part of the key, every evolution produced a NEW notice
+  // — so the same agent's summary appeared multiple times (user report). appendWorkflowNotice
+  // updates the existing keyed notice in place with the latest body instead of appending.
   return {
-    key: `item:${runId}:${item.id}:${statusPart}:${fingerprintText(body)}`,
+    key: `item:${runId}:${item.id}`,
     text: `[workflow] ${label}: ${title}\n${body}`,
     sentAt: timestampFromIso(item.endedAt ?? item.startedAt) ?? fallbackSentAt,
   };
@@ -183,13 +169,4 @@ function timestampFromIso(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function fingerprintText(value: string): string {
-  let hash = 2166136261;
-  for (let i = 0; i < value.length; i++) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
 }

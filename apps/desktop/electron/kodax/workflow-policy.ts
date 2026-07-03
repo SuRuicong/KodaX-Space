@@ -10,20 +10,32 @@ import { getSpaceDataDir } from './data-paths.js';
 export interface WorkflowPolicy {
   readonly maxAgents: number;
   readonly maxConcurrency: number;
+  /** Per-run token cap. **0 = unlimited (no cap)** — the default. Matches KodaX,
+   * which imposes no token budget on a workflow; only an explicit user value caps. */
   readonly tokenBudget: number;
 }
 
-const HARD = { maxAgents: 64, maxConcurrency: 16, tokenBudget: 200_000 } as const;
+// tokenBudget HARD only bounds an EXPLICIT user-set cap; 0 (unlimited) is the default.
+const HARD = { maxAgents: 64, maxConcurrency: 16, tokenBudget: 100_000_000 } as const;
 
 export const DEFAULT_WORKFLOW_POLICY: WorkflowPolicy = {
   maxAgents: 16,
   maxConcurrency: 8,
-  tokenBudget: 100_000,
+  // No token cap by default — a real workflow (e.g. a deep parallel review) easily
+  // exceeds a low fixed budget, and the SDK/KodaX itself imposes none. Users can opt
+  // into a cap via the Workflow policy settings; 0 = unlimited.
+  tokenBudget: 0,
 };
 
 function clampInt(v: unknown, min: number, max: number, fallback: number): number {
   if (typeof v !== 'number' || !Number.isFinite(v)) return fallback;
   return Math.min(max, Math.max(min, Math.round(v)));
+}
+
+/** 0 / negative / non-number → 0 (unlimited); otherwise a sane explicit cap. */
+function normalizeTokenBudget(v: unknown): number {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) return 0;
+  return Math.min(HARD.tokenBudget, Math.max(10_000, Math.round(v)));
 }
 
 /** Normalize arbitrary persisted/user input into the SDK WorkflowHostPolicy subset. */
@@ -38,12 +50,7 @@ export function normalizeWorkflowPolicy(
       HARD.maxConcurrency,
       DEFAULT_WORKFLOW_POLICY.maxConcurrency,
     ),
-    tokenBudget: clampInt(
-      input?.tokenBudget,
-      1000,
-      HARD.tokenBudget,
-      DEFAULT_WORKFLOW_POLICY.tokenBudget,
-    ),
+    tokenBudget: normalizeTokenBudget(input?.tokenBudget),
   };
 }
 

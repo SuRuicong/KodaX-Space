@@ -19,7 +19,7 @@ function freshFile(): { dir: string; file: string } {
 test('default policy: conservative caps', () => {
   assert.ok(DEFAULT_WORKFLOW_POLICY.maxAgents <= 64);
   assert.ok(DEFAULT_WORKFLOW_POLICY.maxConcurrency <= 16);
-  assert.ok(DEFAULT_WORKFLOW_POLICY.tokenBudget <= 200_000);
+  assert.equal(DEFAULT_WORKFLOW_POLICY.tokenBudget, 0); // 0 = 不限（默认不施加 token cap，对齐 KodaX）
 });
 
 test('normalize clamps caps to hard ceiling and ignores removed autoStart', () => {
@@ -32,7 +32,9 @@ test('normalize clamps caps to hard ceiling and ignores removed autoStart', () =
   assert.equal('autoStart' in p, false);
   assert.equal(p.maxAgents, 64);
   assert.equal(p.maxConcurrency, 16);
-  assert.equal(p.tokenBudget, 200_000);
+  // An explicit user cap is preserved (only clamped at the very high hard ceiling);
+  // the default remains 0 = unlimited.
+  assert.equal(p.tokenBudget, 9_999_999);
 });
 
 test('normalize floors caps at >=1 and ignores non-numeric', () => {

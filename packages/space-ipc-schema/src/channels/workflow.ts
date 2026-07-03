@@ -419,7 +419,11 @@ export const workflowSavedDeleteChannel = {
 const workflowPolicySchema = z.object({
   maxAgents: z.number().int().positive(),
   maxConcurrency: z.number().int().positive(),
-  tokenBudget: z.number().int().positive(),
+  // 0 = unlimited (the default; see DEFAULT_WORKFLOW_POLICY). Must be nonnegative, NOT
+  // positive — the store returns 0 by default, and a `.positive()` output schema made
+  // workflow.policy.get/set fail output validation (OUTPUT_INVALID), silently breaking
+  // the advanced-limits panel for every user who had not set an explicit cap.
+  tokenBudget: z.number().int().nonnegative(),
 });
 export type WorkflowPolicyT = z.infer<typeof workflowPolicySchema>;
 
@@ -448,7 +452,10 @@ export const workflowPolicySetChannel = {
     // 上界不强约束（main 侧 normalize 钳到硬上限）；floor 与 normalizeWorkflowPolicy 对齐。
     maxAgents: z.number().int().min(1).optional(),
     maxConcurrency: z.number().int().min(1).optional(),
-    tokenBudget: z.number().int().min(1000).optional(),
+    // Allow 0 so the user can reset the cap back to "unlimited"; normalizeTokenBudget
+    // maps 0/negatives → 0 (unlimited) and floors any positive to a sane minimum.
+    // (Previously `.min(1000)` made "unlimited" unreachable once any value was set.)
+    tokenBudget: z.number().int().min(0).optional(),
   }),
   output: workflowPolicySchema,
 } as const;

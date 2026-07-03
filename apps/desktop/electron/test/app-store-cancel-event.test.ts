@@ -86,6 +86,17 @@ test('appendEvent keeps pendingSend across a pre-session_start non-lifecycle eve
   assert.equal(snap2.streaming, true, 'still streaming after session_start (no gap)');
 });
 
+test('appendEvent still clears pendingSend on a terminal event even if only non-lifecycle events preceded it (no stuck spinner)', () => {
+  // Guards the flip-side of the fix above: if a run fails/ends right after a non-lifecycle event
+  // (no session_start ever arrived), the terminal event must still clear pendingSend so the spinner
+  // doesn't get stuck on "Sending…".
+  const store = useAppStore.getState();
+  store.appendEvent({ kind: 'repointel_trace', sessionId: SID, event: { kind: 'started' } });
+  assert.equal(useAppStore.getState().pendingSendBySession[SID], true);
+  store.appendEvent({ kind: 'session_error', sessionId: SID, error: 'boom' });
+  assert.equal(useAppStore.getState().pendingSendBySession[SID], undefined, 'terminal clears pendingSend');
+});
+
 test('appendEvent accepts a later cancelled event after a new session_start', () => {
   const store = useAppStore.getState();
   store.appendEvent({ kind: 'session_error', sessionId: SID, error: 'cancelled' });
@@ -346,4 +357,33 @@ test('appendWorkflowNotice keeps restored workflow notices before session list c
   assert.equal(notices.length, 1);
   assert.equal(notices[0]?.content, '[workflow] completed: review');
   assert.equal(notices[0]?.sentAt, Date.parse('2026-06-21T00:01:00.000Z'));
+});
+
+test('appendWorkflowNotice keeps one notice per key and replaces its content in place', () => {
+  // Regression: an agent's summary evolves (excerpt → result), and workflow events replay
+  // on restore/hot-reload. With a per-(status,body) key each evolution became a NEW notice,
+  // so the same agent's summary showed up 2×+ (user report). Dedup now lives in the store
+  // keyed on a stable per-agent key, and re-emission REPLACES the content in place.
+  useAppStore.setState({ sessions: [], currentSessionId: SID, workflowNoticesBySession: {} });
+  const store = useAppStore.getState();
+  const KEY = 'item:run1:a1'; // stable per (run, item), independent of status/body
+
+  store.appendWorkflowNotice(SID, '[workflow] agent summary excerpt: R\npartial', 1000, KEY);
+  // Same content re-emitted → no-op.
+  store.appendWorkflowNotice(SID, '[workflow] agent summary excerpt: R\npartial', 1000, KEY);
+  // Evolved content, same key → replaced in place (still one notice, latest content, same id).
+  store.appendWorkflowNotice(SID, '[workflow] agent summary: R\nfinal body', 9999, KEY);
+  // Different agent → distinct notice:
+  store.appendWorkflowNotice(SID, '[workflow] agent summary: R2', 1001, 'item:run1:a2');
+  // Keyless callers keep append-always semantics:
+  store.appendWorkflowNotice(SID, '[workflow] agent spawned: reviewer');
+
+  const notices = useAppStore.getState().workflowNoticesBySession[SID] ?? [];
+  assert.equal(notices.length, 3);
+  const keyed = notices.filter((n) => n.key === KEY);
+  assert.equal(keyed.length, 1);
+  assert.equal(keyed[0]?.content, '[workflow] agent summary: R\nfinal body');
+  // Position/timestamp preserved from first insert (replace is in place, not re-appended).
+  assert.equal(keyed[0]?.sentAt, 1000);
+  assert.equal(notices[0]?.key, KEY);
 });

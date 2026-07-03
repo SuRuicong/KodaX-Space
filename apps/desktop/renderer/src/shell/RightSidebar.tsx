@@ -464,24 +464,23 @@ function planTodoTextClass(status: SidebarTodoStatus): string {
 function WorkflowSection(): JSX.Element | null {
   const { t } = useI18n();
   const runs = useSessionWorkflowRuns();
-  // #15 fix: 之前只挑 1 条 run（currentRun ?? runs[0]）传给 WorkflowPanel——多 run 时：
-  //   1) 标题没有 run 数后缀，看不出还有别的 run；
-  //   2) WorkflowPanel compact 视图自带的 "+N more in full panel" overflow 提示永远不触发
-  //      （它内部 slice(0,3)，但这里已经先把数组砍成 1 条了）。
-  // 现在把全部 runs 传下去，让 compact 的 slice + overflow 提示按真实数量工作；仍然让
-  // "正在跑/暂停"的 run 排到最前面，保留"当前活跃 run 优先可见"的原有体验。
-  const orderedRuns = useMemo(() => {
+  // 用户反馈：workflow 失败后修复重跑，右栏还挂着那条失败的旧 run，和正在跑的同名新 run 混在
+  // 一起分不清哪个是当前的。右栏只关心"正在进行"：只要有 active（running/paused）run，就**只**
+  // 显示 active，把终态（completed/failed/cancelled）旧 run 收起——历史仍可在 workflow popout
+  // （WorkflowPanelConnected 走全量 useSessionWorkflowRuns）里回看流程图/结果。
+  //
+  // 完全没有 active 时保留最近一次终态 run 一条——避免 workflow 一结束右栏整段消失、用户来不及
+  // 回看刚跑完的结果（#15 保留终态的初衷）。runs 已按 startedAt 倒序，[0] 即最近一次。
+  const displayRuns = useMemo(() => {
     const active = runs.filter((run) => run.status === 'running' || run.status === 'paused');
-    if (active.length === 0 || active.length === runs.length) return runs;
-    const activeIds = new Set(active.map((run) => run.runId));
-    return [...active, ...runs.filter((run) => !activeIds.has(run.runId))];
+    return active.length > 0 ? active : runs.slice(0, 1);
   }, [runs]);
-  if (orderedRuns.length === 0) return null;
+  if (displayRuns.length === 0) return null;
   const title =
-    runs.length > 1 ? `${t('right.workflow')} (${runs.length})` : t('right.workflow');
+    displayRuns.length > 1 ? `${t('right.workflow')} (${displayRuns.length})` : t('right.workflow');
   return (
     <Section title={title} popoutKind="workflow">
-      <WorkflowPanel runs={orderedRuns} variant="compact" />
+      <WorkflowPanel runs={displayRuns} variant="compact" />
     </Section>
   );
 }

@@ -49,8 +49,10 @@ export function WorkflowPolicySection(): JSX.Element {
           <CapInput
             label={t('workflow.tokenBudget')}
             value={policy.tokenBudget}
-            max={200000}
+            min={0}
+            max={100_000_000}
             step={10000}
+            hint={t('workflow.tokenBudgetHint')}
             onCommit={(v) => void patch({ tokenBudget: v })}
           />
           <div className="text-[10px] text-fg-faint">{t('workflow.limitsHint')}</div>
@@ -63,14 +65,18 @@ export function WorkflowPolicySection(): JSX.Element {
 function CapInput({
   label,
   value,
+  min = 1,
   max,
   step,
+  hint,
   onCommit,
 }: {
   label: string;
   value: number;
+  min?: number;
   max: number;
   step?: number;
+  hint?: string;
   onCommit: (v: number) => void;
 }): JSX.Element {
   const [draft, setDraft] = useState(String(value));
@@ -85,7 +91,7 @@ function CapInput({
       <span className="w-32 text-fg-secondary">{label}</span>
       <input
         type="number"
-        min={1}
+        min={min}
         max={max}
         step={step ?? 1}
         value={draft}
@@ -97,7 +103,7 @@ function CapInput({
         }}
         className="h-8 w-32 rounded-lg border border-border-default bg-surface px-2 font-mono text-fg-primary focus:border-border-strong focus:outline-none"
       />
-      <span className="text-[10px] text-fg-faint">&lt;= {max}</span>
+      <span className="text-[10px] text-fg-faint">{hint ?? `<= ${max}`}</span>
     </div>
   );
 }

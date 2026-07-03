@@ -29,19 +29,12 @@ import {
 } from './features/workflow/workflowNotices.js';
 
 // Shell owns the visible layout; App keeps process-wide bootstrapping and global listeners.
-const WORKFLOW_NOTICE_DEDUPE_LIMIT = 2000;
-const seenWorkflowNoticeKeys = new Set<string>();
 const HIDDEN_SESSION_EVENT_FLUSH_MS = 100;
 
-function rememberWorkflowNoticeKey(key: string): boolean {
-  if (seenWorkflowNoticeKeys.has(key)) return false;
-  seenWorkflowNoticeKeys.add(key);
-  if (seenWorkflowNoticeKeys.size > WORKFLOW_NOTICE_DEDUPE_LIMIT) {
-    const oldest = seenWorkflowNoticeKeys.values().next().value;
-    if (oldest !== undefined) seenWorkflowNoticeKeys.delete(oldest);
-  }
-  return true;
-}
+// Workflow-notice dedup lives in the store (appendWorkflowNotice keyed on notice.key),
+// NOT in a module-level Set here: such a Set resets on hot-reload / remount while the
+// store keeps the notices, desyncing the two and re-appending every summary as a
+// duplicate (user report). Passing notice.key lets the store drop repeats itself.
 
 type SessionEventAppender = (event: SessionEvent) => void;
 type StreamDeltaEvent = Extract<SessionEvent, { kind: 'text_delta' | 'thinking_delta' }>;
@@ -322,9 +315,7 @@ export default function App(): JSX.Element {
           for (const run of r.data.runs) {
             if (run.sessionId === undefined || run.surface === 'partner') continue;
             for (const notice of formatWorkflowRunRestoreNotices(run)) {
-              if (rememberWorkflowNoticeKey(notice.key)) {
-                appendWorkflowNotice(run.sessionId, notice.text, notice.sentAt);
-              }
+              appendWorkflowNotice(run.sessionId, notice.text, notice.sentAt, notice.key);
             }
           }
         }
@@ -337,9 +328,7 @@ export default function App(): JSX.Element {
         upsertWorkflowRun(payload);
         if (payload.sessionId !== undefined && payload.surface !== 'partner') {
           for (const notice of formatWorkflowEventNotices(payload)) {
-            if (rememberWorkflowNoticeKey(notice.key)) {
-              appendWorkflowNotice(payload.sessionId, notice.text, notice.sentAt);
-            }
+            appendWorkflowNotice(payload.sessionId, notice.text, notice.sentAt, notice.key);
           }
         }
         if (

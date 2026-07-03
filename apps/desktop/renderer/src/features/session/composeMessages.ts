@@ -179,13 +179,21 @@ export function composeMessages({
 function findSegmentEnd(events: readonly SessionEvent[], cursor: number): number {
   for (let i = cursor; i < events.length; i++) {
     const e = events[i];
-    // Interrupt queued prompts can begin a new logical turn before the
-    // previous turn emits a terminal event. A later session_start or the
-    // SDK's mid-turn prompt callback is a segment boundary; the boundary
-    // event at cursor still belongs to the next segment.
-    if (i > cursor && e.kind === 'session_start') {
-      return i;
-    }
+    // A user turn's segment ends at the next *user-delivery* boundary — an
+    // explicit mid-turn / queued prompt marker — or a terminal event. The
+    // boundary event at cursor still belongs to the next segment.
+    //
+    // `session_start` is deliberately NOT a boundary (#5 fix). The SDK emits
+    // exactly one session_start per run (CAP-003), and Space's after-turn drain
+    // emits that run's session_start immediately AFTER `queued_user_prompt_started`
+    // for the SAME delivery (startQueuedPromptIfIdle → startRun). When session_start
+    // was also treated as a boundary, that second boundary stole a *later* prompt's
+    // segment slot: e.g. after-turn prompt B starts a new run, then an interrupt C
+    // arrives mid-run — C's bubble landed above content ("cB") that had already
+    // streamed for B, and B lost its reply. Every genuine new turn is already bounded
+    // by a terminal (separate turns) or a delivery marker (mid-run / after-turn), so
+    // absorbing session_start is safe. History restore uses session_complete
+    // separators and emits no session_start, so it is unaffected.
     if (
       i > cursor &&
       (e.kind === 'mid_turn_user_prompt' || e.kind === 'queued_user_prompt_started')
@@ -297,6 +305,12 @@ function composeAssistantSegment(
         // iter/token 数据由 BottomBar 的 ActivitySpinner + ContextWindowIndicator
         // 持续显示，对话流不再插 system_notice — 避免每轮中间出现 "iter 1/200 · 14k tokens"
         // 分隔线打断阅读节奏（用户反馈：状态栏有就够了）。
+        //
+        // 只有主循环（parent / 旧版 undefined scope）的 iteration_end 才结束当前气泡。
+        // 工作流 / dispatch 子 agent 的 `scope: 'worker'` 迭代事件不属于主 transcript——
+        // 主端已在 real-session 过滤，这里再兜一道：否则并行子 agent 的 worker 迭代会在主
+        // agent 流式输出中途 flush，把一条回复切成多个断句气泡（见 real-session onIterationEnd）。
+        if (evt.scope === 'worker') break;
         flushTextBubble();
         break;
       }

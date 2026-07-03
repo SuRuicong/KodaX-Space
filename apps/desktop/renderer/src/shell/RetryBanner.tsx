@@ -13,7 +13,7 @@
 // 状态保鲜 (来自 events 流尾扫): 倒序找最近 retry_after,如果之后有 iteration_start 就不显示
 // (KodaX 已经恢复正常 retry 后继续了)。
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { RotateCw, Timer, X } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
@@ -75,25 +75,27 @@ function findActiveBannerRaw(events: readonly SessionEvent[]): BannerRaw | null 
 interface BannerDismissButtonProps {
   readonly tone: 'warning' | 'run';
   readonly onDismiss: () => void;
-  readonly side: number;
 }
 
-function BannerDismissButton({ tone, onDismiss, side }: BannerDismissButtonProps): JSX.Element {
+function BannerDismissButton({ tone, onDismiss }: BannerDismissButtonProps): JSX.Element {
   const toneClass =
     tone === 'warning'
       ? 'text-warn/80 hover:bg-warn/20 hover:text-warn'
       : 'text-run/80 hover:bg-run/20 hover:text-run';
 
+  // inset-y-0 pins the button to the banner's interior height (top:0/bottom:0) so the
+  // hover highlight always fills the row exactly — no JS height measurement, no
+  // top-1/2/-translate rounding against border-box vs padding-box (which left the
+  // square floating high above the text). Fixed width keeps a stable click target.
   return (
     <button
       type="button"
       onClick={onDismiss}
       className={[
-        'absolute right-0 top-1/2 inline-flex -translate-y-1/2 items-center justify-center',
+        'absolute inset-y-0 right-0 inline-flex w-7 items-center justify-center',
         'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-current',
         toneClass,
       ].join(' ')}
-      style={{ width: side, height: side }}
       title="Dismiss"
       aria-label="Dismiss retry notice"
     >
@@ -110,7 +112,6 @@ export function RetryBanner(): JSX.Element | null {
   const raw = findActiveBannerRaw(events);
   const bannerRootRef = useRef<HTMLDivElement | null>(null);
   const [dismissedBannerKey, setDismissedBannerKey] = useState<string | null>(null);
-  const [dismissSide, setDismissSide] = useState(24);
   const bannerKey =
     raw && raw.eventIdx !== undefined
       ? `${currentSessionId ?? 'global'}:${raw.kind}:${raw.eventIdx}`
@@ -147,23 +148,6 @@ export function RetryBanner(): JSX.Element | null {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raw?.kind, retryAt]);
 
-  useLayoutEffect(() => {
-    const row = bannerRootRef.current;
-    if (!row || !raw) return;
-
-    const updateDismissSide = (): void => {
-      const next = Math.max(24, Math.ceil(row.getBoundingClientRect().height));
-      setDismissSide((prev) => (prev === next ? prev : next));
-    };
-
-    updateDismissSide();
-    if (typeof ResizeObserver === 'undefined') return;
-
-    const observer = new ResizeObserver(updateDismissSide);
-    observer.observe(row);
-    return () => observer.disconnect();
-  }, [bannerKey, raw?.provider, raw?.reason, raw?.recoveryAction]);
-
   useEffect(() => {
     if (bannerKey === null || dismissedBannerKey === bannerKey) return undefined;
 
@@ -194,10 +178,9 @@ export function RetryBanner(): JSX.Element | null {
       <div
         ref={bannerRootRef}
         className={[
-          'relative pl-3 py-1 text-xs flex items-center gap-2 border-t border-b font-mono',
+          'relative pl-3 pr-7 py-1 text-xs flex items-center gap-2 border-t border-b font-mono',
           'text-warn bg-warn/15 border-warn/40',
         ].join(' ')}
-        style={{ paddingRight: dismissSide }}
         role="status"
         aria-live="polite"
       >
@@ -209,7 +192,7 @@ export function RetryBanner(): JSX.Element | null {
         <span className="text-warn/80 dark:text-warn/60 ml-auto">
           attempt {banner.attempt}/{banner.maxAttempts}
         </span>
-        <BannerDismissButton tone="warning" onDismiss={dismissActiveBanner} side={dismissSide} />
+        <BannerDismissButton tone="warning" onDismiss={dismissActiveBanner} />
       </div>
     );
   }
@@ -219,11 +202,10 @@ export function RetryBanner(): JSX.Element | null {
     <div
       ref={bannerRootRef}
       className={[
-        'relative pl-3 py-1 text-xs flex items-center gap-2 border-t border-b font-mono',
+        'relative pl-3 pr-7 py-1 text-xs flex items-center gap-2 border-t border-b font-mono',
         'text-run bg-run/15 border-run/40',
         'dark:text-run/90 dark:bg-run/15 dark:border-run/30',
       ].join(' ')}
-      style={{ paddingRight: dismissSide }}
       role="status"
       aria-live="polite"
     >
@@ -232,7 +214,7 @@ export function RetryBanner(): JSX.Element | null {
       <span className="text-run/80 dark:text-run/60 ml-auto">
         attempt {banner.attempt}/{banner.maxAttempts}
       </span>
-      <BannerDismissButton tone="run" onDismiss={dismissActiveBanner} side={dismissSide} />
+      <BannerDismissButton tone="run" onDismiss={dismissActiveBanner} />
     </div>
   );
 }

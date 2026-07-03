@@ -215,6 +215,43 @@ test('iteration_end no longer pushes system_notice (data goes to BottomBar spinn
   );
 });
 
+test("worker-scope iteration_end does NOT split the main agent's streaming reply", () => {
+  // Regression: a workflow's parallel sub-agents each fire iteration_end forwarded to the
+  // parent handler tagged only `scope: 'worker'`. If those flush the in-flight assistant
+  // bubble, one streaming reply gets chopped into several mid-sentence bubbles (each with its
+  // own copy footer). Only main-loop `parent`/undefined scope may end a bubble.
+  const events: SessionEvent[] = [
+    { kind: 'text_delta', sessionId: sid, text: '我已完成 3 项独立核查（渲染层 confirm' },
+    { kind: 'iteration_end', sessionId: sid, iter: 4, maxIter: 200, tokenCount: 12, scope: 'worker' },
+    { kind: 'text_delta', sessionId: sid, text: '清理、pptx 缺失、Partner 禁用门完整性），这些会' },
+    { kind: 'iteration_end', sessionId: sid, iter: 5, maxIter: 200, tokenCount: 20, scope: 'worker' },
+    { kind: 'text_delta', sessionId: sid, text: '并入最终报告。请稍候。' },
+    { kind: 'session_complete', sessionId: sid },
+  ];
+  const out = composeMessages({ events, userMessages: [userMsg('u1', 'go')] });
+  const bubbles = out.filter((m) => m.kind === 'assistant_text');
+  assert.equal(bubbles.length, 1, 'worker iterations must not split the reply into multiple bubbles');
+  if (bubbles[0].kind === 'assistant_text') {
+    assert.equal(
+      bubbles[0].text,
+      '我已完成 3 项独立核查（渲染层 confirm清理、pptx 缺失、Partner 禁用门完整性），这些会并入最终报告。请稍候。',
+    );
+  }
+});
+
+test("parent-scope iteration_end still ends the current assistant bubble", () => {
+  // Guard-rail: the fix must not merge across genuine main-loop iteration boundaries.
+  const events: SessionEvent[] = [
+    { kind: 'text_delta', sessionId: sid, text: 'first' },
+    { kind: 'iteration_end', sessionId: sid, iter: 1, maxIter: 30, tokenCount: 10, scope: 'parent' },
+    { kind: 'text_delta', sessionId: sid, text: 'second' },
+    { kind: 'session_complete', sessionId: sid },
+  ];
+  const out = composeMessages({ events, userMessages: [userMsg('u1', 'go')] });
+  const bubbles = out.filter((m) => m.kind === 'assistant_text');
+  assert.equal(bubbles.length, 2, 'parent iteration_end should still break the bubble');
+});
+
 test('session_error emits system_notice variant=error with the error text', () => {
   const events: SessionEvent[] = [
     { kind: 'text_delta', sessionId: sid, text: 'starting' },
@@ -249,22 +286,105 @@ test('two user messages with separate event segments: events route to correct us
   if (out[1].kind === 'assistant_text') assert.equal(out[1].text, 'reply1');
   if (out[3].kind === 'assistant_text') assert.equal(out[3].text, 'reply2');
 });
-test('session_start can split an interrupt-queued user turn before terminal event', () => {
+test('session_start is absorbed, not a user-turn boundary (#5 fix)', () => {
+  // Regression for #5. session_start is NOT a turn boundary: the SDK emits exactly
+  // one per run (CAP-003) and every genuine new turn is already bounded by a
+  // terminal or a delivery marker. A stray/extra session_start mid-turn must be
+  // absorbed into the current segment — never split a user turn on its own, or a
+  // later follow-up gets slotted above content that already streamed.
   const events: SessionEvent[] = [
     { kind: 'session_start', sessionId: sid, provider: 'mock' },
-    { kind: 'text_delta', sessionId: sid, text: 'reply1' },
+    { kind: 'text_delta', sessionId: sid, text: 'phase1' },
     { kind: 'session_start', sessionId: sid, provider: 'mock' },
-    { kind: 'text_delta', sessionId: sid, text: 'reply2' },
+    { kind: 'text_delta', sessionId: sid, text: 'phase2-preB' },
+    { kind: 'mid_turn_user_prompt', sessionId: sid, content: 'q2' },
+    { kind: 'text_delta', sessionId: sid, text: 'phase2-postB' },
     { kind: 'session_complete', sessionId: sid },
   ];
   const out = composeMessages({
     events,
-    userMessages: [userMsg('u1', 'q1', 1000), userMsg('u2', 'q2', 1001)],
+    userMessages: [userMsg('u1', 'q1', 1000), userMsg('u2', 'q2', 3000)],
   });
 
+  // q2 is delivered at its marker — it must appear AFTER all content that streamed
+  // before the marker (phase1 + phase2-preB), never above it.
   assert.deepEqual(kindsOf(out), ['user', 'assistant_text', 'user', 'assistant_text']);
-  if (out[1].kind === 'assistant_text') assert.equal(out[1].text, 'reply1');
-  if (out[3].kind === 'assistant_text') assert.equal(out[3].text, 'reply2');
+  if (out[0].kind === 'user') assert.equal(out[0].content, 'q1');
+  if (out[1].kind === 'assistant_text') assert.equal(out[1].text, 'phase1phase2-preB');
+  if (out[2].kind === 'user') assert.equal(out[2].content, 'q2');
+  if (out[3].kind === 'assistant_text') assert.equal(out[3].text, 'phase2-postB');
+});
+
+test('after-turn queued prompt + later interrupt keeps delivery order (#5 regression)', () => {
+  // The exact producible bug: turn A completes; an after-turn queued prompt B starts
+  // a NEW run, which emits `queued_user_prompt_started` immediately followed by that
+  // run's `session_start` (Space startQueuedPromptIfIdle → startRun) — two boundary
+  // events for ONE delivery. Then an interrupt C arrives mid-run (mid_turn_user_prompt).
+  // When session_start was a boundary, the extra boundary stole C's segment slot: C's
+  // bubble rendered ABOVE B's reply ("cB") and B lost its reply. Delivery order must be
+  // A, cA, B, cB, C, cC.
+  const events: SessionEvent[] = [
+    { kind: 'session_start', sessionId: sid, provider: 'mock' },
+    { kind: 'text_delta', sessionId: sid, text: 'cA' },
+    { kind: 'session_complete', sessionId: sid },
+    { kind: 'queued_user_prompt_started', sessionId: sid, queueMode: 'after-turn', content: 'B' },
+    { kind: 'session_start', sessionId: sid, provider: 'mock' },
+    { kind: 'text_delta', sessionId: sid, text: 'cB' },
+    { kind: 'mid_turn_user_prompt', sessionId: sid, content: 'C' },
+    { kind: 'text_delta', sessionId: sid, text: 'cC' },
+    { kind: 'session_complete', sessionId: sid },
+  ];
+  const out = composeMessages({
+    events,
+    userMessages: [userMsg('u1', 'A', 1000), userMsg('u2', 'B', 2000), userMsg('u3', 'C', 3000)],
+  });
+
+  assert.deepEqual(kindsOf(out), [
+    'user',
+    'assistant_text',
+    'user',
+    'assistant_text',
+    'user',
+    'assistant_text',
+  ]);
+  if (out[0].kind === 'user') assert.equal(out[0].content, 'A');
+  if (out[1].kind === 'assistant_text') assert.equal(out[1].text, 'cA');
+  if (out[2].kind === 'user') assert.equal(out[2].content, 'B');
+  if (out[3].kind === 'assistant_text') assert.equal(out[3].text, 'cB');
+  if (out[4].kind === 'user') assert.equal(out[4].content, 'C');
+  if (out[5].kind === 'assistant_text') assert.equal(out[5].text, 'cC');
+});
+
+test('idle-yield follow-up delivered mid-run lands after already-streamed content (#5)', () => {
+  // Handoff repro: one run (single session_start, no mid-turn session_complete). A
+  // follow-up B is drained on an idle-yield wake and surfaced via mid_turn_user_prompt.
+  // B must appear after the content that had already streamed for A, before the reply
+  // produced after B's delivery.
+  const events: SessionEvent[] = [
+    { kind: 'session_start', sessionId: sid, provider: 'mock' },
+    { kind: 'text_delta', sessionId: sid, text: 'A-stream-1' },
+    { kind: 'tool_start', sessionId: sid, toolId: 't1', toolName: 'read', input: {} },
+    { kind: 'tool_result', sessionId: sid, toolId: 't1', toolName: 'read', content: 'ok' },
+    { kind: 'text_delta', sessionId: sid, text: 'A-stream-2' },
+    { kind: 'mid_turn_user_prompt', sessionId: sid, content: 'B' },
+    { kind: 'text_delta', sessionId: sid, text: 'B-reply' },
+    { kind: 'session_complete', sessionId: sid },
+  ];
+  const out = composeMessages({
+    events,
+    userMessages: [userMsg('u1', 'A', 1000), userMsg('u2', 'B', 5000)],
+  });
+
+  assert.deepEqual(kindsOf(out), [
+    'user',
+    'assistant_text',
+    'tool_call',
+    'assistant_text',
+    'user',
+    'assistant_text',
+  ]);
+  if (out[4].kind === 'user') assert.equal(out[4].content, 'B');
+  if (out[5].kind === 'assistant_text') assert.equal(out[5].text, 'B-reply');
 });
 
 test('mid_turn_user_prompt splits SDK-consumed interrupt prompt within the same run', () => {

@@ -102,6 +102,13 @@ export interface WorkflowNoticeMessage {
   readonly id: string;
   readonly content: string;
   readonly sentAt: number;
+  /**
+   * Stable dedup key (see workflowNotices.ts). Stored ON the notice so dedup state
+   * lives in the persisted store alongside the notices it guards — it cannot desync
+   * from them on hot-reload / remount / workflow re-seed the way a module-level Set
+   * did (that desync re-appended every summary as a duplicate; user report).
+   */
+  readonly key?: string;
 }
 
 export interface QueuedUserMessage {
@@ -456,7 +463,7 @@ interface AppState {
       readonly sentAt?: number;
     },
   ): string | null;
-  appendWorkflowNotice(sessionId: string, content: string, sentAt?: number): void;
+  appendWorkflowNotice(sessionId: string, content: string, sentAt?: number, key?: string): void;
   /**
    * v0.1.4 B3: BottomBar optimistic appendUserMessage 后若 IPC session.send 失败
    * （session disposed / 主进程错 / 等非 queue 路径），调本 action 把刚 push 的
@@ -1161,7 +1168,7 @@ export const useAppStore = create<AppState>((set) => ({
     return localId;
   },
 
-  appendWorkflowNotice: (sessionId, content, sentAt) =>
+  appendWorkflowNotice: (sessionId, content, sentAt, key) =>
     set((state) => {
       const knownSession = state.sessions.some((s) => s.sessionId === sessionId);
       const knownWorkflowSession = Object.values(state.workflowRuns).some(
@@ -1170,8 +1177,34 @@ export const useAppStore = create<AppState>((set) => ({
       if (!knownSession && state.currentSessionId !== sessionId && !knownWorkflowSession)
         return state;
       const bucket = state.workflowNoticesBySession[sessionId] ?? [];
+      // Keyed notices are unique per logical workflow event (agent summary / run
+      // finished). If one with the same key already exists, REPLACE its content in
+      // place — keeping the original id + sentAt so it stays at its chronological
+      // position — instead of appending a near-duplicate. This collapses an agent's
+      // evolving summary (excerpt → result) to a single bubble and is idempotent under
+      // event replay / restore / hot-reload. Keyless callers (activity digests,
+      // optimistic slash notices) keep append-always semantics.
+      if (key !== undefined) {
+        const idx = bucket.findIndex((n) => n.key === key);
+        if (idx !== -1) {
+          if (bucket[idx]!.content === content) return state;
+          const nextBucket = bucket.slice();
+          nextBucket[idx] = { ...bucket[idx]!, content };
+          return {
+            workflowNoticesBySession: {
+              ...state.workflowNoticesBySession,
+              [sessionId]: nextBucket,
+            },
+          };
+        }
+      }
       const id = `wf_${sessionId}_${++workflowNoticeCounter}`;
-      const msg: WorkflowNoticeMessage = { id, content, sentAt: sentAt ?? Date.now() };
+      const msg: WorkflowNoticeMessage = {
+        id,
+        content,
+        sentAt: sentAt ?? Date.now(),
+        ...(key !== undefined ? { key } : {}),
+      };
       return {
         workflowNoticesBySession: {
           ...state.workflowNoticesBySession,

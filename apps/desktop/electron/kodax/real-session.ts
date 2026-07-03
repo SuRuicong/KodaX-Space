@@ -991,6 +991,15 @@ export class RealKodaXSession implements ManagedSession {
         emitLive({ kind: 'iteration_start', sessionId: sid, iter, maxIter });
       },
       onIterationEnd: (info) => {
+        // Sub-agent (workflow / dispatch_child_task) iterations are forwarded to the
+        // PARENT handler tagged only with `scope: 'worker'` — the SDK gives iteration
+        // events no `liveOnly`/`childAgentId` meta, so isTransientChildEvent can't catch
+        // them. Emitting them into the main stream makes composeMessages flush the
+        // in-flight assistant bubble on every worker iteration, chopping one streaming
+        // reply into several mid-sentence bubbles while a workflow's N sub-agents run in
+        // parallel. Only the main loop's `parent` (or legacy undefined) scope belongs in
+        // the main transcript / status indicators.
+        if (info.scope === 'worker') return;
         emitLive({
           kind: 'iteration_end',
           sessionId: sid,
@@ -1398,6 +1407,11 @@ export class RealKodaXSession implements ManagedSession {
       gitRoot: this.projectRoot,
       executionCwd: this.projectRoot,
       planModeBlockCheck,
+      // Repointel chip 的唯一数据源是 onRepoIntelligenceTrace 回调，而 SDK repo-intelligence
+      // 的 trace 发射默认关闭（inspectRepoIntelligenceRuntime 实测 configured=auto /
+      // effective=full 但 trace=off）。不显式开这个 per-run 开关，回调永不触发 → chip 恒
+      // idle（repo-intel 其实满血在跑，只是没 trace 给 UI 上色）。开销可忽略，恒开。
+      repoIntelligenceTrace: true,
       ...(partnerAgentProfile ? { agentProfile: partnerAgentProfile } : {}),
       ...(partnerAgentProfile ? { toolVisibilityPolicy: partnerToolVisibilityPolicy } : {}),
       ...(partnerRuntimeContextOverlay ? { promptOverlay: partnerRuntimeContextOverlay } : {}),
@@ -1470,7 +1484,17 @@ export class RealKodaXSession implements ManagedSession {
       },
       // KodaX 0.7.58 removed host-side natural-language workflow auto-start.
       // Space passes only runtime caps plus the durable run dir for AMAW run_workflow.
-      workflowHostPolicy: workflowPolicy,
+      // tokenBudget is only forwarded when the user opted into an explicit cap
+      // (> 0). By default Space imposes NO token cap — matching KodaX, which sets
+      // none; a low fixed budget was killing real workflows ("tokenBudget cap
+      // exhausted"). maxAgents / maxConcurrency governance still applies.
+      workflowHostPolicy: {
+        maxAgents: workflowPolicy.maxAgents,
+        maxConcurrency: workflowPolicy.maxConcurrency,
+        ...(workflowPolicy.tokenBudget > 0
+          ? { tokenBudget: workflowPolicy.tokenBudget }
+          : {}),
+      },
       workflowRunsBaseDir: workflowController.getRunBaseDir(),
       workflow: { maxConcurrency: workflowPolicy.maxConcurrency },
     };

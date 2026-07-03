@@ -1714,7 +1714,15 @@ export class WorkflowController {
         executionCwd: s.projectRoot,
         agentProfile: { surface: s.surface },
       },
-      workflowHostPolicy: policy,
+      // tokenBudget is forwarded ONLY when the user opted into an explicit cap (> 0),
+      // mirroring the AMAW run_workflow path in real-session.ts. The SDK clamps a
+      // literal tokenBudget of 0 to 1 (`e <= 0 ? 1`), which would throttle an explicit
+      // /workflow run to a single token; omitting the key means "no cap" (the default).
+      workflowHostPolicy: {
+        maxAgents: policy.maxAgents,
+        maxConcurrency: policy.maxConcurrency,
+        ...(policy.tokenBudget > 0 ? { tokenBudget: policy.tokenBudget } : {}),
+      },
       workflow: { maxConcurrency: policy.maxConcurrency },
     };
   }
