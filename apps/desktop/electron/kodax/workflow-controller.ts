@@ -22,7 +22,8 @@ import { getSpaceDataDir } from './data-paths.js';
 import { pushToRenderer } from '../ipc/push.js';
 import { artifactStore } from '../artifact/store.js';
 import { detectArtifactKind } from '../artifact/workflow-artifact-bridge.js';
-import { reasoningModeToEffort } from './reasoning-effort.js';
+import { resolveWireEffort, type ReasoningProfileLike } from './reasoning-effort.js';
+import { workflowPolicyStore } from './workflow-policy.js';
 
 // ---- SDK 形状(只取本控制器用到的子集,避免硬依赖 SDK 类型导出) ----
 interface SdkProcessSnapshot {
@@ -1323,15 +1324,10 @@ export class WorkflowController {
     if (!module) return { error: `workflow not found: ${input.target}` };
 
     const s = input.session;
-    // 精简 options——workflow 子 agent 只需 provider/model/reasoning/agentMode/context;
+    // 精简 options——workflow 子 agent 只需 provider/model/reasoning/agentMode/context + host policy;
     // 不带主对话的 events/storage/compact 等 per-run 状态(那些是 real-session 对话回路专用)。
-    const options: Record<string, unknown> = {
-      provider: s.provider,
-      effort: reasoningModeToEffort(s.reasoningMode),
-      agentMode: s.agentMode,
-      ...(s.model ? { model: s.model } : {}),
-      context: { gitRoot: s.projectRoot, executionCwd: s.projectRoot },
-    };
+    // 走同一 launchOptions 保证 effort 解析 / host policy / artifact 归属与其它启动路径一致。
+    const options = await this.launchOptions(s);
     const runId = `wf_${randomUUID()}`;
     const runDir = path.join(this.runBaseDir, runId);
     const meta = (module as { meta?: { name?: string } }).meta;
@@ -1378,7 +1374,7 @@ export class WorkflowController {
     try {
       generated = await sdk.generateWorkflowFromOptions({
         request,
-        options: this.launchOptions(session),
+        options: await this.launchOptions(session),
       });
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
@@ -1505,6 +1501,10 @@ export class WorkflowController {
     readonly session: LaunchSession;
     readonly saved?: SavedWorkflowLite;
   }): Promise<WorkflowSavedResult> {
+    // C3: reviseWorkflow generates + persists an executable workflow (an LLM scan of the project),
+    // so it MUST carry the same Partner gate as start/create/rerun — this is the real authz fence.
+    const partnerBlocked = this.assertCoderSurface(input.session);
+    if (partnerBlocked) return partnerBlocked;
     if (input.replace && !input.saved) {
       return { error: 'revise --replace requires a saved workflow name target' };
     }
@@ -1544,7 +1544,7 @@ export class WorkflowController {
     try {
       generated = await sdk.generateWorkflowFromOptions({
         request: revisionRequest,
-        options: this.launchOptions(input.session),
+        options: await this.launchOptions(input.session),
       });
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
@@ -1677,13 +1677,41 @@ export class WorkflowController {
 
   // ---- 内部 ----
 
-  private launchOptions(s: LaunchSession): Record<string, unknown> {
+  private async launchOptions(s: LaunchSession): Promise<Record<string, unknown>> {
+    // C4/C5: resolve the effort against the provider's real ladder (workflow child agents hit the
+    // same localReject-crash / low-ceiling hazards as the chat path).
+    let reasoningProfile: ReasoningProfileLike | undefined;
+    try {
+      const sdk = await loadCodingSdk();
+      const resolveProvider = (
+        sdk as unknown as {
+          resolveProvider?: (id: string) => {
+            getReasoningProfile?: (model?: string) => ReasoningProfileLike | undefined;
+          } | undefined;
+        } | null
+      )?.resolveProvider;
+      reasoningProfile = resolveProvider?.(s.provider)?.getReasoningProfile?.(s.model ?? undefined);
+    } catch {
+      reasoningProfile = undefined;
+    }
+    // C2: forward the user-configured Workflow Host Policy so maxAgents/maxConcurrency/tokenBudget
+    // caps actually bound explicit /workflow runs (mirrors the AMAW run_workflow path in real-session).
+    const policy = workflowPolicyStore.get();
     return {
       provider: s.provider,
-      effort: reasoningModeToEffort(s.reasoningMode),
+      effort: resolveWireEffort(s.reasoningMode, reasoningProfile),
       agentMode: s.agentMode,
       ...(s.model ? { model: s.model } : {}),
-      context: { gitRoot: s.projectRoot, executionCwd: s.projectRoot },
+      // C9: agentProfile.surface makes create_artifact's resolveSessionRunContext succeed for
+      // workflow-originated artifacts (surface is 'code' — Partner is blocked upstream). Absent
+      // ⇒ default Coding Agent, so no tool-visibility restriction is introduced.
+      context: {
+        gitRoot: s.projectRoot,
+        executionCwd: s.projectRoot,
+        agentProfile: { surface: s.surface },
+      },
+      workflowHostPolicy: policy,
+      workflow: { maxConcurrency: policy.maxConcurrency },
     };
   }
 
@@ -1717,7 +1745,7 @@ export class WorkflowController {
       await this.manager.startFromOptions({
         module: input.module,
         args: input.args ?? {},
-        options: this.launchOptions(input.session),
+        options: await this.launchOptions(input.session),
         runId,
         runDir,
         ...(input.scriptSnapshot ? { scriptSnapshot: input.scriptSnapshot } : {}),

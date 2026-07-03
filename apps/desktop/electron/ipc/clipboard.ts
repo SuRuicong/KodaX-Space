@@ -31,12 +31,20 @@ type NativeImageBlock = {
   readonly mediaType?: string;
 };
 
+type NormalizedImage = {
+  readonly buffer: Buffer;
+  readonly mediaType: 'image/png' | 'image/jpeg';
+  readonly width: number;
+  readonly height: number;
+};
+
 type MediaSdk = {
   readAndNormalizeClipboardImage(): Promise<NativeClipboardImage | null>;
   persistImageAsBlock(
     image: NativeClipboardImage,
     options: { readonly directory: string; readonly fileNamePrefix: string },
   ): Promise<NativeImageBlock>;
+  normalizePastedImage(input: Buffer): Promise<NormalizedImage>;
 };
 
 let mediaSdkCache: Promise<MediaSdk> | null = null;
@@ -91,12 +99,15 @@ async function sessionDir(sessionId: string): Promise<string> {
 // 再 enforce 一次 — schema 是 string 长度防 IPC 边界 DoS；这里是 decoded 防写盘 DoS。
 const MAX_DECODED_IMAGE_BYTES = 6 * 1024 * 1024;
 
-/** 单纯写盘逻辑 — registerClipboardChannels 和单元测试共用。*/
-export async function saveClipboardImage(input: {
-  readonly sessionId: string;
-  readonly base64: string;
-  readonly mediaType: 'image/png' | 'image/jpeg' | 'image/webp';
-}): Promise<{ path: string; bytes: number }> {
+/** 单纯写盘逻辑 — registerClipboardChannels 和单元测试共用。sdk 参数供测试注入。*/
+export async function saveClipboardImage(
+  input: {
+    readonly sessionId: string;
+    readonly base64: string;
+    readonly mediaType: 'image/png' | 'image/jpeg' | 'image/webp';
+  },
+  sdk: Pick<MediaSdk, 'normalizePastedImage'> | undefined = undefined,
+): Promise<{ path: string; bytes: number }> {
   const dir = await sessionDir(input.sessionId);
   // review HIGH-1 fix: 显式 0o700 而非依赖 umask —— 多用户系统下默认 0o755 让 sessionId
   // 文件名 (含时间戳泄露使用窗口) 在 ls 可见，是元数据泄露。0o700 仅 owner 可读/进入。
@@ -104,36 +115,55 @@ export async function saveClipboardImage(input: {
   // 目录设 mode；用户已存在的 parent 不会被改 mode (这是预期 — 不应主动 chmod 用户目录)。
   await fs.mkdir(dir, { recursive: true, mode: 0o700 });
 
-  const ext = EXT_BY_MEDIA[input.mediaType];
+  const rawBuf = Buffer.from(input.base64, 'base64');
+  if (rawBuf.length === 0) {
+    throw new Error('clipboard.saveImage: empty image bytes after base64 decode');
+  }
+  if (rawBuf.length > MAX_DECODED_IMAGE_BYTES) {
+    // review MEDIUM-5 fix: schema string max 算的是 base64 编码后的长度，decoded 后可能仍
+    // 超过 6 MiB 上限 (base64 有 ~33% 膨胀)。这里再 enforce 真实字节数，硬拒。
+    throw new Error(
+      `clipboard.saveImage: image too large after decode: ${rawBuf.length} bytes (max ${MAX_DECODED_IMAGE_BYTES})`,
+    );
+  }
+
+  // C6: 粘贴 / 拖拽路径过去只做体积上限、原样写盘，绕过了 SDK 的图片规范化（尺寸降采样到
+  // MAX_DIMENSION、目标字节数、canonical mediaType）——与原生剪贴板读取路径不一致，一张全分辨率
+  // 4K 截图会超规格发给模型。这里补跑 normalizePastedImage 对齐媒体契约。best-effort：媒体子包
+  // 不可用（测试环境）或解码失败时回退原始 buffer，保证附图仍可用。
+  let outBuf: Buffer = rawBuf;
+  let outMediaType: 'image/png' | 'image/jpeg' | 'image/webp' = input.mediaType;
+  try {
+    const media = sdk ?? (await loadMediaSdk());
+    const normalized = await media.normalizePastedImage(rawBuf);
+    if (normalized?.buffer?.length) {
+      outBuf = normalized.buffer;
+      outMediaType = normalized.mediaType;
+    }
+  } catch (err) {
+    console.warn(
+      `[clipboard.saveImage] normalizePastedImage failed; writing raw buffer: ${err instanceof Error ? err.message : err}`,
+    );
+  }
+
+  const ext = EXT_BY_MEDIA[outMediaType];
   if (!ext) {
-    // schema 已限制 enum 三选一，能到这里说明 enum 列表与 EXT_BY_MEDIA 失配 —
-    // 是开发者改 schema 没改 handler 的 bug，不是用户输入。
-    throw new Error(`clipboard.saveImage: unsupported mediaType ${input.mediaType}`);
+    // enum 已限三选一，且 normalizePastedImage 只输出 png/jpeg —— 到这里说明 enum 与
+    // EXT_BY_MEDIA 失配，是开发者改 schema 没改 handler 的 bug，不是用户输入。
+    throw new Error(`clipboard.saveImage: unsupported mediaType ${outMediaType}`);
   }
   monotonicCounter = (monotonicCounter + 1) & 0xffff;
   const filename = `${Date.now().toString(36)}-${monotonicCounter.toString(36)}.${ext}`;
   const filePath = path.join(dir, filename);
+  await fs.writeFile(filePath, outBuf, { mode: 0o600 });
 
-  const buf = Buffer.from(input.base64, 'base64');
-  if (buf.length === 0) {
-    throw new Error('clipboard.saveImage: empty image bytes after base64 decode');
-  }
-  if (buf.length > MAX_DECODED_IMAGE_BYTES) {
-    // review MEDIUM-5 fix: schema string max 算的是 base64 编码后的长度，decoded 后可能仍
-    // 超过 6 MiB 上限 (base64 有 ~33% 膨胀)。这里再 enforce 真实字节数，硬拒。
-    throw new Error(
-      `clipboard.saveImage: image too large after decode: ${buf.length} bytes (max ${MAX_DECODED_IMAGE_BYTES})`,
-    );
-  }
-  await fs.writeFile(filePath, buf, { mode: 0o600 });
-
-  return { path: filePath, bytes: buf.length };
+  return { path: filePath, bytes: outBuf.length };
 }
 
 /** Read a native OS clipboard image and persist it into the Space session sandbox. */
 export async function readNativeClipboardImage(
   input: { readonly sessionId: string },
-  sdk: MediaSdk | undefined = undefined,
+  sdk: Pick<MediaSdk, 'readAndNormalizeClipboardImage' | 'persistImageAsBlock'> | undefined = undefined,
 ): Promise<{
   image: {
     path: string;

@@ -12,36 +12,37 @@
 
 type CapRule = { match: RegExp; cap: number };
 
+// 数值与 SDK 0.7.58 provider-capabilities.json 对齐（2026-07-03 复核，见 c:/tmp/caps.mjs 对比脚本）。
+// **过报(over-claim)是危险方向**——会让用户误以为"还有大把空间"却提前压缩；这里逐条按 SDK 真值订正。
+// 顺序敏感：更具体的规则必须在通配前面（first-match wins）。
 const RULES: readonly CapRule[] = [
-  // Anthropic Claude — 200k 上下文
+  // Anthropic Claude — opus 4.7 / 4.8 是 1M；其余 (haiku / opus 4.6 等) 200k。
+  { match: /^claude-opus-4-[78]/, cap: 1_000_000 },
   { match: /^claude-/, cap: 200_000 },
-  // OpenAI GPT-5 系列 — 1M (GPT-5.4 / GPT-5.3-codex / spark)
-  { match: /^gpt-5/, cap: 1_000_000 },
+  // OpenAI GPT-5 系列 — 现役 gpt-5.4 / gpt-5.3-codex-spark 均 400k（**旧注 1M 已过时，是过报**）。
+  { match: /^gpt-5/, cap: 400_000 },
   // OpenAI GPT-4 系列 — 128k
   { match: /^gpt-4/, cap: 128_000 },
-  // DeepSeek V3 / V4 — 1M（DeepSeek API 当前所有 model 统一 1M context window，
-  // 经 resolveContextWindow 验证 deepseek-v3.2 / v4-pro 都返回 1M）
+  // DeepSeek — v3.x 仍是 128k（**旧注统一 1M 是过报**）；v4 (flash/pro) 及后续 1M。
+  { match: /^deepseek-v3/, cap: 128_000 },
   { match: /^deepseek-/, cap: 1_000_000 },
-  // Kimi K2.7 Code — 256k (KodaX 0.7.56, kimi + ark-coding).
+  // Kimi K2 系列（k2.5 / k2.6 / k2.7-code）与 Kimi for Coding — 均 256k。
   { match: /^kimi-k2\.7-code$/, cap: 256_000 },
-  // Kimi K2 series fallback — 200k.
-  { match: /^kimi-k2/, cap: 200_000 },
-  // Kimi for Coding — 256k（SDK 实际值；之前硬编码 200k 偏低）
+  { match: /^kimi-k2/, cap: 256_000 },
   { match: /^kimi-for-coding/, cap: 256_000 },
   // Qwen 3.5 — 1M
   { match: /^qwen3\.5/, cap: 1_000_000 },
-  // GLM-5.2 (Zhipu Coding Plan) - 1M; keep this before the broader GLM-5 fallback.
+  // GLM-5.2 (Zhipu / Z.ai Coding Plan) - 1M; keep this before the broader GLM-5 fallback.
   { match: /^glm-5\.2$/, cap: 1_000_000 },
   // GLM-5 / GLM-5.1 / GLM-5 Turbo - 200k fallback.
   { match: /^glm-5(?:$|\.1$|-turbo$)/, cap: 200_000 },
   // GLM-4.7 - 200k.
   { match: /^glm-4\.7$/, cap: 200_000 },
-  // MiniMax M 系列 (M2 / M2.7 / M3，ark-coding + minimax-coding) — 1M
-  // 2026-06-09 SDK ark-coding 阵容 catch-up：新增 MiniMax-M3、移除 minimax-latest，
-  // 故 match 从 /^MiniMax-M2/ 放宽到 /^MiniMax-M/ 覆盖 M3 及后续，并删掉死规则 minimax-latest。
+  // MiniMax — M2.x 系列 (M2.7 / -highspeed) 204800（**旧注 1M 是过报**）；M3 及后续 1M。
+  { match: /^MiniMax-M2/, cap: 204_800 },
   { match: /^MiniMax-M/, cap: 1_000_000 },
-  // MiMo (Xiaomi) — 128k
-  { match: /^mimo-/, cap: 128_000 },
+  // MiMo (Xiaomi) — v2.5 是 1M（旧注 128k 过时，属欠报）。
+  { match: /^mimo-/, cap: 1_000_000 },
   // Doubao seed 2.0 系列 (ark-coding) — 256k
   { match: /^doubao-seed/, cap: 256_000 },
   // Gemini 3 — 2M

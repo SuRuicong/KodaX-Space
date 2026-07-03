@@ -33,6 +33,7 @@ import {
 import { testProvider } from '../providers/test-connection.js';
 import { validateBaseUrl } from '../providers/url-guard.js';
 import { validateApiKeyEnv } from '../providers/env-guard.js';
+import { computeModelContextWindow } from '../providers/context-window.js';
 import type { ProviderInfo } from '@kodax-space/space-ipc-schema';
 import type { CustomProviderProbe } from '../providers/test-connection.js';
 
@@ -520,36 +521,29 @@ export function registerProviderChannels(): void {
       ]);
       const provider = resolveProvider(input.providerId);
       const capabilities = resolveModelCapabilities(input.providerId, input.model);
-      // SDK 内部级联：CompactionConfig.contextWindow → provider.getEffectiveContextWindow(model)
-      //   → provider.getContextWindow() → 200_000 hard fallback
-      // 我们传 enabled:false 因为不需要 compaction 配置——只是用 resolver 拿数字
-      const cw =
-        capabilities?.contextWindow ??
-        resolveContextWindow(
-          { enabled: false, triggerPercent: 80 },
-          provider,
-          input.model,
-        );
-      // 是 provider-advertised 还是 SDK fallback (200k)？没法直接区分；按值判断：
-      //   - 命中 200_000 且 provider 没有 getEffectiveContextWindow/getContextWindow → fallback
-      //   - 其他情况一律 provider
-      // 简化：只要 != 200_000 就 'provider'；== 200_000 时再判 capability function 存在与否
-      let source: 'provider' | 'fallback' = 'provider';
-      if (capabilities?.contextWindow === undefined && cw === 200_000) {
-        const p = provider as {
-          getEffectiveContextWindow?: unknown;
-          getContextWindow?: unknown;
-        };
-        if (typeof p.getEffectiveContextWindow !== 'function' && typeof p.getContextWindow !== 'function') {
-          source = 'fallback';
-        }
-      }
-      const supportedEfforts = capabilities?.reasoningProfile?.supportedEfforts
+      // 上下文窗口走 SDK runtime-authoritative 级联（= runtime 决定 compaction 触发的同一算法），
+      // 而非 resolveModelCapabilities().contextWindow（0.7.58 default-model bug 会返回 200k）。
+      // 逻辑 + 回归守卫见 providers/context-window.ts / context-window.test.ts。
+      const { contextWindow: cw, source } = computeModelContextWindow(
+        provider as { getEffectiveContextWindow?: unknown; getContextWindow?: unknown },
+        input.model,
+        resolveContextWindow,
+      );
+      // Reasoning 效力档同理走 provider.getReasoningProfile(model)（走 model 级 descriptor,
+      // 不受 0.7.58 default-model bug 影响）；capabilities.reasoningProfile 仅作 provider 无此
+      // 方法时的兜底。今天两处数据碰巧一致,但 default model 的 reasoningProfile 迟早会与
+      // provider 级快照分叉(与 contextWindow 同一类漂移),锚定 model 级 resolver 才稳。
+      type ReasoningProfileT = NonNullable<typeof capabilities>['reasoningProfile'];
+      const providerReasoningProfile = (
+        provider as { getReasoningProfile?: (model: string) => ReasoningProfileT }
+      ).getReasoningProfile?.(input.model);
+      const reasoningProfile = providerReasoningProfile ?? capabilities?.reasoningProfile;
+      const supportedEfforts = reasoningProfile?.supportedEfforts
         ?.filter((effort) => effort.isUserVisible !== false)
         .map((effort) => effort.value);
       const defaultEffort =
-        capabilities?.reasoningProfile?.defaultEffort ??
-        capabilities?.reasoningProfile?.supportedEfforts?.find((effort) => effort.isDefault)?.value;
+        reasoningProfile?.defaultEffort ??
+        reasoningProfile?.supportedEfforts?.find((effort) => effort.isDefault)?.value;
       return {
         contextWindow: cw,
         source,

@@ -70,6 +70,16 @@ export async function probeKodaxSdk(): Promise<void> {
     );
   }
 
+  // /agent：context-window 显示 (provider.modelContextWindow channel) 依赖 resolveContextWindow —
+  // 它是 runtime compaction 与 UI 显示的单一事实源。SDK 删/改它会让上下文窗口静默退回 200k 兜底,
+  // 所以在启动 probe 里硬拦。
+  const agentModule = await import('@kodax-ai/kodax/agent');
+  if (typeof agentModule.resolveContextWindow !== 'function') {
+    failures.push(
+      `@kodax-ai/kodax/agent.resolveContextWindow: expected function, got ${typeof agentModule.resolveContextWindow}`,
+    );
+  }
+
   if (failures.length > 0) {
     throw new Error(
       `[kodax-sdk-probe] KodaX SDK shape mismatch (update ` +

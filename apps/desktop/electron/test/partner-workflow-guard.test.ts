@@ -62,3 +62,13 @@ test('WorkflowController.rerunGeneratedWorkflow rejects a Partner session', asyn
   const res = await workflowController.rerunGeneratedWorkflow('wf_x', {}, partnerSession);
   assert.ok('error' in res && res.error.includes('[partner]'), JSON.stringify(res));
 });
+
+test('WorkflowController.reviseWorkflow rejects a Partner session', async () => {
+  // reviseWorkflow generates + persists an executable workflow, so it must be gated too.
+  const res = await workflowController.reviseWorkflow({
+    target: 'wf_x',
+    request: 'change it',
+    session: partnerSession,
+  });
+  assert.ok('error' in res && res.error.includes('[partner]'), JSON.stringify(res));
+});

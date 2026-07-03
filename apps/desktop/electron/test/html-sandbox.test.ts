@@ -43,7 +43,9 @@ test('buildInteractiveHtmlCsp opens only declared permission sources', () => {
   });
 
   assert.match(csp, /connect-src https:\/\/api\.example\.com wss:\/\/api\.example\.com/);
-  assert.match(csp, /script-src 'unsafe-inline' https:\/\/cdn\.example\.com\/lib\/v1\.js/);
+  // script-src = 'unsafe-inline' + default CDN allowlist + the declared SRI script.
+  assert.match(csp, /script-src 'unsafe-inline'/);
+  assert.ok(csp.includes('https://cdn.example.com/lib/v1.js'), 'declared script present in script-src');
   assert.match(csp, /style-src 'unsafe-inline' https:\/\/styles\.example\.com/);
   assert.match(csp, /img-src data: blob: https:\/\/images\.example\.com/);
   assert.match(csp, /media-src data: blob: https:\/\/media\.example\.com/);
@@ -97,6 +99,27 @@ test('buildInteractiveHtmlSrcDoc injects SRI and crossorigin for declared script
 
   assert.match(out, /integrity="sha256-AbCdEf0123456789\+\/="/);
   assert.match(out, /crossorigin="anonymous"/);
+});
+
+test('C12: default script-src allows a curated CDN set so CDN-script artifacts are not blank', () => {
+  const csp = buildInteractiveHtmlCsp();
+  assert.match(csp, /script-src[^;]*https:\/\/cdn\.tailwindcss\.com/);
+  assert.match(csp, /script-src[^;]*https:\/\/cdn\.jsdelivr\.net/);
+  assert.match(csp, /script-src[^;]*https:\/\/unpkg\.com/);
+  // but network egress stays locked by default — the CDN allowance can't be used to exfiltrate.
+  assert.match(csp, /connect-src 'none'/);
+});
+
+test('C11: explicit permissions still keep passive resources present in the markup', () => {
+  // Supplying only `connect` must NOT revoke the font/img that inference would otherwise allow.
+  const out = buildInteractiveHtmlSrcDoc(
+    '<html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter"></head>' +
+      '<body><img src="https://images.example.com/a.png"></body></html>',
+    { connect: ['https://api.example.com'] },
+  );
+  assert.match(out, /connect-src https:\/\/api\.example\.com/, 'explicit connect honored');
+  assert.match(out, /img-src[^"]*https:\/\/images\.example\.com/, 'inferred img still allowed');
+  assert.match(out, /style-src[^"]*https:\/\/fonts\.googleapis\.com/, 'inferred style still allowed');
 });
 
 test('sandboxForInteractiveHtml adds forms and popup tokens only when requested', () => {

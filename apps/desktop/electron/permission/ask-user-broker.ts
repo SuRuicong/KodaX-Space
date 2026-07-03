@@ -57,6 +57,9 @@ type PendingAskUser =
       readonly timer: NodeJS.Timeout;
     };
 
+/** Mirrors the askUser.request push schema's `.max(20)` on options[] and signals[]. */
+const ASK_USER_ARRAY_MAX = 20;
+
 function normalizeOption(option: AskUserQuestionOption): AskUserQuestionOption {
   const value = sanitizeForDisplay(option.value, 512) || '(empty)';
   const label = sanitizeForDisplay(option.label, 160) || value;
@@ -98,7 +101,10 @@ class AskUserBroker {
       const safeToolName = sanitizeForDisplay(req.toolCall.toolName, 128) || '(unnamed)';
       const safeReason = sanitizeForDisplay(req.reason, 2048) || 'Agent needs your input.';
       const safeInput = sanitizeInputForDisplay(req.toolCall.input);
-      const safeSignals = req.signals?.map((s) => ({
+      // C8: the askUser.request push schema caps signals[] at max(20); a schema-compliant guardrail
+      // with exactly 20 signals is fine, but any overflow would fail the push zod validation
+      // silently → renderer never receives the prompt → 60s timeout resolves as if cancelled. Clamp.
+      const safeSignals = req.signals?.slice(0, ASK_USER_ARRAY_MAX).map((s) => ({
         type: sanitizeForDisplay(s.type, 64) || 'signal',
         severity: s.severity,
         message: sanitizeForDisplay(s.message, 512),
@@ -154,7 +160,11 @@ class AskUserBroker {
         sessionId: req.sessionId,
         question: sanitizeForDisplay(req.question, 2048) || 'Agent needs your input.',
         ...(req.header !== undefined ? { header: sanitizeForDisplay(req.header, 96) } : {}),
-        ...(req.kind === 'select' ? { options: (req.options ?? []).map(normalizeOption) } : {}),
+        // C8: clamp to the push schema's options.max(20) so an overflowing option list can never
+        // silently fail the push validation (which would hang the prompt for the full timeout).
+        ...(req.kind === 'select'
+          ? { options: (req.options ?? []).slice(0, ASK_USER_ARRAY_MAX).map(normalizeOption) }
+          : {}),
         ...(req.multiSelect !== undefined ? { multiSelect: req.multiSelect } : {}),
         ...(minSelections !== undefined ? { minSelections } : {}),
         ...(safeMaxSelections !== undefined ? { maxSelections: safeMaxSelections } : {}),

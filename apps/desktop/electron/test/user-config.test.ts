@@ -404,6 +404,49 @@ test('updateKodaxConfigCustomProvider writes back custom provider and renames se
     },
   ]);
 });
+test('updateKodaxConfigCustomProvider clears the reasoning declaration but preserves unmodeled CLI fields', async () => {
+  // C3 regression: reasoning is a Space-form-modeled field, so omitting it in the update
+  // (user cleared it) must remove it; unmodeled fields the KodaX CLI set (reasoningProfile,
+  // custom headers, supportsThinking) must survive the merge.
+  const config: Record<string, unknown> = {
+    customProviders: [
+      {
+        name: 'sdk-custom',
+        protocol: 'openai',
+        baseUrl: 'https://old.example.com/v1',
+        apiKeyEnv: 'OLD_API_KEY',
+        model: 'old-model',
+        reasoning: { efforts: ['low', 'high'], default: 'high' },
+        reasoningProfile: { effortStrategy: 'openai-chat-effort' },
+        supportsThinking: true,
+        headers: { 'x-cli-only': '1' },
+      },
+    ],
+  };
+  const saveCalls: unknown[] = [];
+  mockUserConfig(config, { saveCalls });
+
+  // update omits `reasoning` → user cleared it in the form
+  const result = await updateKodaxConfigCustomProvider('sdk-custom', {
+    displayName: 'sdk-custom',
+    protocol: 'openai',
+    baseUrl: 'https://old.example.com/v1',
+    apiKeyEnv: 'OLD_API_KEY',
+    defaultModel: 'old-model',
+    models: ['old-model'],
+  });
+
+  assert.deepEqual(result, { updated: true, providerId: 'sdk-custom' });
+  const providers = config.customProviders as Array<Record<string, unknown>>;
+  assert.equal(providers.length, 1);
+  const p = providers[0];
+  assert.equal('reasoning' in p, false, 'reasoning must be cleared, not preserved');
+  // unmodeled CLI fields survive:
+  assert.deepEqual(p.reasoningProfile, { effortStrategy: 'openai-chat-effort' });
+  assert.equal(p.supportsThinking, true);
+  assert.deepEqual(p.headers, { 'x-cli-only': '1' });
+});
+
 test('updateKodaxConfigCustomProvider rejects duplicate KodaX config provider names', async () => {
   const config: Record<string, unknown> = {
     customProviders: [
@@ -475,7 +518,11 @@ test('removeKodaxConfigCustomProvider writes back customProviders and clears sel
   ]);
 });
 
-test('updateKodaxConfigCustomProvider preserves CLI-set reasoning + unmodeled fields when the form omits them', async () => {
+// NOTE: reasoning is a Space-form-MODELED field (the form pre-fills it from the record and
+// re-sends it on every save), so an omitted reasoning in an update means the user deliberately
+// cleared it — see the "clears the reasoning declaration..." test above. Unmodeled fields the
+// form never touches (customHeaders/reasoningProfile) are still preserved through the merge.
+test('updateKodaxConfigCustomProvider keeps unmodeled CLI fields while updating modeled ones', async () => {
   const config: Record<string, unknown> = {
     customProviders: [
       {
@@ -484,7 +531,6 @@ test('updateKodaxConfigCustomProvider preserves CLI-set reasoning + unmodeled fi
         baseUrl: 'https://gw.example.com/v1',
         apiKeyEnv: 'MY_GW_API_KEY',
         model: 'm1',
-        reasoning: { efforts: ['off', 'high'], default: 'high' },
         // unmodeled field set outside Space (e.g. hand-edited config.json / CLI)
         customHeaders: { 'x-team': 'a' },
       },
@@ -502,11 +548,9 @@ test('updateKodaxConfigCustomProvider preserves CLI-set reasoning + unmodeled fi
   assert.equal(res.updated, true);
 
   const saved = (config.customProviders as Array<Record<string, unknown>>)[0];
-  // Modeled fields updated by the form:
   assert.equal(saved.baseUrl, 'https://gw.example.com/v2');
   assert.equal(saved.model, 'm2');
-  // Reasoning + unmodeled fields preserved (not clobbered by the rebuild):
-  assert.deepEqual(saved.reasoning, { efforts: ['off', 'high'], default: 'high' });
+  // Unmodeled field preserved (not clobbered by the rebuild):
   assert.deepEqual(saved.customHeaders, { 'x-team': 'a' });
 });
 

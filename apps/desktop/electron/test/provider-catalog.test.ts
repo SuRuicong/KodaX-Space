@@ -46,7 +46,7 @@ test('catalog includes expected anchor providers (anthropic, openai, zhipu-codin
   assert.ok(ids.has('zhipu-coding'));
 });
 
-test('catalog has fallback data for all 14 anchor providers (disaster recovery)', () => {
+test('catalog has fallback data for all 15 anchor providers (disaster recovery)', () => {
   // 这个验证不直接调 buildFallbackProviders（未导出），但通过 BUILTIN_PROVIDERS
   // 间接保证：每个 builtin 都有 apiKeyEnv + defaultModel，无论数据来自 JSON 还是 fallback。
   // 等同于"如果 JSON 缺失走 fallback，依然有完整数据"的 invariant 保护。
@@ -59,6 +59,7 @@ test('catalog has fallback data for all 14 anchor providers (disaster recovery)'
     'qwen',
     'zhipu',
     'zhipu-coding',
+    'zai-coding',
     'minimax-coding',
     'mimo-coding',
     'mimo',
@@ -81,6 +82,7 @@ test('apiKeyEnv values match KodaX upstream catalog (env var naming convention)'
     openai: 'OPENAI_API_KEY',
     zhipu: 'ZHIPU_API_KEY',
     'zhipu-coding': 'ZHIPU_CODING_API_KEY',
+    'zai-coding': 'ZAI_CODING_API_KEY',
     deepseek: 'DEEPSEEK_API_KEY',
     kimi: 'KIMI_API_KEY',
     'kimi-code': 'KIMI_CODE_API_KEY',
@@ -101,6 +103,14 @@ test('zhipu-coding catalog tracks KodaX 0.7.56 GLM lineup', () => {
   assert.ok(provider);
   assert.equal(provider.defaultModel, 'glm-5.2');
   assert.deepEqual(provider.models, ['glm-5.2', 'glm-5-turbo', 'glm-4.7']);
+});
+
+test('zai-coding catalog (SDK 0.7.58) has anthropic protocol + friendly name, not the raw slug', () => {
+  const provider = getBuiltin('zai-coding');
+  assert.ok(provider, 'zai-coding must be in the catalog');
+  assert.equal(provider.protocol, 'anthropic');
+  assert.notEqual(provider.displayName, 'zai-coding'); // must have a friendly override, not the slug
+  assert.equal(provider.defaultModel, 'glm-5.2');
 });
 
 test('ark-coding catalog includes KodaX 0.7.56 GLM and Kimi code models', () => {

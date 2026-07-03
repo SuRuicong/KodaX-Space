@@ -268,11 +268,12 @@ export async function updateKodaxConfigCustomProvider(
   }
 
   // Merge, don't replace: this config record is shared with the KodaX CLI, which may
-  // have set fields Space does not model (reasoning / reasoningProfile / supportsThinking,
-  // custom headers, etc.). A full rebuild from the narrow form field set would silently
-  // discard them. Space's modeled fields are fully replaced by the rebuild (so clearing
-  // e.g. the model list still takes effect); every other field on the existing record is
-  // preserved.
+  // have set fields Space does not model (reasoningProfile / supportsThinking, custom
+  // headers, etc.). A full rebuild from the narrow form field set would silently discard
+  // them. Space's MODELED fields (CUSTOM_PROVIDER_MODELED_KEYS — incl. `reasoning`, which
+  // the form owns) are fully replaced by the rebuild, so clearing them (e.g. emptying the
+  // model list or the reasoning declaration) actually takes effect; every other field on
+  // the existing record is preserved.
   const existing = providers[index] as unknown as Record<string, unknown>;
   const rebuilt = customProviderUpdateToSdk(nextProviderId, update) as unknown as Record<
     string,
@@ -528,6 +529,11 @@ const CUSTOM_PROVIDER_MODELED_KEYS: ReadonlySet<string> = new Set([
   'apiKeyEnv',
   'model',
   'models',
+  // 'reasoning' 是 Space 表单建模并作为其权威编辑器的字段（表单会用现有值预填,见
+  // CustomProviderForm reasoningNone/reasoningEfforts/reasoningDefault）。必须纳入 modeled
+  // keys,否则 merge 永远保留旧值 → 用户清空 reasoning 无效（C3 bug）。注意：SDK 侧的
+  // reasoningProfile / supportsThinking 是 **另外的** key,不由表单建模,仍走 preserved 保留。
+  'reasoning',
 ]);
 
 function customProviderUpdateToSdk(

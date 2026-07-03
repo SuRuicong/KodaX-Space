@@ -108,21 +108,16 @@ export function registerArtifactChannels(): void {
     const base = slash >= 0 ? input.path.slice(slash + 1) : input.path;
     const title = input.path.length <= 256 ? input.path : base.slice(0, 256);
 
-    // 去重：同一 session 已有同 title+kind 的预览 artifact → 复用其 id 升版本，
-    // 避免反复点"预览"刷出一堆副本（store.upsert 对未知 id 会生成新 UUID，故必须先查到真 id）。
-    const existing = (await artifactStore.list({ sessionId: input.sessionId })).find((a) => {
-      if (a.title !== title) return false;
-      if (a.kind === kind) return true;
-      return isHtmlPreviewKind(a.kind) && isHtmlPreviewKind(kind);
-    });
-
+    // 去重：同一 session 已有同 title+kind 的预览 artifact → 复用其 id 升版本，避免反复点"预览"
+    // 刷出一堆副本。C13: 去重查找移进 store.upsert 的写锁内（dedupeKey），消除 list→upsert 的
+    // check-then-act 竞态（两次快速预览曾各建一个新 UUID）。htmlFamily 让 html/interactive-html 同桶。
     const res = await artifactStore.upsert({
       sessionId: input.sessionId,
       surface: input.surface,
       kind,
       title,
       content: read.content,
-      ...(existing ? { id: existing.id } : {}),
+      dedupeKey: { title, kind, htmlFamily: isHtmlPreviewKind(kind) },
     });
     pushToRenderer('artifact.changed', {
       id: res.id,

@@ -69,6 +69,10 @@ const sharedOptions = {
     '@kodax-ai/kodax/mcp',
     '@kodax-ai/kodax/llm',
     '@kodax-ai/kodax/agent',
+    // ./media is dynamically imported by ipc/{session,clipboard}.ts — the base '@kodax-ai/kodax'
+    // external does NOT cover subpaths in esbuild, so it must be listed or the packaged main.js
+    // would try to bundle this ESM-only subpath (ERR_PACKAGE_PATH_NOT_EXPORTED at runtime).
+    '@kodax-ai/kodax/media',
     'electron-updater',
   ],
   logLevel: 'info',

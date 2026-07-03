@@ -106,6 +106,15 @@ const SPACE_OVERRIDES: Record<string, SpaceOverride> = {
     fallbackApiKeyEnv: 'ZHIPU_CODING_API_KEY',
     fallbackDefaultModel: 'glm-5.2',
   },
+  // Z.ai Coding Plan（SDK 0.7.58 新增，与 zhipu-coding 并列的 GLM-5.2 coding-plan 入口）。
+  // 继承 KodaXAnthropicCompatProvider → protocol=anthropic（baseUrl https://api.z.ai/api/anthropic）；
+  // 缺此 override 会退化成 displayName='zai-coding' + protocol='openai'（错）。
+  'zai-coding': {
+    displayName: 'Z.ai Coding Plan',
+    protocol: 'anthropic',
+    fallbackApiKeyEnv: 'ZAI_CODING_API_KEY',
+    fallbackDefaultModel: 'glm-5.2',
+  },
   'minimax-coding': {
     displayName: 'MiniMax Coding',
     protocol: 'anthropic',

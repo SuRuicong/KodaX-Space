@@ -26,14 +26,36 @@ beforeEach(async () => {
   await fs.rm(TEST_ROOT, { recursive: true, force: true }).catch(() => {});
 });
 
-test('saveImage: writes file and returns absolute path + byte count', async () => {
-  const out = await saveClipboardImage({
-    sessionId: 'sess-A',
-    base64: TINY_PNG_BASE64,
-    mediaType: 'image/png',
-  });
+// Deterministic normalization mocks (avoid depending on the native `sharp` binding in test).
+const NORMALIZE_TO_PNG = {
+  normalizePastedImage: async (buf: Buffer) => ({
+    buffer: buf,
+    mediaType: 'image/png' as const,
+    width: 1,
+    height: 1,
+  }),
+};
+const NORMALIZE_TO_JPEG = {
+  normalizePastedImage: async () => ({
+    buffer: Buffer.from([1, 2, 3, 4]),
+    mediaType: 'image/jpeg' as const,
+    width: 1,
+    height: 1,
+  }),
+};
+const NORMALIZE_THROWS = {
+  normalizePastedImage: async () => {
+    throw new Error('no sharp in test');
+  },
+};
+
+test('saveImage: writes file, extension follows the NORMALIZED mediaType (C6)', async () => {
+  const out = await saveClipboardImage(
+    { sessionId: 'sess-A', base64: TINY_PNG_BASE64, mediaType: 'image/png' },
+    NORMALIZE_TO_PNG,
+  );
   assert.ok(path.isAbsolute(out.path), 'returned path should be absolute');
-  assert.ok(out.path.endsWith('.png'), 'png ext should be picked from mediaType');
+  assert.ok(out.path.endsWith('.png'), 'png ext from normalized mediaType');
   assert.ok(out.path.includes('sess-A'), 'path should be under sessionId subdir');
   assert.ok(out.bytes > 0, 'bytes > 0');
 
@@ -41,22 +63,30 @@ test('saveImage: writes file and returns absolute path + byte count', async () =
   assert.equal(stat.size, out.bytes, 'on-disk size matches returned bytes');
 });
 
-test('saveImage: jpeg media type → .jpg extension', async () => {
-  const out = await saveClipboardImage({
-    sessionId: 'sess-B',
-    base64: TINY_PNG_BASE64,
-    mediaType: 'image/jpeg',
-  });
-  assert.ok(out.path.endsWith('.jpg'));
+test('saveImage: normalization result drives extension + bytes (jpeg)', async () => {
+  const out = await saveClipboardImage(
+    { sessionId: 'sess-B', base64: TINY_PNG_BASE64, mediaType: 'image/png' },
+    NORMALIZE_TO_JPEG,
+  );
+  assert.ok(out.path.endsWith('.jpg'), 'ext follows normalized image/jpeg, not the declared type');
+  assert.equal(out.bytes, 4, 'bytes come from the normalized buffer');
 });
 
-test('saveImage: webp media type → .webp extension', async () => {
-  const out = await saveClipboardImage({
-    sessionId: 'sess-C',
-    base64: TINY_PNG_BASE64,
-    mediaType: 'image/webp',
-  });
-  assert.ok(out.path.endsWith('.webp'));
+test('saveImage: webp is canonicalized to the normalized type (never writes .webp)', async () => {
+  const out = await saveClipboardImage(
+    { sessionId: 'sess-C', base64: TINY_PNG_BASE64, mediaType: 'image/webp' },
+    NORMALIZE_TO_PNG,
+  );
+  assert.ok(out.path.endsWith('.png'), 'webp input normalizes to png');
+});
+
+test('saveImage: normalization failure falls back to the declared mediaType', async () => {
+  const out = await saveClipboardImage(
+    { sessionId: 'sess-D', base64: TINY_PNG_BASE64, mediaType: 'image/webp' },
+    NORMALIZE_THROWS,
+  );
+  assert.ok(out.path.endsWith('.webp'), 'fallback keeps the declared mediaType extension');
+  assert.ok(out.bytes > 0);
 });
 
 test('readNativeClipboardImage: returns null when SDK sees no clipboard image', async () => {

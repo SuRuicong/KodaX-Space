@@ -159,6 +159,13 @@ export interface UpsertInput {
   summary?: string;
   /** When set + found, append a version (iterate) instead of creating new. */
   id?: string;
+  /**
+   * C13: when `id` is absent, resolve an existing artifact to version by (sessionId, title, kind)
+   * ATOMICALLY inside the write lock, closing the check-then-act race that let two concurrent
+   * previews of the same file create duplicates. `htmlFamily` treats html / interactive-html as
+   * one bucket (a static preview upgraded to interactive still matches). Ignored when `id` is set.
+   */
+  dedupeKey?: { title: string; kind: ArtifactKindT; htmlFamily?: boolean };
 }
 
 export interface ReadResult {
@@ -438,7 +445,12 @@ export class ArtifactStore {
     await this.ensureReady();
     return this.mutate(async () => {
       const now = Date.now();
-      const existing = input.id !== undefined ? await this.loadArtifactById(input.id) : null;
+      // Resolve the target id inside the write lock so dedup is atomic (C13): no other upsert can
+      // slip a duplicate in between "does one exist?" and "create it".
+      const resolvedId =
+        input.id ??
+        (input.dedupeKey ? this.findDedupeMatchId(input.sessionId, input.dedupeKey) : undefined);
+      const existing = resolvedId !== undefined ? await this.loadArtifactById(resolvedId) : null;
 
       if (existing) {
         if (existing.sessionId !== input.sessionId) {
@@ -583,7 +595,14 @@ export class ArtifactStore {
 
   private async ensureReady(): Promise<void> {
     if (!this.ready) {
-      this.ready = this.initialize();
+      // Don't cache a REJECTED init promise: a transient failure (native-module ABI mismatch on a
+      // cold call, a briefly-locked catalog file, etc.) would otherwise disable the entire artifact
+      // feature for the process's whole lifetime, since `!this.ready` treats any settled promise as
+      // truthy. Reset on failure so the next operation retries a fresh initialize().
+      this.ready = this.initialize().catch((err: unknown) => {
+        this.ready = null;
+        throw err;
+      });
     }
     await this.ready;
   }
@@ -828,6 +847,22 @@ export class ArtifactStore {
       }
       return null;
     }
+  }
+
+  /** C13: find an existing artifact id to version by (sessionId, title, kind) — most-recent first. */
+  private findDedupeMatchId(
+    sessionId: string,
+    dedupeKey: { title: string; kind: ArtifactKindT; htmlFamily?: boolean },
+  ): string | undefined {
+    const isHtml = (k: ArtifactKindT): boolean => k === 'html' || k === 'interactive-html';
+    // queryCatalogRows returns rows ORDER BY updatedAt DESC → prefer the most recently touched match.
+    const match = this.queryCatalogRows({ sessionId }).find(
+      (r) =>
+        r.title === dedupeKey.title &&
+        (r.kind === dedupeKey.kind ||
+          (dedupeKey.htmlFamily === true && isHtml(r.kind) && isHtml(dedupeKey.kind))),
+    );
+    return match?.id;
   }
 
   private queryCatalogRows(filter?: {

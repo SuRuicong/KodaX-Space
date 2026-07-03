@@ -232,7 +232,7 @@ export function ContextWindowIndicator(): JSX.Element | null {
           {/* 百分比 + 注释 */}
           <div className="mt-2 text-[11px] text-fg-muted flex justify-between">
             <span>{percent.toFixed(1)}% used</span>
-            <span>{formatTokens(cap - tokenCount)} left</span>
+            <span>{formatTokens(Math.max(0, cap - tokenCount))} left</span>
           </div>
 
           {/* alpha.1 breakdown 占位：等 KodaX SDK usage 出 segment 数据再分项 */}

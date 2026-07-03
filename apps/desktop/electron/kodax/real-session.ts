@@ -50,6 +50,22 @@ function loadSdkLlm(): Promise<SdkLlmModule | null> {
   return sdkLlmCache;
 }
 
+// /agent 子路径——只用它的 reasoning-effort 能力学习缓存（getCachedRejectedEfforts /
+// recordRejectedEffort）。加载失败返 null，effort 解析退回纯 profile（不影响主回路）。
+type SdkAgentModule = typeof import('@kodax-ai/kodax/agent');
+let sdkAgentCache: Promise<SdkAgentModule | null> | null = null;
+function loadSdkAgent(): Promise<SdkAgentModule | null> {
+  if (sdkAgentCache === null) {
+    sdkAgentCache = import('@kodax-ai/kodax/agent').catch((err) => {
+      console.warn(
+        `[real-session] failed to load @kodax-ai/kodax/agent subpath: ${err instanceof Error ? err.message : err}`,
+      );
+      return null;
+    });
+  }
+  return sdkAgentCache;
+}
+
 /**
  * 从 SDK 抛出的 error 里抠 Retry-After（rate_limit / 5xx 时有）。
  * SDK /llm 加载失败 / err 里没 header → undefined。返 'header' type 的 waitMs；
@@ -99,6 +115,9 @@ import type {
 } from '@kodax-ai/kodax/coding';
 import type { InputArtifact, SessionEvent, Surface } from '@kodax-space/space-ipc-schema';
 import { ASK_USER_BACK_SIGNAL } from '@kodax-space/space-ipc-schema';
+
+/** Mirrors the askUser.request push schema's options[].max(20) — the synthetic "Back" must fit. */
+const ASK_USER_MAX_OPTIONS = 20;
 import { askUserBroker } from '../permission/ask-user-broker.js';
 import { bootstrapAutoMode } from './auto-mode-bootstrap.js';
 import {
@@ -146,7 +165,7 @@ import {
   drainQueueForSession,
   enqueueUserPrompt,
 } from '../ipc/queue.js';
-import { reasoningModeToEffort } from './reasoning-effort.js';
+import { resolveWireEffort, type ReasoningProfileLike } from './reasoning-effort.js';
 
 type SpaceReasoning = 'off' | 'auto' | 'quick' | 'balanced' | 'deep';
 
@@ -715,17 +734,29 @@ export class RealKodaXSession implements ManagedSession {
           );
           return undefined;
         }
+        // C8: the askUser.request push schema caps options[] at 20. Appending the synthetic
+        // "Back" to a full 20-option question would make 21 → the push silently fails validation →
+        // the prompt hangs for the whole timeout and resolves as cancelled. Reserve one slot for
+        // Back so options + Back ≤ 20 (drops the least-likely-relevant trailing option, with a warn,
+        // rather than hanging the whole prompt).
+        const backSlotReserved = ASK_USER_MAX_OPTIONS - 1;
+        if (questionIndex > 0 && question.options.length > backSlotReserved) {
+          console.warn(
+            `[real-session ${sid}] askUserMulti question ${questionIndex + 1} has ${question.options.length} options; ` +
+              `truncating to ${backSlotReserved} to fit the synthetic "Back" within the ${ASK_USER_MAX_OPTIONS}-option limit`,
+          );
+        }
         const askOptions =
           questionIndex > 0
             ? [
-                ...question.options,
+                ...question.options.slice(0, backSlotReserved),
                 {
                   label: 'Back',
                   description: 'Return to previous question',
                   value: ASK_USER_BACK_SIGNAL,
                 },
               ]
-            : question.options;
+            : question.options.slice(0, ASK_USER_MAX_OPTIONS);
         const header = question.header !== undefined
           ? `[${questionIndex + 1}/${options.questions.length}] ${question.header}`
           : `[${questionIndex + 1}/${options.questions.length}]`;
@@ -1021,6 +1052,27 @@ export class RealKodaXSession implements ManagedSession {
           recoveryAction: event.recoveryAction,
           ladderStep: event.ladderStep,
           fallbackUsed: event.fallbackUsed,
+        });
+      },
+      // C1: 记录 wire 层拒绝的 reasoning effort。SDK 每 turn 新建 provider 实例 →
+      // suppressReasoningEffort 不跨 turn 存活；只有落到进程级能力缓存里，下一 turn 的
+      // resolveWireEffort(getCachedRejectedEfforts) 才会把它从档位里排除，不再重复发送。
+      onReasoningEffortRejected: (event) => {
+        void loadSdkAgent().then((agent) => {
+          try {
+            agent?.recordRejectedEffort(
+              event.provider,
+              event.model,
+              event.effort,
+              'observed',
+              new Date().toISOString(),
+            );
+          } catch (err) {
+            console.warn(
+              `[real-session ${sid}] recordRejectedEffort failed:`,
+              err instanceof Error ? err.message : err,
+            );
+          }
         });
       },
 
@@ -1346,9 +1398,26 @@ export class RealKodaXSession implements ManagedSession {
       ...(inputArtifacts ? { inputArtifacts } : {}),
     };
 
+    // C4/C5/C1: 解析 Space 的 5 档 reasoning 到 provider 真实档位。绝不发 provider 本地硬拒的
+    // 档位（kimi-code/minimax 的 'none'/'minimal' 会 throw），"Deep" 触及真实天花板（GLM-5.2 'max'），
+    // 并排除本进程 wire 层已拒过的档位（onReasoningEffortRejected → getCachedRejectedEfforts）。
+    let reasoningProfile: ReasoningProfileLike | undefined;
+    try {
+      reasoningProfile = (
+        sdk.resolveProvider(this.provider) as {
+          getReasoningProfile?: (model?: string) => ReasoningProfileLike | undefined;
+        }
+      )?.getReasoningProfile?.(this.model ?? undefined);
+    } catch {
+      reasoningProfile = undefined; // custom_* / 未识别 provider → 走 legacy 静态映射
+    }
+    const rejectedEfforts =
+      (await loadSdkAgent())?.getCachedRejectedEfforts(this.provider, this.model ?? undefined) ?? [];
+    const wireEffort = resolveWireEffort(this.reasoningMode, reasoningProfile, rejectedEfforts);
+
     const options: KodaXOptions = {
       provider: this.provider,
-      effort: reasoningModeToEffort(this.reasoningMode),
+      effort: wireEffort,
       // KodaX agent 形态：AMA / AMAW / SA。显式传以便用户切换生效。
       agentMode: this.agentMode,
       // SDK 0.7.42 wired (P0): /model + /thinking 设置在下一 turn 生效

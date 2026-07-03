@@ -6,6 +6,22 @@ import {
 
 export { looksLikeInteractiveHtml };
 
+// C12: a small, curated set of widely-mirrored, HTTPS CDN origins allowed for `script-src` BY
+// DEFAULT. LLM-generated artifacts routinely reference `<script src="https://cdn.tailwindcss.com">`
+// (or unpkg / jsdelivr / cdnjs) and cannot compute an offline SRI hash, so the SRI-gated `scripts`
+// permission is impractical for the model to satisfy — without this, such artifacts render blank.
+// The safety boundary is preserved by (1) the iframe sandbox (null origin, no allow-same-origin,
+// separate process) and (2) the default `connect-src 'none'` / `form-action 'none'`: a script from
+// these hosts can build UI but cannot exfiltrate data or navigate without a separately-granted
+// permission. Host-only origins (no exact-URL SRI) — these hosts are immutable-by-version registries.
+// (Declared before INTERACTIVE_HTML_CSP below, which calls buildInteractiveHtmlCsp() at module load.)
+const DEFAULT_SCRIPT_CDNS: readonly string[] = [
+  'https://cdn.tailwindcss.com',
+  'https://cdn.jsdelivr.net',
+  'https://unpkg.com',
+  'https://cdnjs.cloudflare.com',
+];
+
 export const INTERACTIVE_HTML_CSP = buildInteractiveHtmlCsp();
 
 function unique(values: readonly string[]): string[] {
@@ -93,7 +109,7 @@ export function buildInteractiveHtmlCsp(permissions?: ArtifactHtmlPermissionsT):
 
   return [
     "default-src 'none'",
-    `script-src ${sourceList(["'unsafe-inline'", ...scripts], "'none'")}`,
+    `script-src ${sourceList(["'unsafe-inline'", ...DEFAULT_SCRIPT_CDNS, ...scripts], "'none'")}`,
     `style-src ${sourceList(["'unsafe-inline'", ...styles], "'none'")}`,
     `img-src ${sourceList(['data:', 'blob:', ...imgs], "'none'")}`,
     `font-src ${sourceList(['data:', ...fonts], "'none'")}`,
@@ -227,6 +243,35 @@ export function inferPassiveHtmlPermissions(html: string): ArtifactHtmlPermissio
   return permissionsFromSets(sets);
 }
 
+/**
+ * C11: merge the auto-inferred PASSIVE resource permissions (style/img/media/font already present
+ * in the markup) with any EXPLICIT permissions the caller supplied. Previously supplying any
+ * explicit permission (e.g. `{connect: [...]}` to unblock a fetch) skipped passive inference
+ * entirely, so the same artifact's fonts/images silently stopped loading. Active/security-sensitive
+ * categories (connect / scripts / forms / popups) stay EXPLICIT-only — they require deliberate intent.
+ */
+function mergePassiveWithExplicit(
+  inferred: ArtifactHtmlPermissionsT | undefined,
+  explicit: ArtifactHtmlPermissionsT | undefined,
+): ArtifactHtmlPermissionsT | undefined {
+  if (!explicit) return inferred;
+  if (!inferred) return explicit;
+  const mergeCat = (
+    a: readonly string[] | undefined,
+    b: readonly string[] | undefined,
+  ): string[] | undefined => {
+    const merged = unique([...(a ?? []), ...(b ?? [])]).slice(0, ARTIFACT_PERMISSION_MAX_SOURCES);
+    return merged.length > 0 ? merged : undefined;
+  };
+  const out: ArtifactHtmlPermissionsT = { ...explicit };
+  for (const cat of ['style', 'img', 'media', 'font'] as const) {
+    const merged = mergeCat(inferred[cat], explicit[cat]);
+    if (merged) out[cat] = merged;
+    else delete out[cat];
+  }
+  return out;
+}
+
 function injectScriptIntegrity(html: string, permissions?: ArtifactHtmlPermissionsT): string {
   const scripts = permissions?.scripts ?? [];
   if (scripts.length === 0) return html;
@@ -253,7 +298,12 @@ export function buildInteractiveHtmlSrcDoc(
   permissions?: ArtifactHtmlPermissionsT,
 ): string {
   const htmlWithIntegrity = injectScriptIntegrity(html, permissions);
-  const effectivePermissions = permissions ?? inferPassiveHtmlPermissions(html);
+  // C11: always fold in the passive resources present in the markup, even when explicit permissions
+  // were supplied — otherwise granting one category (e.g. connect) silently revokes the others.
+  const effectivePermissions = mergePassiveWithExplicit(
+    inferPassiveHtmlPermissions(html),
+    permissions,
+  );
   const meta = cspMeta(effectivePermissions);
   const headOpen = htmlWithIntegrity.match(/<head\b[^>]*>/i);
   if (headOpen?.index !== undefined) {

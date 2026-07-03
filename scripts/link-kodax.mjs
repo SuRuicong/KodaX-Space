@@ -74,11 +74,16 @@ const stagingPkg = {
   main: kodaxPkg.main,
   types: kodaxPkg.types,
   bin: kodaxPkg.bin,
-  exports: {
+  // exports: 直接 borrow KodaX 自己的 exports map（它已指向 ./dist/sdk-*.js，与本 staging 的
+  // dist 符号链接一致）。这样 KodaX 新增子路径（如 0.7.58 的 ./media）自动跟上，不再手 sync 漂移
+  // —— 缺 ./media 曾导致 dev-link 下 import('@kodax-ai/kodax/media') 抛 ERR_PACKAGE_PATH_NOT_EXPORTED。
+  // kodaxPkg.exports 缺失时回退到显式清单（含 ./media，与 KodaX 0.7.58 对齐）。
+  exports: kodaxPkg.exports ?? {
     '.': { types: './dist/index.d.ts', import: './dist/index.js' },
     './agent': { types: './dist/sdk-agent.d.ts', import: './dist/sdk-agent.js' },
     './llm': { types: './dist/sdk-llm.d.ts', import: './dist/sdk-llm.js' },
     './coding': { types: './dist/sdk-coding.d.ts', import: './dist/sdk-coding.js' },
+    './media': { types: './dist/sdk-media.d.ts', import: './dist/sdk-media.js' },
     './repl': { types: './dist/sdk-repl.d.ts', import: './dist/sdk-repl.js' },
     './skills': { types: './dist/sdk-skills.d.ts', import: './dist/sdk-skills.js' },
     './mcp': { types: './dist/sdk-mcp.d.ts', import: './dist/sdk-mcp.js' },

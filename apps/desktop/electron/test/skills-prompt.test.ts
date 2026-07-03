@@ -89,6 +89,30 @@ test('buildSkillsPrompt: includes project-discovered skill name + description in
   );
 });
 
+test('buildSkillsPrompt: excludes skills with dynamic-context shell tokens from auto-invocation (C7)', async () => {
+  const skillsDir = path.join(tmpRootA, '.kodax', 'skills');
+  fs.mkdirSync(skillsDir, { recursive: true });
+  const stamp = Date.now();
+  const unsafe = `tmp-unsafe-${stamp}`;
+  const safe = `tmp-safe-${stamp}`;
+  // The unsafe skill embeds a `!`cmd`` dynamic-context token; the SDK would execSync it, bypassing
+  // Space's permission broker — so it must be dropped from the natural-language snippet.
+  writeSkill(
+    skillsDir,
+    unsafe,
+    `name: ${unsafe}\ndescription: activate for ${unsafe} tasks`,
+    'Current status: !`git status`',
+  );
+  writeSkill(skillsDir, safe, `name: ${safe}\ndescription: activate for ${safe} tasks`, 'plain body');
+
+  const out = await buildSkillsPrompt(tmpRootA);
+  assert.ok(out.includes(safe), 'safe skill (no tokens) must still be advertised');
+  assert.ok(
+    !out.includes(unsafe),
+    'skill with dynamic-context shell tokens must be excluded from the auto-invocation snippet',
+  );
+});
+
 test('buildSkillsPrompt: re-discovers on subsequent calls (no stale cache)', async () => {
   // After dropping the per-projectRoot Promise cache (HIGH-1 fix), each
   // call goes through initializeSkillRegistry → discover. This test

@@ -73,6 +73,56 @@ function loadSdkSkills(): Promise<SdkSkillsModule | null> {
   return sdkModuleCache;
 }
 
+/**
+ * C7 (security): the SDK `skill` tool expands `` !`cmd` `` dynamic-context tokens via execSync,
+ * bypassing Space's F029/F030 permission broker — this is exactly why Space's EXPLICIT /skill path
+ * refuses such skills (skill/registry.ts#refuseIfUnsafeContent). The natural-language auto-invocation
+ * path (this file) previously advertised EVERY discovered skill, so a skill carrying these tokens
+ * could be auto-invoked by the model and run unmediated shell. We enforce the same policy here by
+ * setting `disableModelInvocation=true` on any unsafe skill, which the SDK honors in BOTH places:
+ *   (a) `getSystemPromptSnippet()` filters `disableModelInvocation` skills out of the prompt, and
+ *   (b) the `skill` tool refuses to invoke a skill whose loaded form has the flag set.
+ * `loadFull` caches and returns the same Skill reference the tool later reads, so mutating it closes
+ * the tool path too. Safe skills are untouched — no regression to the dynamic-context-free majority.
+ */
+const DYNAMIC_CONTEXT_TOKEN = /!`[^`]+`/;
+
+interface MutableSkillMetadata {
+  readonly name: string;
+  disableModelInvocation: boolean;
+}
+interface MutableFullSkill {
+  content?: string;
+  rawContent?: string;
+  disableModelInvocation?: boolean;
+}
+interface SafetyScannableRegistry {
+  readonly skills: ReadonlyMap<string, MutableSkillMetadata>;
+  loadFull(name: string): Promise<MutableFullSkill>;
+}
+
+async function enforceSkillSafetyPolicy(registry: SafetyScannableRegistry): Promise<void> {
+  for (const meta of registry.skills.values()) {
+    if (meta.disableModelInvocation) continue;
+    let full: MutableFullSkill;
+    try {
+      full = await registry.loadFull(meta.name);
+    } catch {
+      // Can't verify the content → fail safe: exclude from model auto-invocation.
+      meta.disableModelInvocation = true;
+      continue;
+    }
+    if (DYNAMIC_CONTEXT_TOKEN.test(`${full.content ?? ''}\n${full.rawContent ?? ''}`)) {
+      meta.disableModelInvocation = true; // (a) drop from getSystemPromptSnippet()
+      full.disableModelInvocation = true; // (b) make the cached fullSkill fail the skill-tool gate
+      console.warn(
+        `[skills-prompt] skill '${meta.name}' contains dynamic-context shell tokens ` +
+          '(`!`...`); excluded from natural-language auto-invocation (KodaX Space safety policy).',
+      );
+    }
+  }
+}
+
 // Process-level serializing chain. Each `buildSkillsPrompt` call waits
 // for the previous one to complete before touching the SDK global
 // SkillRegistry. We chain on Promise resolution rather than rejection so
@@ -123,7 +173,11 @@ export async function buildSkillsPrompt(projectRoot: string): Promise<string> {
       // from the caller's perspective.
       await sdk.initializeSkillRegistry(projectRoot);
       stage = 'snapshot';
-      return sdk.getSkillRegistry(projectRoot).getSystemPromptSnippet();
+      const registry = sdk.getSkillRegistry(projectRoot);
+      // C7: enforce the dynamic-context-token safety policy before advertising skills, so unsafe
+      // skills are dropped from the snippet AND rejected by the skill tool (same flag governs both).
+      await enforceSkillSafetyPolicy(registry as unknown as SafetyScannableRegistry);
+      return registry.getSystemPromptSnippet();
     } catch (err) {
       // `stage` is set to 'init' at entry and only flipped after
       // initializeSkillRegistry resolves successfully; this makes the
