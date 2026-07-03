@@ -10,9 +10,11 @@
 //   - Repointel chip (F015) → 当前 mode (auto/oss/premium-*) + 最近 traces 列表
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MapPin, Folder, GitBranch, Check, Settings } from 'lucide-react';
+import { MapPin, Folder, GitBranch, Check, Settings, Lock } from 'lucide-react';
 import type { RepointelStatusOutput } from '@kodax-space/space-ipc-schema';
+import { isLicenseActive } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 import { SettingsModal } from '../features/settings/SettingsModal.js';
 
 export function ChipBar(): JSX.Element | null {
@@ -232,6 +234,7 @@ function RepointelChip({ projectPath }: { readonly projectPath: string }): JSX.E
   const [statusErr, setStatusErr] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
+  const licenseStatus = useAppStore((s) => s.licenseStatus);
   // 订阅原始 events array，避免 selector 返回新数组引用造成 zustand re-render 风暴
   const events = useAppStore((s) =>
     currentSessionId ? s.eventsBySession[currentSessionId] : undefined,
@@ -276,6 +279,14 @@ function RepointelChip({ projectPath }: { readonly projectPath: string }): JSX.E
   }, [open, projectPath]);
 
   if (!currentSessionId) return null;
+
+  // Repo-intelligence is a licensed capability. License known & not active → locked
+  // pill + upsell (the capability itself is forced off in real-session's context).
+  // While license state is still loading (null), fall through to the normal pill so
+  // licensed users don't see a lock flash on boot.
+  if (licenseStatus !== null && !isLicenseActive(licenseStatus)) {
+    return <RepointelLockedChip />;
+  }
 
   const latest = latestTraces[0];
   const mode = latest?.mode;
@@ -359,6 +370,66 @@ function RepointelChip({ projectPath }: { readonly projectPath: string }): JSX.E
             ))
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Locked variant — repo-intelligence is a licensed capability and no active license is
+ * present. Visible + openable (product intent: "UI opens and prompts"): clicking shows
+ * an upsell popover that deep-links into Settings → License. The capability itself is
+ * separately forced off in real-session (repoIntelligenceMode:'off'); this is just the
+ * visible signal + activation path.
+ */
+function RepointelLockedChip(): JSX.Element {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocDown(e: MouseEvent): void {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onDocDown);
+    return () => document.removeEventListener('mousedown', onDocDown);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-2 border border-border-default hover:bg-hover-bg text-fg-muted"
+        title={t('repointel.locked.tooltip')}
+      >
+        <Lock className="w-3 h-3" strokeWidth={2} aria-hidden />
+        <span className="font-mono">Repointel</span>
+        <span className="text-fg-muted">·</span>
+        <span className="font-mono">{t('repointel.locked.pill')}</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 bottom-full mb-1 w-72 bg-surface-4 border border-border-default rounded-lg shadow-xl p-3 z-50 space-y-1.5">
+          <div className="text-[11px] text-fg-primary font-medium">
+            {t('repointel.locked.title')}
+          </div>
+          <div className="text-[11px] text-fg-muted leading-relaxed">{t('repointel.locked.body')}</div>
+          <button
+            type="button"
+            onClick={() => {
+              setSettingsOpen(true);
+              setOpen(false);
+            }}
+            className="mt-1 w-full px-2 py-1 rounded bg-surface-2 border border-border-default hover:bg-hover-bg text-info text-[11px] font-medium"
+          >
+            {t('repointel.locked.activate')}
+          </button>
+        </div>
+      )}
+      {settingsOpen && (
+        <SettingsModal initialTab="license" onClose={() => setSettingsOpen(false)} />
       )}
     </div>
   );

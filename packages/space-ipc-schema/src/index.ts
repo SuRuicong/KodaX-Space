@@ -252,6 +252,7 @@ export {
   licenseHasFeatureChannel,
   licenseImportEntitlementChannel,
   licenseKindSchema,
+  isLicenseActive,
   licenseRequireEntitlementChannel,
   licenseRuntimeStatusSchema,
   licenseStatusSchema,

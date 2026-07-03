@@ -178,7 +178,14 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
   const refreshLicenseStatus = useCallback((): void => {
     if (!window.kodaxSpace) return;
     void window.kodaxSpace.invoke('license.getStatus', {}).then((result) => {
-      if (result.ok) setLicenseStatus(result.data);
+      if (result.ok) {
+        setLicenseStatus(result.data);
+        // Mirror into the store so entitlement-gated surfaces (e.g. the Repointel
+        // chip) react to boot + activation without their own IPC round-trip. Shell
+        // is always mounted with the composer, and already refetches on mount +
+        // 'kodax-space.license-changed', so this is the single license-fetch owner.
+        useAppStore.getState().setLicenseStatus(result.data);
+      }
     });
   }, []);
 

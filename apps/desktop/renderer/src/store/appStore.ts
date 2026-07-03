@@ -24,6 +24,7 @@ import type {
   WorkflowEventPayload,
   WorkflowActivityPayload,
   SpaceRuntimeDefaultsT,
+  LicenseStatusT,
 } from '@kodax-space/space-ipc-schema';
 import { canonProjectRoot as canonProjectRootShared } from '@kodax-space/space-ipc-schema';
 import {
@@ -124,6 +125,9 @@ export interface QueuedUserMessage {
 interface AppState {
   // ----- 数据 -----
   projects: readonly Project[];
+  /** License entitlement snapshot (boot-fetched + refreshed after import). null =
+   *  not yet loaded. Gated capabilities (e.g. Repointel) read this via isLicenseActive. */
+  licenseStatus: LicenseStatusT | null;
   currentProjectPath: string | null;
   /** F040: 每个项目在 LeftSidebar.ProjectTree 中的展开状态。
    *  localStorage 持久化（key 'kodax-space.expandedProjects'）。
@@ -269,6 +273,12 @@ interface AppState {
   /** F060：workflow.list 播种已知 run（覆盖式合并进 workflowRuns）。*/
   seedWorkflowRuns: (runs: readonly WorkflowRunT[]) => void;
   /**
+   * F062：workflow.delete 成功后从渲染层移除 run（连带其活动流）。
+   * 必须显式移除——seed 是"只增不删"的覆盖合并，且删除无 push 事件，
+   * 否则已删的 run 会一直留在侧栏/面板里直到重启。
+   */
+  removeWorkflowRun: (runId: string) => void;
+  /**
    * F065：子 agent 活动遥测，按 runId 存有界活动流（每 run 最近 N 条 discrete 事件）。
    * 来自 push workflow.activity；右侧栏按 runId 显示，App 顶层另把关键活动写入中间历史流。
    */
@@ -403,6 +413,7 @@ interface AppState {
 
   // ----- actions -----
   setProjects(projects: readonly Project[]): void;
+  setLicenseStatus(status: LicenseStatusT | null): void;
   /**
    * F040: 切某项目展开状态 — 同步写 localStorage 持久化。
    * `currentDefault` 是当前计算出的"如无显式覆盖时应该展开吗"（current project=true、others=false），
@@ -880,6 +891,7 @@ const initialMascotMode = readPersistedMascotMode();
 
 export const useAppStore = create<AppState>((set) => ({
   projects: [],
+  licenseStatus: null,
   currentProjectPath: lsGet(LS_KEY_PROJECT),
   expandedProjects: readPersistedExpandedProjects(),
   sessions: [],
@@ -957,6 +969,8 @@ export const useAppStore = create<AppState>((set) => ({
   archivedProjectsExpanded: lsGet('kodax-space.archivedProjectsExpanded') === '1',
 
   setProjects: (projects) => set({ projects }),
+
+  setLicenseStatus: (licenseStatus) => set({ licenseStatus }),
 
   toggleProjectExpanded: (projectPath, currentDefault) =>
     set((state) => {
@@ -1423,6 +1437,17 @@ export const useAppStore = create<AppState>((set) => ({
       // immutable：用 Object.fromEntries 构造增量，再一次性 spread（不原地 mutate 中间对象）。
       const additions = Object.fromEntries(runs.map((r) => [r.runId, r]));
       return { workflowRuns: capWorkflowRuns({ ...state.workflowRuns, ...additions }) };
+    }),
+
+  // F062：删除成功后从渲染层移除该 run（immutable：重建不含该 key 的对象），并清其活动流。
+  removeWorkflowRun: (runId) =>
+    set((state) => {
+      if (!(runId in state.workflowRuns) && !(runId in state.workflowActivityByRun)) {
+        return state;
+      }
+      const { [runId]: _removedRun, ...workflowRuns } = state.workflowRuns;
+      const { [runId]: _removedActivity, ...workflowActivityByRun } = state.workflowActivityByRun;
+      return { workflowRuns, workflowActivityByRun };
     }),
 
   // F065：子 agent 活动——按 runId 有界追加（每 run 最近 MAX_ACTIVITY_PER_RUN 条）。

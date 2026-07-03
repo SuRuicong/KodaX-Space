@@ -26,7 +26,9 @@ import {
   clipboardReadImageChannel,
   ok,
   fail,
+  isLicenseActive,
   type IpcResult,
+  type LicenseStatusT,
 } from '../src/index.js';
 
 test('invokeChannels: space.version is registered', () => {
@@ -200,6 +202,7 @@ test('repointel.status input and output schema', () => {
     traceSource: 'session-events',
     warmSupported: false,
     warmReason: 'The current KodaX SDK does not expose a standalone warm API.',
+    entitled: true,
     diagnostics: [
       {
         id: 'project',
@@ -209,6 +212,42 @@ test('repointel.status input and output schema', () => {
     ],
   });
   assert.equal(output.success, true);
+
+  // `entitled` is required — repo-intelligence is a licensed capability, so a status
+  // payload that forgets to report entitlement must not validate.
+  const missingEntitled = repointelStatusChannel.output.safeParse({
+    projectRoot: 'C:/repo',
+    projectExists: true,
+    gitRoot: 'C:/repo',
+    traceSource: 'session-events',
+    warmSupported: false,
+    warmReason: 'x',
+    diagnostics: [{ id: 'project', status: 'ok', detail: 'y' }],
+  });
+  assert.equal(missingEntitled.success, false);
+});
+
+test('isLicenseActive: only an active licensed status unlocks gated capabilities', () => {
+  const base: LicenseStatusT = {
+    status: 'community',
+    edition: 'community',
+    licenseKind: null,
+    managedRequired: false,
+    enforcementSource: 'none',
+    licenseId: null,
+    customer: null,
+    expiresAt: null,
+    features: [],
+    reason: null,
+    lastCheckedAt: '2026-07-03T00:00:00.000Z',
+    degraded: false,
+  };
+  assert.equal(isLicenseActive({ ...base, status: 'licensed' }), true);
+  // Any-active-license policy: everything that is not 'licensed' stays locked —
+  // including 'degraded' (valid payload, but clock-rollback suspicious).
+  for (const status of ['community', 'expired', 'invalid', 'required', 'degraded'] as const) {
+    assert.equal(isLicenseActive({ ...base, status }), false, `${status} must not unlock`);
+  }
 });
 
 test('handoff list output accepts valid, stale, and invalid entries', () => {

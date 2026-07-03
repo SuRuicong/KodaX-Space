@@ -19,6 +19,10 @@ export const repointelStatusChannel = {
     traceSource: z.enum(['session-events']),
     warmSupported: z.boolean(),
     warmReason: z.string().min(1),
+    // Repo-intelligence is a licensed capability: true only when a valid, active
+    // license is present (isLicenseActive). When false, Space forces repo-intel
+    // off and the UI shows a locked/upsell state instead of running it.
+    entitled: z.boolean(),
     diagnostics: z.array(repointelStatusItemSchema).min(1),
   }),
 } as const;

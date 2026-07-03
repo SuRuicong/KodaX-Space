@@ -87,6 +87,23 @@ export const licenseStatusSchema = z
   .strict();
 export type LicenseStatusT = z.infer<typeof licenseStatusSchema>;
 
+/**
+ * Entitlement predicate shared by main (capability gate) and renderer (UI lock).
+ *
+ * Current policy: ANY valid, active license unlocks gated capabilities — a signed
+ * entitlement that verified, has not expired, and is not clock-rollback degraded
+ * (runtime status === 'licensed'). community / expired / invalid / required /
+ * degraded all read as "not entitled".
+ *
+ * Future Pro/Enterprise tiering should add a SIBLING predicate (e.g.
+ * `meetsEdition(status, 'professional')` or `status.features.includes(id)`) rather
+ * than widening this one — keep "any active license" and "tier-gated" as distinct,
+ * explicit checks so a per-feature tier change is a one-line swap at the call site.
+ */
+export function isLicenseActive(status: LicenseStatusT): boolean {
+  return status.status === 'licensed';
+}
+
 export const licenseGetStatusChannel = {
   name: 'license.getStatus',
   direction: 'invoke',

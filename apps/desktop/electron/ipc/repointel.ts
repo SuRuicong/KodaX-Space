@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { registerChannel } from './register.js';
 import type { RepointelStatusItemT, RepointelStatusOutput } from '@kodax-space/space-ipc-schema';
+import { isLicenseActive } from '@kodax-space/space-ipc-schema';
 import { loadSpaceSdkCoding } from '../kodax/sdk-extensions.js';
+import { licenseManager } from '../license/manager.js';
 
 const WARM_SUPPORTED_REASON =
   'KodaX SDK exposes built-in best-effort repo-intelligence prewarm; use /repointel warm to start it for the current project.';
@@ -110,8 +112,17 @@ async function buildStatus(projectRoot: string | undefined): Promise<RepointelSt
   const projectExists = normalizedProjectRoot !== null && canReadDirectory(normalizedProjectRoot);
   const gitRoot = projectExists ? findGitRoot(normalizedProjectRoot) : null;
   const sdk = await sdkDiagnostics(normalizedProjectRoot);
+  // Repo-intelligence is a licensed capability — any active license unlocks it.
+  const entitled = isLicenseActive(await licenseManager.getStatus());
 
   const diagnostics: RepointelStatusItemT[] = [
+    item(
+      'license',
+      entitled ? 'ok' : 'blocked',
+      entitled
+        ? 'Repo-intelligence is unlocked by an active license.'
+        : 'Repo-intelligence is a licensed capability; activate a license to enable it.',
+    ),
     normalizedProjectRoot
       ? item(
           'project',
@@ -144,6 +155,7 @@ async function buildStatus(projectRoot: string | undefined): Promise<RepointelSt
     traceSource: 'session-events',
     warmSupported: sdk.warmSupported,
     warmReason: sdk.warmReason,
+    entitled,
     diagnostics,
   };
 }

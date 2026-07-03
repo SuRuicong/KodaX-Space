@@ -101,6 +101,12 @@ export const messages = {
     'license.status.expired': 'Expired',
     'license.status.invalid': 'Invalid',
     'license.status.degraded': 'Degraded',
+    'repointel.locked.tooltip': 'Repo-intelligence — licensed capability (locked)',
+    'repointel.locked.pill': 'locked',
+    'repointel.locked.title': 'Repo-intelligence is a licensed feature',
+    'repointel.locked.body':
+      'Activate a license to enable repo-aware assistance — semantic lookup, repo & symbol context. It boosts efficiency and harness quality; core coding still works without it.',
+    'repointel.locked.activate': 'Activate license…',
     'settings.keySafety.title': 'Key safety',
     'settings.keySafety.description':
       'API keys are sent only to the Electron main process. The renderer sees configured state, never the secret value.',
@@ -614,6 +620,12 @@ export const messages = {
     'license.status.expired': '已过期',
     'license.status.invalid': '无效',
     'license.status.degraded': '降级',
+    'repointel.locked.tooltip': 'Repo 智能 —— 授权能力（未激活）',
+    'repointel.locked.pill': '未激活',
+    'repointel.locked.title': 'Repo 智能是授权功能',
+    'repointel.locked.body':
+      '激活许可证即可启用仓库感知能力——语义查找、仓库与符号上下文。它提升效率与 harness 水平；未激活时核心编码功能仍可正常使用。',
+    'repointel.locked.activate': '激活许可证…',
     'settings.keySafety.title': '密钥安全',
     'settings.keySafety.description':
       'API Key 只会发送给 Electron 主进程。渲染进程只看到配置状态，不会看到密钥值。',

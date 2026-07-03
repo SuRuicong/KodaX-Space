@@ -114,11 +114,12 @@ import type {
   ToolCallSignal,
 } from '@kodax-ai/kodax/coding';
 import type { InputArtifact, SessionEvent, Surface } from '@kodax-space/space-ipc-schema';
-import { ASK_USER_BACK_SIGNAL } from '@kodax-space/space-ipc-schema';
+import { ASK_USER_BACK_SIGNAL, isLicenseActive } from '@kodax-space/space-ipc-schema';
 
 /** Mirrors the askUser.request push schema's options[].max(20) — the synthetic "Back" must fit. */
 const ASK_USER_MAX_OPTIONS = 20;
 import { askUserBroker } from '../permission/ask-user-broker.js';
+import { licenseManager } from '../license/manager.js';
 import { bootstrapAutoMode } from './auto-mode-bootstrap.js';
 import {
   computeToolBlockReason,
@@ -1402,16 +1403,25 @@ export class RealKodaXSession implements ManagedSession {
     const inputArtifacts = buildInputArtifacts(sdk, artifacts);
     const workflowPolicy = workflowPolicyStore.get();
 
+    // Repo-intelligence is a LICENSED capability — any active license unlocks it
+    // (isLicenseActive). getStatus() re-reads + Ed25519-verifies the entitlement per
+    // call; sub-millisecond and only once per user turn, so no caching needed here.
+    const repoIntelEntitled = isLicenseActive(await licenseManager.getStatus());
+
     const context: NonNullable<KodaXOptions['context']> = {
       // gitRoot 用 projectRoot——Space 不再单独求 git root，KodaX 自己会处理边界
       gitRoot: this.projectRoot,
       executionCwd: this.projectRoot,
       planModeBlockCheck,
-      // Repointel chip 的唯一数据源是 onRepoIntelligenceTrace 回调，而 SDK repo-intelligence
-      // 的 trace 发射默认关闭（inspectRepoIntelligenceRuntime 实测 configured=auto /
-      // effective=full 但 trace=off）。不显式开这个 per-run 开关，回调永不触发 → chip 恒
-      // idle（repo-intel 其实满血在跑，只是没 trace 给 UI 上色）。开销可忽略，恒开。
-      repoIntelligenceTrace: true,
+      // Repo-intelligence gate（见上 repoIntelEntitled）：
+      //  · 有权 → repoIntelligenceTrace:true 打开 per-run trace 发射。SDK 默认 trace=off
+      //    (inspectRepoIntelligenceRuntime 实测 configured=auto/effective=full 但 trace=off)，
+      //    不开这个开关 onRepoIntelligenceTrace 永不回调 → Repointel chip 恒 idle。
+      //  · 无权 → repoIntelligenceMode:'off' 让内建引擎彻底不跑（社区版不吃 repo-intel 效率
+      //    加成）。Space 只闸自己这层；KodaX SDK/CLI 仍内建 repo-intel，不在本次范围。
+      ...(repoIntelEntitled
+        ? { repoIntelligenceTrace: true }
+        : { repoIntelligenceMode: 'off' as const }),
       ...(partnerAgentProfile ? { agentProfile: partnerAgentProfile } : {}),
       ...(partnerAgentProfile ? { toolVisibilityPolicy: partnerToolVisibilityPolicy } : {}),
       ...(partnerRuntimeContextOverlay ? { promptOverlay: partnerRuntimeContextOverlay } : {}),
