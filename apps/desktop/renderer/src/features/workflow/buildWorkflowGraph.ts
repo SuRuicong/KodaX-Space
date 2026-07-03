@@ -183,9 +183,18 @@ function attachLooseRootsToPhases(
   }
   if (phaseRoots.length === 0) return unassigned;
 
+  // Compute the frontier phase ONCE — from phase state AFTER explicit (phaseId/title)
+  // matches but BEFORE any fallback attachment. Otherwise attaching one untagged agent
+  // shifts a phase's *derived* status and pushes the next agent to a different phase — the
+  // bug where every finished sub-agent cascaded into the LAST phase. All untagged agents
+  // (running OR already-completed) belong to the same active frontier; only an untagged
+  // failure prefers an already-failed phase.
+  const frontier = findFrontierPhase(phaseRoots, run);
+  const failedPhase = phaseRoots.find((phase) => phaseStatusFromNode(phase) === 'failed');
+
   const stillUnassigned: WorkflowTreeNode[] = [];
   for (const node of unassigned) {
-    const phase = findFallbackPhase(phaseRoots, node, run);
+    const phase = (node.item.status === 'failed' ? failedPhase : undefined) ?? frontier;
     if (phase) phase.children.push(node);
     else stillUnassigned.push(node);
   }
@@ -212,34 +221,34 @@ function normalizePhaseRef(value: string | undefined): string {
   return (value ?? '').trim().toLowerCase();
 }
 
-function findFallbackPhase(
+// The phase the run is CURRENTLY working — where untagged agents belong. NEVER a
+// future/last phase. Preference: explicit active phase (by id, then index) → the phase
+// whose matched children are running → the first phase not yet finished → the first phase.
+//
+// Bug fixed here (#): the old per-agent fallback special-cased `status === 'running'` to
+// anchor to the active phase, but let every OTHER status (i.e. completed) fall through to
+// `phaseRoots.at(-1)` (the LAST phase). So running agents correctly stayed in the active
+// phase while every *completed* sub-agent jumped into the final phase and lit it up as
+// "done". Computing the frontier once (in attachLooseRootsToPhases) and sending all
+// untagged agents there — regardless of status — is stable and matches the run's cursor.
+function findFrontierPhase(
   phaseRoots: readonly WorkflowTreeNode[],
-  node: WorkflowTreeNode,
   run: WorkflowRunT,
 ): WorkflowTreeNode | undefined {
   const activeById = findActivePhaseById(phaseRoots, run.activePhaseId);
   if (activeById) return activeById;
 
-  if (node.item.status === 'running') {
-    const running = phaseRoots.find((phase) => phaseStatusFromNode(phase) === 'running');
-    if (running) return running;
-    const activeByIndex = findActivePhaseByIndex(phaseRoots, run.activePhaseIndex);
-    if (activeByIndex) return activeByIndex;
-    return phaseRoots.find((phase) => phaseStatusFromNode(phase) === 'pending');
-  }
+  const running = phaseRoots.find((phase) => phaseStatusFromNode(phase) === 'running');
+  if (running) return running;
 
-  if (node.item.status === 'failed') {
-    const failed = phaseRoots.find((phase) => phaseStatusFromNode(phase) === 'failed');
-    if (failed) return failed;
-  }
+  const activeByIndex = findActivePhaseByIndex(phaseRoots, run.activePhaseIndex);
+  if (activeByIndex) return activeByIndex;
 
-  const lastTouched = findLastPhase(phaseRoots, (phase) => {
+  const firstOpen = phaseRoots.find((phase) => {
     const status = phaseStatusFromNode(phase);
-    return status !== 'pending' && status !== 'skipped';
+    return status !== 'completed' && status !== 'skipped' && status !== 'cancelled';
   });
-  if (lastTouched) return lastTouched;
-
-  return phaseRoots.at(-1);
+  return firstOpen ?? phaseRoots[0];
 }
 
 function findActivePhaseById(
@@ -267,17 +276,6 @@ function findActivePhaseByIndex(
 function phaseStatusFromNode(node: WorkflowTreeNode): WorkflowGraphStatus {
   const counts = countNodes(node.children.map((child) => graphNodeFromTreeNode(child, 'running')));
   return derivePhaseStatus(node.item.status, counts);
-}
-
-function findLastPhase(
-  phaseRoots: readonly WorkflowTreeNode[],
-  predicate: (phase: WorkflowTreeNode) => boolean,
-): WorkflowTreeNode | undefined {
-  for (let i = phaseRoots.length - 1; i >= 0; i--) {
-    const phase = phaseRoots[i];
-    if (phase && predicate(phase)) return phase;
-  }
-  return undefined;
 }
 
 function derivePhaseStatus(

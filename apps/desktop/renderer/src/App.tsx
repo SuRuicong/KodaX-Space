@@ -23,7 +23,6 @@ import { QuickAskPopover } from './features/quick-ask/QuickAskPopover.js';
 import { useSessionCompleteNotification } from './features/notifications/useSessionCompleteNotification.js';
 import { Shell } from './shell/Shell.js';
 import {
-  formatWorkflowActivityNotice,
   formatWorkflowEventNotices,
   formatWorkflowRunRestoreNotices,
 } from './features/workflow/workflowNotices.js';
@@ -344,12 +343,11 @@ export default function App(): JSX.Element {
     // F065 子 agent 活动遥测——归到 run 的有界活动桶（不进主 transcript）。
     unsubsRef.current.push(
       bridge.on('workflow.activity', (payload) => {
+        // Digest/activity only feeds the right-sidebar live activity strip. The durable
+        // per-agent transcript summary comes solely from the snapshot item-summary path
+        // (formatItemSummaryNotice, keyed + deduped) — the same source restore replays —
+        // so the digest no longer emits a separate, keyless, duplicate transcript notice.
         appendWorkflowActivity(payload);
-        const run = useAppStore.getState().workflowRuns[payload.runId];
-        if (run?.sessionId !== undefined && run.surface !== 'partner') {
-          const notice = formatWorkflowActivityNotice(payload);
-          if (notice) appendWorkflowNotice(run.sessionId, notice);
-        }
       }),
     );
 

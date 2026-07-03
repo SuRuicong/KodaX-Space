@@ -147,6 +147,40 @@ test('workflow graph assigns running loose agents to the current pending phase',
   assert.equal(model.phases[2]?.status, 'pending');
 });
 
+test('workflow graph keeps finished untagged agents in the active phase, not the last (#regression)', () => {
+  // Repro of the reported bug: a parallel-review phase spawns several untagged agents
+  // (no phaseId; titles do not match any phase). Some finish while one is still running.
+  // Every agent — running AND completed — must stay in the active "find" phase; a finisher
+  // must NOT jump into the last phase ("synthesize") and light it up as done. The previous
+  // per-agent fallback sent completed agents to phaseRoots.at(-1) and cascaded.
+  const model = buildWorkflowGraphModel(
+    run({
+      phaseCount: 3,
+      items: [
+        item({ id: 'find', title: 'find', kind: 'phase', status: 'pending' }),
+        item({ id: 'verify', title: 'verify', kind: 'phase', status: 'pending' }),
+        item({ id: 'synthesize', title: 'synthesize', kind: 'phase', status: 'pending' }),
+        item({ id: 'security-ipc', title: 'security-ipc', kind: 'agent', status: 'completed' }),
+        item({ id: 'workflow-control', title: 'workflow-control', kind: 'agent', status: 'completed' }),
+        item({ id: 'partner-design', title: 'partner-design', kind: 'agent', status: 'running' }),
+        item({ id: 'frontend-ux', title: 'frontend-ux', kind: 'agent', status: 'completed' }),
+      ],
+    }),
+  );
+
+  assert.equal(model.phases.length, 3);
+  // All four untagged agents land in phase 1 (the active frontier), regardless of status.
+  assert.deepEqual(
+    [...(model.phases[0]?.nodes.map((node) => node.title) ?? [])].sort(),
+    ['frontend-ux', 'partner-design', 'security-ipc', 'workflow-control'],
+  );
+  assert.equal(model.phases[0]?.status, 'running');
+  // The last phase must not be lit up by an early finisher.
+  assert.equal(model.phases[1]?.nodes.length, 0);
+  assert.equal(model.phases[2]?.nodes.length, 0);
+  assert.equal(model.phases[2]?.status, 'pending');
+});
+
 test('workflow graph avoids synthetic workflow-name phase when real phases exist', () => {
   const model = buildWorkflowGraphModel(
     run({

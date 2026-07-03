@@ -132,7 +132,17 @@ type PushFn = (payload: WorkflowEventPayload) => void;
 
 // 映射上限——防止长跑进程里 origins 无界增长(终态 run 的归属不再变,留最近 N 条即可)。
 const MAX_ORIGINS = 500;
-const GENERATED_RUN_ID_RE = /^wf_[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+// Path-safety guard for a durable run-dir name / renderer-supplied runId: it must be a single
+// filename token (no separators, no `.`/`..`) so path.join(runBaseDir, runId) can't escape the
+// base dir. It is NOT an "is this a Space-generated id" check — it MUST accept both Space's own
+// `wf_<uuid>` ids and the SDK's AMAW run_workflow ids of the form `run-<...>`.
+//
+// Regression fix: the old `^wf_...` form silently excluded every `run-...` AMAW run from the
+// durable disk scan (listDurableWorkflowSnapshots) and the get()/result path resolver — so after
+// a restart those runs, and all their transcript notices + left/right-sidebar UI, disappeared,
+// even though their run.json and hostMetadata.sessionId were correctly persisted on disk. The
+// conversation was unaffected (separate SDK transcript), which is exactly the reported symptom.
+const SAFE_RUN_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const IPC_SHORT_MAX = 256;
 const IPC_MSG_MAX = 8192;
 const IPC_PATH_MAX = 4096;
@@ -954,7 +964,7 @@ function listDurableWorkflowSnapshots(
   let entries: string[];
   try {
     entries = readdirSync(runBaseDir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && GENERATED_RUN_ID_RE.test(entry.name))
+      .filter((entry) => entry.isDirectory() && SAFE_RUN_ID_RE.test(entry.name))
       .map((entry) => entry.name);
   } catch {
     return [];
@@ -2185,7 +2195,7 @@ function patternsFromWorkflowModule(module: unknown): string[] | undefined {
 }
 
 function generatedRunDir(baseDir: string, runId: string): string | null {
-  return GENERATED_RUN_ID_RE.test(runId) ? path.join(baseDir, runId) : null;
+  return SAFE_RUN_ID_RE.test(runId) ? path.join(baseDir, runId) : null;
 }
 
 function scriptSnapshotFromCapsule(capsule: unknown): WorkflowScriptSnapshotLite | undefined {

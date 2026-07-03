@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { WorkflowEventPayload, WorkflowRunT } from '@kodax-space/space-ipc-schema';
 import {
-  formatWorkflowActivityNotice,
   formatWorkflowEventNotices,
   formatWorkflowRunRestoreNotices,
 } from '../../renderer/src/features/workflow/workflowNotices.js';
@@ -179,46 +178,8 @@ test('workflow event notices ignore generic live refresh messages', () => {
   assert.equal(notices.length, 0);
 });
 
-test('workflow live tool activity is NOT pushed to the transcript (right-sidebar live panel only)', () => {
-  for (const kind of ['tool_use', 'tool_result', 'end'] as const) {
-    assert.equal(
-      formatWorkflowActivityNotice({
-        runId: 'wf-notice',
-        childAgentName: 'Reviewer',
-        kind,
-        toolName: 'grep',
-      }),
-      null,
-      `${kind} activity should not become a transcript notice`,
-    );
-  }
-});
-
-test('workflow activity digest notices include agent summary body', () => {
-  assert.equal(
-    formatWorkflowActivityNotice({
-      runId: 'wf-notice',
-      childAgentName: 'Reviewer',
-      kind: 'digest',
-      summary: 'Checked the patch and found one missing test.',
-      summaryKind: 'digest',
-    }),
-    '[workflow] agent summary: Reviewer\nChecked the patch and found one missing test.',
-  );
-});
-
-test('workflow activity digest notices preserve verifier result without summary', () => {
-  assert.equal(
-    formatWorkflowActivityNotice({
-      runId: 'wf-notice',
-      childAgentName: 'Writer',
-      kind: 'digest',
-      verification: {
-        ok: false,
-        enforcement: 'warn',
-        reasons: ['expected file mutations'],
-      },
-    }),
-    '[workflow] agent summary: Writer\nverification failed (warn): expected file mutations',
-  );
-});
+// The per-agent digest (workflow.activity kind:'digest') no longer produces a transcript
+// notice — it feeds the right-sidebar live activity strip only. The durable per-agent
+// transcript summary comes from the snapshot item-summary path (asserted above), which is
+// keyed + deduped and is also what restore replays. This removed the duplicate-summary bug
+// (digest + item-summary both emitted a byte-identical notice for the same SDK event).

@@ -293,6 +293,52 @@ test('list and get restore completed workflow runs from durable run.json', async
   }
 });
 
+test('list/get restore AMAW run_workflow runs whose id has the SDK "run-" prefix (regression)', async () => {
+  // Regression: the durable-scan filter + run-dir path guard used to require a `wf_` prefix, so
+  // every AMAW run_workflow run (the SDK ids them `run-<...>`) was silently excluded from the
+  // disk scan and from get()/result — after a restart those runs, and all their transcript
+  // notices + left/right-sidebar UI, disappeared, even though run.json + hostMetadata.sessionId
+  // were correctly persisted on disk (the conversation was unaffected: separate SDK transcript).
+  const { dir, file } = freshFile();
+  const runBaseDir = join(dir, 'workflow-runs');
+  const runId = 'run-mr4oxcg4';
+  const runDir = join(runBaseDir, runId);
+  const projectRoot = join(dir, 'project');
+  try {
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(
+      join(runDir, 'run.json'),
+      JSON.stringify({
+        runId,
+        workflowName: 'review-since-v0.1.26',
+        status: 'completed',
+        startedAt: '2026-07-03T09:24:56.000Z',
+        updatedAt: '2026-07-03T09:40:00.000Z',
+        items: [],
+        counts: { pending: 0, running: 0, completed: 0, failed: 0, cancelled: 0, skipped: 0 },
+        progress: {
+          spawnedAgents: 0,
+          finishedAgents: 0,
+          activeAgents: 0,
+          failedAgents: 0,
+          stoppedAgents: 0,
+        },
+        hostMetadata: { sessionId: 's_amaw', surface: 'code', projectRoot },
+      }),
+    );
+    const ctrl = new WorkflowController(() => {}, file, runBaseDir);
+    assert.equal(
+      ctrl.list().find((r) => r.runId === runId)?.sessionId,
+      's_amaw',
+      'run-<...> AMAW run must appear in list() after restart',
+    );
+    assert.equal(ctrl.list('s_amaw')[0]?.runId, runId);
+    assert.equal(ctrl.get(runId)?.sessionId, 's_amaw');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('list and get recover completed workflow runs from durable events without run.json', async () => {
   const { dir, file } = freshFile();
   const runBaseDir = join(dir, 'workflow-runs');

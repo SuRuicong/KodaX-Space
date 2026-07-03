@@ -1,5 +1,4 @@
 import type {
-  WorkflowActivityPayload,
   WorkflowEventPayload,
   WorkflowProcessItemT,
   WorkflowRunT,
@@ -12,14 +11,14 @@ export interface WorkflowNoticeCandidate {
 }
 
 const AGENT_SUMMARY_MAX = 900;
-const ACTIVITY_MAX = 180;
 
-export function compactWorkflowText(value: string | undefined, max = ACTIVITY_MAX): string {
-  if (!value) return '';
-  const oneLine = value.replace(/\s+/g, ' ').trim();
-  if (oneLine.length <= max) return oneLine;
-  return `${oneLine.slice(0, Math.max(0, max - 1))}...`;
-}
+// NOTE: the per-agent digest (workflow.activity, kind:'digest') deliberately does NOT
+// produce a transcript notice. It feeds the right-sidebar live activity strip only. The
+// durable per-agent transcript summary comes solely from the snapshot item-summary path
+// (formatItemSummaryNotice below, keyed + deduped) — the same source restore replays.
+// Having BOTH emit produced byte-identical duplicate summaries (one keyed, one keyless),
+// since the digest event and the snapshot item are two views of the SAME SDK event
+// (agent_completed/…: item.id === childAgentId === taskId). See #dedup.
 
 function workflowBlockText(value: string | undefined, max?: number): string {
   if (!value) return '';
@@ -30,46 +29,6 @@ function workflowBlockText(value: string | undefined, max?: number): string {
   if (max === undefined) return text;
   if (text.length <= max) return text;
   return `${text.slice(0, Math.max(0, max - 4)).trimEnd()}\n...`;
-}
-
-export function formatWorkflowActivityNotice(payload: WorkflowActivityPayload): string | null {
-  const child = payload.childAgentName ?? payload.childAgentId ?? 'child agent';
-  switch (payload.kind) {
-    // Live per-tool activity (using X / X finished / completed) is shown in the
-    // right-sidebar Workflow live panel; it must NOT flood the main transcript
-    // during a run. Only the terminal agent `digest` (a meaningful summary) stays
-    // in history — matching KodaX REPL's "live in the panel, digest in history".
-    case 'tool_use':
-    case 'tool_result':
-    case 'end':
-      return null;
-    case 'digest': {
-      const body = workflowBlockText(payload.summary, AGENT_SUMMARY_MAX);
-      const verification = formatWorkflowVerification(payload.verification);
-      if (!body && !verification) return null;
-      const label =
-        payload.summaryKind === 'digest-failed'
-          ? 'agent summary excerpt'
-          : payload.summaryKind === 'excerpt'
-            ? 'agent excerpt'
-            : 'agent summary';
-      return `[workflow] ${label}: ${child}${body ? `\n${body}` : ''}${
-        verification ? `\n${verification}` : ''
-      }`;
-    }
-  }
-}
-
-function formatWorkflowVerification(
-  verification: WorkflowActivityPayload['verification'],
-): string {
-  if (!verification) return '';
-  const label = verification.ok ? 'verification passed' : 'verification failed';
-  const mode = verification.enforcement ? ` (${verification.enforcement})` : '';
-  const reasons = verification.reasons.length
-    ? `: ${compactWorkflowText(verification.reasons.join('; '), AGENT_SUMMARY_MAX)}`
-    : '';
-  return `${label}${mode}${reasons}`;
 }
 
 export function formatWorkflowEventNotices(
