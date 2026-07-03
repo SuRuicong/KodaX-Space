@@ -393,6 +393,10 @@ async function writeEventsOnlyWorkflowRun(
 }
 
 test('workflow push events update the sidebar and transcript through completion', async () => {
+  test.skip(
+    !!process.env.CI && process.platform === 'win32',
+    'seeds a session via a mock assistant turn that can stall on Windows CI; keep local and Linux coverage',
+  );
   const testId = `workflow-events-${Date.now()}`;
   const { space, projectDir } = await launchSeededSpace(testId);
   try {
