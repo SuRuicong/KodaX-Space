@@ -513,15 +513,12 @@ function saveWritableKodaxConfig(config: SdkLoadConfigReturn): void {
 /**
  * The SdkCustomProviderConfig keys that {@link customProviderUpdateToSdk} /
  * {@link spaceCustomProviderToSdk} own (i.e. driven by Space's provider form).
- * On update these are fully replaced; every other key on the existing record is
- * preserved so CLI-set fields (reasoning / supportsThinking / …) survive an edit.
+ * On update these are fully REPLACED by the rebuild (so clearing one — e.g. emptying
+ * the model list or the reasoning declaration — actually takes effect); every other key
+ * on the existing record is preserved so CLI-set fields Space does NOT model
+ * (`reasoningProfile` / `supportsThinking` / custom headers / …) survive an edit.
  * Keep in sync with `spaceCustomProviderToSdk`'s output shape.
  */
-// NB: `reasoning` is intentionally NOT modeled here. The update rebuild only emits
-// a `reasoning` key when the form supplies one, and the merge spreads rebuild over
-// preserved — so a form-supplied reasoning wins, while an existing declaration
-// (including an advanced raw `reasoningProfile` the form can't express) survives an
-// edit that leaves reasoning untouched.
 const CUSTOM_PROVIDER_MODELED_KEYS: ReadonlySet<string> = new Set([
   'name',
   'protocol',

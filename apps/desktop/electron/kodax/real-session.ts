@@ -760,6 +760,15 @@ export class RealKodaXSession implements ManagedSession {
         const header = question.header !== undefined
           ? `[${questionIndex + 1}/${options.questions.length}] ${question.header}`
           : `[${questionIndex + 1}/${options.questions.length}]`;
+        // Clamp selection bounds to the count of REAL (non-"Back") options actually presented. The
+        // synthetic "Back" is a navigation escape, not a selectable answer, and we may have trimmed
+        // a real option to make room for it — so an un-clamped minSelections (e.g. 20 on a 20-option
+        // question that became 19 real + Back) would make the modal impossible to Submit.
+        const realOptionCount = askOptions.length - (questionIndex > 0 ? 1 : 0);
+        const clampBound = (b: number | undefined): number | undefined =>
+          b === undefined ? undefined : Math.min(b, realOptionCount);
+        const clampedMin = clampBound(question.minSelections);
+        const clampedMax = clampBound(question.maxSelections);
         const answer = await askUserBroker.requestQuestion({
           sessionId: sid,
           kind: 'select',
@@ -767,8 +776,8 @@ export class RealKodaXSession implements ManagedSession {
           header,
           options: askOptions,
           ...(question.multiSelect !== undefined ? { multiSelect: question.multiSelect } : {}),
-          ...(question.minSelections !== undefined ? { minSelections: question.minSelections } : {}),
-          ...(question.maxSelections !== undefined ? { maxSelections: question.maxSelections } : {}),
+          ...(clampedMin !== undefined ? { minSelections: clampedMin } : {}),
+          ...(clampedMax !== undefined ? { maxSelections: clampedMax } : {}),
         });
         if (answer === undefined) return undefined;
         if (!Array.isArray(answer) && answer === ASK_USER_BACK_SIGNAL) {

@@ -244,6 +244,12 @@ export const providerModelContextWindowChannel = {
     source: z.enum(['provider', 'fallback']),
     supportedEfforts: z.array(z.string().min(1).max(32)).max(16).optional(),
     defaultEffort: z.string().min(1).max(32).optional(),
+    /**
+     * Whether the provider can actually disable thinking (honor an "Off"/none effort). False for
+     * providers that hard-reject 'none' (kimi-code / minimax-coding) — the UI hides "Off" for those
+     * so it doesn't mislabel a control the runtime would silently clamp up to the weakest rung.
+     */
+    canDisableThinking: z.boolean().optional(),
   }),
 } as const;
 

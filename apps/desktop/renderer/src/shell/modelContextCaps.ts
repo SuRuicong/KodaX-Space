@@ -27,7 +27,6 @@ const RULES: readonly CapRule[] = [
   { match: /^deepseek-v3/, cap: 128_000 },
   { match: /^deepseek-/, cap: 1_000_000 },
   // Kimi K2 系列（k2.5 / k2.6 / k2.7-code）与 Kimi for Coding — 均 256k。
-  { match: /^kimi-k2\.7-code$/, cap: 256_000 },
   { match: /^kimi-k2/, cap: 256_000 },
   { match: /^kimi-for-coding/, cap: 256_000 },
   // Qwen 3.5 — 1M

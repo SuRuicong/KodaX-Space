@@ -89,38 +89,63 @@ const DYNAMIC_CONTEXT_TOKEN = /!`[^`]+`/;
 
 interface MutableSkillMetadata {
   readonly name: string;
+  readonly source: string; // 'project' | 'user' | 'plugin' | 'builtin'
   disableModelInvocation: boolean;
 }
+
+// Untrusted skill sources: `project` = the opened repo's .kodax/skills (may come from a cloned repo
+// the user didn't author), `plugin` = externally-installed. `user` (~/.kodax/skills) and `builtin`
+// (KodaX-shipped) are treated as trusted.
+//
+// ACCEPTED-SCOPE NOTE (security review, owner decision 2026-07): `user` is a deliberately NARROWER
+// scope. `~/.kodax/skills` CAN hold a downloaded skill pack (a supply-chain vector comparable to a
+// cloned repo), so a malicious user-level dynamic-context skill is a KNOWN RESIDUAL that this
+// suppression does not cover. It is left trusted because (a) Space's explicit /skill path already
+// refuses ALL dynamic-context skills regardless of source (skill/registry.ts#refuseIfUnsafeContent),
+// so such a skill is already non-functional there, and (b) widening to `user` would couple this
+// path to whatever global skills the running machine happens to have. Full closure of the residual
+// is an SDK ask (route the skill tool's dynamic-context through the host broker), tracked separately.
+const UNTRUSTED_SKILL_SOURCES: ReadonlySet<string> = new Set(['project', 'plugin']);
 interface MutableFullSkill {
   content?: string;
   rawContent?: string;
   disableModelInvocation?: boolean;
 }
-interface SafetyScannableRegistry {
+export interface SafetyScannableRegistry {
   readonly skills: ReadonlyMap<string, MutableSkillMetadata>;
   loadFull(name: string): Promise<MutableFullSkill>;
 }
 
-async function enforceSkillSafetyPolicy(registry: SafetyScannableRegistry): Promise<void> {
+/** Exported for unit testing the trust-boundary + flag-setting logic with a mock registry. */
+export async function enforceSkillSafetyPolicy(
+  registry: SafetyScannableRegistry,
+): Promise<{ untrustedUnsafeSkills: string[] }> {
+  const untrustedUnsafeSkills: string[] = [];
   for (const meta of registry.skills.values()) {
-    if (meta.disableModelInvocation) continue;
+    let unsafe = false;
     let full: MutableFullSkill;
     try {
       full = await registry.loadFull(meta.name);
+      unsafe = DYNAMIC_CONTEXT_TOKEN.test(`${full.content ?? ''}\n${full.rawContent ?? ''}`);
+      if (unsafe) {
+        // Belt: flag the metadata + cached full skill so the SDK drops it from the snippet and the
+        // skill tool refuses it in the common (no-race) single-registry case.
+        meta.disableModelInvocation = true;
+        full.disableModelInvocation = true;
+      }
     } catch {
-      // Can't verify the content → fail safe: exclude from model auto-invocation.
+      unsafe = true; // can't verify the content → fail safe
       meta.disableModelInvocation = true;
-      continue;
     }
-    if (DYNAMIC_CONTEXT_TOKEN.test(`${full.content ?? ''}\n${full.rawContent ?? ''}`)) {
-      meta.disableModelInvocation = true; // (a) drop from getSystemPromptSnippet()
-      full.disableModelInvocation = true; // (b) make the cached fullSkill fail the skill-tool gate
-      console.warn(
-        `[skills-prompt] skill '${meta.name}' contains dynamic-context shell tokens ` +
-          '(`!`...`); excluded from natural-language auto-invocation (KodaX Space safety policy).',
-      );
+    // Suspenders: flagging alone can't survive the SDK global-singleton re-discover race, and the
+    // exfil threat is an UNTRUSTED (cloned-repo / plugin) skill. When one is present, suppress the
+    // whole snippet (below) — trusted builtin/user skills using dynamic-context (e.g. `!`git status``)
+    // stay flagged-only and do not nuke advertisement for the session.
+    if (unsafe && UNTRUSTED_SKILL_SOURCES.has(meta.source)) {
+      untrustedUnsafeSkills.push(meta.name);
     }
   }
+  return { untrustedUnsafeSkills };
 }
 
 // Process-level serializing chain. Each `buildSkillsPrompt` call waits
@@ -174,9 +199,29 @@ export async function buildSkillsPrompt(projectRoot: string): Promise<string> {
       await sdk.initializeSkillRegistry(projectRoot);
       stage = 'snapshot';
       const registry = sdk.getSkillRegistry(projectRoot);
-      // C7: enforce the dynamic-context-token safety policy before advertising skills, so unsafe
-      // skills are dropped from the snippet AND rejected by the skill tool (same flag governs both).
-      await enforceSkillSafetyPolicy(registry as unknown as SafetyScannableRegistry);
+      // C7 (security review HIGH): the SDK `skill` tool re-discovers a FRESH, unflagged registry
+      // whenever a concurrent session on another project root thrashes the process-global
+      // SkillRegistry singleton, and its dynamic-context expansion runs `!`cmd`` via execSync
+      // WITHOUT the permission broker. Per-skill flagging can't survive that race. The exploit
+      // requires the model to know the unsafe skill's name — which Space only ever supplies via this
+      // snippet — so when a project contains ANY dynamic-context skill we suppress the ENTIRE
+      // natural-language snippet for it. The model is then never told a skill name for this project
+      // and cannot auto-invoke the unsafe one, race or not. Safe skills in the same project lose NL
+      // auto-invocation until the `!`...` token is removed; explicit /skill is unaffected and
+      // independently blocks unsafe skills (skill/registry.ts#refuseIfUnsafeContent). Full closure
+      // needs an SDK change (route the skill tool's dynamic-context through the host broker).
+      const { untrustedUnsafeSkills } = await enforceSkillSafetyPolicy(
+        registry as unknown as SafetyScannableRegistry,
+      );
+      if (untrustedUnsafeSkills.length > 0) {
+        console.warn(
+          `[skills-prompt] project '${projectRoot}' has ${untrustedUnsafeSkills.length} untrusted ` +
+            `skill(s) with dynamic-context shell tokens (${untrustedUnsafeSkills.join(', ')}); ` +
+            'natural-language skill auto-invocation is disabled for this project (KodaX Space ' +
+            'safety policy). Remove the `!`...` tokens to re-enable.',
+        );
+        return '';
+      }
       return registry.getSystemPromptSnippet();
     } catch (err) {
       // `stage` is set to 'init' at entry and only flipped after

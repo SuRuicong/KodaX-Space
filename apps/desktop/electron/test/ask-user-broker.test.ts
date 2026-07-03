@@ -175,6 +175,44 @@ test('push payload contains reason / toolCall / signals when provided', async ()
   await pending;
 });
 
+test('C8: guardrail signals[] are clamped to the push schema max (20)', async () => {
+  // >20 signals would fail the askUser.request zod validation on push → the prompt never reaches
+  // the renderer and silently times out. The broker must clamp so the push always validates.
+  const pending = askUserBroker.request({
+    sessionId: 's_signals_clamp',
+    reason: 'many signals',
+    toolCall: { toolId: 't', toolName: 'bash', input: { command: 'echo' } },
+    signals: Array.from({ length: 25 }, (_, i) => ({
+      type: `sig-${i}`,
+      severity: 'info' as const,
+      message: `signal ${i}`,
+    })),
+  });
+  await new Promise((r) => setImmediate(r));
+  const evt = captured.find((c) => c.channel === 'askUser.request');
+  assert.ok(evt, 'expected a guardrail push');
+  const signals = (evt!.payload as { signals?: unknown[] }).signals ?? [];
+  assert.ok(signals.length <= 20, `signals must be clamped to <=20, got ${signals.length}`);
+  askUserBroker.resolve((evt!.payload as { reqId: string }).reqId, 'block');
+  await pending;
+});
+
+test('C8: select options[] are clamped to the push schema max (20)', async () => {
+  const pending = askUserBroker.requestQuestion({
+    sessionId: 's_options_clamp',
+    kind: 'select',
+    question: 'pick one',
+    options: Array.from({ length: 25 }, (_, i) => ({ label: `opt ${i}`, value: `v${i}` })),
+  });
+  await new Promise((r) => setImmediate(r));
+  const evt = captured.find((c) => c.channel === 'askUser.request');
+  assert.ok(evt, 'expected a question push');
+  const options = (evt!.payload as { options?: unknown[] }).options ?? [];
+  assert.ok(options.length <= 20, `options must be clamped to <=20, got ${options.length}`);
+  askUserBroker.cancelAll('shutdown');
+  await pending;
+});
+
 test('pendingCount reflects in-flight requests', async () => {
   // 测试前状态可能有残留——先 cancelAll 清空
   askUserBroker.cancelAll('shutdown');

@@ -30,6 +30,10 @@ import { pushToast } from '../store/toastStore.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import type { MessageKey } from '../i18n/messages.js';
 import { resolveActiveModel } from './resolveActiveModel.js';
+import { sdkEffortToReasoningMode, visibleEffortLadder } from './effortLadder.js';
+
+// Re-export the pure ladder helpers (kept as this module's public API; logic lives in effortLadder.ts).
+export { sdkEffortToReasoningMode, visibleEffortLadder };
 
 type ReasoningMode = SessionMeta['reasoningMode'];
 type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
@@ -41,54 +45,9 @@ const EFFORT_LABEL_KEYS: Record<ReasoningMode, MessageKey> = {
   auto: 'modelPicker.effort.auto',
   deep: 'modelPicker.effort.deep',
 };
-const EFFORT_ORDER: readonly ReasoningMode[] = ['off', 'quick', 'balanced', 'auto', 'deep'];
 
 function effortLabel(mode: ReasoningMode, t: Translate): string {
   return t(EFFORT_LABEL_KEYS[mode]);
-}
-
-/**
- * Map an SDK effort rung (from resolveModelCapabilities' reasoningProfile) to
- * Space's persisted ReasoningMode bucket. Mirrors the main-process
- * reasoning-effort.ts `effortToReasoningMode`. Returns null for an unmappable rung.
- */
-export function sdkEffortToReasoningMode(effort: string): ReasoningMode | null {
-  switch (effort.trim().toLowerCase()) {
-    case 'off':
-    case 'none':
-    case 'minimal':
-      return 'off';
-    case 'auto':
-      return 'auto';
-    case 'low':
-      return 'quick';
-    case 'medium':
-      return 'balanced';
-    case 'high':
-    case 'xhigh':
-    case 'max':
-      return 'deep';
-    default:
-      return null;
-  }
-}
-
-/**
- * Build the visible effort ladder from the active model's SDK-declared efforts.
- * `off` and `auto` are universal Space options (disable thinking / let the model
- * decide) so they are always available; the depth buckets (quick/balanced/deep)
- * are shown only when the model actually supports a rung that maps to them.
- * When the SDK reports no efforts (unknown / non-reasoning model) we fall back to
- * the full fixed ladder — never more restrictive than the prior behavior.
- */
-export function visibleEffortLadder(supportedEfforts: readonly string[] | undefined): readonly ReasoningMode[] {
-  if (!supportedEfforts || supportedEfforts.length === 0) return EFFORT_ORDER;
-  const allowed = new Set<ReasoningMode>(['off', 'auto']);
-  for (const effort of supportedEfforts) {
-    const mode = sdkEffortToReasoningMode(effort);
-    if (mode) allowed.add(mode);
-  }
-  return EFFORT_ORDER.filter((mode) => allowed.has(mode));
 }
 
 export function ModelEffortSelector(): JSX.Element {
@@ -119,6 +78,7 @@ export function ModelEffortSelector(): JSX.Element {
   const [modelEfforts, setModelEfforts] = useState<{
     readonly supported: readonly string[];
     readonly default?: string;
+    readonly canDisableThinking?: boolean;
   } | null>(null);
 
   // Ctrl+I 打开/关闭
@@ -162,7 +122,10 @@ export function ModelEffortSelector(): JSX.Element {
   // Effort ladder built from the active model's SDK-declared efforts (falls back
   // to the full fixed ladder when unknown). The model's own default rung is
   // annotated so the user can see "what this model prefers".
-  const visibleEfforts = visibleEffortLadder(modelEfforts?.supported);
+  const visibleEfforts = visibleEffortLadder(
+    modelEfforts?.supported,
+    modelEfforts?.canDisableThinking ?? true,
+  );
   const modelDefaultMode = modelEfforts?.default
     ? sdkEffortToReasoningMode(modelEfforts.default)
     : null;
@@ -276,6 +239,7 @@ export function ModelEffortSelector(): JSX.Element {
         if (cancelled || !r.ok) return;
         setModelEfforts({
           supported: r.data.supportedEfforts ?? [],
+          canDisableThinking: r.data.canDisableThinking ?? true,
           ...(r.data.defaultEffort ? { default: r.data.defaultEffort } : {}),
         });
       } catch {
@@ -297,7 +261,10 @@ export function ModelEffortSelector(): JSX.Element {
       const isEffortCycle = e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && key === 'e';
       if (isLegacyCycle || isEffortCycle) {
         e.preventDefault();
-        const ladder = visibleEffortLadder(modelEfforts?.supported);
+        const ladder = visibleEffortLadder(
+          modelEfforts?.supported,
+          modelEfforts?.canDisableThinking ?? true,
+        );
         const idx = ladder.indexOf(activeEffort);
         const next = ladder[(idx + 1) % ladder.length] ?? ladder[0];
         if (next) void pickEffort(next);

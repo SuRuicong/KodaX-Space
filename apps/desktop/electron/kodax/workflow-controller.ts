@@ -1694,12 +1694,16 @@ export class WorkflowController {
     } catch {
       reasoningProfile = undefined;
     }
+    // Also exclude efforts the wire layer already rejected this process (parity with the chat path),
+    // so a previously-400'd effort isn't re-sent on every workflow run.
+    const rejectedEfforts =
+      (await loadAgentEffortCache())?.getCachedRejectedEfforts?.(s.provider, s.model ?? undefined) ?? [];
     // C2: forward the user-configured Workflow Host Policy so maxAgents/maxConcurrency/tokenBudget
     // caps actually bound explicit /workflow runs (mirrors the AMAW run_workflow path in real-session).
     const policy = workflowPolicyStore.get();
     return {
       provider: s.provider,
-      effort: resolveWireEffort(s.reasoningMode, reasoningProfile),
+      effort: resolveWireEffort(s.reasoningMode, reasoningProfile, rejectedEfforts),
       agentMode: s.agentMode,
       ...(s.model ? { model: s.model } : {}),
       // C9: agentProfile.surface makes create_artifact's resolveSessionRunContext succeed for
@@ -2099,6 +2103,20 @@ async function loadCodingSdk(): Promise<CodingSdkSubset | null> {
       '[WorkflowController] failed to load SDK coding module:',
       err instanceof Error ? err.message : err,
     );
+    return null;
+  }
+}
+
+// /agent subpath — only for the reasoning-effort rejection cache (same source the chat path uses),
+// so workflow child agents also stop resending a wire-rejected effort. Load failure → empty cache.
+type AgentEffortCache = { getCachedRejectedEfforts?: (provider: string, model?: string) => readonly string[] };
+let agentEffortCache: AgentEffortCache | null = null;
+async function loadAgentEffortCache(): Promise<AgentEffortCache | null> {
+  if (agentEffortCache) return agentEffortCache;
+  try {
+    agentEffortCache = (await import('@kodax-ai/kodax/agent')) as unknown as AgentEffortCache;
+    return agentEffortCache;
+  } catch {
     return null;
   }
 }

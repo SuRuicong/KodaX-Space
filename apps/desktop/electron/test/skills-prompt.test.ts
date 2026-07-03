@@ -29,7 +29,9 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   buildSkillsPrompt,
+  enforceSkillSafetyPolicy,
   _resetSkillsPromptForTests,
+  type SafetyScannableRegistry,
 } from '../kodax/skills-prompt.js';
 
 let tmpRootA: string;
@@ -105,12 +107,49 @@ test('buildSkillsPrompt: excludes skills with dynamic-context shell tokens from 
   );
   writeSkill(skillsDir, safe, `name: ${safe}\ndescription: activate for ${safe} tasks`, 'plain body');
 
+  // Security policy: a project containing ANY dynamic-context skill gets its ENTIRE natural-language
+  // snippet suppressed (the per-skill flag can't survive the SDK global-singleton re-discover race,
+  // so we never advertise a skill name the model could use to auto-invoke the unsafe one).
   const out = await buildSkillsPrompt(tmpRootA);
-  assert.ok(out.includes(safe), 'safe skill (no tokens) must still be advertised');
-  assert.ok(
-    !out.includes(unsafe),
-    'skill with dynamic-context shell tokens must be excluded from the auto-invocation snippet',
+  assert.equal(out, '', 'snippet fully suppressed when the project has a dynamic-context skill');
+  assert.ok(!out.includes(unsafe), 'unsafe skill not advertised');
+  assert.ok(!out.includes(safe), 'sibling skills also suppressed while an unsafe skill is present');
+});
+
+test('enforceSkillSafetyPolicy: only untrusted (project/plugin) dynamic-context skills trigger suppression', async () => {
+  // Deterministic mock registry (no real SDK / dev-machine ~/.kodax/skills coupling) — verifies both
+  // the trust-boundary (Q3 owner decision: user/builtin trusted) and the belt-flag on ALL unsafe skills.
+  const specs = [
+    { name: 'proj-unsafe', source: 'project', body: 'x !`cat .env`' },
+    { name: 'plugin-unsafe', source: 'plugin', body: 'y !`whoami`' },
+    { name: 'user-unsafe', source: 'user', body: 'z !`git status`' }, // trusted → no suppression
+    { name: 'builtin-unsafe', source: 'builtin', body: 'w !`git log`' }, // trusted → no suppression
+    { name: 'proj-safe', source: 'project', body: 'plain, no tokens' },
+  ];
+  const skills = new Map(
+    specs.map((s) => [s.name, { name: s.name, source: s.source, disableModelInvocation: false }]),
   );
+  const bodyByName = new Map(specs.map((s) => [s.name, s.body]));
+  const registry: SafetyScannableRegistry = {
+    skills,
+    loadFull: async (name: string) => ({
+      content: bodyByName.get(name) ?? '',
+      rawContent: bodyByName.get(name) ?? '',
+      disableModelInvocation: false,
+    }),
+  };
+
+  const { untrustedUnsafeSkills } = await enforceSkillSafetyPolicy(registry);
+  assert.deepEqual(
+    [...untrustedUnsafeSkills].sort(),
+    ['plugin-unsafe', 'proj-unsafe'],
+    'only project/plugin dynamic-context skills gate the snippet',
+  );
+  // Belt: EVERY unsafe skill (any source) is flagged out of model invocation.
+  assert.equal(skills.get('user-unsafe')?.disableModelInvocation, true);
+  assert.equal(skills.get('builtin-unsafe')?.disableModelInvocation, true);
+  // Safe skill is left invokable.
+  assert.equal(skills.get('proj-safe')?.disableModelInvocation, false);
 });
 
 test('buildSkillsPrompt: re-discovers on subsequent calls (no stale cache)', async () => {
