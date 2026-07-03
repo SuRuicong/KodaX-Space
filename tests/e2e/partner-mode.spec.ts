@@ -93,6 +93,7 @@ async function sendPartnerPrompt(page: Page, prompt: string): Promise<void> {
 }
 
 test('Partner artifact rail can be hidden and restored without losing the conversation lane', async () => {
+  test.setTimeout(60_000); // Electron boot + window resize settle is slow on Windows CI
   const testId = `partner-artifact-rail-${Date.now()}`;
   const projectDir = await createProject(testId);
   const space = await launchSpace(testId);
@@ -102,7 +103,15 @@ test('Partner artifact rail can be hidden and restored without losing the conver
     await space.seedProject(projectDir);
     await switchSurface(page, 'Partner');
     await expect(page.getByTestId('partner-workspace')).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByTestId('partner-artifact-panel')).toBeVisible();
+    // The Partner artifact panel auto-hides when the workspace is narrower than
+    // ~900px. Linux CI runs under a 1280-wide xvfb screen, but the headless
+    // Windows runner can clamp the launch window narrower, hiding the panel and
+    // stalling this assertion. Force a wide window so the rail shows
+    // deterministically on every runner, then allow the ResizeObserver to settle.
+    await space.app.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.setSize(1440, 880);
+    });
+    await expect(page.getByTestId('partner-artifact-panel')).toBeVisible({ timeout: 15_000 });
 
     const artifactToggle = page.getByTestId('partner-artifact-toggle');
     await expect(artifactToggle).toHaveAttribute('aria-pressed', 'true');

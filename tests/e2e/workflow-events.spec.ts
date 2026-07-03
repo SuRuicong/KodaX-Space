@@ -437,11 +437,18 @@ test('workflow push events update the sidebar and transcript through completion'
     });
 
     const sidebar = space.page.getByTestId('right-sidebar');
-    await expect(sidebar).toContainText('E2E Workflow Review', { timeout: 5_000 });
-    await expect(sidebar.getByLabel('Workflow flow graph')).toContainText('fan-out');
-    await expect(sidebar.getByLabel('Workflow flow graph')).toContainText('Collect changes');
+    // First render after the workflow event round-trips main -> renderer -> store;
+    // on the loaded Windows CI runner this can take longer than the default 5s.
+    await expect(sidebar).toContainText('E2E Workflow Review', { timeout: 15_000 });
+    await expect(sidebar.getByLabel('Workflow flow graph')).toContainText('fan-out', {
+      timeout: 15_000,
+    });
+    await expect(sidebar.getByLabel('Workflow flow graph')).toContainText('Collect changes', {
+      timeout: 15_000,
+    });
     await expect(space.page.getByTestId('workflow-live-strip')).toContainText(
       'E2E Workflow Review',
+      { timeout: 15_000 },
     );
 
     await emitWorkflowEvent(space, {
