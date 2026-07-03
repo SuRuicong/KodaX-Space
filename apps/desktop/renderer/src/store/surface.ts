@@ -54,6 +54,19 @@ export const SURFACES: Record<Surface, SurfaceSpec> = {
 
 export const DEFAULT_SURFACE: Surface = 'code';
 
+/**
+ * Partner surface 总开关。**暂禁用**：Partner 的「产出交付物」链路不完整——
+ * `create_artifact` 的 office 类（pdf/docx/xlsx）要求先 `write` 文件再引用其 path，
+ * 而 Partner 工具策略禁 `write`/`edit`/`bash`，且无 `pptx` kind，导致无法真正产出
+ * 可交付的 office 文件（只能出 markdown/html/svg/chart 类面板内产物）。
+ *
+ * false 时：SurfaceTabs 的 Partner 按钮置灰不可点（唯一切入口），且持久化的
+ * 'partner' 不再从启动恢复（`lsGetSurface` 返回 Coder）。Partner 相关代码
+ * （PartnerWorkspace / partner-tools / partner-profile / 测试）全部保留——待产出
+ * 链路补齐后翻 true 即恢复。setSurface 原语不动（仅 UI + 启动读取两处 gate）。
+ */
+export const PARTNER_ENABLED = false;
+
 // F046: currentSurface 持久化——重启回到上次停留的面（Coder/Partner）。
 // 仅持久化"哪个面"，不持久化"哪个 session"——与 Coder 现状一致（重启都回各面 dashboard）。
 const LS_KEY_SURFACE = 'kodax-space.currentSurface';
@@ -76,6 +89,8 @@ function sessionMatchesCurrentProject(
 }
 
 function lsGetSurface(): Surface {
+  // Partner 暂禁用：即使上次停留在 Partner，也不从持久化恢复进去（否则绕过灰态按钮）。
+  if (!PARTNER_ENABLED) return DEFAULT_SURFACE;
   if (typeof window === 'undefined') return DEFAULT_SURFACE;
   try {
     return window.localStorage.getItem(LS_KEY_SURFACE) === 'partner' ? 'partner' : 'code';

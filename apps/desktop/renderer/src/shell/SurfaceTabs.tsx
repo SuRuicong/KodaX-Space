@@ -8,7 +8,7 @@
 // 依赖 SDK 给 session 加 tag + 列表过滤的原生能力，到位后在左栏接入。
 
 import { Code2, Handshake } from 'lucide-react';
-import { useSurfaceStore, type Surface } from '../store/surface.js';
+import { PARTNER_ENABLED, useSurfaceStore, type Surface } from '../store/surface.js';
 
 const TABS: readonly { surface: Surface; label: string; Icon: typeof Code2 }[] = [
   { surface: 'code', label: 'Coder', Icon: Code2 },
@@ -22,18 +22,29 @@ export function SurfaceTabs(): JSX.Element {
     <div className="p-2 flex gap-1 border-b border-border-default flex-shrink-0">
       {TABS.map(({ surface, label, Icon }) => {
         const active = currentSurface === surface;
+        // Partner 暂禁用（产出链路未补齐，见 store/surface.ts PARTNER_ENABLED）：置灰不可点。
+        const disabled = surface === 'partner' && !PARTNER_ENABLED;
         return (
           <button
             key={surface}
             type="button"
-            onClick={() => useSurfaceStore.getState().setSurface(surface)}
+            disabled={disabled}
+            title={disabled ? 'Partner 开发中，暂不可用' : undefined}
+            onClick={() => {
+              if (!disabled) useSurfaceStore.getState().setSurface(surface);
+            }}
             aria-pressed={active}
             className={`flex-1 text-xs py-1.5 rounded ${
-              active ? 'bg-surface-3 text-fg-primary' : 'text-fg-muted hover:text-fg-primary'
+              disabled
+                ? 'text-fg-muted opacity-40 cursor-not-allowed'
+                : active
+                  ? 'bg-surface-3 text-fg-primary'
+                  : 'text-fg-muted hover:text-fg-primary'
             }`}
           >
             <span className="inline-flex items-center justify-center gap-1.5">
               <Icon className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden /> {label}
+              {disabled && <span className="text-[10px] opacity-80">· 开发中</span>}
             </span>
           </button>
         );
