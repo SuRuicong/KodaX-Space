@@ -593,12 +593,19 @@ export function registerSessionChannels(): void {
       readonly type?: unknown;
       readonly message: (typeof data.messages)[number];
       readonly summary?: unknown;
+      // SDK 0.7.51+ SessionTranscriptEntry.timestamp (ISO string) — the real per-message
+      // wall-clock. We forward it as the history item's sentAt so restored turns keep their
+      // true time instead of all collapsing onto session.createdAt (the renderer fallback).
+      // Without it, workflow notices — which DO carry real run times — sort above the whole
+      // restored conversation after a compaction re-root (createdAt is reset later than the run).
+      readonly timestamp?: unknown;
     };
     const entries: readonly TranscriptEntryLike[] = Array.isArray(rawTranscriptEntries)
       ? (rawTranscriptEntries as TranscriptEntryLike[])
       : data.messages.map((message) => ({ type: 'message', message }));
 
     for (const entry of entries) {
+      const entrySentAt = parseEntrySentAt(entry.timestamp);
       if (entry.type === 'branch_summary' || entry.type === 'compaction') {
         const rawSummary =
           typeof entry.summary === 'string' && entry.summary.trim().length > 0
@@ -647,7 +654,16 @@ export function registerSessionChannels(): void {
         // user message 通常 = pure text;若是工具结果回灌 (content 是 tool_result block 数组),
         // 则 text === '',不 emit user item (但 tool_results map 已经在第一步抽走了)
         const userText = extractUserText(msg.content);
-        if (userText.length > 0) items.push({ kind: 'user', content: userText });
+        if (userText.length > 0) {
+          items.push({
+            kind: 'user',
+            content: userText,
+            // Real per-message time (see TranscriptEntryLike.timestamp). Only the user item
+            // needs it: it becomes a UserMessage whose sentAt drives composeMessages' merge
+            // with workflow notices; assistant/tool items become events that inherit the turn.
+            ...(entrySentAt !== undefined ? { sentAt: entrySentAt } : {}),
+          });
+        }
       } else if (msg.role === 'assistant') {
         // assistant: 按 content blocks 顺序逐个发 — text/thinking 累积到下次 tool_use 边界
         // flush 出 'assistant' item;tool_use 直接 emit 'tool_call' item
@@ -708,6 +724,18 @@ export function registerSessionChannels(): void {
     }
     return { items: items.slice(0, 2000) };
   });
+}
+
+/** SessionTranscriptEntry.timestamp → epoch ms. SDK gives an ISO string; tolerate a raw
+ *  number too. Returns undefined for missing/invalid so the renderer keeps its createdAt
+ *  fallback rather than stamping NaN. */
+function parseEntrySentAt(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const ms = Date.parse(value);
+    return Number.isFinite(ms) ? ms : undefined;
+  }
+  return undefined;
 }
 
 /** user message content 提取纯文本部分;若 content 是 string 直接返回;若是 blocks 数组取 type=='text'.

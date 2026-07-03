@@ -126,6 +126,91 @@ test('history replay with no relevant events leaves promoted untouched', () => {
   assert.equal(promoted.size, 0);
 });
 
+test('restored conversation keeps real per-message sentAt so workflow notices are not hoisted to the top', () => {
+  // Root-cause regression for "workflow content jumps above the whole conversation after restart".
+  // The SDK persists per-message timestamps (SessionTranscriptEntry.timestamp); the session.history
+  // handler now forwards them as SessionHistoryItem.sentAt, so prependSessionHistory stamps each
+  // restored turn with its real time instead of collapsing every turn onto session.createdAt.
+  // createdAt here is LATER than the run — simulating a compaction-re-rooted session, where the
+  // re-root resets createdAt to a time AFTER the workflow ran.
+  const T1 = 1000;
+  const T_RUN = 1500;
+  const T2 = 2000;
+  const LATE_CREATED = 9999;
+  const reset = (): void =>
+    useAppStore.setState({
+      sessions: [
+        {
+          sessionId: SID,
+          projectRoot: '/proj/x',
+          provider: 'mock',
+          reasoningMode: 'auto',
+          permissionMode: 'accept-edits',
+          autoModeEngine: 'llm',
+          agentMode: 'ama',
+          surface: 'code',
+          createdAt: LATE_CREATED,
+          lastActivityAt: LATE_CREATED,
+        },
+      ],
+      eventsBySession: {},
+      userMessagesBySession: {},
+      promotedPopoutsBySession: {},
+      workflowNoticesBySession: {
+        [SID]: [{ id: 'wf1', content: '[workflow] completed: review', sentAt: T_RUN }],
+      },
+      currentSessionId: SID,
+    });
+  const render = () => {
+    const s = useAppStore.getState();
+    return composeMessages({
+      events: s.eventsBySession[SID] ?? [],
+      userMessages: s.userMessagesBySession[SID] ?? [],
+      workflowNotices: s.workflowNoticesBySession[SID] ?? [],
+    });
+  };
+
+  // Fixed handler: user items carry real per-message sentAt → the notice interleaves between turns.
+  reset();
+  useAppStore.getState().prependSessionHistory(
+    SID,
+    [
+      { kind: 'user', content: 'turn one', sentAt: T1 },
+      { kind: 'assistant', text: 'reply one' },
+      { kind: 'user', content: 'turn two', sentAt: T2 },
+      { kind: 'assistant', text: 'reply two' },
+    ],
+    LATE_CREATED,
+  );
+  const out = render();
+  assert.notEqual(out[0]?.kind, 'system_notice', 'workflow notice must not be hoisted to the top');
+  const noticeIdx = out.findIndex((m) => m.kind === 'system_notice');
+  const u1 = out.findIndex((m) => m.kind === 'user' && m.content === 'turn one');
+  const u2 = out.findIndex((m) => m.kind === 'user' && m.content === 'turn two');
+  assert.ok(
+    u1 === 0 && noticeIdx > u1 && noticeIdx < u2,
+    `notice must interleave between turns (kinds: ${out.map((m) => m.kind).join(',')})`,
+  );
+
+  // Control (old behavior): no per-message sentAt → every turn collapses to the late createdAt,
+  // and the notice (real earlier run time) sorts above the whole conversation. Documents the bug.
+  reset();
+  useAppStore.getState().prependSessionHistory(
+    SID,
+    [
+      { kind: 'user', content: 'turn one' },
+      { kind: 'assistant', text: 'reply one' },
+      { kind: 'user', content: 'turn two' },
+    ],
+    LATE_CREATED,
+  );
+  assert.equal(
+    render()[0]?.kind,
+    'system_notice',
+    'without per-message sentAt the notice regresses to the top (this is why the handler must forward entry.timestamp)',
+  );
+});
+
 test('history replay restores sidecar verifier messages as sidecar notices', () => {
   const items: SessionHistoryItem[] = [
     { kind: 'user', content: 'q' },
