@@ -1406,7 +1406,14 @@ export class RealKodaXSession implements ManagedSession {
     // Repo-intelligence is a LICENSED capability — any active license unlocks it
     // (isLicenseActive). getStatus() re-reads + Ed25519-verifies the entitlement per
     // call; sub-millisecond and only once per user turn, so no caching needed here.
-    const repoIntelEntitled = isLicenseActive(await licenseManager.getStatus());
+    // Fail-closed + fault-tolerant: this runs OUTSIDE the run's try/catch, and
+    // getStatus() writes state.json (clock observation) on nearly every call — a
+    // transient disk error must NOT reject the run (that would hang the turn with no
+    // session_error emitted). On any failure, treat as unentitled (repo-intel off).
+    const repoIntelEntitled = await licenseManager
+      .getStatus()
+      .then(isLicenseActive)
+      .catch(() => false);
 
     const context: NonNullable<KodaXOptions['context']> = {
       // gitRoot 用 projectRoot——Space 不再单独求 git root，KodaX 自己会处理边界

@@ -18,6 +18,16 @@ export interface WorkflowPolicy {
 // tokenBudget HARD only bounds an EXPLICIT user-set cap; 0 (unlimited) is the default.
 const HARD = { maxAgents: 64, maxConcurrency: 16, tokenBudget: 100_000_000 } as const;
 
+// Bumped when a persisted-policy field changes meaning. v2: tokenBudget switched
+// from a fixed default cap (old default 100k, ceiling 200k) to "0 = unlimited".
+// A pre-v2 file's tokenBudget is the OLD default, never an intentional new-model
+// cap, so migration drops it to the new default on first load (see load()).
+const POLICY_SCHEMA_VERSION = 2;
+
+interface PersistedWorkflowPolicy extends WorkflowPolicy {
+  readonly schemaVersion?: number;
+}
+
 export const DEFAULT_WORKFLOW_POLICY: WorkflowPolicy = {
   maxAgents: 16,
   maxConcurrency: 8,
@@ -68,7 +78,18 @@ export class WorkflowPolicyStore {
     this.loaded = true;
     try {
       const raw = await fs.readFile(this.filePath, 'utf-8');
-      this.cached = normalizeWorkflowPolicy(JSON.parse(raw) as Partial<WorkflowPolicy>);
+      const parsed = JSON.parse(raw) as Partial<PersistedWorkflowPolicy>;
+      const normalized = normalizeWorkflowPolicy(parsed);
+      if (parsed.schemaVersion !== POLICY_SCHEMA_VERSION) {
+        // Pre-v2 file: its tokenBudget is the old fixed default/cap (100k–200k),
+        // not an intentional cap under the "0 = unlimited" model. Drop it to the
+        // new default and re-persist once with the current schema version;
+        // maxAgents/maxConcurrency stay as the user set them.
+        this.cached = { ...normalized, tokenBudget: DEFAULT_WORKFLOW_POLICY.tokenBudget };
+        void this.persist();
+      } else {
+        this.cached = normalized;
+      }
     } catch (err) {
       if (!(err instanceof Error && 'code' in err && (err as { code: string }).code === 'ENOENT')) {
         console.warn('[WorkflowPolicy] read failed, using defaults:', err instanceof Error ? err.message : err);
@@ -100,7 +121,11 @@ export class WorkflowPolicyStore {
       const dir = path.dirname(this.filePath);
       await fs.mkdir(dir, { recursive: true, mode: 0o700 });
       const tmp = `${this.filePath}.tmp-${process.pid}`;
-      await fs.writeFile(tmp, JSON.stringify(this.cached, null, 2), {
+      const persisted: PersistedWorkflowPolicy = {
+        ...this.cached,
+        schemaVersion: POLICY_SCHEMA_VERSION,
+      };
+      await fs.writeFile(tmp, JSON.stringify(persisted, null, 2), {
         encoding: 'utf-8',
         mode: 0o600,
       });

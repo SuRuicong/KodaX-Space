@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -59,6 +59,32 @@ test('get returns defaults before load; set persists clamped value', async () =>
     const loaded = await store2.load();
     assert.equal('autoStart' in loaded, false);
     assert.equal(loaded.maxAgents, 64);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('migration: pre-v2 file drops the stale token cap to unlimited, keeps other caps', async () => {
+  const { dir, file } = freshFile();
+  try {
+    // Upgraded install: old file with the pre-v2 fixed token cap (old default 100k)
+    // and no schemaVersion, plus a user-chosen concurrency.
+    writeFileSync(file, JSON.stringify({ maxAgents: 32, maxConcurrency: 4, tokenBudget: 100_000 }));
+    const store = new WorkflowPolicyStore(file);
+    const loaded = await store.load();
+    assert.equal(loaded.tokenBudget, 0); // stale cap dropped → unlimited (v2 fix reaches upgraders)
+    assert.equal(loaded.maxConcurrency, 4); // user's other choices preserved
+    assert.equal(loaded.maxAgents, 32);
+    await store.flush();
+
+    // Re-persisted with the current schema version → migration runs once, and an
+    // intentional new-model cap now survives reload.
+    const store2 = new WorkflowPolicyStore(file);
+    assert.equal((await store2.load()).tokenBudget, 0);
+    await store2.set({ tokenBudget: 50_000 });
+    await store2.flush();
+    const store3 = new WorkflowPolicyStore(file);
+    assert.equal((await store3.load()).tokenBudget, 50_000); // survives — no re-migration
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
