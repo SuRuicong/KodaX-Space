@@ -487,20 +487,22 @@ test('workflow push events update the sidebar and transcript through completion'
       }),
     });
 
-    await expect(
-      stream.locator('[data-testid="system-notice"][data-notice-variant="workflow"]', {
-        hasText: '[workflow] agent spawned: Reviewer',
-      }),
-    ).toBeVisible({ timeout: 5_000 });
+    // Live run progress (agent spawned / phase started) is NOT pushed to the
+    // transcript — it surfaces only in the right-sidebar runtime status. History
+    // keeps just per-agent summaries and the final result.
+    await expect(sidebar.getByLabel('Workflow runtime status')).toContainText('Reviewer', {
+      timeout: 15_000,
+    });
     await expect(
       stream.locator('[data-testid="system-notice"][data-notice-variant="workflow"]', {
         hasText: '[workflow] agent summary: Collector',
       }),
     ).toBeVisible({ timeout: 5_000 });
+    // Spawn/live-progress must never leak into the transcript as a notice.
     await expect(
-      stream
-        .getByTestId('user-message-bubble')
-        .filter({ hasText: '[workflow] agent spawned: Reviewer' }),
+      stream.locator('[data-testid="system-notice"][data-notice-variant="workflow"]', {
+        hasText: '[workflow] agent spawned',
+      }),
     ).toHaveCount(0);
 
     await emitWorkflowEvent(space, {

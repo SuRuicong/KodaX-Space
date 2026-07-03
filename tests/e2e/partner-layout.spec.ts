@@ -9,6 +9,15 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import { launchSpace } from './fixtures.js';
 
+// Partner surface is intentionally disabled (PARTNER_ENABLED=false in
+// store/surface.ts, commit c28a0746) until its deliverable chain is complete —
+// the [Partner] tab is greyed out and cannot be switched to, so every flow here
+// (which starts by switching to Partner) can't run. Re-enable this whole file
+// when PARTNER_ENABLED flips back to true.
+test.beforeEach(() => {
+  test.skip(true, 'Partner surface disabled (PARTNER_ENABLED=false) until deliverable chain complete');
+});
+
 interface Rect {
   x: number;
   y: number;

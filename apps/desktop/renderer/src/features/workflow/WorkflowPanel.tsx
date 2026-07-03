@@ -230,7 +230,14 @@ function WorkflowControls({
       confirmLabel: '删除',
     });
     if (!confirmed) return;
-    fireControl(window.kodaxSpace?.invoke('workflow.delete', { runId }), '删除失败');
+    const res = await window.kodaxSpace?.invoke('workflow.delete', { runId });
+    const env = res as { ok?: boolean; data?: { ok?: boolean } } | undefined;
+    if (!res || env?.ok === false || env?.data?.ok === false) {
+      pushToast('删除失败', 'warning');
+      return;
+    }
+    // 删除无 push 事件、seed 只增不删——必须显式从 store 移除，否则面板里删不掉。
+    useAppStore.getState().removeWorkflowRun(runId);
   }
   return (
     <div

@@ -506,6 +506,19 @@ html:not(.dark).q-full {
   --glass-alpha: 0.66;
 }
 
+/* 内容透明的全覆盖 popout（目前只有 workflow）盖在对话流「上面」，内容是纯文字行直接铺在
+   半透明玻璃上、没有自带的不透明内容层——于是下层对话文字会印上来、跟面板内容打架
+   （用户反馈：全特效档 workflow 覆盖层透明度过高，下层字影响看最上层内容）。
+   diff / artifact 虽也全覆盖，但内容区自带不透明表面（Monaco / 渲染产出），不需要此类、故不加。
+   这里单独把玻璃不透明度拉高（模糊/描边/高光保持不变），当作实心 chrome 读。
+   在元素自身设 --glass-alpha → 覆盖从 html 档位继承来的值；极简档 .glass 走实色，天然不受影响。 */
+.glass-cover {
+  --glass-alpha: 0.92;
+}
+html:not(.dark) .glass-cover {
+  --glass-alpha: 0.95;
+}
+
 /* ============================================================
    Liquid Glass 面板（Apple Liquid Glass / visionOS 语言）
    立体感来自光·影·材质，不靠运动：

@@ -304,6 +304,66 @@ test('upsertWorkflowRun exposes workflow event message as latest live message', 
   assert.equal(run?.latestMessage, 'agent spawned: impact reviewer');
 });
 
+test('removeWorkflowRun drops the run and its activity so a deleted run leaves the sidebar', () => {
+  // Regression: workflow.delete succeeded on the main side but the renderer never removed the run —
+  // seedWorkflowRuns is an additive covering merge and delete emits no push event, so the deleted
+  // run stayed visible in the left sidebar / panels until app restart ("点删除删不掉").
+  useAppStore.setState({
+    workflowRuns: {
+      wf_gone: {
+        runId: 'wf_gone',
+        workflowName: 'review',
+        status: 'completed',
+        startedAt: '2026-06-21T00:00:00.000Z',
+        updatedAt: '2026-06-21T00:01:00.000Z',
+        sessionId: SID,
+        surface: 'code',
+        items: [],
+        counts: { pending: 0, running: 0, completed: 0, failed: 0, cancelled: 0, skipped: 0 },
+        progress: {
+          spawnedAgents: 0,
+          finishedAgents: 0,
+          activeAgents: 0,
+          failedAgents: 0,
+          stoppedAgents: 0,
+        },
+      },
+      wf_keep: {
+        runId: 'wf_keep',
+        workflowName: 'audit',
+        status: 'running',
+        startedAt: '2026-06-21T00:00:00.000Z',
+        updatedAt: '2026-06-21T00:02:00.000Z',
+        sessionId: SID,
+        surface: 'code',
+        items: [],
+        counts: { pending: 0, running: 1, completed: 0, failed: 0, cancelled: 0, skipped: 0 },
+        progress: {
+          spawnedAgents: 1,
+          finishedAgents: 0,
+          activeAgents: 1,
+          failedAgents: 0,
+          stoppedAgents: 0,
+        },
+      },
+    },
+    workflowActivityByRun: { wf_gone: [], wf_keep: [] },
+  });
+
+  useAppStore.getState().removeWorkflowRun('wf_gone');
+
+  const state = useAppStore.getState();
+  assert.equal(state.workflowRuns.wf_gone, undefined, 'deleted run is gone from store');
+  assert.ok(state.workflowRuns.wf_keep, 'other runs are untouched');
+  assert.equal(state.workflowActivityByRun.wf_gone, undefined, 'deleted run activity is purged');
+  assert.ok('wf_keep' in state.workflowActivityByRun, 'other activity is untouched');
+
+  // Removing an unknown run is a no-op that keeps referential identity (no needless re-render).
+  const before = useAppStore.getState().workflowRuns;
+  useAppStore.getState().removeWorkflowRun('wf_missing');
+  assert.equal(useAppStore.getState().workflowRuns, before, 'unknown runId is a no-op');
+});
+
 test('appendWorkflowNotice keeps notices for current session before session list catches up', () => {
   useAppStore.setState({
     sessions: [],

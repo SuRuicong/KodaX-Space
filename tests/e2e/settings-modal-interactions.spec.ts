@@ -219,9 +219,11 @@ test('Settings preferences controls are keyboardable, minimal, and persist edits
     await page.keyboard.press('Enter');
     await expect(dialog.getByLabel('Max concurrency')).toHaveValue('16');
 
-    await dialog.getByLabel('Token budget').fill('999999');
+    // Token-budget HARD ceiling is 100,000,000 (0 = unlimited default); a value
+    // above it clamps down to the ceiling.
+    await dialog.getByLabel('Token budget').fill('999999999');
     await page.keyboard.press('Enter');
-    await expect(dialog.getByLabel('Token budget')).toHaveValue('200000');
+    await expect(dialog.getByLabel('Token budget')).toHaveValue('100000000');
   } finally {
     await space.close();
   }

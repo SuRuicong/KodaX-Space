@@ -892,7 +892,11 @@ async function deleteWorkflowRun(run: WorkflowRunT): Promise<void> {
     window.kodaxSpace?.invoke('workflow.delete', { runId: run.runId }),
     `Delete failed: ${name}`,
   );
-  if (result) pushToast(`Workflow run deleted: ${name}`, 'success');
+  if (result) {
+    // 删除无 push 事件、seed 只增不删——必须显式从 store 移除，否则面板里删不掉。
+    useAppStore.getState().removeWorkflowRun(run.runId);
+    pushToast(`Workflow run deleted: ${name}`, 'success');
+  }
 }
 
 async function startSavedWorkflow(
