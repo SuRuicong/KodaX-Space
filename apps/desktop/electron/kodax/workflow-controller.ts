@@ -18,12 +18,31 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import type { WorkflowRunT, WorkflowEventPayload } from '@kodax-space/space-ipc-schema';
+import { isLicenseActive } from '@kodax-space/space-ipc-schema';
 import { getSpaceDataDir } from './data-paths.js';
 import { pushToRenderer } from '../ipc/push.js';
 import { artifactStore } from '../artifact/store.js';
 import { detectArtifactKind } from '../artifact/workflow-artifact-bridge.js';
 import { resolveWireEffort, type ReasoningProfileLike } from './reasoning-effort.js';
-import { workflowPolicyStore } from './workflow-policy.js';
+import { workflowPolicyStore, buildWorkflowHostPolicy } from './workflow-policy.js';
+import { licenseManager } from '../license/manager.js';
+
+// Repo-intelligence is a LICENSED capability. This is the entitlement check used by the
+// single workflow-launch gate in launchOptions(). Overridable test seam (mirrors
+// _setCodingSdkForTesting). Default = the real, fail-closed license read: getStatus()
+// writes state.json on nearly every call, so a transient disk error must NOT reject a
+// launch — treat as unentitled.
+const defaultRepoIntelEntitlement = (): Promise<boolean> =>
+  licenseManager
+    .getStatus()
+    .then(isLicenseActive)
+    .catch(() => false);
+let resolveRepoIntelEntitlement = defaultRepoIntelEntitlement;
+
+/** Test-only: override the workflow-launch repo-intel entitlement check. */
+export function _setRepoIntelEntitlementForTesting(fn: (() => Promise<boolean>) | null): void {
+  resolveRepoIntelEntitlement = fn ?? defaultRepoIntelEntitlement;
+}
 
 // ---- SDK 形状(只取本控制器用到的子集,避免硬依赖 SDK 类型导出) ----
 interface SdkProcessSnapshot {
@@ -1711,6 +1730,14 @@ export class WorkflowController {
     // C2: forward the user-configured Workflow Host Policy so maxAgents/maxConcurrency/tokenBudget
     // caps actually bound explicit /workflow runs (mirrors the AMAW run_workflow path in real-session).
     const policy = workflowPolicyStore.get();
+    // Repo-intelligence is a LICENSED capability, and EVERY workflow-launch path funnels
+    // through launchOptions() — so this is the single gate for /workflow, the Workflow
+    // Panel (workflow.* IPC), generate/revise, and module runs (parity with the chat-turn
+    // gate in real-session.ts). Without it, workflow sub-agents run the built-in engine at
+    // full power regardless of license: the SDK default resolves 'auto'→'full' when the
+    // key is absent, and the value is threaded to each child via ChildExecutorOptions
+    // .parentOptions. resolveRepoIntelEntitlement() is fail-closed (see its definition).
+    const repoIntelEntitled = await resolveRepoIntelEntitlement();
     return {
       provider: s.provider,
       effort: resolveWireEffort(s.reasoningMode, reasoningProfile, rejectedEfforts),
@@ -1723,16 +1750,14 @@ export class WorkflowController {
         gitRoot: s.projectRoot,
         executionCwd: s.projectRoot,
         agentProfile: { surface: s.surface },
+        // Licensed → enable trace (chip lights up); unlicensed → force engine off.
+        ...(repoIntelEntitled
+          ? { repoIntelligenceTrace: true }
+          : { repoIntelligenceMode: 'off' }),
       },
-      // tokenBudget is forwarded ONLY when the user opted into an explicit cap (> 0),
-      // mirroring the AMAW run_workflow path in real-session.ts. The SDK clamps a
-      // literal tokenBudget of 0 to 1 (`e <= 0 ? 1`), which would throttle an explicit
-      // /workflow run to a single token; omitting the key means "no cap" (the default).
-      workflowHostPolicy: {
-        maxAgents: policy.maxAgents,
-        maxConcurrency: policy.maxConcurrency,
-        ...(policy.tokenBudget > 0 ? { tokenBudget: policy.tokenBudget } : {}),
-      },
+      // Host policy shape (incl. "tokenBudget 0 = unlimited", KodaX 0.7.59) is single-sourced
+      // in buildWorkflowHostPolicy — mirrors the AMAW run_workflow path in real-session.ts.
+      workflowHostPolicy: buildWorkflowHostPolicy(policy),
       workflow: { maxConcurrency: policy.maxConcurrency },
     };
   }

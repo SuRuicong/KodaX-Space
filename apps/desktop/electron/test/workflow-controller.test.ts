@@ -6,7 +6,11 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { WorkflowController, _setCodingSdkForTesting } from '../kodax/workflow-controller.js';
+import {
+  WorkflowController,
+  _setCodingSdkForTesting,
+  _setRepoIntelEntitlementForTesting,
+} from '../kodax/workflow-controller.js';
 import type {
   WorkflowRunManagerLike,
   WorkflowLifecycleLike,
@@ -1128,6 +1132,104 @@ test('workflow snapshots are clamped before IPC validation', async () => {
     const seeded = ctrl.get('r_long');
     assert.ok((seeded?.resultSummary?.length ?? 0) <= 8192);
   } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- Repo-intelligence license gate on workflow launch ---
+// Regression for a CRITICAL bypass: repo-intelligence is a licensed capability, but the
+// Workflow Harness builds its OWN context in launchOptions() (separate from the chat
+// path). Every /workflow + Workflow Panel launch funnels through launchOptions(), so it
+// must force repo-intel OFF for unlicensed users and enable trace when licensed. This
+// shipped ungated because nothing exercised it — hence these two tests.
+function launchSdk(name: string): unknown {
+  return {
+    async generateWorkflowFromOptions() {
+      return generatedWorkflow(name);
+    },
+  };
+}
+
+test('workflow launch forces repo-intelligence OFF when unlicensed', async () => {
+  const { dir, file } = freshFile();
+  _setCodingSdkForTesting(launchSdk('gated-flow'));
+  _setRepoIntelEntitlementForTesting(async () => false);
+  try {
+    const ctrl = new WorkflowController(() => {}, file);
+    const mgr = fakeManager();
+    await ctrl.init(mgr);
+    await ctrl.createGeneratedWorkflow('do a thing', LAUNCH_SESSION);
+    assert.equal(mgr.started.length, 1);
+    const context = (mgr.started[0]!.options as { context: Record<string, unknown> }).context;
+    assert.equal(
+      context.repoIntelligenceMode,
+      'off',
+      'unlicensed workflow launch must force the built-in repo-intel engine off',
+    );
+    assert.equal(
+      context.repoIntelligenceTrace,
+      undefined,
+      'unlicensed workflow launch must not enable repo-intel trace',
+    );
+  } finally {
+    _setRepoIntelEntitlementForTesting(null);
+    _setCodingSdkForTesting(null);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('workflow launch enables repo-intelligence trace when licensed', async () => {
+  const { dir, file } = freshFile();
+  _setCodingSdkForTesting(launchSdk('licensed-flow'));
+  _setRepoIntelEntitlementForTesting(async () => true);
+  try {
+    const ctrl = new WorkflowController(() => {}, file);
+    const mgr = fakeManager();
+    await ctrl.init(mgr);
+    await ctrl.createGeneratedWorkflow('do a thing', LAUNCH_SESSION);
+    const context = (mgr.started[0]!.options as { context: Record<string, unknown> }).context;
+    assert.equal(context.repoIntelligenceTrace, true, 'licensed workflow launch enables trace');
+    assert.equal(
+      context.repoIntelligenceMode,
+      undefined,
+      'licensed workflow launch must not force mode off',
+    );
+  } finally {
+    _setRepoIntelEntitlementForTesting(null);
+    _setCodingSdkForTesting(null);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('workflow launch forwards tokenBudget unconditionally (0 = unlimited, KodaX 0.7.59)', async () => {
+  // KodaX 0.7.59 fixed the host-policy clamp: a tokenBudget of 0 / null / negative now
+  // means "unbounded" (0.7.58 clamped a literal 0 → a 1-token run). Space no longer omits
+  // the field when 0 — it forwards it, so 0 must reach the SDK as an OWN property. This is
+  // the regression guard against re-introducing the old omit-when-0 spread (which produced
+  // no tokenBudget key at all). The controller only calls workflowPolicyStore.get() (never
+  // load()/set()), so the singleton stays at DEFAULT_WORKFLOW_POLICY (tokenBudget: 0) here
+  // — deterministic and no disk touch.
+  const { dir, file } = freshFile();
+  _setCodingSdkForTesting(launchSdk('budget-flow'));
+  try {
+    const ctrl = new WorkflowController(() => {}, file);
+    const mgr = fakeManager();
+    await ctrl.init(mgr);
+    await ctrl.createGeneratedWorkflow('do a thing', LAUNCH_SESSION);
+    const hostPolicy = (
+      mgr.started[0]!.options as { workflowHostPolicy: Record<string, unknown> }
+    ).workflowHostPolicy;
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(hostPolicy, 'tokenBudget'),
+      'tokenBudget must be forwarded (not omitted) so an explicit 0 reaches the SDK as unbounded',
+    );
+    assert.equal(
+      hostPolicy.tokenBudget,
+      0,
+      'default policy forwards tokenBudget 0 (= unlimited in KodaX 0.7.59)',
+    );
+  } finally {
+    _setCodingSdkForTesting(null);
     rmSync(dir, { recursive: true, force: true });
   }
 });

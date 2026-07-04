@@ -212,11 +212,15 @@ interface RepointelTraceSlim {
 }
 
 const REPOINTEL_MODE_LABEL: Record<string, string> = {
+  // KodaX 0.7.57+ effective repo-intel modes.
   off: 'off',
+  light: 'Light',
+  full: 'Full',
+  auto: 'auto',
+  // Legacy values (pre-0.7.57) kept for back-compat with older SDK traces.
   oss: 'OSS',
   'premium-shared': 'Premium (shared)',
   'premium-native': 'Premium',
-  auto: 'auto',
 };
 
 /**
@@ -292,15 +296,13 @@ function RepointelChip({ projectPath }: { readonly projectPath: string }): JSX.E
   const mode = latest?.mode;
   const modeLabel = mode ? (REPOINTEL_MODE_LABEL[mode] ?? mode) : 'idle';
   const dotColor =
-    mode === undefined
+    mode === undefined || mode === 'off'
       ? 'bg-fg-muted'
-      : mode === 'off'
-        ? 'bg-fg-muted'
-        : mode === 'oss'
+      : mode === 'full' || mode === 'premium-shared' || mode === 'premium-native'
+        ? 'bg-info'
+        : mode === 'light' || mode === 'oss'
           ? 'bg-ok'
-          : mode === 'premium-shared' || mode === 'premium-native'
-            ? 'bg-info'
-            : 'bg-warn';
+          : 'bg-warn';
 
   return (
     <div className="relative" ref={ref}>
