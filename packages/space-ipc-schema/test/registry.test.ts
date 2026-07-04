@@ -194,6 +194,8 @@ test('space.version output schema: rejects unknown capability status', () => {
 test('repointel.status input and output schema', () => {
   assert.equal(repointelStatusChannel.input.safeParse({ projectRoot: 'C:/repo' }).success, true);
   assert.equal(repointelStatusChannel.input.safeParse({ projectRoot: '' }).success, false);
+  // probe is an optional input — the chip passes probe:false for a cheap readiness fetch.
+  assert.equal(repointelStatusChannel.input.safeParse({ probe: false }).success, true);
 
   const output = repointelStatusChannel.output.safeParse({
     projectRoot: 'C:/repo',
@@ -203,6 +205,8 @@ test('repointel.status input and output schema', () => {
     warmSupported: false,
     warmReason: 'The current KodaX SDK does not expose a standalone warm API.',
     entitled: true,
+    effectiveEngine: 'full',
+    engineStatus: 'ok',
     diagnostics: [
       {
         id: 'project',
@@ -213,8 +217,25 @@ test('repointel.status input and output schema', () => {
   });
   assert.equal(output.success, true);
 
+  // effectiveEngine/engineStatus are nullable (SDK inspection failed) but still required keys.
+  assert.equal(
+    repointelStatusChannel.output.safeParse({
+      projectRoot: null,
+      projectExists: false,
+      gitRoot: null,
+      traceSource: 'session-events',
+      warmSupported: false,
+      warmReason: 'x',
+      entitled: false,
+      effectiveEngine: null,
+      engineStatus: null,
+      diagnostics: [{ id: 'x', status: 'ok', detail: 'y' }],
+    }).success,
+    true,
+  );
+
   // `entitled` is required — repo-intelligence is a licensed capability, so a status
-  // payload that forgets to report entitlement must not validate.
+  // payload that forgets to report entitlement must not validate (other fields present).
   const missingEntitled = repointelStatusChannel.output.safeParse({
     projectRoot: 'C:/repo',
     projectExists: true,
@@ -222,6 +243,8 @@ test('repointel.status input and output schema', () => {
     traceSource: 'session-events',
     warmSupported: false,
     warmReason: 'x',
+    effectiveEngine: 'full',
+    engineStatus: 'ok',
     diagnostics: [{ id: 'project', status: 'ok', detail: 'y' }],
   });
   assert.equal(missingEntitled.success, false);

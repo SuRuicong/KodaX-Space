@@ -11,6 +11,10 @@ export const repointelStatusChannel = {
   direction: 'invoke',
   input: z.object({
     projectRoot: z.string().min(1).max(4096).optional(),
+    // The chip fetches with probe:false (cheap, config-only — no semantic-worker spawn)
+    // to drive its always-on readiness pill; the /repointel status doctor view omits it
+    // (defaults to a full probe:true health check). Defaults to true when absent.
+    probe: z.boolean().optional(),
   }),
   output: z.object({
     projectRoot: z.string().min(1).nullable(),
@@ -23,6 +27,12 @@ export const repointelStatusChannel = {
     // license is present (isLicenseActive). When false, Space forces repo-intel
     // off and the UI shows a locked/upsell state instead of running it.
     entitled: z.boolean(),
+    // Resolved engine mode + health from inspectRepoIntelligenceRuntime. The chip uses
+    // these so the pill can reflect READINESS ("Full" when enabled + healthy) instead of
+    // a misleading "idle" whenever the current session simply hasn't invoked repo-intel
+    // yet. null when the SDK inspection itself failed.
+    effectiveEngine: z.enum(['off', 'light', 'full']).nullable(),
+    engineStatus: z.enum(['disabled', 'ok', 'limited', 'unavailable', 'warming']).nullable(),
     diagnostics: z.array(repointelStatusItemSchema).min(1),
   }),
 } as const;

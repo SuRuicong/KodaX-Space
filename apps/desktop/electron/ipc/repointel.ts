@@ -41,15 +41,20 @@ function sdkStatus(status: string): RepointelStatusItemT['status'] {
   return 'ok';
 }
 
-async function sdkDiagnostics(projectRoot: string | null): Promise<{
+async function sdkDiagnostics(
+  projectRoot: string | null,
+  probe: boolean,
+): Promise<{
   readonly warmSupported: boolean;
   readonly warmReason: string;
+  readonly effectiveEngine: 'off' | 'light' | 'full' | null;
+  readonly engineStatus: 'disabled' | 'ok' | 'limited' | 'unavailable' | 'warming' | null;
   readonly diagnostics: readonly RepointelStatusItemT[];
 }> {
   try {
     const sdk = await loadSpaceSdkCoding();
     const inspection = await sdk.inspectRepoIntelligenceRuntime({
-      probe: true,
+      probe,
       ...(projectRoot ? { workspaceRoot: projectRoot } : {}),
     });
     const diagnostics: RepointelStatusItemT[] = [
@@ -89,12 +94,16 @@ async function sdkDiagnostics(projectRoot: string | null): Promise<{
         inspection.requestedMode === 'off'
           ? 'Repo intelligence is disabled by KodaX config.'
           : WARM_SUPPORTED_REASON,
+      effectiveEngine: inspection.effectiveEngine,
+      engineStatus: inspection.status,
       diagnostics,
     };
   } catch (err) {
     return {
       warmSupported: false,
       warmReason: `KodaX repo-intelligence inspection is unavailable: ${err instanceof Error ? err.message : String(err)}`,
+      effectiveEngine: null,
+      engineStatus: null,
       diagnostics: [
         item(
           'repo-intelligence',
@@ -106,11 +115,14 @@ async function sdkDiagnostics(projectRoot: string | null): Promise<{
   }
 }
 
-async function buildStatus(projectRoot: string | undefined): Promise<RepointelStatusOutput> {
+async function buildStatus(
+  projectRoot: string | undefined,
+  probe: boolean,
+): Promise<RepointelStatusOutput> {
   const normalizedProjectRoot = projectRoot ? path.resolve(projectRoot) : null;
   const projectExists = normalizedProjectRoot !== null && canReadDirectory(normalizedProjectRoot);
   const gitRoot = projectExists ? findGitRoot(normalizedProjectRoot) : null;
-  const sdk = await sdkDiagnostics(normalizedProjectRoot);
+  const sdk = await sdkDiagnostics(normalizedProjectRoot, probe);
   // Repo-intelligence is a licensed capability — any active license unlocks it.
   // Fail-closed (see repo-intel-gate.ts).
   const entitled = await isRepoIntelEntitled();
@@ -156,6 +168,8 @@ async function buildStatus(projectRoot: string | undefined): Promise<RepointelSt
     warmSupported: sdk.warmSupported,
     warmReason: sdk.warmReason,
     entitled,
+    effectiveEngine: sdk.effectiveEngine,
+    engineStatus: sdk.engineStatus,
     diagnostics,
   };
 }
@@ -163,6 +177,8 @@ async function buildStatus(projectRoot: string | undefined): Promise<RepointelSt
 export function registerRepointelChannels(): void {
   registerChannel(
     'repointel.status',
-    (input): Promise<RepointelStatusOutput> => buildStatus(input.projectRoot),
+    // probe defaults to true (doctor/popover full health check); the chip passes false
+    // for its cheap always-on readiness fetch (no semantic-worker spawn on render).
+    (input): Promise<RepointelStatusOutput> => buildStatus(input.projectRoot, input.probe ?? true),
   );
 }

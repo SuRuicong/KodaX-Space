@@ -224,13 +224,18 @@ const REPOINTEL_MODE_LABEL: Record<string, string> = {
 };
 
 /**
- * Repointel chip —— 显示当前 session 最近一次 repo-intelligence trace 的状态。
- * SDK `onRepoIntelligenceTrace` 回调走 main → push channel → renderer events buffer。
- * 这里从 buffer 倒扫拿最近一条，pill 显示 mode + status，点开看最近 3 条 trace。
+ * Repointel chip —— pill 反映 repo-intelligence 的**就绪态 + 本 session 活动**。
  *
- * 无 active session / 还没 trace 到达 → 灰色 idle pill；trace 到了就上色。
- * v0.1.2 暂不做 auto-warm —— SDK 还没暴露 standalone warm API，
- * runKodaX 第一次 send 会自动 warm 进 trace，这里被动展示就够。
+ * 两个数据源:
+ *  1. live `repointel_trace` 事件(SDK onRepoIntelligenceTrace → push → events buffer):
+ *     本 session 真跑过 repo-intel 时的"活动"状态,pill 显示该 trace 的 mode。
+ *  2. `repointel.status`(probe:false)的 `effectiveEngine`:引擎的"就绪"状态。
+ *
+ * 关键设计:没有 live trace 时,pill **不再**显示误导性的 "idle",而是回落到引擎就绪态
+ * (entitled + effective=full/light → "Full"/"Light")。否则一个满血就绪、已授权的
+ * repo-intel,只要当前 session 没恰好调用过它(如纯 bash/git 的 workflow 会话),就会被
+ * 错画成 idle/坏了。未授权 → RepointelLockedChip。auto-warm 由 composer 首次输入触发(见
+ * BottomBar),此处只负责展示。
  */
 function RepointelChip({ projectPath }: { readonly projectPath: string }): JSX.Element | null {
   const [open, setOpen] = useState(false);
@@ -263,24 +268,25 @@ function RepointelChip({ projectPath }: { readonly projectPath: string }): JSX.E
     return () => document.removeEventListener('mousedown', onDocDown);
   }, [open]);
 
-  // 无 session 不显示 — ChipBar 整体已经在没 projectPath 时不渲染，这里再细化"无 session"
+  // Fetch repo-intel status for THIS project with probe:false (cheap, config-only — no
+  // semantic-worker spawn) so the pill can reflect ENGINE READINESS even before any live
+  // trace arrives. Refetch on project change; status is kept across the fetch (not reset
+  // to null) to avoid an idle→ready flicker. Also used by the popover.
   useEffect(() => {
-    if (!open || !window.kodaxSpace) return;
+    if (!window.kodaxSpace) return;
     let cancelled = false;
-    setStatus(null);
     setStatusErr(null);
-    void window.kodaxSpace.invoke('repointel.status', { projectRoot: projectPath }).then((result) => {
-      if (cancelled) return;
-      if (result.ok) {
-        setStatus(result.data);
-      } else {
-        setStatusErr(result.error?.message ?? 'status failed');
-      }
-    });
+    void window.kodaxSpace
+      .invoke('repointel.status', { projectRoot: projectPath, probe: false })
+      .then((result) => {
+        if (cancelled) return;
+        if (result.ok) setStatus(result.data);
+        else setStatusErr(result.error?.message ?? 'status failed');
+      });
     return () => {
       cancelled = true;
     };
-  }, [open, projectPath]);
+  }, [projectPath]);
 
   if (!currentSessionId) return null;
 
@@ -292,8 +298,18 @@ function RepointelChip({ projectPath }: { readonly projectPath: string }): JSX.E
     return <RepointelLockedChip />;
   }
 
+  // Pill state: a live trace (repo-intel actually ran THIS session) wins and shows its
+  // mode as "active"; otherwise fall back to engine READINESS from status (Full/Light when
+  // enabled + healthy) so a licensed, ready repo-intel isn't shown as a misleading "idle"
+  // just because this session hasn't invoked it yet. Only genuinely off/unknown → 'idle'.
   const latest = latestTraces[0];
-  const mode = latest?.mode;
+  const liveMode = latest?.mode;
+  const readyMode =
+    status && (status.effectiveEngine === 'full' || status.effectiveEngine === 'light')
+      ? status.effectiveEngine
+      : undefined;
+  const mode = liveMode ?? readyMode;
+  const active = liveMode !== undefined;
   const modeLabel = mode ? (REPOINTEL_MODE_LABEL[mode] ?? mode) : 'idle';
   const dotColor =
     mode === undefined || mode === 'off'
@@ -310,7 +326,9 @@ function RepointelChip({ projectPath }: { readonly projectPath: string }): JSX.E
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-2 border border-border-default hover:bg-hover-bg"
-        title={`Repo-intelligence: ${modeLabel}${latest?.status ? ` · ${latest.status}` : ''}`}
+        title={`Repo-intelligence: ${modeLabel}${
+          active ? (latest?.status ? ` · ${latest.status}` : ' · active') : readyMode ? ' · ready' : ''
+        }`}
       >
         <span aria-hidden className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
         <span className="font-mono">Repointel</span>
