@@ -97,6 +97,13 @@ export interface UserMessage {
   readonly id: string;
   readonly content: string;
   readonly sentAt: number;
+  /**
+   * true = 本地提示条(slash echo / 本地命令输出),**不是**真正送进 SDK 的 prompt。
+   * composeMessages 据此**只按时间排序、不消费一段 assistant events**——否则一条没有 SDK
+   * 回合的本地 slash(如 `/repointel status`)会把下一条真 query 的回答吃进自己那段(错位 bug)。
+   * 缺省(真实用户 prompt / skill 调用)= 消费事件段,行为不变。
+   */
+  readonly local?: boolean;
 }
 
 export interface WorkflowNoticeMessage {
@@ -452,6 +459,9 @@ interface AppState {
   ): void;
   /** sentAt 可选——缺省 Date.now()；history restore 时传 session.createdAt 让旧消息显示真实时间。 */
   appendUserMessage(sessionId: string, content: string, sentAt?: number): void;
+  /** 追加一条**本地提示条**(slash echo / 本地命令输出):参与时间排序,但不消费 SDK 事件段。
+   *  用于所有不触发 SDK 回合的 slash 输出(见 UserMessage.local + composeMessages)。 */
+  appendLocalNotice(sessionId: string, content: string, sentAt?: number): void;
   appendQueuedUserMessage(
     sessionId: string,
     input: {
@@ -1056,6 +1066,23 @@ export const useAppStore = create<AppState>((set) => ({
       if (!state.sessions.some((s) => s.sessionId === sessionId)) return state;
       const bucket = state.userMessagesBySession[sessionId] ?? [];
       const msg = createUserMessage(sessionId, content, sentAt ?? Date.now());
+      return {
+        userMessagesBySession: {
+          ...state.userMessagesBySession,
+          [sessionId]: [...bucket, msg],
+        },
+      };
+    }),
+
+  appendLocalNotice: (sessionId, content, sentAt) =>
+    set((state) => {
+      if (!state.sessions.some((s) => s.sessionId === sessionId)) return state;
+      const bucket = state.userMessagesBySession[sessionId] ?? [];
+      // 与真实用户消息同列存储(共用时间排序 + 渲染),仅打 local 标记让 composeMessages 不消费事件段。
+      const msg: UserMessage = {
+        ...createUserMessage(sessionId, content, sentAt ?? Date.now()),
+        local: true,
+      };
       return {
         userMessagesBySession: {
           ...state.userMessagesBySession,

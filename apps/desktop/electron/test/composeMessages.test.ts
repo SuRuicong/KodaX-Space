@@ -22,6 +22,11 @@ function userMsg(id: string, content: string, sentAt = 1000): UserMessage {
   return { id, content, sentAt };
 }
 
+// 本地提示条(slash echo / 本地命令输出):渲染成 user 气泡,但**不消费** assistant events 段。
+function localMsg(id: string, content: string, sentAt = 1000): UserMessage {
+  return { id, content, sentAt, local: true };
+}
+
 function workflowNotice(id: string, content: string, sentAt = 1001): WorkflowNoticeMessage {
   return { id, content, sentAt };
 }
@@ -58,6 +63,42 @@ test('only user message, no events: returns single user bubble', () => {
   assert.equal(out.length, 1);
   assert.equal(out[0].kind, 'user');
   if (out[0].kind === 'user') assert.equal(out[0].content, 'hello');
+});
+
+test('local notice (slash echo/output) does NOT consume a real query\'s events (ordering regression)', () => {
+  // 复现用户报的错位:先跑一条纯本地 slash(/repointel status,无 SDK 回合),再问一个真 query。
+  // 真 query 的回答必须挂在真 query 气泡下,而不是被前面没有 events 的本地 slash 抢走。
+  const events: SessionEvent[] = [
+    { kind: 'text_delta', sessionId: sid, text: '这是对第二个问题的回答' },
+    { kind: 'session_complete', sessionId: sid },
+  ];
+  const out = composeMessages({
+    events,
+    userMessages: [
+      localMsg('l1', '/repointel status', 1000), // slash echo(本地)
+      localMsg('l2', '[repointel] status: ...', 1001), // slash 输出(本地)
+      userMsg('u1', '为什么你的 repointel 是 idle', 1002), // 真 query
+    ],
+  });
+  // 顺序:两条本地条目原位 → 真 query → 它的回答(没有被本地 slash 吃走)
+  assert.deepEqual(kindsOf(out), ['user', 'user', 'user', 'assistant_text']);
+  assert.equal(out[0].kind === 'user' && out[0].content, '/repointel status');
+  assert.equal(out[2].kind === 'user' && out[2].content, '为什么你的 repointel 是 idle');
+  const answer = out[3];
+  assert.equal(answer.kind, 'assistant_text');
+  if (answer.kind === 'assistant_text') {
+    assert.equal(answer.text, '这是对第二个问题的回答');
+    assert.equal(answer.sentAt, 1002, '回答继承真 query(u1)的时间,而非本地 slash');
+  }
+});
+
+test('local notice with no following real query renders alone, leaves later events unconsumed', () => {
+  // 纯本地 slash 单独存在时不吞事件;真实事件段留给之后的真消息(此处无,故落到段尾兜底渲染)。
+  const events: SessionEvent[] = [{ kind: 'text_delta', sessionId: sid, text: 'orphan' }];
+  const out = composeMessages({ events, userMessages: [localMsg('l1', '/tree', 1000)] });
+  // 本地条目 + 段尾未消费事件兜底成 assistant 气泡(不会被 /tree "吃"进它自己那段之前)
+  assert.deepEqual(kindsOf(out), ['user', 'assistant_text']);
+  assert.equal(out[0].kind === 'user' && out[0].content, '/tree');
 });
 
 test('pending queued user messages render as queued_user, not normal user bubbles', () => {

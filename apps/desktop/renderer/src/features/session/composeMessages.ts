@@ -168,6 +168,11 @@ export function composeMessages({
       sentAt: userMsg.sentAt,
     });
 
+    // 本地提示条(slash echo / 本地命令输出)背后没有 SDK 回合 → **不消费**一段 assistant events。
+    // 否则一条没有 events 的本地 slash 会把 cursor 一路扫到下一条真 query 的 session_complete,
+    // 把那条 query 的回答吃进自己这段 → 回答错位到本地 slash 底下(用户复报 /repointel status 后错位)。
+    if (userMsg.local) continue;
+
     // 找这条 user message 对应的 events 段：从 cursor 起，到遇到
     // session_complete / session_error / 或所有 events 用完。
     const segmentEnd = findSegmentEnd(events, cursor);

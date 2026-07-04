@@ -575,6 +575,7 @@ export function BottomBar(): JSX.Element {
   const pendingAgentMode = useAppStore((s) => s.pendingAgentMode);
   const setPendingProviderId = useAppStore((s) => s.setPendingProviderId);
   const appendUserMessage = useAppStore((s) => s.appendUserMessage);
+  const appendLocalNotice = useAppStore((s) => s.appendLocalNotice);
   const appendQueuedUserMessage = useAppStore((s) => s.appendQueuedUserMessage);
   const markQueuedUserMessageAccepted = useAppStore((s) => s.markQueuedUserMessageAccepted);
   const removeQueuedUserMessage = useAppStore((s) => s.removeQueuedUserMessage);
@@ -1056,6 +1057,11 @@ export function BottomBar(): JSX.Element {
     args: string[],
     queueMode: QueueMode = 'interrupt',
   ): Promise<void> {
+    // 本函数追加进 transcript 的每一条(slash echo + 本地反馈)都**没有 SDK 回合**在背后
+    // ——真正触发 SDK turn 的只有技能(走 invokeSkill,另一函数)。所以这里把 appendUserMessage
+    // 局部改道到 appendLocalNotice:它们只按时间排序、**不消费一段 assistant events**,否则一条
+    // 没有 events 的本地 slash 会把下一条真 query 的回答吃走(错位 bug)。workflow 走 appendWorkflowNotice,不受影响。
+    const appendUserMessage = appendLocalNotice;
     if (!window.kodaxSpace) {
       setErr('IPC unavailable');
       appendUserMessage(sessionId, '[slash] IPC unavailable');
@@ -1127,6 +1133,11 @@ export function BottomBar(): JSX.Element {
     args: string[],
     action: string,
   ): Promise<void> {
+    // 本函数处理的全是**本地 UI/IPC action**(status/cost/tree/history/repointel/doctor/mcp/
+    // sessions/skills/review/load/delete/fork/rewind…),没有一条会触发 SDK 主回合。故把
+    // appendUserMessage 局部改道到 appendLocalNotice:echo + 输出只按时间排序、**不消费 assistant
+    // events**——否则这些没有 events 的本地条目会把下一条真 query 的回答吃走(用户复报的 slash 错位)。
+    const appendUserMessage = appendLocalNotice;
     // Echo the slash command into the transcript.
     appendUserMessage(sessionId, `/${name} ${args.join(' ')}`.trim());
 
