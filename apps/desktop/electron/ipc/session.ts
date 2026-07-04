@@ -50,6 +50,7 @@ import {
 import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
 import { loadPersistedTranscript } from '../kodax/session-store.js';
+import { parseTaskCompletedNotice } from './workflow-result-notice.js';
 import { resolveRuntimeDefaults } from '../kodax/runtime-defaults.js';
 import { getSessionRuntimeStore } from '../kodax/session-runtime-store.js';
 import { assertArtifactPathInClipboardSandbox } from './clipboard.js';
@@ -647,7 +648,19 @@ export function registerSessionChannels(): void {
         }
         continue;
       }
-      if (synthetic) continue; // SDK 合成消息隐藏
+      // Workflow 结果/失败:SDK 把 run 的最终结果作为一条 _synthetic 的 `<task-completed …>`
+      // user 消息存进 transcript(位置正确)。识别它、原位渲染成 workflow 历史提示条——否则会被
+      // 下面的 `if (synthetic) continue` 丢掉,只能靠侧存储按 wall-clock 重排(SDK 压缩把时间戳
+      // 压平后 → resume 乱序/置顶)。见 historyWorkflowNoticeSchema。
+      if (synthetic && msg.role === 'user') {
+        const wf = parseTaskCompletedNotice(extractUserText(msg.content));
+        if (wf !== undefined) {
+          items.push({ kind: 'workflow_notice', text: wf });
+          if (items.length >= 2000) break;
+          continue;
+        }
+      }
+      if (synthetic) continue; // 其余 SDK 合成消息隐藏
       if (msg.role === 'system') continue; // system prompts 内部
 
       if (msg.role === 'user') {
@@ -737,6 +750,7 @@ function parseEntrySentAt(value: unknown): number | undefined {
   }
   return undefined;
 }
+
 
 /** user message content 提取纯文本部分;若 content 是 string 直接返回;若是 blocks 数组取 type=='text'.
  *  tool_result blocks 不在这里出 — 它们在 history handler 第一步单独收集映射到 toolId。 */

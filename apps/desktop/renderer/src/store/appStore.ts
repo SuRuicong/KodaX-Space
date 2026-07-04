@@ -1309,6 +1309,13 @@ export const useAppStore = create<AppState>((set) => ({
             text: item.text,
           });
           assistantPendingComplete = true;
+        } else if (item.kind === 'workflow_notice') {
+          // Workflow 结果/失败提示条:SDK 把它作为 `<task-completed>` 合成消息存进 transcript,
+          // session.history 识别后发这个 kind。路由成 workflow_notice 事件 → composeMessages
+          // 原位渲染成 system_notice(variant='workflow'),不再走侧存储按 wall-clock 重排。
+          ensureLeadingUserSentinel();
+          histEvents.push({ kind: 'workflow_notice', sessionId, text: item.text });
+          assistantPendingComplete = true;
         } else {
           // tool_call: emit tool_start + (optional) tool_result。 result 缺失时 (history 损坏
           // 或 tool_use 没匹配上 tool_result) 仍 emit tool_start 让 UI 显示一张 "running" 卡片。

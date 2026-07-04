@@ -593,3 +593,66 @@ test('sidecar_message arriving after session_complete still renders as sidecar n
     assert.match(notice.text, /without evidence/);
   }
 });
+
+test('workflow_notice event renders as a workflow system_notice at its transcript position (not by timestamp)', () => {
+  // Approach A: on restore, the workflow result comes from the SDK transcript's `<task-completed>`
+  // block as a position-anchored `workflow_notice` EVENT (not a wall-clock-merged notice), so it
+  // lands exactly where the run executed — surviving the SDK's compaction timestamp-collapse.
+  const events: SessionEvent[] = [
+    { kind: 'text_delta', sessionId: sid, text: 'assistant reply before the workflow' },
+    { kind: 'workflow_notice', sessionId: sid, text: '[workflow] completed · run-x\nreport body' },
+    { kind: 'text_delta', sessionId: sid, text: 'assistant reply after the workflow' },
+    { kind: 'session_complete', sessionId: sid },
+  ];
+  const out = composeMessages({ events, userMessages: [userMsg('u1', 'run the workflow', 1000)] });
+  const kinds = out.map((m) => m.kind);
+  assert.deepEqual(kinds, ['user', 'assistant_text', 'system_notice', 'assistant_text']);
+  const notice = out[2];
+  assert.equal(notice.kind, 'system_notice');
+  if (notice.kind === 'system_notice') {
+    assert.equal(notice.variant, 'workflow');
+    assert.match(notice.text, /\[workflow\] completed · run-x/);
+    assert.match(notice.text, /report body/);
+  }
+});
+
+test('re-rooted session: a workflow notice whose run predates all restored messages is clamped, not pinned to the top', () => {
+  // Real case: session s_01213312 was compaction-re-rooted, so every restored message carries
+  // the re-root wall-clock (T_ROOT), while the workflow finished just BEFORE the re-root
+  // (T_RUN < T_ROOT). By raw sentAt the notice sorts above the entire conversation → top.
+  // composeMessages clamps the notice's sort key to the earliest restored message so it lands
+  // WITHIN the conversation instead of pinning to the top.
+  const T_ROOT = 1_000_000;
+  const T_RUN = T_ROOT - 60_000; // run ended a minute before the re-root
+  const out = composeMessages({
+    events: [],
+    userMessages: [
+      userMsg('u1', 'first restored turn', T_ROOT),
+      userMsg('u2', 'second restored turn', T_ROOT + 1000),
+      userMsg('u3', 'third restored turn', T_ROOT + 2000),
+    ],
+    workflowNotices: [workflowNotice('wf1', '[workflow] completed: review · run-x', T_RUN)],
+  });
+  assert.notEqual(out[0]?.kind, 'system_notice', 'notice must NOT be pinned above the conversation');
+  assert.equal(out[0]?.kind, 'user', 'earliest restored user turn stays first');
+  const noticeIdx = out.findIndex((m) => m.kind === 'system_notice');
+  assert.ok(noticeIdx > 0, `notice interleaves within the conversation (idx ${noticeIdx})`);
+  // Display still carries the real run time (footer "Xd ago"), only the sort key is clamped.
+  const notice = out[noticeIdx];
+  if (notice?.kind === 'system_notice') {
+    assert.equal(notice.sentAt, T_RUN, 'displayed notice sentAt stays the real run time');
+  }
+
+  // Guard the in-range case (e.g. session 20260617_014905, run within the message span):
+  // the notice is NOT clamped and interleaves at its true position between turns.
+  const inRange = composeMessages({
+    events: [],
+    userMessages: [userMsg('a', 'early', 1000), userMsg('b', 'late', 3000)],
+    workflowNotices: [workflowNotice('wf2', '[workflow] completed', 2000)],
+  });
+  assert.deepEqual(
+    inRange.map((m) => m.kind),
+    ['user', 'system_notice', 'user'],
+    'in-range notice interleaves at its true position (no clamp)',
+  );
+});

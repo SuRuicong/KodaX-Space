@@ -24,7 +24,6 @@ import { useSessionCompleteNotification } from './features/notifications/useSess
 import { Shell } from './shell/Shell.js';
 import {
   formatWorkflowEventNotices,
-  formatWorkflowRunRestoreNotices,
 } from './features/workflow/workflowNotices.js';
 
 // Shell owns the visible layout; App keeps process-wide bootstrapping and global listeners.
@@ -310,13 +309,11 @@ export default function App(): JSX.Element {
       .invoke('workflow.list', undefined)
       .then((r) => {
         if (r.ok) {
+          // 只播种右侧栏的 run 列表。workflow 的结果/失败**通知**不再从这里按 wall-clock 重排回
+          // transcript —— 改由 session.history 从 transcript 里 SDK 存的 `<task-completed>` 合成
+          // 消息**原位**还原(见 ipc/session.ts)。原来那套侧存储重排在 SDK 压缩把 transcript
+          // 时间戳压平后会乱序/置顶(治本待 SDK 逐条时间戳,见转交需求)。live 通知仍走 workflow.event。
           seedWorkflowRuns(r.data.runs);
-          for (const run of r.data.runs) {
-            if (run.sessionId === undefined || run.surface === 'partner') continue;
-            for (const notice of formatWorkflowRunRestoreNotices(run)) {
-              appendWorkflowNotice(run.sessionId, notice.text, notice.sentAt, notice.key);
-            }
-          }
         }
       })
       .catch(() => {

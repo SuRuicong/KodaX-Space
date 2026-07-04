@@ -114,6 +114,24 @@ export function composeMessages({
   // 当前 mock + future real adapter 都会在每次 send 结束时 emit session_complete 或 session_error，
   // 所以"按 session_complete/error 切段"是稳定的边界。
 
+  // Floor for workflow-notice SORT position (not display): a workflow for a session always
+  // ran after the conversation began, so a notice must never sort ABOVE the restored
+  // conversation. It can though: a compaction *re-root* re-stamps every restored message to
+  // the (later) re-root time, so a run that finished just BEFORE the re-root keeps its real
+  // (earlier) time and pins to the very top on reopen — even after the per-message-sentAt fix,
+  // because there is no restored message earlier than it (verified: session s_01213312, run
+  // ended 10:33 < every re-rooted message at 10:34). Clamp the sort key to the earliest
+  // restored user message so such a notice interleaves within the conversation instead of
+  // floating to the top. No-op for live notices and for runs whose time is already in range
+  // (e.g. 20260617_014905, run within the message span — unchanged). Display keeps the real
+  // run time (footer "Xd ago").
+  const userSentAts = userMessages.map((u) => u.sentAt).filter((t) => Number.isFinite(t));
+  const earliestUserSentAt = userSentAts.length > 0 ? Math.min(...userSentAts) : undefined;
+  const noticeSortAt = (sentAt: number): number =>
+    earliestUserSentAt !== undefined && Number.isFinite(sentAt)
+      ? Math.max(sentAt, earliestUserSentAt)
+      : sentAt;
+
   let cursor = 0;
   const localMessages = [
     ...userMessages.map((userMsg, order) => ({
@@ -124,7 +142,7 @@ export function composeMessages({
     })),
     ...workflowNotices.map((notice, order) => ({
       kind: 'workflow_notice' as const,
-      sentAt: notice.sentAt,
+      sentAt: noticeSortAt(notice.sentAt),
       order: userMessages.length + order,
       notice,
     })),
@@ -367,6 +385,19 @@ function composeAssistantSegment(
           id: `${segmentTag}_lineage${noticeCounter++}`,
           variant: 'lineage',
           text: `${label}: ${evt.text}`,
+        });
+        break;
+      }
+      case 'workflow_notice': {
+        // 历史回放:workflow run 的结果/失败提示条,由 session.history 从 transcript 的
+        // `<task-completed>` 合成消息**原位**还原(见 ipc/session.ts + prependSessionHistory)。
+        // 用事件流位置定位——而不是按 wall-clock 交织,因为 SDK 压缩会把 transcript 时间戳压平。
+        flushTextBubble();
+        out.push({
+          kind: 'system_notice',
+          id: `${segmentTag}_wf${noticeCounter++}`,
+          variant: 'workflow',
+          text: evt.text,
         });
         break;
       }

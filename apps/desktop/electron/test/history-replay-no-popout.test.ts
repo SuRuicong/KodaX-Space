@@ -192,8 +192,13 @@ test('restored conversation keeps real per-message sentAt so workflow notices ar
     `notice must interleave between turns (kinds: ${out.map((m) => m.kind).join(',')})`,
   );
 
-  // Control (old behavior): no per-message sentAt → every turn collapses to the late createdAt,
-  // and the notice (real earlier run time) sorts above the whole conversation. Documents the bug.
+  // Safety net (composeMessages clamp): even WITHOUT per-message sentAt — every turn collapses
+  // onto the late createdAt because a compaction re-root re-stamped restored messages LATER than
+  // the run (real case: session s_01213312, run ended 10:33 < every re-rooted message at 10:34) —
+  // the workflow notice must NOT float to the very top. composeMessages clamps a notice's sort
+  // position to the earliest restored message, so it interleaves within the conversation instead
+  // of pinning above it. (The per-message-sentAt path above still gives the *correct*
+  // mid-conversation position when timestamps are real; this clamp is the fallback.)
   reset();
   useAppStore.getState().prependSessionHistory(
     SID,
@@ -204,11 +209,13 @@ test('restored conversation keeps real per-message sentAt so workflow notices ar
     ],
     LATE_CREATED,
   );
-  assert.equal(
-    render()[0]?.kind,
+  const controlOut = render();
+  assert.notEqual(
+    controlOut[0]?.kind,
     'system_notice',
-    'without per-message sentAt the notice regresses to the top (this is why the handler must forward entry.timestamp)',
+    'clamp: a run-time-earlier notice must NOT pin to the top even when restored messages collapse onto a late createdAt',
   );
+  assert.equal(controlOut[0]?.kind, 'user', 'the first restored user turn stays at the top, not the workflow notice');
 });
 
 test('history replay restores sidecar verifier messages as sidecar notices', () => {
@@ -242,4 +249,37 @@ test('history replay restores sidecar verifier messages as sidecar notices', () 
     assert.equal(notice.variant, 'sidecar');
     assert.match(notice.text, /Please rerun the focused test/);
   }
+});
+
+test('workflow_notice history item restores as a workflow system_notice at its transcript position (approach A)', () => {
+  // The SDK stores a workflow run's result as a `_synthetic` `<task-completed>` transcript message
+  // at the correct position. session.history maps it to a `workflow_notice` item; prependSessionHistory
+  // routes it to a position-anchored event so composeMessages renders it exactly where the run ran —
+  // NOT hoisted to the top, and independent of the (compaction-collapsed) wall-clock timestamps.
+  useAppStore.setState({ eventsBySession: {}, userMessagesBySession: {}, workflowNoticesBySession: {} });
+  const items: SessionHistoryItem[] = [
+    { kind: 'user', content: 'run the workflow', sentAt: 1000 },
+    { kind: 'assistant', text: 'kicking it off' },
+    { kind: 'workflow_notice', text: '[workflow] completed · run-x\nthe report body' },
+    { kind: 'user', content: 'thanks', sentAt: 2000 },
+    { kind: 'assistant', text: 'you are welcome' },
+  ];
+  useAppStore.getState().prependSessionHistory(SID, items, FALLBACK_SENT_AT);
+  const s = useAppStore.getState();
+  const out = composeMessages({
+    events: s.eventsBySession[SID] ?? [],
+    userMessages: s.userMessagesBySession[SID] ?? [],
+    workflowNotices: s.workflowNoticesBySession[SID] ?? [],
+  });
+  assert.notEqual(out[0]?.kind, 'system_notice', 'workflow notice must NOT be pinned to the top');
+  const nIdx = out.findIndex((m) => m.kind === 'system_notice' && m.variant === 'workflow');
+  const u1 = out.findIndex((m) => m.kind === 'user' && m.content === 'run the workflow');
+  const u2 = out.findIndex((m) => m.kind === 'user' && m.content === 'thanks');
+  assert.ok(nIdx > -1, 'workflow notice present');
+  assert.ok(
+    u1 === 0 && nIdx > u1 && nIdx < u2,
+    `workflow notice interleaves at its run position (kinds: ${out.map((m) => m.kind).join(',')})`,
+  );
+  const notice = out[nIdx];
+  if (notice?.kind === 'system_notice') assert.match(notice.text, /\[workflow\] completed · run-x/);
 });

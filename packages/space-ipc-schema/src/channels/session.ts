@@ -532,6 +532,18 @@ const historyLineageNoticeSchema = z.object({
   text: z.string().max(MAX_TEXT_CHUNK),
 });
 
+/**
+ * v0.1.x: workflow 结果历史提示条（仅历史回放）。SDK 把 workflow run 的最终结果/失败作为一条
+ * `_synthetic` 的 `<task-completed task_id="…">…</task-completed>` user 消息存进 transcript
+ * （位置正确）。session.history handler 识别它、改发这个 kind，renderer **原位**渲染成 workflow
+ * system_notice —— 而不是像以前那样把合成消息一律丢弃、再从侧存储按 wall-clock 重排（SDK 压缩会
+ * 把 transcript 时间戳压平，导致 workflow 通知在 resume 后乱序/置顶）。
+ */
+const historyWorkflowNoticeSchema = z.object({
+  kind: z.literal('workflow_notice'),
+  text: z.string().max(MAX_TEXT_CHUNK),
+});
+
 const sessionHistoryItemSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('user'),
@@ -549,6 +561,7 @@ const sessionHistoryItemSchema = z.discriminatedUnion('kind', [
   historyToolCallSchema,
   historySidecarMessageSchema,
   historyLineageNoticeSchema,
+  historyWorkflowNoticeSchema,
 ]);
 
 export const sessionHistoryChannel = {
@@ -945,6 +958,14 @@ export const sessionEventChannel = {
       kind: z.literal('lineage_notice'),
       sessionId: z.string().min(1),
       noticeKind: z.enum(['branch_summary', 'compaction']),
+      text: z.string().max(MAX_TEXT_CHUNK),
+    }),
+    // v0.1.x: workflow 结果历史提示条（仅历史回放）——见 historyWorkflowNoticeSchema。
+    // prependSessionHistory 把 session.history 的 workflow_notice item 转成这个 SessionEvent，
+    // composeMessages 原位渲染成 system_notice(variant='workflow')。main 端从不实时 push 它。
+    z.object({
+      kind: z.literal('workflow_notice'),
+      sessionId: z.string().min(1),
       text: z.string().max(MAX_TEXT_CHUNK),
     }),
     z.object({
