@@ -1,10 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { WorkflowEventPayload, WorkflowRunT } from '@kodax-space/space-ipc-schema';
-import {
-  formatWorkflowEventNotices,
-  formatWorkflowRunRestoreNotices,
-} from '../../renderer/src/features/workflow/workflowNotices.js';
+import { formatWorkflowEventNotices } from '../../renderer/src/features/workflow/workflowNotices.js';
 
 function run(over: Partial<WorkflowRunT>): WorkflowRunT {
   return {
@@ -117,43 +114,6 @@ test('workflow finished notice keeps full final report text', () => {
   assert.equal(notices.length, 1);
   assert.ok(notices[0]?.text.includes(tail));
   assert.ok(!notices[0]?.text.endsWith('\n...'));
-});
-
-test('restored workflow runs hydrate child summaries and final report notices', () => {
-  const notices = formatWorkflowRunRestoreNotices(
-    run({
-      status: 'completed',
-      updatedAt: '2026-06-21T00:02:00.000Z',
-      sessionId: 's1',
-      surface: 'code',
-      items: [
-        {
-          id: 'a1',
-          title: 'Impact reviewer',
-          kind: 'agent',
-          status: 'completed',
-          summaryStatus: 'result',
-          summary: 'Recovered child digest.',
-          endedAt: '2026-06-21T00:01:00.000Z',
-        },
-      ],
-      resultSummary: '# Restored final report\n\nWorkflow completed.',
-    }),
-  );
-
-  assert.equal(notices.length, 2);
-  assert.match(notices[0]?.key ?? '', /^item:wf-notice:a1$/);
-  assert.equal(
-    notices[0]?.text,
-    '[workflow] agent summary: Impact reviewer\nRecovered child digest.',
-  );
-  assert.equal(notices[0]?.sentAt, Date.parse('2026-06-21T00:01:00.000Z'));
-  assert.match(notices[1]?.key ?? '', /^finished:wf-notice:completed$/);
-  assert.equal(
-    notices[1]?.text,
-    '[workflow] completed: review · wf-notice\n# Restored final report\n\nWorkflow completed.',
-  );
-  assert.equal(notices[1]?.sentAt, Date.parse('2026-06-21T00:02:00.000Z'));
 });
 
 test('workflow live progress messages are NOT pushed to the transcript (they belong to the right-sidebar ticker)', () => {

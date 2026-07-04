@@ -41,7 +41,8 @@ export function assertSessionSendScope(
   }
 }
 import { loadAgentsMd, type AgentsFile } from '../kodax/agents-md-loader.js';
-import { getKodaxDir } from '../kodax/data-paths.js';
+import path from 'node:path';
+import { getKodaxDir, getSpaceDataDir } from '../kodax/data-paths.js';
 import {
   loadKodaxCustomProviders,
   loadKodaxUserDefaults,
@@ -50,7 +51,7 @@ import {
 import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
 import { loadPersistedTranscript } from '../kodax/session-store.js';
-import { parseTaskCompletedNotice } from './workflow-result-notice.js';
+import { parseTaskCompletedBlocks, isWorkflowRunDir } from './workflow-result-notice.js';
 import { resolveRuntimeDefaults } from '../kodax/runtime-defaults.js';
 import { getSessionRuntimeStore } from '../kodax/session-runtime-store.js';
 import { assertArtifactPathInClipboardSandbox } from './clipboard.js';
@@ -605,6 +606,11 @@ export function registerSessionChannels(): void {
       ? (rawTranscriptEntries as TranscriptEntryLike[])
       : data.messages.map((message) => ({ type: 'message', message }));
 
+    // Workflow 结果原位还原用:一条 `<task-completed>` 块只有当它的 task_id 命名了一个 Space 落盘的
+    // workflow run(<space>/workflow-runs/<runId>/)才算 workflow —— 借此把用同样 wrapper 的普通
+    // dispatch_child_task 排除掉(review HIGH)。
+    const workflowRunBaseDir = path.join(getSpaceDataDir(), 'workflow-runs');
+
     for (const entry of entries) {
       const entrySentAt = parseEntrySentAt(entry.timestamp);
       if (entry.type === 'branch_summary' || entry.type === 'compaction') {
@@ -653,11 +659,19 @@ export function registerSessionChannels(): void {
       // 下面的 `if (synthetic) continue` 丢掉,只能靠侧存储按 wall-clock 重排(SDK 压缩把时间戳
       // 压平后 → resume 乱序/置顶)。见 historyWorkflowNoticeSchema。
       if (synthetic && msg.role === 'user') {
-        const wf = parseTaskCompletedNotice(extractUserText(msg.content));
-        if (wf !== undefined) {
-          items.push({ kind: 'workflow_notice', text: wf });
-          if (items.length >= 2000) break;
-          continue;
+        // 一条合成消息可能批了多个 `<task-completed>` 块;逐块解析、只对**真 workflow run** 出 notice
+        // (dispatch_child_task 用同样的 wrapper、但没落盘目录 → isWorkflowRunDir 排除,避免误标)。
+        const blocks = parseTaskCompletedBlocks(extractUserText(msg.content));
+        if (blocks.length > 0) {
+          let emitted = false;
+          for (const b of blocks) {
+            if (!isWorkflowRunDir(b.runId, workflowRunBaseDir)) continue;
+            items.push({ kind: 'workflow_notice', text: b.text });
+            emitted = true;
+            if (items.length >= 2000) break;
+          }
+          if (emitted) continue; // 已原位渲染 workflow 结果
+          // 否则(全是普通子任务 / 未落盘的 run)→ 落到下面的 synthetic-skip,和以前一样隐藏。
         }
       }
       if (synthetic) continue; // 其余 SDK 合成消息隐藏

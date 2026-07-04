@@ -1,8 +1,4 @@
-import type {
-  WorkflowEventPayload,
-  WorkflowProcessItemT,
-  WorkflowRunT,
-} from '@kodax-space/space-ipc-schema';
+import type { WorkflowEventPayload, WorkflowProcessItemT } from '@kodax-space/space-ipc-schema';
 
 export interface WorkflowNoticeCandidate {
   readonly key: string;
@@ -54,21 +50,6 @@ export function formatWorkflowEventNotices(
   }
 
   return notices;
-}
-
-export function formatWorkflowRunRestoreNotices(run: WorkflowRunT): WorkflowNoticeCandidate[] {
-  const type =
-    run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled'
-      ? 'workflow_finished'
-      : 'workflow_updated';
-  return formatWorkflowEventNotices({
-    type,
-    snapshot: run,
-    ...(run.latestMessage !== undefined ? { message: run.latestMessage } : {}),
-    ...(run.sessionId !== undefined ? { sessionId: run.sessionId } : {}),
-    ...(run.surface !== undefined ? { surface: run.surface } : {}),
-    ...(run.projectRoot !== undefined ? { projectRoot: run.projectRoot } : {}),
-  });
 }
 
 function formatWorkflowFinishedNotice(
