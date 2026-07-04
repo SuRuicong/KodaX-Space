@@ -52,6 +52,7 @@ import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
 import { loadPersistedTranscript } from '../kodax/session-store.js';
 import { parseTaskCompletedBlocks, selectWorkflowBlocks } from './workflow-result-notice.js';
+import { dedupeTranscriptEntries } from './transcript-dedup.js';
 import { resolveRuntimeDefaults } from '../kodax/runtime-defaults.js';
 import { getSessionRuntimeStore } from '../kodax/session-runtime-store.js';
 import { assertArtifactPathInClipboardSandbox } from './clipboard.js';
@@ -601,6 +602,9 @@ export function registerSessionChannels(): void {
       // Without it, workflow notices — which DO carry real run times — sort above the whole
       // restored conversation after a compaction re-root (createdAt is reset later than the run).
       readonly timestamp?: unknown;
+      // SDK marks each transcript entry active (on the live branch) or not. Used to scope
+      // dedup to inactive old-island re-clones only — the active branch is never collapsed.
+      readonly active?: unknown;
     };
     const entries: readonly TranscriptEntryLike[] = Array.isArray(rawTranscriptEntries)
       ? (rawTranscriptEntries as TranscriptEntryLike[])
@@ -614,8 +618,13 @@ export function registerSessionChannels(): void {
     // 同一条 `<task-completed>` 会重复出现(旧的侧存储按 finished:runId:status 去重、只显一份;approach A
     // 改按 transcript 位置渲染后丢了去重 → 同一份报告显示多次)。按 runId 去重、保留**首次**出现的位置。
     const seenWorkflowRunIds = new Set<string>();
+    // 整段对话重复渲染修复:loadFullTranscript 返回全谱系。① 新 session:旧岛消息被 evict 成
+    // "[compacted]" 占位 → 跳过;② 旧 session(更早 SDK 写的):旧岛保留真内容、每次压缩逐字节克隆一份
+    // → 按内容折叠。去重**限定在 inactive 旧岛**,活动分支一条不碰(不折叠合法重复的活动消息)。
+    // 见 transcript-dedup.ts 的机制说明。
+    const dedupedEntries = dedupeTranscriptEntries(entries);
 
-    for (const entry of entries) {
+    for (const entry of dedupedEntries) {
       const entrySentAt = parseEntrySentAt(entry.timestamp);
       if (entry.type === 'branch_summary' || entry.type === 'compaction') {
         const rawSummary =
