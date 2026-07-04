@@ -13,12 +13,22 @@
 // unentitled (repo-intel off).
 
 import { isLicenseActive } from '@kodax-space/space-ipc-schema';
+import type { KodaXContextOptions } from '@kodax-ai/kodax/coding';
 import { licenseManager } from '../license/manager.js';
 
-/** Context fields that express the gate — spread into a run's `context`. */
+/**
+ * Context fields that express the gate — spread into a run's `context`.
+ *
+ * Derived from the SDK's own `KodaXContextOptions` via `Pick`, NOT a hand-written literal:
+ * if a future SDK version renames or removes `repoIntelligenceMode` / `repoIntelligenceTrace`
+ * (this SDK has a history of breaking renames in the repo-intel enum space), this Pick fails
+ * to compile — turning a would-be SILENT bypass (Space keeps emitting a key the SDK no longer
+ * reads → engine defaults back to full for unlicensed users, typecheck + tests still green)
+ * into a build-time error the CI catches.
+ */
 export type RepoIntelContextFields =
-  | { readonly repoIntelligenceTrace: true }
-  | { readonly repoIntelligenceMode: 'off' };
+  | Required<Pick<KodaXContextOptions, 'repoIntelligenceTrace'>>
+  | Required<Pick<KodaXContextOptions, 'repoIntelligenceMode'>>;
 
 const defaultEntitlement = (): Promise<boolean> =>
   licenseManager
