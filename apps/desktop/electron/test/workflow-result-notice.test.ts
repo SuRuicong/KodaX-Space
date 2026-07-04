@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import {
   parseTaskCompletedBlocks,
   isWorkflowRunDir,
+  selectWorkflowBlocks,
   TASK_COMPLETED_BODY_MAX,
 } from '../ipc/workflow-result-notice.js';
 
@@ -64,6 +65,40 @@ test('very long body truncated with an ellipsis', () => {
   const [b] = parseTaskCompletedBlocks(`<task-completed task_id="r">${long}</task-completed>`);
   assert.ok((b?.text.length ?? 0) < TASK_COMPLETED_BODY_MAX + 200, 'truncated');
   assert.match(b?.text ?? '', /…$/);
+});
+
+test('selectWorkflowBlocks: gates non-workflow blocks + dedups the same run across the restore', () => {
+  const base = mkdtempSync(join(tmpdir(), 'wf-select-'));
+  try {
+    mkdirSync(join(base, 'run-a'));
+    mkdirSync(join(base, 'run-b'));
+    // run-c has NO dir → dispatch_child_task-style; must be gated out.
+    const blocks = (runId: string) => parseTaskCompletedBlocks(`<task-completed task_id="${runId}">done</task-completed>`);
+    const seen = new Set<string>();
+
+    // first sighting of run-a (real) → rendered, message handled
+    let sel = selectWorkflowBlocks(blocks('run-a'), seen, base);
+    assert.equal(sel.render.length, 1);
+    assert.equal(sel.render[0]?.runId, 'run-a');
+    assert.equal(sel.handled, true);
+
+    // a re-rooted duplicate of run-a → NOT rendered again, but still handled (message consumed)
+    sel = selectWorkflowBlocks(blocks('run-a'), seen, base);
+    assert.equal(sel.render.length, 0, 'same run rendered only once (dedup)');
+    assert.equal(sel.handled, true);
+
+    // a different real run → rendered
+    sel = selectWorkflowBlocks(blocks('run-b'), seen, base);
+    assert.equal(sel.render.length, 1);
+    assert.equal(sel.render[0]?.runId, 'run-b');
+
+    // a non-workflow block (no run dir, e.g. dispatch_child_task) → not rendered, NOT handled
+    sel = selectWorkflowBlocks(blocks('run-c'), seen, base);
+    assert.equal(sel.render.length, 0);
+    assert.equal(sel.handled, false, 'dispatch_child_task block falls through to normal synthetic-skip');
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
 });
 
 test('isWorkflowRunDir: true only when the run directory exists; rejects path traversal', () => {

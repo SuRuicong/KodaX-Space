@@ -51,7 +51,7 @@ import {
 import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
 import { loadPersistedTranscript } from '../kodax/session-store.js';
-import { parseTaskCompletedBlocks, isWorkflowRunDir } from './workflow-result-notice.js';
+import { parseTaskCompletedBlocks, selectWorkflowBlocks } from './workflow-result-notice.js';
 import { resolveRuntimeDefaults } from '../kodax/runtime-defaults.js';
 import { getSessionRuntimeStore } from '../kodax/session-runtime-store.js';
 import { assertArtifactPathInClipboardSandbox } from './clipboard.js';
@@ -610,6 +610,10 @@ export function registerSessionChannels(): void {
     // workflow run(<space>/workflow-runs/<runId>/)才算 workflow —— 借此把用同样 wrapper 的普通
     // dispatch_child_task 排除掉(review HIGH)。
     const workflowRunBaseDir = path.join(getSpaceDataDir(), 'workflow-runs');
+    // 同一个 workflow run 的结果只渲染一次:被压缩/re-root 过的 session,loadFullTranscript 的全谱系里
+    // 同一条 `<task-completed>` 会重复出现(旧的侧存储按 finished:runId:status 去重、只显一份;approach A
+    // 改按 transcript 位置渲染后丢了去重 → 同一份报告显示多次)。按 runId 去重、保留**首次**出现的位置。
+    const seenWorkflowRunIds = new Set<string>();
 
     for (const entry of entries) {
       const entrySentAt = parseEntrySentAt(entry.timestamp);
@@ -663,14 +667,16 @@ export function registerSessionChannels(): void {
         // (dispatch_child_task 用同样的 wrapper、但没落盘目录 → isWorkflowRunDir 排除,避免误标)。
         const blocks = parseTaskCompletedBlocks(extractUserText(msg.content));
         if (blocks.length > 0) {
-          let emitted = false;
-          for (const b of blocks) {
-            if (!isWorkflowRunDir(b.runId, workflowRunBaseDir)) continue;
+          const { render, handled } = selectWorkflowBlocks(
+            blocks,
+            seenWorkflowRunIds,
+            workflowRunBaseDir,
+          );
+          for (const b of render) {
             items.push({ kind: 'workflow_notice', text: b.text });
-            emitted = true;
             if (items.length >= 2000) break;
           }
-          if (emitted) continue; // 已原位渲染 workflow 结果
+          if (handled) continue; // 已处理(渲染或去重跳过)workflow 结果
           // 否则(全是普通子任务 / 未落盘的 run)→ 落到下面的 synthetic-skip,和以前一样隐藏。
         }
       }

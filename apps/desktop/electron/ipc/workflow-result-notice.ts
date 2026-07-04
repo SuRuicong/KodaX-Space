@@ -75,3 +75,34 @@ export function isWorkflowRunDir(runId: string, runBaseDir: string): boolean {
     return false;
   }
 }
+
+export interface WorkflowBlockSelection {
+  /** 真 workflow run 且本次 restore 里首见的块 —— 要渲染成 workflow_notice。 */
+  readonly render: readonly TaskCompletedBlock[];
+  /** 该条合成消息里是否有**任何**真 workflow run 块(哪怕因去重不渲染)—— true 表示这条消息已被
+   *  当作 workflow 结果消费掉,调用方应隐藏它(不再走别的展示路径)。 */
+  readonly handled: boolean;
+}
+
+/**
+ * 从一条合成消息的 `<task-completed>` 块里挑出**要渲染**的 workflow 结果:
+ *  - 只认真 workflow run(isWorkflowRunDir 排除 dispatch_child_task 同款 wrapper);
+ *  - 同一 runId 只渲染一次(`seen` 跨整个 restore 累积;re-root 会把同一份报告复制多份 → 去重)。
+ * `seen` 会被就地写入(加入已渲染的 runId)。
+ */
+export function selectWorkflowBlocks(
+  blocks: readonly TaskCompletedBlock[],
+  seen: Set<string>,
+  runBaseDir: string,
+): WorkflowBlockSelection {
+  const render: TaskCompletedBlock[] = [];
+  let handled = false;
+  for (const b of blocks) {
+    if (!isWorkflowRunDir(b.runId, runBaseDir)) continue;
+    handled = true;
+    if (seen.has(b.runId)) continue;
+    seen.add(b.runId);
+    render.push(b);
+  }
+  return { render, handled };
+}
