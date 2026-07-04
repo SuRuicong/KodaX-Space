@@ -134,9 +134,10 @@ nsis:
   artifactName: '${productName}-Setup-${version}.${ext}'
 
 # Portable 单文件免安装版（F010 v0.1.9 起）：双击直接运行，无需安装、无写注册表。
-# electron-builder 会把整个 app 解包到临时目录运行；启动时设 PORTABLE_EXECUTABLE_DIR
-# 指向 exe 所在目录。Space 启动时会把 ~/.kodax 与 Electron userData 重定向到
-# PORTABLE_EXECUTABLE_DIR/.kodax，因此便携版数据随 exe 目录走，不写系统默认用户数据区。
+# 数据目录：便携版**与 dev / 安装版一致，都用 ~/.kodax**（不再跟随 exe 目录）。
+# 早期版本曾按 PORTABLE_EXECUTABLE_DIR 把 Space 数据重定向到 <exe>/.kodax，但 SDK 的
+# sessions 不跟随 → 便携版里"session 正常、workflow 全空"的半便携不一致。现已取消该重定向
+# （见 apps/desktop/electron/kodax/data-paths.ts）。需要独立数据档用 KODAX_PROFILE_DIR。
 portable:
   artifactName: '${productName}-Portable-${version}.${ext}'
 

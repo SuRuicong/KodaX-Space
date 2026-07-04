@@ -37,7 +37,7 @@ import { prewarmKodaxUserConfig, registerKodaxCustomProviders } from './kodax/us
 import { probeKodaxSdk } from './kodax/kodax-sdk-probe.js';
 import { probeSkillRegistry } from './skill/registry.js';
 import { hydrateShellEnvOnce } from './kodax/shell-env-hydrate.js';
-import { getPortableOrTestUserDataDir } from './kodax/data-paths.js';
+import { getScopedUserDataDir, applySdkHomeEnv } from './kodax/data-paths.js';
 import { registerProviderChannels, injectAllKeysToEnv } from './ipc/provider.js';
 import { autoActivateProvidersFromEnv } from './providers/auto-activate.js';
 import { registerFilesChannels } from './ipc/files.js';
@@ -148,10 +148,16 @@ if (process.platform === 'win32') {
   app.setAppUserModelId(SPACE_APP_USER_MODEL_ID);
 }
 
-const scopedUserDataDir = getPortableOrTestUserDataDir();
+// KODAX_PROFILE_DIR 独立数据档时,把 SDK 数据根(sessions/config/agents)一并搬进该档,
+// 靠设 KODAX_HOME(SDK 的 getAgentConfigHome 只读它,不读 KODAX_SESSIONS_DIR)。必须在任何
+// loadSdkModule() 动态 import 之前(SDK 在模块加载时冻结 <KODAX_HOME>/sessions),所以放在
+// bootstrap 最早期。默认/便携版/测试模式下是 no-op。
+applySdkHomeEnv();
+
+const scopedUserDataDir = getScopedUserDataDir();
 if (scopedUserDataDir !== null) {
-  // Playwright and portable builds need Chromium userData to follow the same
-  // data root. The single-instance lock is scoped to userData, so move it before
+  // Playwright and explicit KODAX_PROFILE_DIR runs need Chromium userData to follow the
+  // same data root. The single-instance lock is scoped to userData, so move it before
   // requestSingleInstanceLock().
   mkdirSync(scopedUserDataDir, { recursive: true });
   app.setPath('userData', scopedUserDataDir);
