@@ -35,6 +35,7 @@ export {
 
 export {
   repointelStatusChannel,
+  repointelPrewarmChannel,
   repointelStatusItemSchema,
   type RepointelStatusItemT,
   type RepointelStatusOutput,

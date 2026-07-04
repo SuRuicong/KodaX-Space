@@ -174,6 +174,29 @@ async function buildStatus(
   };
 }
 
+/**
+ * Best-effort prewarm of the repo-intelligence semantic index for a project. Fired by the
+ * composer on the user's first keystroke (typing = imminent send → warm during the typing
+ * window). Gated MAIN-side on license + git root (authoritative; the renderer trigger is a
+ * hint). Fully fail-closed + fault-tolerant: any failure → { started: false }, never throws
+ * — a prewarm must never disrupt the UI. The SDK detaches the worker, so this returns as
+ * soon as the warm is kicked off.
+ */
+async function prewarmProject(projectRoot: string): Promise<{ readonly started: boolean }> {
+  try {
+    if (!(await isRepoIntelEntitled())) return { started: false };
+    const normalized = path.resolve(projectRoot);
+    if (!canReadDirectory(normalized)) return { started: false };
+    const gitRoot = findGitRoot(normalized);
+    if (!gitRoot) return { started: false };
+    const sdk = await loadSpaceSdkCoding();
+    sdk.prewarmRepoIntelligenceCaches({ gitRoot, executionCwd: normalized });
+    return { started: true };
+  } catch {
+    return { started: false };
+  }
+}
+
 export function registerRepointelChannels(): void {
   registerChannel(
     'repointel.status',
@@ -181,4 +204,5 @@ export function registerRepointelChannels(): void {
     // for its cheap always-on readiness fetch (no semantic-worker spawn on render).
     (input): Promise<RepointelStatusOutput> => buildStatus(input.projectRoot, input.probe ?? true),
   );
+  registerChannel('repointel.prewarm', (input) => prewarmProject(input.projectRoot));
 }

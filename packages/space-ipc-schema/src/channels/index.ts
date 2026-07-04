@@ -12,7 +12,7 @@
 //   - 显式两个 map 让类型 + 运行时 allowlist 同源派生，preload 拿来直接用
 
 import { versionChannel } from './version.js';
-import { repointelStatusChannel } from './repointel.js';
+import { repointelStatusChannel, repointelPrewarmChannel } from './repointel.js';
 import {
   handoffAcceptChannel,
   handoffChangedChannel,
@@ -169,6 +169,7 @@ import {
 export const invokeChannels = {
   [versionChannel.name]: versionChannel,
   [repointelStatusChannel.name]: repointelStatusChannel,
+  [repointelPrewarmChannel.name]: repointelPrewarmChannel,
   [handoffListChannel.name]: handoffListChannel,
   [handoffAcceptChannel.name]: handoffAcceptChannel,
   [handoffDismissChannel.name]: handoffDismissChannel,

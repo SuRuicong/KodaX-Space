@@ -557,6 +557,20 @@ function workflowPendingMessage(name: string, args: readonly string[]): string |
   return nonStartingSubcommands.has(first) ? null : 'starting workflow...';
 }
 
+// Projects already asked to prewarm repo-intel this app run. Prewarm is best-effort and
+// fires once per project on the user's first keystroke — typing means a send is imminent,
+// so we warm the semantic index during the typing window (main gates on license + git
+// root; a no-repo / unlicensed project just no-ops). Module-level so it survives composer
+// remounts; resetting on app restart is fine (warm again next run).
+const prewarmedProjects = new Set<string>();
+function maybePrewarmRepoIntel(value: string, projectRoot: string | null): void {
+  if (!projectRoot || value.length === 0 || prewarmedProjects.has(projectRoot)) return;
+  if (!window.kodaxSpace) return;
+  prewarmedProjects.add(projectRoot); // optimistic — never retry-spam per keystroke
+  // Fire-and-forget: must never disrupt typing, so swallow everything.
+  void window.kodaxSpace.invoke('repointel.prewarm', { projectRoot }).catch(() => {});
+}
+
 export function BottomBar(): JSX.Element {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
@@ -1044,13 +1058,16 @@ export function BottomBar(): JSX.Element {
   const trimmedPrompt = prompt.trimStart();
   const isWorkflowSlashPrompt = shouldOpenWorkflowSlashCompletion(trimmedPrompt);
   const slashArgTrailingMode = /^\/[^\s]+\s$/i.test(trimmedPrompt);
+  // FEATURE_031+: 匹配任意 /command <arg> 模式，让 SlashCommandPopover 内部决定是否显示子命令补全。
+  // 此前 slashArgTrailingMode 只匹配末尾空格（/command ），用户一继续打字 popover 就消失。
+  const slashArgMode = !isWorkflowSlashPrompt && /^\/[^\s]+\s/.test(trimmedPrompt);
   const slashMode =
     trimmedPrompt.startsWith('/') &&
     (!/\s/.test(trimmedPrompt) ||
       isWorkflowSlashPrompt ||
       slashArgTrailingMode ||
+      slashArgMode ||
       shouldOpenStaticSlashArgCompletion(trimmedPrompt));
-
   async function execSlashOrSkill(
     sessionId: string,
     name: string,
@@ -2302,6 +2319,8 @@ export function BottomBar(): JSX.Element {
               onChange={(e) => {
                 setPrompt(e.target.value);
                 setCaret(e.target.selectionStart ?? e.target.value.length);
+                // Best-effort: warm repo-intel during the typing window (once per project).
+                maybePrewarmRepoIntel(e.target.value, currentProjectPath);
               }}
               onSelect={(e) => {
                 setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0);

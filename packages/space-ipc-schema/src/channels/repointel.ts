@@ -37,5 +37,21 @@ export const repointelStatusChannel = {
   }),
 } as const;
 
+// Best-effort repo-intelligence prewarm for a project. The composer fires this on the
+// user's first keystroke (well-targeted: typing = imminent send) so the semantic index
+// warms in the background during the typing window. Main gates it on license + git root;
+// it is fire-and-forget (the SDK detaches the worker), so `started` just reports whether
+// a warm was kicked off (false when unentitled / no git root).
+export const repointelPrewarmChannel = {
+  name: 'repointel.prewarm',
+  direction: 'invoke',
+  input: z.object({
+    projectRoot: z.string().min(1).max(4096),
+  }),
+  output: z.object({
+    started: z.boolean(),
+  }),
+} as const;
+
 export type RepointelStatusItemT = z.infer<typeof repointelStatusItemSchema>;
 export type RepointelStatusOutput = z.infer<typeof repointelStatusChannel.output>;
