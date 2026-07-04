@@ -55,17 +55,21 @@ test('real SDK: GLM-5.2 on coding-plan providers resolves to 1M via Space helper
   }
 });
 
-test('real SDK: resolveModelCapabilities STILL has the default-model context bug (documents why Space avoids it)', async () => {
-  // If this ever starts FAILING (i.e. the SDK fixed the bug), it is safe to also
-  // trust resolveModelCapabilities().contextWindow — update the note in
-  // providers/context-window.ts. Until then, Space must not depend on it.
+test('real SDK: resolveModelCapabilities default-model context bug is FIXED in 0.7.59', async () => {
+  // Historically (SDK 0.7.58) resolveModelCapabilities('zhipu-coding', 'glm-5.2')
+  // returned the provider-level default (200k) whenever the queried model equaled
+  // the provider's default model — the bug Space works around via the runtime
+  // cascade (resolveContextWindow). SDK 0.7.59 fixed it: both the default-model and
+  // non-default paths now read the model-level 1M window. Space still uses the
+  // cascade helper (provider-agnostic and correct either way); this now guards that
+  // the SDK fix holds rather than that the bug persists.
   const llm = await import('@kodax-ai/kodax/llm');
-  const buggy = llm.resolveModelCapabilities('zhipu-coding', 'glm-5.2');
+  const wasBuggy = llm.resolveModelCapabilities('zhipu-coding', 'glm-5.2');
   const healthy = llm.resolveModelCapabilities('zhipu', 'glm-5.2');
   assert.equal(healthy?.contextWindow, 1_000_000, 'zhipu (default=glm-5) reads model-level correctly');
   assert.equal(
-    buggy?.contextWindow,
-    200_000,
-    'zhipu-coding (default=glm-5.2) returns provider-level default — the SDK bug Space works around',
+    wasBuggy?.contextWindow,
+    1_000_000,
+    'zhipu-coding (default=glm-5.2) now reads model-level 1M too — the 0.7.58 default-model bug is fixed',
   );
 });

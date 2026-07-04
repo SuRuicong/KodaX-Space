@@ -19,7 +19,6 @@ import type {
   AgentMode,
   WorkflowRunT,
 } from '@kodax-space/space-ipc-schema';
-import { isLicenseActive } from '@kodax-space/space-ipc-schema';
 import type {
   ReviewableLearningProposal,
   SkillTrustRecord,
@@ -29,7 +28,7 @@ import type {
 } from '@kodax-ai/kodax/agent';
 import type { SlashCommandDef, SlashHandlerContext, SlashHandlerResult } from './registry.js';
 import { kodaxHost } from '../kodax/host.js';
-import { licenseManager } from '../license/manager.js';
+import { isRepoIntelEntitled } from '../kodax/repo-intel-gate.js';
 import { workflowController, type LaunchSession, type SavedWorkflowLite } from '../kodax/workflow-controller.js';
 import { loadPersistedSession } from '../kodax/session-store.js';
 import {
@@ -1712,15 +1711,10 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
         return { ok: true, message: '__action__:show-repointel-trace', echo: false };
       }
       if (detailMode === 'warm') {
-        // Repo-intelligence is a licensed capability — don't prewarm the built-in
-        // engine without an active license. Matches the runManagedTask gate in
-        // real-session (repoIntelligenceMode:'off' when unentitled) and the chip lock.
-        // Fail-closed: a transient getStatus() failure treats the user as unentitled.
-        const licensed = await licenseManager
-          .getStatus()
-          .then(isLicenseActive)
-          .catch(() => false);
-        if (!licensed) {
+        // Repo-intelligence is a licensed capability — don't prewarm the built-in engine
+        // without an active license (matches the run gate + chip lock). Fail-closed via
+        // repo-intel-gate.ts.
+        if (!(await isRepoIntelEntitled())) {
           return {
             ok: true,
             message:

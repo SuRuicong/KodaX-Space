@@ -18,31 +18,13 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import type { WorkflowRunT, WorkflowEventPayload } from '@kodax-space/space-ipc-schema';
-import { isLicenseActive } from '@kodax-space/space-ipc-schema';
 import { getSpaceDataDir } from './data-paths.js';
 import { pushToRenderer } from '../ipc/push.js';
 import { artifactStore } from '../artifact/store.js';
 import { detectArtifactKind } from '../artifact/workflow-artifact-bridge.js';
 import { resolveWireEffort, type ReasoningProfileLike } from './reasoning-effort.js';
 import { workflowPolicyStore, buildWorkflowHostPolicy } from './workflow-policy.js';
-import { licenseManager } from '../license/manager.js';
-
-// Repo-intelligence is a LICENSED capability. This is the entitlement check used by the
-// single workflow-launch gate in launchOptions(). Overridable test seam (mirrors
-// _setCodingSdkForTesting). Default = the real, fail-closed license read: getStatus()
-// writes state.json on nearly every call, so a transient disk error must NOT reject a
-// launch — treat as unentitled.
-const defaultRepoIntelEntitlement = (): Promise<boolean> =>
-  licenseManager
-    .getStatus()
-    .then(isLicenseActive)
-    .catch(() => false);
-let resolveRepoIntelEntitlement = defaultRepoIntelEntitlement;
-
-/** Test-only: override the workflow-launch repo-intel entitlement check. */
-export function _setRepoIntelEntitlementForTesting(fn: (() => Promise<boolean>) | null): void {
-  resolveRepoIntelEntitlement = fn ?? defaultRepoIntelEntitlement;
-}
+import { repoIntelContextFields } from './repo-intel-gate.js';
 
 // ---- SDK 形状(只取本控制器用到的子集,避免硬依赖 SDK 类型导出) ----
 interface SdkProcessSnapshot {
@@ -1736,8 +1718,8 @@ export class WorkflowController {
     // gate in real-session.ts). Without it, workflow sub-agents run the built-in engine at
     // full power regardless of license: the SDK default resolves 'auto'→'full' when the
     // key is absent, and the value is threaded to each child via ChildExecutorOptions
-    // .parentOptions. resolveRepoIntelEntitlement() is fail-closed (see its definition).
-    const repoIntelEntitled = await resolveRepoIntelEntitlement();
+    // .parentOptions. repoIntelContextFields() is fail-closed (see repo-intel-gate.ts).
+    const repoIntelCtx = await repoIntelContextFields();
     return {
       provider: s.provider,
       effort: resolveWireEffort(s.reasoningMode, reasoningProfile, rejectedEfforts),
@@ -1751,9 +1733,7 @@ export class WorkflowController {
         executionCwd: s.projectRoot,
         agentProfile: { surface: s.surface },
         // Licensed → enable trace (chip lights up); unlicensed → force engine off.
-        ...(repoIntelEntitled
-          ? { repoIntelligenceTrace: true }
-          : { repoIntelligenceMode: 'off' }),
+        ...repoIntelCtx,
       },
       // Host policy shape (incl. "tokenBudget 0 = unlimited", KodaX 0.7.59) is single-sourced
       // in buildWorkflowHostPolicy — mirrors the AMAW run_workflow path in real-session.ts.

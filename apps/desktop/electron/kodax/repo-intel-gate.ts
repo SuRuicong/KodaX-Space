@@ -1,0 +1,50 @@
+// The single source of truth for the repo-intelligence license gate.
+//
+// Repo-intelligence is a LICENSED capability. The SDK reads repo-intel config from the
+// per-run `KodaXOptions.context` that Space builds fresh at each run entry — and Space
+// has two such builders (chat: real-session.ts, workflow: workflow-controller.ts) plus
+// a few read-only surfaces (version panel, /repointel status, /repointel warm). Every
+// one of them MUST make the same entitlement decision. Rather than inline (and risk
+// forgetting one — that was a real bypass), they all call the helpers here.
+//
+// Fail-closed + fault-tolerant: licenseManager.getStatus() re-reads + Ed25519-verifies
+// the entitlement and writes state.json (clock observation) on nearly every call. A
+// transient disk error must never reject a run/handler — on ANY failure, treat as
+// unentitled (repo-intel off).
+
+import { isLicenseActive } from '@kodax-space/space-ipc-schema';
+import { licenseManager } from '../license/manager.js';
+
+/** Context fields that express the gate — spread into a run's `context`. */
+export type RepoIntelContextFields =
+  | { readonly repoIntelligenceTrace: true }
+  | { readonly repoIntelligenceMode: 'off' };
+
+const defaultEntitlement = (): Promise<boolean> =>
+  licenseManager
+    .getStatus()
+    .then(isLicenseActive)
+    .catch(() => false);
+
+let entitlementResolver: () => Promise<boolean> = defaultEntitlement;
+
+/** True only when a valid, active license grants repo-intelligence (fail-closed). */
+export function isRepoIntelEntitled(): Promise<boolean> {
+  return entitlementResolver();
+}
+
+/**
+ * The repo-intel `context` fields for a run: entitled → enable the per-run trace toggle
+ * (so onRepoIntelligenceTrace fires and the chip lights up); unentitled → force the
+ * built-in engine off. Spread into every Space→SDK run context builder.
+ */
+export async function repoIntelContextFields(): Promise<RepoIntelContextFields> {
+  return (await isRepoIntelEntitled())
+    ? { repoIntelligenceTrace: true }
+    : { repoIntelligenceMode: 'off' };
+}
+
+/** Test-only: override the entitlement check (affects every gate site at once). */
+export function _setRepoIntelEntitlementForTesting(fn: (() => Promise<boolean>) | null): void {
+  entitlementResolver = fn ?? defaultEntitlement;
+}

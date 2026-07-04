@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import {
   WorkflowPolicyStore,
   normalizeWorkflowPolicy,
+  buildWorkflowHostPolicy,
   DEFAULT_WORKFLOW_POLICY,
 } from '../kodax/workflow-policy.js';
 
@@ -20,6 +21,23 @@ test('default policy: conservative caps', () => {
   assert.ok(DEFAULT_WORKFLOW_POLICY.maxAgents <= 64);
   assert.ok(DEFAULT_WORKFLOW_POLICY.maxConcurrency <= 16);
   assert.equal(DEFAULT_WORKFLOW_POLICY.tokenBudget, 0); // 0 = 不限（默认不施加 token cap，对齐 KodaX）
+});
+
+test('buildWorkflowHostPolicy forwards tokenBudget unconditionally (0 = unlimited, KodaX 0.7.59)', () => {
+  // Single-sourced host policy used by BOTH launch paths (AMAW run_workflow in real-session.ts
+  // + explicit /workflow in workflow-controller.ts). 0.7.59 treats 0/null/negative as unbounded,
+  // so an explicit 0 must be FORWARDED (present), not omitted (the pre-0.7.59 workaround).
+  const hp = buildWorkflowHostPolicy(DEFAULT_WORKFLOW_POLICY);
+  assert.ok(
+    Object.prototype.hasOwnProperty.call(hp, 'tokenBudget'),
+    'tokenBudget 0 must be present, not omitted (regression guard for the old omit-when-0 workaround)',
+  );
+  assert.deepEqual(hp, { maxAgents: 16, maxConcurrency: 8, tokenBudget: 0 });
+  // An explicit user cap is forwarded verbatim too.
+  assert.equal(
+    buildWorkflowHostPolicy({ maxAgents: 4, maxConcurrency: 2, tokenBudget: 50_000 }).tokenBudget,
+    50_000,
+  );
 });
 
 test('normalize clamps caps to hard ceiling and ignores removed autoStart', () => {

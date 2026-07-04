@@ -6,8 +6,7 @@ import { app, type App } from 'electron';
 import { createRequire } from 'node:module';
 import { registerChannel } from './register.js';
 import type { SpaceCapability, SpaceVersionOutput } from '@kodax-space/space-ipc-schema';
-import { isLicenseActive } from '@kodax-space/space-ipc-schema';
-import { licenseManager } from '../license/manager.js';
+import { isRepoIntelEntitled } from '../kodax/repo-intel-gate.js';
 
 function readSpaceVersion(electronApp: App): string {
   // app.getVersion() 读 packaged 应用的 package.json；dev 模式下可能不是 0.1.0-alpha.0
@@ -123,14 +122,10 @@ export function registerVersionChannel(): void {
     if (platform !== 'darwin' && platform !== 'linux' && platform !== 'win32') {
       throw new Error(`unsupported platform: ${platform}`);
     }
-    // Repo-intelligence rows are licensed — reflect entitlement so the capability
-    // panel matches the runtime gate + chip lock (community build → 'blocked').
-    // Fail-closed + fault-tolerant (mirrors real-session): getStatus() writes state.json
-    // on nearly every call; a transient disk error must not reject the version handler.
-    const entitled = await licenseManager
-      .getStatus()
-      .then(isLicenseActive)
-      .catch(() => false);
+    // Repo-intelligence rows are licensed — reflect entitlement so the capability panel
+    // matches the runtime gate + chip lock (community build → 'blocked'). Fail-closed
+    // (see repo-intel-gate.ts).
+    const entitled = await isRepoIntelEntitled();
     return {
       spaceVersion: readSpaceVersion(app),
       nodeVersion: process.versions.node,

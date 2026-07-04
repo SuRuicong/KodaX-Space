@@ -6,11 +6,8 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  WorkflowController,
-  _setCodingSdkForTesting,
-  _setRepoIntelEntitlementForTesting,
-} from '../kodax/workflow-controller.js';
+import { WorkflowController, _setCodingSdkForTesting } from '../kodax/workflow-controller.js';
+import { _setRepoIntelEntitlementForTesting } from '../kodax/repo-intel-gate.js';
 import type {
   WorkflowRunManagerLike,
   WorkflowLifecycleLike,

@@ -64,6 +64,28 @@ export function normalizeWorkflowPolicy(
   };
 }
 
+/**
+ * Build the SDK WorkflowHostPolicy from a WorkflowPolicy. Single-sourced so BOTH launch
+ * paths — AMAW run_workflow (real-session.ts) and explicit /workflow (workflow-controller.ts)
+ * — forward the identical shape.
+ *
+ * tokenBudget is forwarded UNCONDITIONALLY, including 0: KodaX 0.7.59 treats a host
+ * tokenBudget of 0 / null / negative as unbounded (clampTokenBudget) — an explicit 0 is
+ * identical to omitting the field (= no cap). (0.7.58 clamped a literal 0 → a 1-token run;
+ * that clamp now only governs maxAgents / maxConcurrency, which still floor at 1.)
+ */
+export function buildWorkflowHostPolicy(policy: WorkflowPolicy): {
+  readonly maxAgents: number;
+  readonly maxConcurrency: number;
+  readonly tokenBudget: number;
+} {
+  return {
+    maxAgents: policy.maxAgents,
+    maxConcurrency: policy.maxConcurrency,
+    tokenBudget: policy.tokenBudget,
+  };
+}
+
 export class WorkflowPolicyStore {
   private cached: WorkflowPolicy = DEFAULT_WORKFLOW_POLICY;
   private loaded = false;

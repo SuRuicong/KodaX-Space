@@ -114,12 +114,12 @@ import type {
   ToolCallSignal,
 } from '@kodax-ai/kodax/coding';
 import type { InputArtifact, SessionEvent, Surface } from '@kodax-space/space-ipc-schema';
-import { ASK_USER_BACK_SIGNAL, isLicenseActive } from '@kodax-space/space-ipc-schema';
+import { ASK_USER_BACK_SIGNAL } from '@kodax-space/space-ipc-schema';
 
 /** Mirrors the askUser.request push schema's options[].max(20) — the synthetic "Back" must fit. */
 const ASK_USER_MAX_OPTIONS = 20;
 import { askUserBroker } from '../permission/ask-user-broker.js';
-import { licenseManager } from '../license/manager.js';
+import { repoIntelContextFields } from './repo-intel-gate.js';
 import { bootstrapAutoMode } from './auto-mode-bootstrap.js';
 import {
   computeToolBlockReason,
@@ -146,7 +146,7 @@ import {
   type SpaceSdkExtensionRuntimeHandle,
 } from './sdk-extensions.js';
 import { SPACE_MANUAL_TOPICS, SPACE_PRODUCT_NAME } from './space-manual-topics.js';
-import { workflowPolicyStore } from './workflow-policy.js';
+import { workflowPolicyStore, buildWorkflowHostPolicy } from './workflow-policy.js';
 import { workflowController } from './workflow-controller.js';
 import { pushToRenderer } from '../ipc/push.js';
 import {
@@ -1403,32 +1403,19 @@ export class RealKodaXSession implements ManagedSession {
     const inputArtifacts = buildInputArtifacts(sdk, artifacts);
     const workflowPolicy = workflowPolicyStore.get();
 
-    // Repo-intelligence is a LICENSED capability — any active license unlocks it
-    // (isLicenseActive). getStatus() re-reads + Ed25519-verifies the entitlement per
-    // call; sub-millisecond and only once per user turn, so no caching needed here.
-    // Fail-closed + fault-tolerant: this runs OUTSIDE the run's try/catch, and
-    // getStatus() writes state.json (clock observation) on nearly every call — a
-    // transient disk error must NOT reject the run (that would hang the turn with no
-    // session_error emitted). On any failure, treat as unentitled (repo-intel off).
-    const repoIntelEntitled = await licenseManager
-      .getStatus()
-      .then(isLicenseActive)
-      .catch(() => false);
+    // Repo-intelligence is a LICENSED capability — resolved once per turn via the shared
+    // gate (repo-intel-gate.ts), single-sourced with the workflow-launch gate. It is
+    // fail-closed AND never throws (catches internally), which matters here: this runs
+    // OUTSIDE the run's try/catch, so a rejection would hang the turn with no
+    // session_error. Licensed → trace on (chip lights up); unlicensed → engine off.
+    const repoIntelCtx = await repoIntelContextFields();
 
     const context: NonNullable<KodaXOptions['context']> = {
       // gitRoot 用 projectRoot——Space 不再单独求 git root，KodaX 自己会处理边界
       gitRoot: this.projectRoot,
       executionCwd: this.projectRoot,
       planModeBlockCheck,
-      // Repo-intelligence gate（见上 repoIntelEntitled）：
-      //  · 有权 → repoIntelligenceTrace:true 打开 per-run trace 发射。SDK 默认 trace=off
-      //    (inspectRepoIntelligenceRuntime 实测 configured=auto/effective=full 但 trace=off)，
-      //    不开这个开关 onRepoIntelligenceTrace 永不回调 → Repointel chip 恒 idle。
-      //  · 无权 → repoIntelligenceMode:'off' 让内建引擎彻底不跑（社区版不吃 repo-intel 效率
-      //    加成）。Space 只闸自己这层；KodaX SDK/CLI 仍内建 repo-intel，不在本次范围。
-      ...(repoIntelEntitled
-        ? { repoIntelligenceTrace: true }
-        : { repoIntelligenceMode: 'off' as const }),
+      ...repoIntelCtx,
       ...(partnerAgentProfile ? { agentProfile: partnerAgentProfile } : {}),
       ...(partnerAgentProfile ? { toolVisibilityPolicy: partnerToolVisibilityPolicy } : {}),
       ...(partnerRuntimeContextOverlay ? { promptOverlay: partnerRuntimeContextOverlay } : {}),
@@ -1499,19 +1486,10 @@ export class RealKodaXSession implements ManagedSession {
         baseTopics: [],
         topics: SPACE_MANUAL_TOPICS,
       },
-      // KodaX 0.7.58 removed host-side natural-language workflow auto-start.
-      // Space passes only runtime caps plus the durable run dir for AMAW run_workflow.
-      // tokenBudget is only forwarded when the user opted into an explicit cap
-      // (> 0). By default Space imposes NO token cap — matching KodaX, which sets
-      // none; a low fixed budget was killing real workflows ("tokenBudget cap
-      // exhausted"). maxAgents / maxConcurrency governance still applies.
-      workflowHostPolicy: {
-        maxAgents: workflowPolicy.maxAgents,
-        maxConcurrency: workflowPolicy.maxConcurrency,
-        ...(workflowPolicy.tokenBudget > 0
-          ? { tokenBudget: workflowPolicy.tokenBudget }
-          : {}),
-      },
+      // KodaX 0.7.58 removed host-side natural-language workflow auto-start. Space passes only
+      // runtime caps plus the durable run dir for AMAW run_workflow. Host policy shape (incl.
+      // "tokenBudget 0 = unlimited", KodaX 0.7.59) is single-sourced in buildWorkflowHostPolicy.
+      workflowHostPolicy: buildWorkflowHostPolicy(workflowPolicy),
       workflowRunsBaseDir: workflowController.getRunBaseDir(),
       workflow: { maxConcurrency: workflowPolicy.maxConcurrency },
     };
