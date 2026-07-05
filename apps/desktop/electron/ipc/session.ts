@@ -18,7 +18,11 @@ function canonProjectRoot(p: string): string {
 }
 
 export function assertSessionSendScope(
-  session: { readonly sessionId: string; readonly projectRoot: string; readonly surface?: SessionMeta['surface'] },
+  session: {
+    readonly sessionId: string;
+    readonly projectRoot: string;
+    readonly surface?: SessionMeta['surface'];
+  },
   expected: {
     readonly expectedProjectRoot?: string;
     readonly expectedSurface?: SessionMeta['surface'];
@@ -50,7 +54,7 @@ import {
 } from '../kodax/user-config.js';
 import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
-import { loadPersistedTranscript } from '../kodax/session-store.js';
+import { appendPersistedClientNotice, loadPersistedTranscript } from '../kodax/session-store.js';
 import { parseTaskCompletedBlocks, selectWorkflowBlocks } from './workflow-result-notice.js';
 import { dedupeTranscriptEntries } from './transcript-dedup.js';
 import { resolveRuntimeDefaults } from '../kodax/runtime-defaults.js';
@@ -234,7 +238,9 @@ export function registerSessionChannels(): void {
       }
     }
     await validateInputArtifactsForSession(input.artifacts, session);
-    const result = await session.send(input.prompt, input.artifacts, { queueMode: input.queueMode });
+    const result = await session.send(input.prompt, input.artifacts, {
+      queueMode: input.queueMode,
+    });
     return {
       accepted: true as const,
       ...(result.queued
@@ -556,7 +562,17 @@ export function registerSessionChannels(): void {
   // 失配 (tool_use 没等到 tool_result, 或 tool_result 没找到对应 tool_use) 仍 emit
   // tool_call item,result 字段缺失 → renderer 会渲染为 "running" 状态卡片。
   registerChannel('session.localNotice.append', async (input) => {
-    await getSessionLocalNoticeStore().append(input.sessionId, input.notice);
+    const payload: Record<string, string> = { id: input.notice.id };
+    if (input.notice.variant !== undefined) payload.variant = input.notice.variant;
+    const entry = await appendPersistedClientNotice(input.sessionId, {
+      source: 'space-local-notice',
+      content: input.notice.content,
+      timestamp: isoTimestampFromSentAt(input.notice.sentAt),
+      payload,
+    });
+    if (entry === null) {
+      await getSessionLocalNoticeStore().append(input.sessionId, input.notice);
+    }
     return { ok: true };
   });
 
@@ -612,9 +628,17 @@ export function registerSessionChannels(): void {
     // 都当作 type:'message'"——即完全不变的旧行为。
     const rawTranscriptEntries = (data as { transcriptEntries?: unknown }).transcriptEntries;
     type TranscriptEntryLike = {
+      readonly entryId?: unknown;
+      readonly logicalId?: unknown;
+      readonly sourceEntryId?: unknown;
       readonly type?: unknown;
+      readonly source?: unknown;
       readonly message: (typeof data.messages)[number];
       readonly summary?: unknown;
+      readonly payload?: unknown;
+      readonly taskResults?: unknown;
+      readonly turnId?: unknown;
+      readonly content?: unknown;
       // SDK 0.7.51+ SessionTranscriptEntry.timestamp (ISO string) — the real per-message
       // wall-clock. We forward it as the history item's sentAt so restored turns keep their
       // true time instead of all collapsing onto session.createdAt (the renderer fallback).
@@ -645,6 +669,14 @@ export function registerSessionChannels(): void {
 
     for (const entry of dedupedEntries) {
       const entrySentAt = parseEntrySentAt(entry.timestamp);
+      if (entry.type === 'client_notice') {
+        const notice = clientNoticeHistoryItemFromEntry(entry, entrySentAt);
+        if (notice !== null) {
+          items.push(notice);
+        }
+        if (items.length >= 2000) break;
+        continue;
+      }
       if (entry.type === 'branch_summary' || entry.type === 'compaction') {
         const rawSummary =
           typeof entry.summary === 'string' && entry.summary.trim().length > 0
@@ -654,6 +686,12 @@ export function registerSessionChannels(): void {
         if (text.length > 0) {
           items.push({ kind: 'lineage_notice', noticeKind: entry.type, text });
         }
+        if (items.length >= 2000) break;
+        continue;
+      }
+      const taskResults = extractTaskResults(entry);
+      if (entry.type === 'task_result' || taskResults.length > 0) {
+        appendWorkflowTaskResultNotices(taskResults, seenWorkflowRunIds, items);
         if (items.length >= 2000) break;
         continue;
       }
@@ -790,6 +828,147 @@ export function registerSessionChannels(): void {
 /** SessionTranscriptEntry.timestamp → epoch ms. SDK gives an ISO string; tolerate a raw
  *  number too. Returns undefined for missing/invalid so the renderer keeps its createdAt
  *  fallback rather than stamping NaN. */
+const MAX_HISTORY_TEXT = 262_144;
+
+function isoTimestampFromSentAt(sentAt: number): string {
+  const date = new Date(sentAt);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : new Date().toISOString();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function clampHistoryText(text: string): string {
+  if (text.length <= MAX_HISTORY_TEXT) return text;
+  const marker = '\n[truncated]';
+  return `${text.slice(0, Math.max(0, MAX_HISTORY_TEXT - marker.length)).trimEnd()}${marker}`;
+}
+
+function clientNoticeHistoryItemFromEntry(
+  entry: {
+    readonly entryId?: unknown;
+    readonly logicalId?: unknown;
+    readonly sourceEntryId?: unknown;
+    readonly timestamp?: unknown;
+    readonly content?: unknown;
+    readonly payload?: unknown;
+    readonly message?: { readonly content?: unknown; readonly timestamp?: unknown } | null;
+  },
+  entrySentAt: number | undefined,
+): SessionHistoryItem | null {
+  const directPayload = isRecord(entry.payload) ? entry.payload : undefined;
+  const nestedPayload =
+    directPayload && isRecord(directPayload.payload) ? directPayload.payload : undefined;
+  const content =
+    stringField(entry.content) ??
+    stringField(directPayload?.content) ??
+    stringField(nestedPayload?.content) ??
+    extractUserText(entry.message?.content);
+  if (content.length === 0) return null;
+  const sentAt = entrySentAt ?? parseEntrySentAt(entry.message?.timestamp) ?? 0;
+  const variantValue = stringField(nestedPayload?.variant) ?? stringField(directPayload?.variant);
+  const variant =
+    variantValue === 'echo' || variantValue === 'output'
+      ? variantValue
+      : content.trimStart().startsWith('/')
+        ? 'echo'
+        : 'output';
+  const id =
+    stringField(nestedPayload?.id) ??
+    stringField(directPayload?.id) ??
+    stringField(entry.entryId) ??
+    stringField(entry.logicalId) ??
+    stringField(entry.sourceEntryId) ??
+    `client_notice_${sentAt}`;
+  return {
+    kind: 'local_notice',
+    id: id.slice(0, 128),
+    content: clampHistoryText(content),
+    sentAt,
+    variant,
+  };
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+interface TaskResultMetadataLike {
+  readonly type: 'task_result';
+  readonly source: 'workflow' | 'child_task';
+  readonly taskId: string;
+  readonly runId?: string;
+  readonly status: 'completed' | 'failed' | 'cancelled';
+  readonly title?: string;
+  readonly summary?: string;
+}
+
+function isTaskResultMetadataLike(value: unknown): value is TaskResultMetadataLike {
+  if (!isRecord(value)) return false;
+  return (
+    value.type === 'task_result' &&
+    (value.source === 'workflow' || value.source === 'child_task') &&
+    typeof value.taskId === 'string' &&
+    (value.status === 'completed' || value.status === 'failed' || value.status === 'cancelled') &&
+    (value.runId === undefined || typeof value.runId === 'string') &&
+    (value.title === undefined || typeof value.title === 'string') &&
+    (value.summary === undefined || typeof value.summary === 'string')
+  );
+}
+
+function extractTaskResults(entry: {
+  readonly taskResults?: unknown;
+  readonly payload?: unknown;
+  readonly message?: unknown;
+}): TaskResultMetadataLike[] {
+  const out: TaskResultMetadataLike[] = [];
+  collectTaskResults(entry.taskResults, out);
+  collectTaskResults(entry.payload, out);
+  if (isRecord(entry.message)) {
+    collectTaskResults(entry.message._taskResult, out);
+    collectTaskResults(entry.message._taskResults, out);
+  }
+  return out;
+}
+
+function collectTaskResults(value: unknown, out: TaskResultMetadataLike[]): void {
+  if (Array.isArray(value)) {
+    for (const item of value) collectTaskResults(item, out);
+    return;
+  }
+  if (isRecord(value) && Array.isArray(value.results)) {
+    collectTaskResults(value.results, out);
+    return;
+  }
+  if (isTaskResultMetadataLike(value)) {
+    out.push(value);
+  }
+}
+
+function appendWorkflowTaskResultNotices(
+  taskResults: readonly TaskResultMetadataLike[],
+  seenWorkflowRunIds: Set<string>,
+  items: SessionHistoryItem[],
+): void {
+  for (const result of taskResults) {
+    if (result.source !== 'workflow') continue;
+    const key = result.runId ?? result.taskId;
+    if (seenWorkflowRunIds.has(key)) continue;
+    seenWorkflowRunIds.add(key);
+    items.push({ kind: 'workflow_notice', text: formatWorkflowTaskResultNotice(result) });
+    if (items.length >= 2000) break;
+  }
+}
+
+function formatWorkflowTaskResultNotice(result: TaskResultMetadataLike): string {
+  const id = result.runId ?? result.taskId;
+  const title = result.title?.trim();
+  const header = `[workflow] ${result.status}${title ? ` · ${title}` : ''}${id ? ` · ${id}` : ''}`;
+  const summary = result.summary?.trim();
+  return clampHistoryText(summary ? `${header}\n${summary}` : header);
+}
+
 function parseEntrySentAt(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
@@ -798,7 +977,6 @@ function parseEntrySentAt(value: unknown): number | undefined {
   }
   return undefined;
 }
-
 
 /** user message content 提取纯文本部分;若 content 是 string 直接返回;若是 blocks 数组取 type=='text'.
  *  tool_result blocks 不在这里出 — 它们在 history handler 第一步单独收集映射到 toolId。 */
@@ -816,7 +994,13 @@ function appendLocalNoticeHistoryItems(
   baseItems: readonly SessionHistoryItem[],
   localNotices: readonly SessionLocalNotice[],
 ): SessionHistoryItem[] {
-  const localItems = localNotices.map(toLocalNoticeHistoryItem).slice(-2000);
+  const existingLocalIds = new Set(
+    baseItems.flatMap((item) => (item.kind === 'local_notice' ? [item.id] : [])),
+  );
+  const localItems = localNotices
+    .filter((notice) => !existingLocalIds.has(notice.id))
+    .map(toLocalNoticeHistoryItem)
+    .slice(-2000);
   if (localItems.length === 0) return baseItems.slice(0, 2000);
   const baseLimit = Math.max(0, 2000 - localItems.length);
   return [...baseItems.slice(0, baseLimit), ...localItems];

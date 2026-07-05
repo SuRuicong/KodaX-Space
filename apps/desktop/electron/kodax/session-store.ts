@@ -54,6 +54,7 @@ export interface SessionStoreImpl {
    * back to `loadSession` (active branch only). See {@link loadPersistedTranscript}.
    */
   readonly loadFullTranscript?: SdkSessionModule['loadFullTranscript'];
+  readonly appendClientNotice?: SdkSessionModule['appendClientNotice'];
   readonly watchSessions: SdkSessionModule['watchSessions'];
   /** optional — mock impls can omit; default impl wires via createSessionManager when present. */
   readonly createSessionManager?: SdkSessionModule['createSessionManager'];
@@ -101,7 +102,9 @@ export async function getSessionStorageHandle(): Promise<unknown> {
     // real-session 透传给 SDK 走 no-storage 路径。
     return (m as unknown as { storage?: unknown }).storage;
   } catch (err) {
-    console.warn(`[session-store] getSessionStorageHandle failed (SDK lacks createSessionManager?): ${err instanceof Error ? err.message : String(err)}`);
+    console.warn(
+      `[session-store] getSessionStorageHandle failed (SDK lacks createSessionManager?): ${err instanceof Error ? err.message : String(err)}`,
+    );
     return undefined;
   }
 }
@@ -116,6 +119,10 @@ const DEFAULT_IMPL: SessionStoreImpl = {
     const sdk = await loadSdkModule();
     // Guard against a spuriously-old SDK build without the method (never-throw contract).
     return typeof sdk.loadFullTranscript === 'function' ? sdk.loadFullTranscript(id) : null;
+  },
+  appendClientNotice: async (id, opts) => {
+    const sdk = await loadSdkModule();
+    return typeof sdk.appendClientNotice === 'function' ? sdk.appendClientNotice(id, opts) : null;
   },
   compactSession: async (id, opts) => (await getManager()).compactSession(id, opts),
   createSessionManager: (opts?: { sessionsDir?: string }) => {
@@ -318,13 +325,13 @@ export async function compactPersistedSession(
  * 返回 null 当 sessionId 不存在。
  */
 type LoadedSessionData = Awaited<ReturnType<SessionStoreImpl['loadSession']>>;
+type AppendClientNoticeOptions = Parameters<SdkSessionModule['appendClientNotice']>[1];
+type PersistedClientNoticeEntry = Awaited<ReturnType<SdkSessionModule['appendClientNotice']>>;
 
 const LOAD_CACHE_MAX = 5;
 const loadCache = new Map<string, LoadedSessionData>();
 
-export async function loadPersistedSession(
-  sessionId: string,
-): Promise<LoadedSessionData | null> {
+export async function loadPersistedSession(sessionId: string): Promise<LoadedSessionData | null> {
   const cached = loadCache.get(sessionId);
   if (cached !== undefined) {
     // LRU recency bump: 删后重 set 让 Map iteration 顺序刷新（Map insertion order = 最近使用）
@@ -342,6 +349,23 @@ export async function loadPersistedSession(
     loadCache.delete(oldestKey);
   }
   return data;
+}
+
+export async function appendPersistedClientNotice(
+  sessionId: string,
+  options: AppendClientNoticeOptions,
+): Promise<PersistedClientNoticeEntry | null> {
+  if (!activeImpl.appendClientNotice) return null;
+  try {
+    const entry = await activeImpl.appendClientNotice(sessionId, options);
+    if (entry !== null) invalidatePersistedSessionCache(sessionId);
+    return entry;
+  } catch (err) {
+    console.warn(
+      `[session-store] appendClientNotice failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return null;
+  }
 }
 
 /**
@@ -362,9 +386,7 @@ type TranscriptData =
 
 const transcriptCache = new Map<string, TranscriptData>();
 
-export async function loadPersistedTranscript(
-  sessionId: string,
-): Promise<TranscriptData | null> {
+export async function loadPersistedTranscript(sessionId: string): Promise<TranscriptData | null> {
   const cached = transcriptCache.get(sessionId);
   if (cached !== undefined) {
     transcriptCache.delete(sessionId);
