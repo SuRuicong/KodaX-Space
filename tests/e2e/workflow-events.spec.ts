@@ -556,16 +556,13 @@ test('workflow manager restores completed runs persisted on disk', async () => {
     // workflow-management-detail tree.
     await panel.getByTestId('workflow-details-toggle').click();
     await expect(panel.getByTestId('workflow-management-detail')).toContainText('Change collector');
-    await panel.getByTestId('workflow-item-toggle').first().click();
-    await expect(panel.getByTestId('workflow-management-detail')).not.toContainText(
-      'Recovered persisted child digest.',
-    );
-    await panel.getByTestId('workflow-item-toggle').first().click();
+    // Child digests render inline in the flat detail tree (short ones always visible; long
+    // ones expose a workflow-digest-toggle — see the Events Only run below). This short
+    // digest is shown without folding. The workflow resultSummary is no longer shown as a
+    // separate 'workflow-management-result-summary' (asserted count 0 above); the canonical
+    // result is the artifact body verified via workflow-result-body below.
     await expect(panel.getByTestId('workflow-management-detail')).toContainText(
       'Recovered persisted child digest.',
-    );
-    await expect(panel.getByTestId('workflow-management-detail')).toContainText(
-      'Recovered from disk.',
     );
     await panel
       .getByTestId('workflow-management-detail')

@@ -14,13 +14,13 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 
 ## [Unreleased]
 
-## [0.1.27] - 2026-07-03
+## [0.1.27] - 2026-07-05
 
 ### Theme
 
-**KodaX 0.7.57 → 0.7.58 SDK catch-up — Partner surface (agent profile, Knowledge Base, workspace Sources), workflow-engine wiring with a hard Partner spawn fence, sandboxed interactive HTML artifacts, and multi-select `ask_user` — plus release hardening.**
+**KodaX 0.7.57 → 0.7.60 SDK catch-up — workflow engine + Workflow Harness GUI, license-gated repo-intelligence, sandboxed interactive HTML artifacts, multi-select `ask_user`, and a focus/confirm-dialog fix — plus portable-build and release hardening. (The Partner surface ships but is disabled behind a flag until its deliverable chain lands.)**
 
-This release consumes the KodaX `0.7.57` and `0.7.58` SDK surfaces and lands the Partner three-column workspace as a real, capability-composed surface on the shared runtime (per [ADR-007](docs/ADR/ADR-007-partner-surface-model.md)), while keeping Space itself orchestration-free (it subscribes to SDK snapshots and enforces surface policy). Reviewed by code-reviewer + security-reviewer before tagging; both HIGH findings were fixed (transcript-artifact rescan, Partner UI i18n) and the Partner `/workflow` privilege-escalation boundary was verified enforced at the controller, slash, and IPC layers.
+This release consumes the KodaX `0.7.57` through `0.7.60` SDK surfaces. It lands the workflow-engine wiring with a hard Coder-only spawn fence, restores workflow result notices in-place from the SDK transcript, gates repo-intelligence behind license activation (closing a `/workflow` bypass), and fixes the portable build so workflows are visible. The Partner three-column workspace is built as a capability-composed surface on the shared runtime (per [ADR-007](docs/ADR/ADR-007-partner-surface-model.md)) but is disabled (`PARTNER_ENABLED=false`) until complete. Reviewed by code-reviewer + security-reviewer before tagging; all HIGH findings were fixed.
 
 ### Added
 
@@ -33,7 +33,7 @@ This release consumes the KodaX `0.7.57` and `0.7.58` SDK surfaces and lands the
 
 ### Changed
 
-- **KodaX 0.7.58 SDK catch-up** - Root and desktop workspace dependencies now resolve `@kodax-ai/kodax` `0.7.58`. Space maps its existing five effort choices to the SDK's canonical `effort` field at the real-session and workflow boundaries, and reads the KodaX config `effort` default before falling back to legacy `reasoningCeiling` / `reasoningMode`.
+- **KodaX 0.7.60 SDK catch-up** - Root and desktop workspace dependencies now resolve `@kodax-ai/kodax` `0.7.60`. Space maps its existing five effort choices to the SDK's canonical `effort` field at the real-session and workflow boundaries, and reads the KodaX config `effort` default before falling back to legacy `reasoningCeiling` / `reasoningMode`. Workflow host policy forwards `tokenBudget` unconditionally (0 = unlimited, treated as unbounded by 0.7.59+, no longer clamped to a 1-token run).
 - **Workflow host limits** - The workflow policy section now exposes only runtime caps (max agents / concurrency / token budget, clamped to KodaX ceilings). Host-side natural-language workflow auto-start was removed in 0.7.58 — that decision now happens inside AMAW — and the Partner surface is fenced out of every workflow-spawn path (`assertCoderSurface` at the controller `start`/`create`/`rerun` methods, the `/workflow` slash command, and the trusted server-resolved surface at the IPC layer).
 - **White-label manual topics** - Space Manual topics can be white-labeled per the KodaX `0.7.58` manual surface (FEATURE_221).
 - **Built-in repo-intelligence diagnostics** - `/repointel status` uses the KodaX built-in repo-intelligence inspection API for worker/cache/mode diagnostics, and `/repointel warm` triggers the SDK's best-effort prewarm path for the current project.
@@ -48,12 +48,16 @@ This release consumes the KodaX `0.7.57` and `0.7.58` SDK surfaces and lands the
 - **Partner Sources / Knowledge Base i18n** - The Partner Sources panel and workspace toggles are now fully bilingual (en / zh-CN) instead of English-only.
 - **Repo-intelligence trace compatibility** - `session.event` accepts the built-in repo-intelligence modes (`off` / `light` / `full`) while preserving older Repointel mode values for historical events.
 - **Workflow transcript ordering & dedup** - Workflow notices keep chronological position (session messages carry real per-message timestamps again), live run progress (agent spawned / phase started) is no longer duplicated into the transcript (it stays in the right-sidebar live ticker), per-agent summaries dedupe to exactly one keyed notice per agent, and phase grouping is corrected. AMAW runs are restored after an app restart.
+- **Workflow result notices restore in-place** - On reopen, a workflow run's result/failure notice is restored from the SDK transcript's `<task-completed>` synthetic message at its real position, instead of being re-merged from a side-store by wall-clock time — which mis-ordered or pinned notices to the top after SDK compaction flattens transcript timestamps.
+- **Portable build shows workflows** - The portable executable no longer forks Space's data directory away from `~/.kodax` (the old `PORTABLE_EXECUTABLE_DIR` redirect left workflow state in an empty folder next to the exe while the SDK still read the real home, so sessions looked fine but workflows were empty). A new `KODAX_PROFILE_DIR` override keeps Space data and the SDK's sessions dir in sync.
+- **GLM-5.2 context window** - KodaX `0.7.59` fixed the `resolveModelCapabilities` default-model bug (GLM-5.2 on coding-plan providers now reports its real 1M window); Space's runtime cascade already resolved this correctly and remains the source of truth.
 - **e2e stabilization** - The language-switch spec asserts on the still-present "Workflow host" section (the autostart control was removed upstream); notifications-surface hover/geometry checks are hardened; provider-delete specs drive the in-app `ConfirmDialog`; workflow-events / token-budget expectations track the new behavior; and Partner-surface specs are skipped while `PARTNER_ENABLED=false`. Mock-turn-dependent specs remain skipped on Windows CI only (they stall under CI load), with Linux CI + local retaining coverage.
 
 ### Security
 
 - **Partner workflow spawn fence (verified)** - Confirmed the Partner surface cannot spawn workflows/subagents: the controller-level `assertCoderSurface` gate, the `/workflow` slash guard, the server-side (non-renderer-forgeable) session surface at the IPC layer, and the Partner tool-visibility policy all enforce it, backed by a dedicated test.
 - **Interactive HTML sandbox** - Scripted artifacts execute only in an opaque-origin sandboxed iframe (no `allow-same-origin`) under a strict injected CSP with HTTPS-only, SRI-pinned external scripts, so a hostile artifact cannot reach the host renderer, Node, or Electron APIs.
+- **Repo-intelligence license gate (closed `/workflow` bypass)** - Repo-intelligence is a licensed capability; previously only the chat-turn path was gated, so the Workflow Harness (`/workflow`, Workflow Panel IPC, generate/revise/module launches — which build their own runtime context) gave unlicensed users full repo-intel on every workflow sub-agent. The controller launch path is now gated fail-closed, and all license checks (`real-session`, `version`, `ipc/repointel`, `slash/builtin`) fail closed on a license-subsystem I/O error rather than rejecting the handler or hanging the turn.
 
 ## [0.1.26] - 2026-06-27
 
