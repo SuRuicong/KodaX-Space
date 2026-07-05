@@ -122,7 +122,7 @@ test('workflow graph folds orphan agent roots back into matching phase', () => {
   assert.equal(model.phases[2]?.status, 'pending');
 });
 
-test('workflow graph assigns running loose agents to the current pending phase', () => {
+test('workflow graph assigns loose agents to their closest phase (no bucket)', () => {
   const model = buildWorkflowGraphModel(
     run({
       phaseCount: 3,
@@ -137,48 +137,47 @@ test('workflow graph assigns running loose agents to the current pending phase',
     }),
   );
 
+  // agent-1 exact-matches phase 1; the two reviewers share the "review" token with phase 2,
+  // so they land there. No trailing bucket — every agent has a home.
   assert.equal(model.phases.length, 3);
-  assert.equal(model.phases[0]?.status, 'completed');
-  assert.equal(model.phases[1]?.status, 'running');
+  assert.equal(model.phases[0]?.nodes[0]?.title, 'Collect changes');
   assert.deepEqual(
     model.phases[1]?.nodes.map((node) => node.title),
     ['Quality review', 'Security review'],
   );
-  assert.equal(model.phases[2]?.status, 'pending');
+  assert.deepEqual(model.phases[2]?.nodes.map((node) => node.title), []);
 });
 
-test('workflow graph keeps finished untagged agents in the active phase, not the last (#regression)', () => {
-  // Repro of the reported bug: a parallel-review phase spawns several untagged agents
-  // (no phaseId; titles do not match any phase). Some finish while one is still running.
-  // Every agent — running AND completed — must stay in the active "find" phase; a finisher
-  // must NOT jump into the last phase ("synthesize") and light it up as done. The previous
-  // per-agent fallback sent completed agents to phaseRoots.at(-1) and cascaded.
-  const model = buildWorkflowGraphModel(
-    run({
-      phaseCount: 3,
-      items: [
-        item({ id: 'find', title: 'find', kind: 'phase', status: 'pending' }),
-        item({ id: 'verify', title: 'verify', kind: 'phase', status: 'pending' }),
-        item({ id: 'synthesize', title: 'synthesize', kind: 'phase', status: 'pending' }),
-        item({ id: 'security-ipc', title: 'security-ipc', kind: 'agent', status: 'completed' }),
-        item({ id: 'workflow-control', title: 'workflow-control', kind: 'agent', status: 'completed' }),
-        item({ id: 'partner-design', title: 'partner-design', kind: 'agent', status: 'running' }),
-        item({ id: 'frontend-ux', title: 'frontend-ux', kind: 'agent', status: 'completed' }),
-      ],
-    }),
-  );
+test('workflow graph places untagged agents identically as the run progresses (#regression)', () => {
+  // Original bug: untagged agents (no phaseId, titles matching no phase) were dumped into
+  // the active/last phase, so the group shifted — and a finisher lit up the last phase — as
+  // the run advanced. Placement is now name-derived, so the exact same items produce the
+  // exact same grouping whatever each agent's status or the active phase is.
+  const base = [
+    item({ id: 'find', title: 'find', kind: 'phase' }),
+    item({ id: 'verify', title: 'verify', kind: 'phase' }),
+    item({ id: 'synthesize', title: 'synthesize', kind: 'phase' }),
+    item({ id: 'security-ipc', title: 'security-ipc', kind: 'agent' }),
+    item({ id: 'workflow-control', title: 'workflow-control', kind: 'agent' }),
+    item({ id: 'partner-design', title: 'partner-design', kind: 'agent' }),
+    item({ id: 'frontend-ux', title: 'frontend-ux', kind: 'agent' }),
+  ];
+  const grouping = (agentStatus: WorkflowProcessItemT['status'], over: Partial<WorkflowRunT>) => {
+    const items = base.map((it) =>
+      it.kind === 'agent'
+        ? { ...it, status: agentStatus }
+        : { ...it, status: 'pending' as const },
+    );
+    const model = buildWorkflowGraphModel(run({ phaseCount: 3, items, ...over }));
+    return model.phases.map(
+      (phase) => `${phase.title}:[${[...phase.nodes.map((n) => n.title)].sort().join(',')}]`,
+    );
+  };
 
-  assert.equal(model.phases.length, 3);
-  // All four untagged agents land in phase 1 (the active frontier), regardless of status.
-  assert.deepEqual(
-    [...(model.phases[0]?.nodes.map((node) => node.title) ?? [])].sort(),
-    ['frontend-ux', 'partner-design', 'security-ipc', 'workflow-control'],
-  );
-  assert.equal(model.phases[0]?.status, 'running');
-  // The last phase must not be lit up by an early finisher.
-  assert.equal(model.phases[1]?.nodes.length, 0);
-  assert.equal(model.phases[2]?.nodes.length, 0);
-  assert.equal(model.phases[2]?.status, 'pending');
+  const early = grouping('running', {});
+  const later = grouping('completed', { status: 'completed', activePhaseId: 'synthesize' });
+  // Identical grouping — no shift, no last-phase flare-up from an early finisher.
+  assert.deepEqual(early, later);
 });
 
 test('workflow graph avoids synthetic workflow-name phase when real phases exist', () => {
@@ -190,7 +189,8 @@ test('workflow graph avoids synthetic workflow-name phase when real phases exist
         item({ id: 'phase-1', title: 'Collect changes', kind: 'phase', status: 'pending' }),
         item({ id: 'phase-2', title: 'Review everything', kind: 'phase', status: 'pending' }),
         item({ id: 'phase-3', title: 'Synthesize', kind: 'phase', status: 'pending' }),
-        item({ id: 'agent-1', title: 'Change collector', kind: 'agent', status: 'running' }),
+        // Token-superset of phase 1 ("collect changes" ⊆ "collect changes now") → folds in.
+        item({ id: 'agent-1', title: 'Collect changes now', kind: 'agent', status: 'running' }),
       ],
     }),
   );
@@ -201,7 +201,106 @@ test('workflow graph avoids synthetic workflow-name phase when real phases exist
     ['Collect changes', 'Review everything', 'Synthesize'],
   );
   assert.equal(model.phases[0]?.status, 'running');
-  assert.equal(model.phases[0]?.nodes[0]?.title, 'Change collector');
+  assert.equal(model.phases[0]?.nodes[0]?.title, 'Collect changes now');
+});
+
+test('workflow graph fuzzy-matches generated domain agents and places the orphan closest', () => {
+  // The real reported run: manifest declares 7 domain phases, the generated script never
+  // opens a phase, and agent names only partially coincide with phase titles.
+  const phaseTitles = [
+    'license-repointel',
+    'workflow',
+    'partner',
+    'session-config',
+    'artifact-ui',
+    'e2e-tests',
+    'synthesis',
+  ];
+  const agentTitles = [
+    'license-repointel',
+    'workflow-system',
+    'partner-surface',
+    'session-config',
+    'artifact-ui',
+    'tests-e2e',
+    'provider-i18n-misc',
+    'synthesize',
+  ];
+  const model = buildWorkflowGraphModel(
+    run({
+      phaseCount: phaseTitles.length,
+      items: [
+        ...phaseTitles.map((title, i) =>
+          item({ id: `phase-${i + 1}`, title, kind: 'phase', status: 'pending' }),
+        ),
+        ...agentTitles.map((title, i) =>
+          item({ id: `agent-${i + 1}`, title, kind: 'agent', status: 'completed' }),
+        ),
+      ],
+    }),
+  );
+
+  const nodesUnder = (phaseTitle: string) =>
+    model.phases.find((phase) => phase.title === phaseTitle)?.nodes.map((node) => node.title) ?? [];
+
+  assert.deepEqual(nodesUnder('license-repointel'), ['license-repointel']); // exact
+  assert.deepEqual(nodesUnder('workflow'), ['workflow-system']); // token containment
+  assert.deepEqual(nodesUnder('partner'), ['partner-surface']); // token containment
+  assert.deepEqual(nodesUnder('artifact-ui'), ['artifact-ui']); // exact
+  assert.deepEqual(nodesUnder('e2e-tests'), ['tests-e2e']); // reordered tokens
+  assert.deepEqual(nodesUnder('synthesis'), ['synthesize']); // single-token stem
+  // No declared phase matches the orphan, so it goes to its most character-similar phase
+  // (session-config) rather than a separate bucket. Mildly wrong but stable — the accepted
+  // trade. No synthetic "parallel" phase is created, and every agent is placed exactly once.
+  assert.deepEqual(nodesUnder('session-config'), ['session-config', 'provider-i18n-misc']);
+  assert.equal(model.phases.length, 7);
+  const placed = model.phases.flatMap((phase) => phase.nodes.map((node) => node.title));
+  assert.equal(placed.length, 8);
+});
+
+test('workflow graph grouping is stable regardless of run progress or active phase', () => {
+  const base = [
+    item({ id: 'phase-1', title: 'workflow', kind: 'phase' }),
+    item({ id: 'phase-2', title: 'partner', kind: 'phase' }),
+    item({ id: 'agent-1', title: 'workflow-system', kind: 'agent' }),
+    item({ id: 'agent-2', title: 'partner-surface', kind: 'agent' }),
+  ];
+  const grouping = (over: Partial<WorkflowRunT>, status: WorkflowProcessItemT['status']) => {
+    const model = buildWorkflowGraphModel(
+      run({ phaseCount: 2, items: base.map((it) => ({ ...it, status })), ...over }),
+    );
+    return model.phases.map((phase) => `${phase.title}:[${phase.nodes.map((n) => n.title).join(',')}]`);
+  };
+
+  const early = grouping({}, 'running');
+  const mid = grouping({ activePhaseId: 'phase-1', activePhaseIndex: 0 }, 'running');
+  const late = grouping({ status: 'completed', activePhaseId: 'phase-2' }, 'completed');
+
+  // Name-derived mapping never shifts as the run advances — no frontier jump.
+  const expected = ['workflow:[workflow-system]', 'partner:[partner-surface]'];
+  assert.deepEqual(early, expected);
+  assert.deepEqual(mid, expected);
+  assert.deepEqual(late, expected);
+});
+
+test('workflow graph resolves a near-ambiguous agent deterministically to one phase', () => {
+  const model = buildWorkflowGraphModel(
+    run({
+      phaseCount: 2,
+      items: [
+        item({ id: 'phase-1', title: 'session-config', kind: 'phase', status: 'pending' }),
+        item({ id: 'phase-2', title: 'session-store', kind: 'phase', status: 'pending' }),
+        item({ id: 'agent-1', title: 'session', kind: 'agent', status: 'running' }),
+      ],
+    }),
+  );
+
+  // `session` is a subset of BOTH phases; the character-similarity term breaks the near-tie
+  // toward the shorter `session-store`. Arbitrary but deterministic (hence stable) — and it
+  // gets a home rather than sitting unassigned.
+  assert.equal(model.phases.length, 2);
+  assert.deepEqual(model.phases[0]?.nodes.map((node) => node.title), []);
+  assert.deepEqual(model.phases[1]?.nodes.map((node) => node.title), ['session']);
 });
 
 test('workflow graph creates a synthetic run phase when SDK sends no phase items', () => {

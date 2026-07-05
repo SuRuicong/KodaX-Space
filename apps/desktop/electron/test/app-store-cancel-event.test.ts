@@ -1,6 +1,10 @@
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { SessionMeta, WorkflowEventPayload } from '@kodax-space/space-ipc-schema';
+import type {
+  SessionHistoryItem,
+  SessionMeta,
+  WorkflowEventPayload,
+} from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../renderer/src/store/appStore.js';
 import { snapshotFromEvents } from '../../renderer/src/shell/ActivitySpinner.js';
 
@@ -27,6 +31,7 @@ beforeEach(() => {
     pendingSendBySession: { [SID]: true },
     userMessagesBySession: {},
     queuedUserMessagesBySession: {},
+    localNoticesBySession: {},
     notifications: [],
     workflowRuns: {},
     workflowNoticesBySession: {},
@@ -190,6 +195,139 @@ test('convertLastUserMessageToQueued replaces a normal optimistic bubble after q
   assert.equal(queued?.queueMode, 'interrupt');
   assert.equal(queued?.status, 'queued');
   assert.equal(queued?.sentAt, 1234);
+});
+
+test('appendLocalNotice stores slash/info output outside real user turns', () => {
+  const store = useAppStore.getState();
+  store.appendUserMessage(SID, 'real question', 1000);
+  store.appendLocalNotice(SID, '/info runtime', 1001);
+  store.appendLocalNotice(SID, '[info] runtime ok', 1002);
+
+  const state = useAppStore.getState();
+  assert.equal(state.userMessagesBySession[SID]?.length ?? 0, 1);
+  assert.equal(state.userMessagesBySession[SID]?.[0]?.content, 'real question');
+  assert.deepEqual(
+    (state.localNoticesBySession[SID] ?? []).map((notice) => notice.content),
+    ['/info runtime', '[info] runtime ok'],
+  );
+  assert.deepEqual(
+    (state.localNoticesBySession[SID] ?? []).map((notice) => notice.variant),
+    ['echo', 'output'],
+  );
+});
+
+test('prependSessionHistory restores local notices outside real user turns', () => {
+  useAppStore.setState({
+    userMessagesBySession: {},
+    localNoticesBySession: {},
+    eventsBySession: {},
+  });
+  const items: SessionHistoryItem[] = [
+    {
+      kind: 'local_notice',
+      id: 'ln_hist_echo',
+      content: '/repointel status',
+      sentAt: 1001,
+      variant: 'echo',
+    },
+    {
+      kind: 'local_notice',
+      id: 'ln_hist_out',
+      content: '[repointel] status: ok',
+      sentAt: 1002,
+      variant: 'output',
+    },
+  ];
+
+  useAppStore.getState().prependSessionHistory(SID, items, 999);
+
+  const state = useAppStore.getState();
+  assert.equal(state.userMessagesBySession[SID]?.length ?? 0, 0);
+  assert.equal(state.eventsBySession[SID]?.length ?? 0, 0);
+  assert.deepEqual(
+    (state.localNoticesBySession[SID] ?? []).map((notice) => ({
+      content: notice.content,
+      variant: notice.variant,
+    })),
+    [
+      { content: '/repointel status', variant: 'echo' },
+      { content: '[repointel] status: ok', variant: 'output' },
+    ],
+  );
+});
+
+test('rewindSessionBuffers truncates local notices by true user turn timestamp', () => {
+  useAppStore.setState({
+    userMessagesBySession: {
+      [SID]: [
+        { id: 'u1', content: 'first turn', sentAt: 1000 },
+        { id: 'u2', content: 'second turn', sentAt: 2000 },
+      ],
+    },
+    localNoticesBySession: {
+      [SID]: [
+        { id: 'ln1', content: '/info', sentAt: 1500 },
+        { id: 'ln2', content: '[info] late', sentAt: 2500 },
+      ],
+    },
+    eventsBySession: {
+      [SID]: [
+        { kind: 'text_delta', sessionId: SID, text: 'first answer' },
+        { kind: 'session_complete', sessionId: SID },
+        { kind: 'text_delta', sessionId: SID, text: 'second answer' },
+        { kind: 'session_complete', sessionId: SID },
+      ],
+    },
+  });
+
+  useAppStore.getState().rewindSessionBuffers(SID, 0);
+
+  const state = useAppStore.getState();
+  assert.deepEqual(
+    (state.userMessagesBySession[SID] ?? []).map((msg) => msg.content),
+    ['first turn'],
+  );
+  assert.deepEqual(
+    (state.localNoticesBySession[SID] ?? []).map((notice) => notice.content),
+    ['/info'],
+  );
+  assert.deepEqual(
+    (state.eventsBySession[SID] ?? []).map((event) => event.kind),
+    ['text_delta', 'session_complete'],
+  );
+});
+
+test('forkSessionBuffers copies local notices without adding user turns', () => {
+  useAppStore.setState({
+    userMessagesBySession: {
+      [SID]: [{ id: 'u1', content: 'real turn', sentAt: 1000 }],
+    },
+    localNoticesBySession: {
+      [SID]: [
+        { id: 'ln1', content: '/history', sentAt: 1001 },
+        { id: 'ln2', content: '[history] 1 user message(s)', sentAt: 1002 },
+      ],
+    },
+    eventsBySession: {
+      [SID]: [
+        { kind: 'text_delta', sessionId: SID, text: 'answer' },
+        { kind: 'session_complete', sessionId: SID },
+      ],
+    },
+  });
+
+  useAppStore.getState().forkSessionBuffers(SID, 'child-session', 0);
+
+  const state = useAppStore.getState();
+  assert.equal(state.userMessagesBySession['child-session']?.length ?? 0, 1);
+  assert.deepEqual(
+    (state.localNoticesBySession['child-session'] ?? []).map((notice) => notice.content),
+    ['/history', '[history] 1 user message(s)'],
+  );
+  assert.deepEqual(
+    (state.eventsBySession['child-session'] ?? []).map((event) => event.sessionId),
+    ['child-session', 'child-session'],
+  );
 });
 
 test('appendEvent turns todo drift warnings into session notifications', () => {
@@ -446,4 +584,41 @@ test('appendWorkflowNotice keeps one notice per key and replaces its content in 
   // Position/timestamp preserved from first insert (replace is in place, not re-appended).
   assert.equal(keyed[0]?.sentAt, 1000);
   assert.equal(notices[0]?.key, KEY);
+});
+
+test('appendEvent keeps keyed workflow_notice in event stream and replaces it in place', () => {
+  useAppStore.setState({ sessions: [], currentSessionId: SID, eventsBySession: {} });
+  const store = useAppStore.getState();
+  const key = 'finished:run-mr72zyw7:completed';
+
+  store.appendEvent({
+    kind: 'workflow_notice',
+    sessionId: SID,
+    text: '[workflow] completed: draft',
+    key,
+    sentAt: 1000,
+  });
+  store.appendEvent({
+    kind: 'workflow_notice',
+    sessionId: SID,
+    text: '[workflow] completed: final',
+    key,
+    sentAt: 2000,
+  });
+  store.appendEvent({
+    kind: 'workflow_notice',
+    sessionId: SID,
+    text: '[workflow] completed: other run',
+    key: 'finished:other:completed',
+    sentAt: 3000,
+  });
+
+  const events = useAppStore.getState().eventsBySession[SID] ?? [];
+  assert.equal(events.length, 2);
+  assert.equal(events[0]?.kind, 'workflow_notice');
+  if (events[0]?.kind === 'workflow_notice') {
+    assert.equal(events[0].text, '[workflow] completed: final');
+    assert.equal(events[0].sentAt, 1000);
+  }
+  assert.equal(events[1]?.kind, 'workflow_notice');
 });

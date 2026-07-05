@@ -212,6 +212,30 @@ export function UserBubble({ content, sentAt }: { content: string; sentAt?: numb
   );
 }
 
+export function LocalNoticeBubble({
+  content,
+  sentAt,
+  variant,
+}: Extract<ConversationMessage, { kind: 'local_notice' }>): JSX.Element {
+  const label = variant === 'echo' ? 'slash' : 'output';
+  return (
+    <div className="group flex flex-col items-start" data-testid="local-notice-bubble">
+      <div
+        className={[
+          'inline-block max-w-[88%] rounded-lg border px-3 py-2 text-[12px]',
+          'bg-surface-3/70 border-border-default text-fg-secondary',
+        ].join(' ')}
+      >
+        <div className="mb-1 text-[10px] font-mono uppercase tracking-[0.12em] text-warn">
+          {label}
+        </div>
+        <pre className="font-mono leading-relaxed whitespace-pre-wrap break-words">{content}</pre>
+      </div>
+      <MessageFooter text={content} sentAt={sentAt} />
+    </div>
+  );
+}
+
 // ---- Assistant Bubble (markdown + 可选 thinking) ----
 
 export function QueuedUserBubble({

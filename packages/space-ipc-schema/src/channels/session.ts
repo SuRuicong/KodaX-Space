@@ -544,6 +544,19 @@ const historyWorkflowNoticeSchema = z.object({
   text: z.string().max(MAX_TEXT_CHUNK),
 });
 
+const localNoticeVariantSchema = z.enum(['echo', 'output']);
+const sessionLocalNoticeSchema = z.object({
+  id: z.string().min(1).max(128),
+  content: z.string().max(MAX_TEXT_CHUNK),
+  sentAt: z.number().int().nonnegative(),
+  variant: localNoticeVariantSchema.optional(),
+});
+export type SessionLocalNotice = z.infer<typeof sessionLocalNoticeSchema>;
+
+const historyLocalNoticeSchema = sessionLocalNoticeSchema.extend({
+  kind: z.literal('local_notice'),
+});
+
 const sessionHistoryItemSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('user'),
@@ -562,6 +575,7 @@ const sessionHistoryItemSchema = z.discriminatedUnion('kind', [
   historySidecarMessageSchema,
   historyLineageNoticeSchema,
   historyWorkflowNoticeSchema,
+  historyLocalNoticeSchema,
 ]);
 
 export const sessionHistoryChannel = {
@@ -576,6 +590,30 @@ export const sessionHistoryChannel = {
 } as const;
 
 export type SessionHistoryItem = z.infer<typeof sessionHistoryItemSchema>;
+
+export const sessionLocalNoticeAppendChannel = {
+  name: 'session.localNotice.append',
+  direction: 'invoke',
+  input: z.object({
+    sessionId: z.string().min(1),
+    notice: sessionLocalNoticeSchema,
+  }),
+  output: z.object({
+    ok: z.boolean(),
+  }),
+} as const;
+
+export const sessionLocalNoticeReplaceChannel = {
+  name: 'session.localNotice.replace',
+  direction: 'invoke',
+  input: z.object({
+    sessionId: z.string().min(1),
+    notices: z.array(sessionLocalNoticeSchema).max(1000),
+  }),
+  output: z.object({
+    ok: z.boolean(),
+  }),
+} as const;
 
 // ---- Invoke: session.fork ---- (FEATURE_033 in-memory)
 //
@@ -960,13 +998,15 @@ export const sessionEventChannel = {
       noticeKind: z.enum(['branch_summary', 'compaction']),
       text: z.string().max(MAX_TEXT_CHUNK),
     }),
-    // v0.1.x: workflow 结果历史提示条（仅历史回放）——见 historyWorkflowNoticeSchema。
-    // prependSessionHistory 把 session.history 的 workflow_notice item 转成这个 SessionEvent，
-    // composeMessages 原位渲染成 system_notice(variant='workflow')。main 端从不实时 push 它。
+    // v0.1.x: workflow 结果/摘要提示条。历史回放由 session.history 的 workflow_notice item
+    // 转成这个 SessionEvent；live workflow.event 也会注入同一事件流，避免 renderer 侧 wall-clock
+    // notice 被排到整段 assistant 回复之后。key/sentAt 仅 live 去重/展示使用。
     z.object({
       kind: z.literal('workflow_notice'),
       sessionId: z.string().min(1),
       text: z.string().max(MAX_TEXT_CHUNK),
+      key: z.string().min(1).max(512).optional(),
+      sentAt: z.number().int().nonnegative().optional(),
     }),
     z.object({
       kind: z.literal('todo_drift_warning'),

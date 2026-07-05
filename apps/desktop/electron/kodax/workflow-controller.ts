@@ -539,17 +539,12 @@ function durableItemsFromEvents(
     pushItem(item);
     return item;
   };
-  const findEventPhaseId = (title?: string): string | undefined => {
-    const exact = phases.get(phaseKey(title));
-    if (exact) return exact.id;
-    const running = [...phases.values()].find((phase) => phase.status === 'running');
-    if (running) return running.id;
-    if (terminalStatus === 'completed') {
-      const all = [...phases.values()];
-      return all.at(-1)?.id;
-    }
-    return undefined;
-  };
+  // Only an EXACT phase-name match pins an agent at reconstruction time. Fuzzy matching and
+  // the stable "parallel" bucket for everything else are handled uniformly in the renderer's
+  // buildWorkflowGraph. Deliberately NO running/last-phase fallback here — that was the
+  // durable-path twin of the frontier bug: on a completed run it lifted every unmatched
+  // agent into the LAST phase (e.g. an orphan analysis agent showing under `synthesis`).
+  const findEventPhaseId = (title?: string): string | undefined => phases.get(phaseKey(title))?.id;
 
   for (const title of manifestPhases) {
     ensurePhase(title);

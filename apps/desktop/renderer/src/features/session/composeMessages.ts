@@ -18,6 +18,7 @@
 
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import type {
+  LocalNoticeMessage,
   QueuedUserMessage,
   UserMessage,
   WorkflowNoticeMessage,
@@ -25,6 +26,13 @@ import type {
 
 export type ConversationMessage =
   | { kind: 'user'; id: string; content: string; sentAt: number }
+  | {
+      kind: 'local_notice';
+      id: string;
+      content: string;
+      sentAt: number;
+      variant: 'echo' | 'output';
+    }
   | {
       kind: 'queued_user';
       id: string;
@@ -84,6 +92,7 @@ export type ConversationMessage =
 interface ComposeInput {
   readonly events: readonly SessionEvent[];
   readonly userMessages: readonly UserMessage[];
+  readonly localNotices?: readonly LocalNoticeMessage[];
   readonly queuedUserMessages?: readonly QueuedUserMessage[];
   readonly workflowNotices?: readonly WorkflowNoticeMessage[];
 }
@@ -91,6 +100,7 @@ interface ComposeInput {
 export function composeMessages({
   events,
   userMessages,
+  localNotices = [],
   queuedUserMessages = [],
   workflowNotices = [],
 }: ComposeInput): ConversationMessage[] {
@@ -140,15 +150,34 @@ export function composeMessages({
       order,
       userMsg,
     })),
+    ...localNotices.map((notice, order) => ({
+      kind: 'local_notice' as const,
+      sentAt: notice.sentAt,
+      order: userMessages.length + order,
+      notice,
+    })),
     ...workflowNotices.map((notice, order) => ({
       kind: 'workflow_notice' as const,
       sentAt: noticeSortAt(notice.sentAt),
-      order: userMessages.length + order,
+      order: userMessages.length + localNotices.length + order,
       notice,
     })),
   ].sort((a, b) => a.sentAt - b.sentAt || a.order - b.order);
 
   for (const local of localMessages) {
+    if (local.kind === 'local_notice') {
+      result.push({
+        kind: 'local_notice',
+        id: local.notice.id,
+        content: local.notice.content,
+        sentAt: local.notice.sentAt,
+        variant:
+          local.notice.variant ??
+          (local.notice.content.trimStart().startsWith('/') ? 'echo' : 'output'),
+      });
+      continue;
+    }
+
     if (local.kind === 'workflow_notice') {
       result.push({
         kind: 'system_notice',
@@ -167,11 +196,6 @@ export function composeMessages({
       content: userMsg.content,
       sentAt: userMsg.sentAt,
     });
-
-    // 本地提示条(slash echo / 本地命令输出)背后没有 SDK 回合 → **不消费**一段 assistant events。
-    // 否则一条没有 events 的本地 slash 会把 cursor 一路扫到下一条真 query 的 session_complete,
-    // 把那条 query 的回答吃进自己这段 → 回答错位到本地 slash 底下(用户复报 /repointel status 后错位)。
-    if (userMsg.local) continue;
 
     // 找这条 user message 对应的 events 段：从 cursor 起，到遇到
     // session_complete / session_error / 或所有 events 用完。
@@ -394,15 +418,16 @@ function composeAssistantSegment(
         break;
       }
       case 'workflow_notice': {
-        // 历史回放:workflow run 的结果/失败提示条,由 session.history 从 transcript 的
-        // `<task-completed>` 合成消息**原位**还原(见 ipc/session.ts + prependSessionHistory)。
-        // 用事件流位置定位——而不是按 wall-clock 交织,因为 SDK 压缩会把 transcript 时间戳压平。
+        // Workflow notices must stay in the assistant event stream. History replay creates
+        // this event from transcript `<task-completed>` entries; live workflow.event injects
+        // the same kind before the main-agent report that follows it.
         flushTextBubble();
         out.push({
           kind: 'system_notice',
           id: `${segmentTag}_wf${noticeCounter++}`,
           variant: 'workflow',
           text: evt.text,
+          ...(evt.sentAt !== undefined ? { sentAt: evt.sentAt } : {}),
         });
         break;
       }

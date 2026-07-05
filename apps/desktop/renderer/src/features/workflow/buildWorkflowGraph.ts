@@ -52,12 +52,11 @@ export interface WorkflowGraphPattern {
 export function buildWorkflowGraphModel(run: WorkflowRunT): WorkflowGraphModel {
   const roots = buildItemTree(run.items);
   const phaseRoots = roots.filter((node) => node.item.kind === 'phase');
-  const looseRoots = attachLooseRootsToPhases(
+  const unassigned = attachLooseRootsToPhases(
     phaseRoots,
     roots.filter((node) => node.item.kind !== 'phase'),
-    run,
   );
-  const renderedPhaseCount = phaseRoots.length + (looseRoots.length > 0 ? 1 : 0);
+  const renderedPhaseCount = phaseRoots.length + (unassigned.length > 0 ? 1 : 0);
   const total =
     phaseRoots.length > 0 ? renderedPhaseCount : Math.max(run.phaseCount ?? 0, renderedPhaseCount);
 
@@ -65,8 +64,19 @@ export function buildWorkflowGraphModel(run: WorkflowRunT): WorkflowGraphModel {
     phaseFromTreeNode(node, index + 1, total || phaseRoots.length, run.status),
   );
 
-  if (looseRoots.length > 0 || phases.length === 0) {
-    phases.push(syntheticRunPhase(run, looseRoots, phases.length + 1, Math.max(total, 1)));
+  if (unassigned.length > 0 || phases.length === 0) {
+    // Reached only when there are NO declared phases (findMatchingPhase always places an
+    // agent in its closest phase when any exist) — the whole run renders as one synthetic
+    // phase titled by the workflow name.
+    phases.push(
+      syntheticRunPhase(
+        run,
+        unassigned,
+        phases.length + 1,
+        Math.max(total, 1),
+        run.displayName ?? run.workflowName,
+      ),
+    );
   }
 
   return { phases, patterns: workflowPatternsForRun(run) };
@@ -173,7 +183,6 @@ function phaseFromTreeNode(
 function attachLooseRootsToPhases(
   phaseRoots: readonly WorkflowTreeNode[],
   looseRoots: readonly WorkflowTreeNode[],
-  run: WorkflowRunT,
 ): WorkflowTreeNode[] {
   const unassigned: WorkflowTreeNode[] = [];
   for (const node of looseRoots) {
@@ -181,101 +190,108 @@ function attachLooseRootsToPhases(
     if (phase) phase.children.push(node);
     else unassigned.push(node);
   }
-  if (phaseRoots.length === 0) return unassigned;
-
-  // Compute the frontier phase ONCE — from phase state AFTER explicit (phaseId/title)
-  // matches but BEFORE any fallback attachment. Otherwise attaching one untagged agent
-  // shifts a phase's *derived* status and pushes the next agent to a different phase — the
-  // bug where every finished sub-agent cascaded into the LAST phase. All untagged agents
-  // (running OR already-completed) belong to the same active frontier; only an untagged
-  // failure prefers an already-failed phase.
-  const frontier = findFrontierPhase(phaseRoots, run);
-  const failedPhase = phaseRoots.find((phase) => phaseStatusFromNode(phase) === 'failed');
-
-  const stillUnassigned: WorkflowTreeNode[] = [];
-  for (const node of unassigned) {
-    const phase = (node.item.status === 'failed' ? failedPhase : undefined) ?? frontier;
-    if (phase) phase.children.push(node);
-    else stillUnassigned.push(node);
-  }
-  return stillUnassigned;
+  return unassigned;
 }
 
+// Where a phaseId-less agent belongs. NEVER a frontier/current-phase guess — that made
+// agents visibly migrate between phases as the run advanced (the reported bug). Matching is
+// name-only, hence STATELESS: the same items always group the same way, whatever the run's
+// progress. Every agent lands in its CLOSEST declared phase (see phaseNameAffinity) — a
+// strong signal (exact title, shared tokens) wins first, and an agent with no overlap still
+// gets its most character-similar phase rather than floating in an "unassigned" limbo. A
+// deliberately-accepted trade: a mildly-wrong but stable home reads better than either the
+// jumping bug or a separate bucket. Returns undefined only when there are no phases at all
+// (generated runs with no declared phases → the caller renders one synthetic run phase).
 function findMatchingPhase(
   phaseRoots: readonly WorkflowTreeNode[],
   node: WorkflowTreeNode,
 ): WorkflowTreeNode | undefined {
   const phaseRef = normalizePhaseRef(node.item.phaseId);
-  const titleRef = normalizePhaseRef(node.item.title);
-  return phaseRoots.find((phase) => {
-    const id = normalizePhaseRef(phase.item.id);
-    const title = normalizePhaseRef(phase.item.title);
-    return (
-      (phaseRef.length > 0 && (phaseRef === id || phaseRef === title)) ||
-      (titleRef.length > 0 && titleRef === title)
-    );
-  });
+  if (phaseRef.length > 0) {
+    const byId = phaseRoots.find((phase) => {
+      const id = normalizePhaseRef(phase.item.id);
+      const title = normalizePhaseRef(phase.item.title);
+      return phaseRef === id || phaseRef === title;
+    });
+    if (byId) return byId;
+  }
+  if (phaseRoots.length === 0) return undefined;
+  return closestPhaseByName(phaseRoots, normalizePhaseRef(node.item.title));
+}
+
+function closestPhaseByName(
+  phaseRoots: readonly WorkflowTreeNode[],
+  agentTitle: string,
+): WorkflowTreeNode {
+  let best = phaseRoots[0]!;
+  let bestScore = Number.NEGATIVE_INFINITY;
+  for (const phase of phaseRoots) {
+    // Strict `>` means the earliest phase wins an exact tie — deterministic, so stable.
+    const score = phaseNameAffinity(agentTitle, normalizePhaseRef(phase.item.title));
+    if (score > bestScore) {
+      bestScore = score;
+      best = phase;
+    }
+  }
+  return best;
+}
+
+// Higher = closer. Layered so a definite signal dominates a fuzzy one:
+//   exact title          → 1000
+//   token containment    → +100  (one title's tokens ⊆ the other, e.g. workflow ⊆ workflow-system)
+//   shared-token Jaccard  → +10×  (reordered/overlapping tokens, e.g. tests-e2e ≡ e2e-tests)
+//   character similarity → +1×   (baseline so there is always a "closest", e.g. synthesize↔synthesis)
+function phaseNameAffinity(agentTitle: string, phaseTitle: string): number {
+  if (agentTitle === phaseTitle) return 1000;
+  const agentTokens = tokenSet(agentTitle);
+  const phaseTokens = tokenSet(phaseTitle);
+  const shared = [...agentTokens].filter((token) => phaseTokens.has(token)).length;
+  const union = new Set([...agentTokens, ...phaseTokens]).size;
+  const jaccard = union > 0 ? shared / union : 0;
+  const contained = tokenContainment(agentTokens, phaseTokens) > 0 ? 1 : 0;
+  const charSimilarity =
+    1 - editDistance(agentTitle, phaseTitle) / Math.max(agentTitle.length, phaseTitle.length, 1);
+  return contained * 100 + jaccard * 10 + charSimilarity;
 }
 
 function normalizePhaseRef(value: string | undefined): string {
   return (value ?? '').trim().toLowerCase();
 }
 
-// The phase the run is CURRENTLY working — where untagged agents belong. NEVER a
-// future/last phase. Preference: explicit active phase (by id, then index) → the phase
-// whose matched children are running → the first phase not yet finished → the first phase.
-//
-// Bug fixed here (#): the old per-agent fallback special-cased `status === 'running'` to
-// anchor to the active phase, but let every OTHER status (i.e. completed) fall through to
-// `phaseRoots.at(-1)` (the LAST phase). So running agents correctly stayed in the active
-// phase while every *completed* sub-agent jumped into the final phase and lit it up as
-// "done". Computing the frontier once (in attachLooseRootsToPhases) and sending all
-// untagged agents there — regardless of status — is stable and matches the run's cursor.
-function findFrontierPhase(
-  phaseRoots: readonly WorkflowTreeNode[],
-  run: WorkflowRunT,
-): WorkflowTreeNode | undefined {
-  const activeById = findActivePhaseById(phaseRoots, run.activePhaseId);
-  if (activeById) return activeById;
-
-  const running = phaseRoots.find((phase) => phaseStatusFromNode(phase) === 'running');
-  if (running) return running;
-
-  const activeByIndex = findActivePhaseByIndex(phaseRoots, run.activePhaseIndex);
-  if (activeByIndex) return activeByIndex;
-
-  const firstOpen = phaseRoots.find((phase) => {
-    const status = phaseStatusFromNode(phase);
-    return status !== 'completed' && status !== 'skipped' && status !== 'cancelled';
-  });
-  return firstOpen ?? phaseRoots[0];
+function tokenSet(value: string): Set<string> {
+  return new Set(
+    value
+      .split(/[^a-z0-9]+/i)
+      .map((token) => token.toLowerCase())
+      .filter(Boolean),
+  );
 }
 
-function findActivePhaseById(
-  phaseRoots: readonly WorkflowTreeNode[],
-  activePhaseId: string | undefined,
-): WorkflowTreeNode | undefined {
-  const ref = normalizePhaseRef(activePhaseId);
-  if (!ref) return undefined;
-  return phaseRoots.find((phase) => {
-    const id = normalizePhaseRef(phase.item.id);
-    const title = normalizePhaseRef(phase.item.title);
-    return ref === id || ref === title;
-  });
+// If one set is a subset of the other, return the shared-token count; otherwise 0. A mere
+// partial overlap (neither set contains the other) is NOT a match — that distinction is
+// what keeps an orphan like `provider-i18n-misc` out of every domain phase.
+function tokenContainment(a: ReadonlySet<string>, b: ReadonlySet<string>): number {
+  const [small, large] = a.size <= b.size ? [a, b] : [b, a];
+  for (const token of small) if (!large.has(token)) return 0;
+  return small.size;
 }
 
-function findActivePhaseByIndex(
-  phaseRoots: readonly WorkflowTreeNode[],
-  activePhaseIndex: number | undefined,
-): WorkflowTreeNode | undefined {
-  if (activePhaseIndex === undefined || !Number.isFinite(activePhaseIndex)) return undefined;
-  const index = Math.floor(activePhaseIndex);
-  return phaseRoots[index] ?? (index > 0 ? phaseRoots[index - 1] : undefined);
-}
-
-function phaseStatusFromNode(node: WorkflowTreeNode): WorkflowGraphStatus {
-  const counts = countNodes(node.children.map((child) => graphNodeFromTreeNode(child, 'running')));
-  return derivePhaseStatus(node.item.status, counts);
+function editDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  let curr = new Array<number>(n + 1);
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(prev[j]! + 1, curr[j - 1]! + 1, prev[j - 1]! + cost);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[n]!;
 }
 
 function derivePhaseStatus(
@@ -295,12 +311,13 @@ function syntheticRunPhase(
   roots: readonly WorkflowTreeNode[],
   index: number,
   total: number,
+  title: string,
 ): WorkflowGraphPhase {
   const nodes = roots.map((node) => graphNodeFromTreeNode(node, run.status));
   const counts = countNodes(nodes);
   return {
     id: `${run.runId}:run`,
-    title: run.displayName ?? run.workflowName,
+    title,
     status: normalizeTerminalGraphStatus(run.status, runStatusToGraphStatus(run.status)),
     index,
     total,

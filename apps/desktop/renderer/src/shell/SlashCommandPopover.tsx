@@ -37,6 +37,7 @@ export type SlashPickerItem =
 export interface SlashCommandPopoverProps {
   /** 当前输入框文本（含 leading `/`）。父组件按需 mount/unmount 本组件。*/
   readonly query: string;
+  readonly registerKeyHandler?: (handler: ((e: KeyboardEvent) => boolean) | null) => void;
   /**
    * 用户选中条目并按回车（或点击）后回调。父组件接管 input clear + IPC exec。
    * item === null 表示用户按 Esc 关闭弹窗。
@@ -223,6 +224,7 @@ const SLASH_ARG_ALIASES: Readonly<Record<string, string>> = {
   q: 'exit',
   quit: 'exit',
   reason: 'reasoning',
+  recovery: 'recover',
   resume: 'load',
   ri: 'repointel',
   rm: 'delete',
@@ -385,17 +387,22 @@ function buildSlashArgSuggestions(
     case 'goal':
       suggestions = staticOptions(['status', 'pause', 'resume', 'complete', 'blocked', 'clear', 'help', '--tokens']);
       break;
+    case 'learn':
+      suggestions = staticOptions(['pending', 'ledger', 'diff', 'approve', 'reject', 'help']);
+      break;
     case 'paste':
       suggestions = staticOptions(['list', 'show', 'help']);
       break;
     case 'memory':
-      suggestions = staticOptions(['list', 'rebuild', 'open', 'help']);
+      suggestions = staticOptions(['pending', 'list', 'rebuild', 'open', 'help']);
       break;
     case 'review':
       suggestions = [
+        opt('--lean', 'Add a minimal-diff review pass'),
         opt('--workflow', 'Ask workflow mode to review changes'),
         opt('base', 'Review against the base branch'),
         opt('sha', 'Review against a specific commit', '<hash>'),
+        opt('help', 'Show review help'),
       ];
       break;
     case 'repointel':
@@ -420,13 +427,24 @@ function buildSlashArgSuggestions(
     case 'rewind':
       suggestions = sessionSuggestions(query, sessions);
       break;
+    case 'extensions':
+      if (first === 'sdk' && argIndex >= 1) {
+        suggestions = staticOptions(['load']);
+      } else {
+        suggestions = staticOptions(['status', 'refresh', 'sdk']);
+      }
+      break;
+    case 'recover':
+      suggestions = staticOptions(['seed', 'prompt', 'candidate', 'help']);
+      break;
+    case 'skills':
+    case 'skill':
+      suggestions = staticOptions(['pending', 'ledger']);
+      break;
     case 'sessions':
     case 'save':
     case 'reload':
-    case 'extensions':
     case 'exit':
-    case 'skills':
-    case 'skill':
       suggestions = [];
       break;
     default:
@@ -477,7 +495,7 @@ export function _resetSlashCacheForTesting(): void {
 }
 
 export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Element | null {
-  const { onPick } = props;
+  const { onPick, registerKeyHandler } = props;
   const [items, setItems] = useState<readonly SlashPickerItem[]>([]);
   const [workflowLibrary, setWorkflowLibrary] = useState<WorkflowLibraryLite | null>(null);
   const [workflowRuns, setWorkflowRuns] = useState<readonly WorkflowRunT[]>([]);
@@ -567,29 +585,34 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
 
   // 上下键 / 回车 / Esc 键盘处理
   useEffect(() => {
-    if (filtered.length === 0 && !prefix) return;
-    const onKey = (e: KeyboardEvent): void => {
+    const onKey = (e: KeyboardEvent): boolean => {
+      if (filtered.length === 0) return false;
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         setSelectedIdx((i) => Math.min(i + 1, filtered.length - 1));
+        return true;
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         setSelectedIdx((i) => Math.max(i - 1, 0));
+        return true;
       } else if (e.key === 'Enter' || e.key === 'Tab') {
         // Enter 或 Tab 都补全选中项（Tab = 编辑器惯例的"补全"键，用户复报 Tab 补不出来）。
         const item = filtered[selectedIdx];
         if (item) {
           e.preventDefault();
           onPick(item);
+          return true;
         }
       } else if (e.key === 'Escape') {
         e.preventDefault();
         onPick(null);
+        return true;
       }
+      return false;
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [filtered, selectedIdx, prefix, onPick]);
+    registerKeyHandler?.(onKey);
+    return () => registerKeyHandler?.(null);
+  }, [filtered, selectedIdx, onPick, registerKeyHandler]);
 
   // 选中项 scroll-into-view
   useEffect(() => {

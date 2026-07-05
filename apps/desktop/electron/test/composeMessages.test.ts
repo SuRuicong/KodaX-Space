@@ -11,6 +11,7 @@ import {
   type ConversationMessage,
 } from '../../renderer/src/features/session/composeMessages.js';
 import type {
+  LocalNoticeMessage,
   QueuedUserMessage,
   UserMessage,
   WorkflowNoticeMessage,
@@ -22,9 +23,9 @@ function userMsg(id: string, content: string, sentAt = 1000): UserMessage {
   return { id, content, sentAt };
 }
 
-// 本地提示条(slash echo / 本地命令输出):渲染成 user 气泡,但**不消费** assistant events 段。
-function localMsg(id: string, content: string, sentAt = 1000): UserMessage {
-  return { id, content, sentAt, local: true };
+// 本地提示条(slash echo / 本地命令输出):渲染成 local_notice,但**不消费** assistant events 段。
+function localMsg(id: string, content: string, sentAt = 1000): LocalNoticeMessage {
+  return { id, content, sentAt };
 }
 
 function workflowNotice(id: string, content: string, sentAt = 1001): WorkflowNoticeMessage {
@@ -75,14 +76,18 @@ test('local notice (slash echo/output) does NOT consume a real query\'s events (
   const out = composeMessages({
     events,
     userMessages: [
+      userMsg('u1', '为什么你的 repointel 是 idle', 1002), // 真 query
+    ],
+    localNotices: [
       localMsg('l1', '/repointel status', 1000), // slash echo(本地)
       localMsg('l2', '[repointel] status: ...', 1001), // slash 输出(本地)
-      userMsg('u1', '为什么你的 repointel 是 idle', 1002), // 真 query
     ],
   });
   // 顺序:两条本地条目原位 → 真 query → 它的回答(没有被本地 slash 吃走)
-  assert.deepEqual(kindsOf(out), ['user', 'user', 'user', 'assistant_text']);
-  assert.equal(out[0].kind === 'user' && out[0].content, '/repointel status');
+  assert.deepEqual(kindsOf(out), ['local_notice', 'local_notice', 'user', 'assistant_text']);
+  assert.equal(out[0].kind === 'local_notice' && out[0].content, '/repointel status');
+  assert.equal(out[0].kind === 'local_notice' && out[0].variant, 'echo');
+  assert.equal(out[1].kind === 'local_notice' && out[1].variant, 'output');
   assert.equal(out[2].kind === 'user' && out[2].content, '为什么你的 repointel 是 idle');
   const answer = out[3];
   assert.equal(answer.kind, 'assistant_text');
@@ -95,10 +100,15 @@ test('local notice (slash echo/output) does NOT consume a real query\'s events (
 test('local notice with no following real query renders alone, leaves later events unconsumed', () => {
   // 纯本地 slash 单独存在时不吞事件;真实事件段留给之后的真消息(此处无,故落到段尾兜底渲染)。
   const events: SessionEvent[] = [{ kind: 'text_delta', sessionId: sid, text: 'orphan' }];
-  const out = composeMessages({ events, userMessages: [localMsg('l1', '/tree', 1000)] });
+  const out = composeMessages({
+    events,
+    userMessages: [],
+    localNotices: [localMsg('l1', '/tree', 1000)],
+  });
   // 本地条目 + 段尾未消费事件兜底成 assistant 气泡(不会被 /tree "吃"进它自己那段之前)
-  assert.deepEqual(kindsOf(out), ['user', 'assistant_text']);
-  assert.equal(out[0].kind === 'user' && out[0].content, '/tree');
+  assert.deepEqual(kindsOf(out), ['local_notice', 'assistant_text']);
+  assert.equal(out[0].kind === 'local_notice' && out[0].content, '/tree');
+  assert.equal(out[0].kind === 'local_notice' && out[0].variant, 'echo');
 });
 
 test('pending queued user messages render as queued_user, not normal user bubbles', () => {
@@ -655,6 +665,35 @@ test('workflow_notice event renders as a workflow system_notice at its transcrip
     assert.match(notice.text, /\[workflow\] completed · run-x/);
     assert.match(notice.text, /report body/);
   }
+});
+
+test('live workflow completion appears before the main-agent final report in the same turn', () => {
+  const events: SessionEvent[] = [
+    { kind: 'text_delta', sessionId: sid, text: 'workflow started.' },
+    {
+      kind: 'workflow_notice',
+      sessionId: sid,
+      text: '[workflow] completed: v0.1.27-review - run-mr72zyw7\nworkflow summary',
+      key: 'finished:run-mr72zyw7:completed',
+      sentAt: 1234,
+    },
+    { kind: 'text_delta', sessionId: sid, text: 'final main-agent report.' },
+    { kind: 'session_complete', sessionId: sid },
+  ];
+  const out = composeMessages({
+    events,
+    userMessages: [userMsg('u1', 'run workflow review', 1000)],
+  });
+
+  assert.deepEqual(kindsOf(out), ['user', 'assistant_text', 'system_notice', 'assistant_text']);
+  assert.match(out[1]?.kind === 'assistant_text' ? out[1].text : '', /started/);
+  const notice = out[2];
+  assert.equal(notice?.kind, 'system_notice');
+  if (notice?.kind === 'system_notice') {
+    assert.match(notice.text, /run-mr72zyw7/);
+    assert.equal(notice.sentAt, 1234);
+  }
+  assert.match(out[3]?.kind === 'assistant_text' ? out[3].text : '', /final main-agent report/);
 });
 
 test('re-rooted session: a workflow notice whose run predates all restored messages is clamped, not pinned to the top', () => {

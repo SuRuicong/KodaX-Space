@@ -23,6 +23,11 @@ import { AttachMenu } from './AttachMenu.js';
 import { AgentPicker } from './AgentPicker.js';
 import { AtPathPopover } from './AtPathPopover.js';
 import { SlashCommandPopover, type SlashPickerItem } from './SlashCommandPopover.js';
+import {
+  getActiveSlashCompletion,
+  replaceActiveSlashCompletion,
+  shouldOpenSlashCompletion,
+} from './slashInput.js';
 import { registerInsertReceiver } from './inputBridge.js';
 import { resolveSessionCreateInputs } from './createSession.js';
 import { useIsStreaming } from './ActivitySpinner.js';
@@ -438,91 +443,6 @@ function tokenizeWorkflowArgs(rest: string): string[] {
   return spans.slice(0, 20).map((span) => span.value);
 }
 
-const STATIC_SLASH_ARG_OPTIONS: Readonly<Record<string, readonly string[]>> = {
-  mode: ['plan', 'accept-edits', 'auto'],
-  'auto-engine': ['llm', 'rules'],
-  'agent-mode': ['ama', 'amaw', 'ama-workflow', 'sa', 'toggle'],
-  am: ['ama', 'amaw', 'ama-workflow', 'sa', 'toggle'],
-  reasoning: ['off', 'auto', 'quick', 'balanced', 'deep'],
-  reason: ['off', 'auto', 'quick', 'balanced', 'deep'],
-  thinking: ['on', 'off', 'auto', 'quick', 'balanced', 'deep'],
-  think: ['on', 'off', 'auto', 'quick', 'balanced', 'deep'],
-  t: ['on', 'off', 'auto', 'quick', 'balanced', 'deep'],
-  auto: ['auto'],
-  a: ['auto'],
-  fallback: ['status', 'off'],
-  'verifier-log': ['on', 'off'],
-  'stall-log': ['on', 'off'],
-  mcp: ['status', 'refresh'],
-  status: ['workspace', 'worktree', 'runtime', 'peers'],
-  info: ['workspace', 'worktree', 'runtime', 'peers'],
-  ctx: ['workspace', 'worktree', 'runtime', 'peers'],
-  paste: ['list', 'show', 'help'],
-};
-
-function shouldOpenStaticSlashArgCompletion(trimmedPrompt: string): boolean {
-  const match = trimmedPrompt.match(/^\/([^\s]+)\s+(\S*)$/);
-  if (!match) return false;
-  const command = match[1]?.toLowerCase() ?? '';
-  const arg = match[2]?.toLowerCase() ?? '';
-  const options = STATIC_SLASH_ARG_OPTIONS[command];
-  if (!options) return false;
-  return arg.length > 0 && !options.includes(arg);
-}
-
-function shouldOpenWorkflowSlashCompletion(trimmedPrompt: string): boolean {
-  const match = trimmedPrompt.match(/^\/workflow(?:\s+(.*))?$/i);
-  if (!match) return false;
-  const rest = match[1] ?? '';
-  if (rest === '') return true;
-
-  const spans = scanArgSpans(rest);
-  const endsWithSpace = /\s$/.test(trimmedPrompt);
-  const first = spans[0]?.value.toLowerCase();
-  if (!first) return true;
-
-  // While editing the first workflow token, keep subcommand / workflow-name completion.
-  if (spans.length === 1 && !endsWithSpace) return true;
-
-  // These subcommands take free-form text after the subcommand/target. Once the
-  // user reaches that free-form position, Enter should execute, not autocomplete.
-  if (first === 'create' || first === 'help' || first === 'list' || first === 'ls') return false;
-
-  if (first === 'revise') {
-    const targetIndex = spans[1]?.value === '--replace' ? 2 : 1;
-    const target = spans[targetIndex];
-    if (!target) return true;
-    return !endsWithSpace && spans.length === targetIndex + 1;
-  }
-
-  if (first === 'rename' || first === 'rerun') {
-    const target = spans[1];
-    if (!target) return true;
-    return !endsWithSpace && spans.length === 2;
-  }
-
-  if (first === 'save') {
-    const runId = spans[1];
-    if (!runId) return true;
-    return !endsWithSpace && spans.length === 2;
-  }
-
-  if (first === 'runs' && spans.at(-2)?.value === '--limit') return false;
-  if (first === 'prune' && ['--keep', '--older-than'].includes(spans.at(-2)?.value ?? ''))
-    return false;
-
-  const completionSubcommands = new Set([
-    'runs',
-    'show',
-    'pause',
-    'resume',
-    'stop',
-    'delete',
-    'prune',
-  ]);
-  return completionSubcommands.has(first);
-}
-
 function slashEchoText(name: string, args: readonly string[]): string {
   return `/${name} ${args.join(' ')}`.trim();
 }
@@ -623,6 +543,11 @@ export function BottomBar(): JSX.Element {
   const [historyIdx, setHistoryIdx] = useState(-1);
   const draftRef = useRef<string>('');
   const [caret, setCaret] = useState(0);
+  const [dismissedSlash, setDismissedSlash] = useState<{
+    readonly start: number;
+    readonly query: string;
+  } | null>(null);
+  const slashKeyHandlerRef = useRef<((e: KeyboardEvent) => boolean) | null>(null);
   const atPathKeyHandlerRef = useRef<((e: KeyboardEvent) => boolean) | null>(null);
 
   function focusComposerSoon(): void {
@@ -1055,19 +980,14 @@ export function BottomBar(): JSX.Element {
     void attachDroppedFiles(Array.from(e.dataTransfer.files));
   }
 
-  const trimmedPrompt = prompt.trimStart();
-  const isWorkflowSlashPrompt = shouldOpenWorkflowSlashCompletion(trimmedPrompt);
-  const slashArgTrailingMode = /^\/[^\s]+\s$/i.test(trimmedPrompt);
-  // FEATURE_031+: 匹配任意 /command <arg> 模式，让 SlashCommandPopover 内部决定是否显示子命令补全。
-  // 此前 slashArgTrailingMode 只匹配末尾空格（/command ），用户一继续打字 popover 就消失。
-  const slashArgMode = !isWorkflowSlashPrompt && /^\/[^\s]+\s/.test(trimmedPrompt);
+  const activeSlash = getActiveSlashCompletion(prompt, caret);
+  const slashDismissed =
+    activeSlash !== null &&
+    dismissedSlash !== null &&
+    dismissedSlash.start === activeSlash.start &&
+    dismissedSlash.query === activeSlash.query;
   const slashMode =
-    trimmedPrompt.startsWith('/') &&
-    (!/\s/.test(trimmedPrompt) ||
-      isWorkflowSlashPrompt ||
-      slashArgTrailingMode ||
-      slashArgMode ||
-      shouldOpenStaticSlashArgCompletion(trimmedPrompt));
+    activeSlash !== null && !slashDismissed && shouldOpenSlashCompletion(activeSlash.query);
   async function execSlashOrSkill(
     sessionId: string,
     name: string,
@@ -2070,7 +1990,9 @@ export function BottomBar(): JSX.Element {
 
   function onSlashPick(item: SlashPickerItem | null): void {
     if (item === null) {
-      setPrompt('');
+      if (activeSlash) {
+        setDismissedSlash({ start: activeSlash.start, query: activeSlash.query });
+      }
       return;
     }
     // Insert the selected command into the composer so the user can add arguments.
@@ -2079,15 +2001,21 @@ export function BottomBar(): JSX.Element {
         ? item.insertText
         : item.kind === 'slash-arg'
           ? item.insertText
-          : item.kind === 'skill'
-            ? `/skill:${item.meta.name} `
-            : `/${item.meta.name} `;
-    setPrompt(insertText);
+        : item.kind === 'skill'
+          ? `/skill:${item.meta.name} `
+          : `/${item.meta.name} `;
+    const replacement =
+      activeSlash !== null
+        ? replaceActiveSlashCompletion(prompt, activeSlash, insertText)
+        : { text: insertText, caret: insertText.length };
+    setDismissedSlash(null);
+    setPrompt(replacement.text);
     requestAnimationFrame(() => {
       const ta = textareaRef.current;
       if (ta) {
         ta.focus();
-        ta.setSelectionRange(ta.value.length, ta.value.length);
+        ta.setSelectionRange(replacement.caret, replacement.caret);
+        setCaret(replacement.caret);
       }
     });
   }
@@ -2132,10 +2060,6 @@ export function BottomBar(): JSX.Element {
     }
 
     if (e.key === 'Enter' && !e.shiftKey) {
-      if (slashMode) {
-        e.preventDefault();
-        return;
-      }
       if (busy) {
         e.preventDefault();
         return;
@@ -2329,6 +2253,12 @@ export function BottomBar(): JSX.Element {
                 setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0);
               }}
               onKeyDown={(e) => {
+                if (slashKeyHandlerRef.current) {
+                  const consumed = slashKeyHandlerRef.current(e.nativeEvent);
+                  if (consumed) {
+                    return;
+                  }
+                }
                 if (atPathKeyHandlerRef.current) {
                   const consumed = atPathKeyHandlerRef.current(e.nativeEvent);
                   if (consumed) {
@@ -2376,7 +2306,15 @@ export function BottomBar(): JSX.Element {
               <QueueIndicator />
               <ContextWindowIndicator />
             </div>
-            {slashMode && <SlashCommandPopover query={trimmedPrompt} onPick={onSlashPick} />}
+            {slashMode && activeSlash && (
+              <SlashCommandPopover
+                query={activeSlash.query}
+                onPick={onSlashPick}
+                registerKeyHandler={(h) => {
+                  slashKeyHandlerRef.current = h;
+                }}
+              />
+            )}
             {!slashMode && (
               <AtPathPopover
                 text={prompt}

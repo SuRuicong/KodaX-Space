@@ -155,6 +155,7 @@ interface WorkflowPanelProps {
   readonly hideRunHeader?: boolean;
   /** full 视图默认展开子树；详情页可改为默认折叠，让流程图/历史先露出。 */
   readonly defaultDetailsOpen?: boolean;
+  readonly defaultResultOpen?: boolean;
 }
 
 /** 纯展示面板：渲染传入的 runs。空 runs 显示空态（popout 路径可达）。 */
@@ -163,6 +164,7 @@ export function WorkflowPanel({
   variant = 'compact',
   hideRunHeader = false,
   defaultDetailsOpen,
+  defaultResultOpen,
 }: WorkflowPanelProps): JSX.Element {
   if (runs.length === 0) {
     return <div className="text-xs text-fg-muted px-1 py-2">无工作流运行。</div>;
@@ -178,6 +180,7 @@ export function WorkflowPanel({
           variant={variant}
           hideHeader={hideRunHeader}
           defaultDetailsOpen={defaultDetailsOpen}
+          defaultResultOpen={defaultResultOpen}
         />
       ))}
       {overflow > 0 && (
@@ -319,11 +322,13 @@ function WorkflowRunCard({
   variant,
   hideHeader,
   defaultDetailsOpen,
+  defaultResultOpen,
 }: {
   run: WorkflowRunT;
   variant: 'compact' | 'full';
   hideHeader: boolean;
   defaultDetailsOpen: boolean | undefined;
+  defaultResultOpen: boolean | undefined;
 }): JSX.Element {
   const RunIcon = RUN_ICON[run.status];
   const tree = useMemo(() => buildItemTree(run.items), [run.items]);
@@ -458,7 +463,11 @@ function WorkflowRunCard({
 
       {/* F066 完整结果（终态懒取）；artifacts 已自动桥进 artifact 面板（方案 A）。 */}
       {isTerminal && run.status === 'completed' && (
-        <WorkflowResultView runId={run.runId} fallback={run.resultSummary} />
+        <WorkflowResultView
+          runId={run.runId}
+          fallback={run.resultSummary}
+          defaultOpen={defaultResultOpen}
+        />
       )}
 
       {/* F065 子 agent 活动遥测（活跃 / full 时显示，不淹主 transcript） */}
@@ -507,11 +516,13 @@ function WorkflowSummaryView({
 function WorkflowResultView({
   runId,
   fallback,
+  defaultOpen = false,
 }: {
   runId: string;
   fallback?: string;
+  defaultOpen?: boolean;
 }): JSX.Element {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [result, setResult] = useState<string | null>(fallback ?? null);
   const [loading, setLoading] = useState(false);
   const [fetchAttempted, setFetchAttempted] = useState(false);
@@ -520,6 +531,25 @@ function WorkflowResultView({
   useEffect(() => {
     if (fallback) setResult((current) => current ?? fallback);
   }, [fallback]);
+  useEffect(() => {
+    if (!open || fetchAttempted) return;
+    setFetchAttempted(true);
+    setLoading(result === null);
+    const resultPromise =
+      window.kodaxSpace?.invoke('workflow.result', { runId }).catch(() => null) ??
+      Promise.resolve(null);
+    const timeoutPromise = new Promise<null>((resolve) =>
+      window.setTimeout(() => resolve(null), RESULT_LOAD_TIMEOUT_MS),
+    );
+    void Promise.race([resultPromise, timeoutPromise])
+      .then((r) => {
+        if (!mountedRef.current) return;
+        setResult(r?.ok ? (r.data.result ?? fallback ?? '') : (fallback ?? ''));
+      })
+      .finally(() => {
+        if (mountedRef.current) setLoading(false);
+      });
+  }, [fallback, fetchAttempted, open, result, runId]);
   async function toggle(): Promise<void> {
     const next = !open;
     setOpen(next);
@@ -547,6 +577,7 @@ function WorkflowResultView({
         type="button"
         onClick={() => void toggle()}
         className="inline-flex items-center gap-1 text-[10px] text-fg-muted hover:text-fg-primary"
+        aria-expanded={open}
         data-testid="workflow-result-toggle"
       >
         {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}

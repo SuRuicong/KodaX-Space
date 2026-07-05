@@ -36,6 +36,8 @@ import {
   sessionAgentsMdChannel,
   sessionAgentsMdSaveChannel,
   sessionHistoryChannel,
+  sessionLocalNoticeAppendChannel,
+  sessionLocalNoticeReplaceChannel,
   sessionListRunningChannel,
   sessionEventChannel,
 } from './session.js';
@@ -189,6 +191,8 @@ export const invokeChannels = {
   [sessionAgentsMdChannel.name]: sessionAgentsMdChannel,
   [sessionAgentsMdSaveChannel.name]: sessionAgentsMdSaveChannel,
   [sessionHistoryChannel.name]: sessionHistoryChannel,
+  [sessionLocalNoticeAppendChannel.name]: sessionLocalNoticeAppendChannel,
+  [sessionLocalNoticeReplaceChannel.name]: sessionLocalNoticeReplaceChannel,
   [sessionListRunningChannel.name]: sessionListRunningChannel,
   [projectListChannel.name]: projectListChannel,
   [projectOpenDialogChannel.name]: projectOpenDialogChannel,

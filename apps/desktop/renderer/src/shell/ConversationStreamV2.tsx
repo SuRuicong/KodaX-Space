@@ -24,6 +24,7 @@ import {
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import {
   useAppStore,
+  type LocalNoticeMessage,
   type QueuedUserMessage,
   type UserMessage,
   type WorkflowNoticeMessage,
@@ -40,6 +41,7 @@ import {
 // (React error #185)。module-level const 让"空"case 复用同一引用。
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 const EMPTY_USER_MESSAGES: readonly UserMessage[] = [];
+const EMPTY_LOCAL_NOTICES: readonly LocalNoticeMessage[] = [];
 const EMPTY_QUEUED_USER_MESSAGES: readonly QueuedUserMessage[] = [];
 const EMPTY_WORKFLOW_NOTICES: readonly WorkflowNoticeMessage[] = [];
 const INSTANT_PROGRAMMATIC_SCROLL_GUARD_MS = 120;
@@ -60,6 +62,7 @@ import {
   SystemNotice,
   ToolCallCard,
   UserBubble,
+  LocalNoticeBubble,
   QueuedUserBubble,
 } from '../features/session/messages/bubbles.js';
 import { WelcomeDashboard } from './WelcomeDashboard.js';
@@ -217,7 +220,12 @@ function groupTools(
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
 
-    if (m.kind === 'user' || m.kind === 'queued_user' || m.kind === 'system_notice') {
+    if (
+      m.kind === 'user' ||
+      m.kind === 'local_notice' ||
+      m.kind === 'queued_user' ||
+      m.kind === 'system_notice'
+    ) {
       flushCluster();
       out.push(m);
       continue;
@@ -326,6 +334,11 @@ export function ConversationStreamV2(): JSX.Element {
       ? (s.queuedUserMessagesBySession[currentSessionId] ?? EMPTY_QUEUED_USER_MESSAGES)
       : EMPTY_QUEUED_USER_MESSAGES,
   );
+  const localNotices = useAppStore((s) =>
+    currentSessionId
+      ? (s.localNoticesBySession[currentSessionId] ?? EMPTY_LOCAL_NOTICES)
+      : EMPTY_LOCAL_NOTICES,
+  );
   const workflowNotices = useAppStore((s) =>
     currentSessionId
       ? (s.workflowNoticesBySession[currentSessionId] ?? EMPTY_WORKFLOW_NOTICES)
@@ -351,8 +364,15 @@ export function ConversationStreamV2(): JSX.Element {
   const transcriptView = useAppStore((s) => s.transcriptView);
 
   const messages = useMemo(
-    () => composeMessages({ events, userMessages, queuedUserMessages, workflowNotices }),
-    [events, userMessages, queuedUserMessages, workflowNotices],
+    () =>
+      composeMessages({
+        events,
+        userMessages,
+        localNotices,
+        queuedUserMessages,
+        workflowNotices,
+      }),
+    [events, userMessages, localNotices, queuedUserMessages, workflowNotices],
   );
   const viewMessages = useMemo(
     () => groupTools(messages, transcriptView),
@@ -752,6 +772,15 @@ export function ConversationStreamV2(): JSX.Element {
                 case 'user':
                   inner = <UserBubble content={m.content} sentAt={m.sentAt} />;
                   markerTone = 'user';
+                  break;
+                case 'local_notice':
+                  inner =
+                    m.variant === 'echo' ? (
+                      <UserBubble content={m.content} sentAt={m.sentAt} />
+                    ) : (
+                      <LocalNoticeBubble {...m} />
+                    );
+                  markerTone = m.variant === 'echo' ? 'user' : 'system';
                   break;
                 case 'queued_user':
                   inner = <QueuedUserBubble {...m} />;

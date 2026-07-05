@@ -15,6 +15,8 @@ import {
   sessionDeleteChannel,
   sessionEventChannel,
   sessionHistoryChannel,
+  sessionLocalNoticeAppendChannel,
+  sessionLocalNoticeReplaceChannel,
   sessionForkChannel,
   sessionRewindChannel,
   sessionAgentsMdChannel,
@@ -56,6 +58,59 @@ test('session.history output accepts restored sidecar verifier messages', () => 
       ],
     }).success,
     true,
+  );
+});
+
+test('session.history output accepts restored local slash notices', () => {
+  assert.equal(
+    sessionHistoryChannel.output.safeParse({
+      items: [
+        {
+          kind: 'local_notice',
+          id: 'ln_s_1_1',
+          content: '/repointel status',
+          sentAt: 1710000000000,
+          variant: 'echo',
+        },
+        {
+          kind: 'local_notice',
+          id: 'ln_s_1_2',
+          content: '[repointel] status: ok',
+          sentAt: 1710000000001,
+          variant: 'output',
+        },
+      ],
+    }).success,
+    true,
+  );
+});
+
+test('session local notice persistence channels are registered and bounded', () => {
+  for (const name of ['session.localNotice.append', 'session.localNotice.replace'] as const) {
+    assert.ok(invokeChannels[name]);
+    assert.ok(INVOKE_CHANNEL_NAMES.has(name));
+  }
+
+  assert.equal(
+    sessionLocalNoticeAppendChannel.input.safeParse({
+      sessionId: 's_1',
+      notice: { id: 'ln_1', content: '/status', sentAt: 1, variant: 'echo' },
+    }).success,
+    true,
+  );
+  assert.equal(
+    sessionLocalNoticeReplaceChannel.input.safeParse({
+      sessionId: 's_1',
+      notices: [{ id: 'ln_2', content: '[status] ok', sentAt: 2, variant: 'output' }],
+    }).success,
+    true,
+  );
+  assert.equal(
+    sessionLocalNoticeAppendChannel.input.safeParse({
+      sessionId: 's_1',
+      notice: { id: 'ln_bad', content: '/status', sentAt: 1, variant: 'user' },
+    }).success,
+    false,
   );
 });
 
@@ -552,6 +607,17 @@ test('session.event auto_engine_change rejects invalid engine value', () => {
     engine: 'something-else',
   };
   assert.equal(sessionEventChannel.payload.safeParse(evt).success, false);
+});
+
+test('session.event workflow_notice accepts live dedup key and sentAt', () => {
+  const evt = {
+    kind: 'workflow_notice' as const,
+    sessionId: 's_1',
+    text: '[workflow] completed: review',
+    key: 'finished:run-mr72zyw7:completed',
+    sentAt: 1234,
+  };
+  assert.equal(sessionEventChannel.payload.safeParse(evt).success, true);
 });
 
 // ---- FEATURE_033 fork + rewind channels ----

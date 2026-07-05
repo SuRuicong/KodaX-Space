@@ -22,17 +22,14 @@ import { SettingsModal } from './features/settings/SettingsModal.js';
 import { QuickAskPopover } from './features/quick-ask/QuickAskPopover.js';
 import { useSessionCompleteNotification } from './features/notifications/useSessionCompleteNotification.js';
 import { Shell } from './shell/Shell.js';
-import {
-  formatWorkflowEventNotices,
-} from './features/workflow/workflowNotices.js';
+import { formatWorkflowEventNotices } from './features/workflow/workflowNotices.js';
 
 // Shell owns the visible layout; App keeps process-wide bootstrapping and global listeners.
 const HIDDEN_SESSION_EVENT_FLUSH_MS = 100;
 
-// Workflow-notice dedup lives in the store (appendWorkflowNotice keyed on notice.key),
-// NOT in a module-level Set here: such a Set resets on hot-reload / remount while the
-// store keeps the notices, desyncing the two and re-appending every summary as a
-// duplicate (user report). Passing notice.key lets the store drop repeats itself.
+// Workflow notice dedup lives in appendEvent keyed workflow_notice events, not a module
+// Set here. The notices must share the session.event stream with assistant text so a
+// workflow result lands before the main-agent report that follows it.
 
 type SessionEventAppender = (event: SessionEvent) => void;
 type StreamDeltaEvent = Extract<SessionEvent, { kind: 'text_delta' | 'thinking_delta' }>;
@@ -133,7 +130,6 @@ export default function App(): JSX.Element {
   const upsertWorkflowRun = useAppStore((s) => s.upsertWorkflowRun);
   const seedWorkflowRuns = useAppStore((s) => s.seedWorkflowRuns);
   const appendWorkflowActivity = useAppStore((s) => s.appendWorkflowActivity);
-  const appendWorkflowNotice = useAppStore((s) => s.appendWorkflowNotice);
   const setRightSidebarOpen = useAppStore((s) => s.setRightSidebarOpen);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const setSessionFlag = useAppStore((s) => s.setSessionFlag);
@@ -324,7 +320,13 @@ export default function App(): JSX.Element {
         upsertWorkflowRun(payload);
         if (payload.sessionId !== undefined && payload.surface !== 'partner') {
           for (const notice of formatWorkflowEventNotices(payload)) {
-            appendWorkflowNotice(payload.sessionId, notice.text, notice.sentAt, notice.key);
+            sessionEventBatcher.push({
+              kind: 'workflow_notice',
+              sessionId: payload.sessionId,
+              text: notice.text,
+              ...(notice.key !== undefined ? { key: notice.key } : {}),
+              ...(notice.sentAt !== undefined ? { sentAt: notice.sentAt } : {}),
+            });
           }
         }
         if (
@@ -374,7 +376,6 @@ export default function App(): JSX.Element {
     upsertWorkflowRun,
     seedWorkflowRuns,
     appendWorkflowActivity,
-    appendWorkflowNotice,
     setRightSidebarOpen,
   ]);
 

@@ -55,12 +55,14 @@ import { parseTaskCompletedBlocks, selectWorkflowBlocks } from './workflow-resul
 import { dedupeTranscriptEntries } from './transcript-dedup.js';
 import { resolveRuntimeDefaults } from '../kodax/runtime-defaults.js';
 import { getSessionRuntimeStore } from '../kodax/session-runtime-store.js';
+import { getSessionLocalNoticeStore } from '../kodax/session-local-notice-store.js';
 import { assertArtifactPathInClipboardSandbox } from './clipboard.js';
 import { clearSlashGoalForSession } from '../slash/builtin.js';
 import type {
   AgentsFileMeta,
   InputArtifact,
   SessionHistoryItem,
+  SessionLocalNotice,
   SessionMeta,
 } from '@kodax-space/space-ipc-schema';
 
@@ -381,6 +383,7 @@ export function registerSessionChannels(): void {
     if (deleted) {
       clearSlashGoalForSession(input.sessionId);
       await getSessionRuntimeStore().delete(input.sessionId);
+      await getSessionLocalNoticeStore().delete(input.sessionId);
     }
     return { deleted };
   });
@@ -552,12 +555,28 @@ export function registerSessionChannels(): void {
   // 工具结果匹配: tool_result block 在后续 user message 里,通过 toolId 与之前的 tool_use 配对。
   // 失配 (tool_use 没等到 tool_result, 或 tool_result 没找到对应 tool_use) 仍 emit
   // tool_call item,result 字段缺失 → renderer 会渲染为 "running" 状态卡片。
+  registerChannel('session.localNotice.append', async (input) => {
+    await getSessionLocalNoticeStore().append(input.sessionId, input.notice);
+    return { ok: true };
+  });
+
+  registerChannel('session.localNotice.replace', async (input) => {
+    await getSessionLocalNoticeStore().replace(input.sessionId, input.notices);
+    return { ok: true };
+  });
+
   registerChannel('session.history', async (input) => {
+    const withLocalNotices = async (
+      baseItems: readonly SessionHistoryItem[],
+    ): Promise<{ items: SessionHistoryItem[] }> => {
+      const localNotices = await getSessionLocalNoticeStore().list(input.sessionId);
+      return { items: appendLocalNoticeHistoryItems(baseItems, localNotices) };
+    };
     // Full append-order transcript (not just the active branch) so pre-compaction
     // turns stay visible in scrollback — fixes "history disappears after compaction".
     const data = await loadPersistedTranscript(input.sessionId);
     if (!data || !Array.isArray(data.messages)) {
-      return { items: [] };
+      return withLocalNotices([]);
     }
     const items: SessionHistoryItem[] = [];
 
@@ -764,7 +783,7 @@ export function registerSessionChannels(): void {
       }
       if (items.length >= 2000) break;
     }
-    return { items: items.slice(0, 2000) };
+    return withLocalNotices(items);
   });
 }
 
@@ -783,6 +802,26 @@ function parseEntrySentAt(value: unknown): number | undefined {
 
 /** user message content 提取纯文本部分;若 content 是 string 直接返回;若是 blocks 数组取 type=='text'.
  *  tool_result blocks 不在这里出 — 它们在 history handler 第一步单独收集映射到 toolId。 */
+function toLocalNoticeHistoryItem(notice: SessionLocalNotice): SessionHistoryItem {
+  return {
+    kind: 'local_notice',
+    id: notice.id,
+    content: notice.content,
+    sentAt: notice.sentAt,
+    ...(notice.variant !== undefined ? { variant: notice.variant } : {}),
+  };
+}
+
+function appendLocalNoticeHistoryItems(
+  baseItems: readonly SessionHistoryItem[],
+  localNotices: readonly SessionLocalNotice[],
+): SessionHistoryItem[] {
+  const localItems = localNotices.map(toLocalNoticeHistoryItem).slice(-2000);
+  if (localItems.length === 0) return baseItems.slice(0, 2000);
+  const baseLimit = Math.max(0, 2000 - localItems.length);
+  return [...baseItems.slice(0, baseLimit), ...localItems];
+}
+
 function extractUserText(content: unknown): string {
   if (typeof content === 'string')
     return content.length > 256 * 1024 ? content.slice(0, 256 * 1024) + '\n…(truncated)' : content;

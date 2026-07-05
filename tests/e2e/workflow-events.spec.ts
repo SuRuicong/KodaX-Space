@@ -545,6 +545,11 @@ test('workflow manager restores completed runs persisted on disk', async () => {
     await expect(panel).toContainText('completed');
     await expect(panel.getByLabel('Workflow runtime status')).toContainText('Collect changes');
     await expect(panel.getByLabel('Workflow runtime status')).toContainText('Synthesize report');
+    await expect(panel.getByTestId('workflow-management-result-summary')).toHaveCount(0);
+    await expect(panel.getByTestId('workflow-result-toggle')).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
     // The WORKFLOW DIAGRAM (pattern-topology chips + full topology graph) was removed as
     // redundant with the runtime-status list. Top-level phase nodes are asserted above;
     // child-agent names ("Change collector") are asserted below via the expandable
@@ -568,7 +573,6 @@ test('workflow manager restores completed runs persisted on disk', async () => {
       .click();
     await space.page.waitForTimeout(500);
     await expect(space.page.getByText('session not found')).toHaveCount(0);
-    await panel.getByTestId('workflow-result-toggle').click();
     await expect(panel.getByTestId('workflow-result-body')).toContainText(
       'Durable artifact report',
     );
@@ -591,7 +595,6 @@ test('workflow manager restores completed runs persisted on disk', async () => {
     await expect(panel.getByTestId('workflow-management-detail')).toContainText(
       'DIGEST_TAIL_VISIBLE_ONLY_WHEN_EXPANDED',
     );
-    await panel.getByTestId('workflow-result-toggle').click();
     await expect(panel.getByTestId('workflow-result-body')).toContainText(
       'Events-only artifact report',
     );

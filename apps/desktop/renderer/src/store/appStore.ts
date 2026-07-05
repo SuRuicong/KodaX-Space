@@ -97,13 +97,13 @@ export interface UserMessage {
   readonly id: string;
   readonly content: string;
   readonly sentAt: number;
-  /**
-   * true = 本地提示条(slash echo / 本地命令输出),**不是**真正送进 SDK 的 prompt。
-   * composeMessages 据此**只按时间排序、不消费一段 assistant events**——否则一条没有 SDK
-   * 回合的本地 slash(如 `/repointel status`)会把下一条真 query 的回答吃进自己那段(错位 bug)。
-   * 缺省(真实用户 prompt / skill 调用)= 消费事件段,行为不变。
-   */
-  readonly local?: boolean;
+}
+
+export interface LocalNoticeMessage {
+  readonly id: string;
+  readonly content: string;
+  readonly sentAt: number;
+  readonly variant?: 'echo' | 'output';
 }
 
 export interface WorkflowNoticeMessage {
@@ -172,6 +172,8 @@ interface AppState {
   /** 每个 sessionId 一桶用户消息（renderer 本地跟踪）。*/
   userMessagesBySession: Readonly<Record<string, readonly UserMessage[]>>;
   queuedUserMessagesBySession: Readonly<Record<string, readonly QueuedUserMessage[]>>;
+  /** Renderer-local slash/info/status notices. These are not user turns and should not affect history/fork indices. */
+  localNoticesBySession: Readonly<Record<string, readonly LocalNoticeMessage[]>>;
   /** Renderer-local workflow notices. These are not user turns and should not affect history/fork indices. */
   workflowNoticesBySession: Readonly<Record<string, readonly WorkflowNoticeMessage[]>>;
   /**
@@ -460,8 +462,12 @@ interface AppState {
   /** sentAt 可选——缺省 Date.now()；history restore 时传 session.createdAt 让旧消息显示真实时间。 */
   appendUserMessage(sessionId: string, content: string, sentAt?: number): void;
   /** 追加一条**本地提示条**(slash echo / 本地命令输出):参与时间排序,但不消费 SDK 事件段。
-   *  用于所有不触发 SDK 回合的 slash 输出(见 UserMessage.local + composeMessages)。 */
-  appendLocalNotice(sessionId: string, content: string, sentAt?: number): void;
+   *  用于所有不触发 SDK 回合的 slash 输出(见 localNoticesBySession + composeMessages)。 */
+  appendLocalNotice(
+    sessionId: string,
+    content: string,
+    options?: number | { readonly sentAt?: number; readonly variant?: 'echo' | 'output' },
+  ): void;
   appendQueuedUserMessage(
     sessionId: string,
     input: {
@@ -579,8 +585,11 @@ interface AppState {
 
 // 单调 counter 用于生成 stable id——sessionId 内多条 user message 顺序唯一。
 let userMessageCounter = 0;
+let localNoticeCounter = 0;
 let workflowNoticeCounter = 0;
 let queuedUserMessageCounter = 0;
+let lastLocalTranscriptSentAt = 0;
+const MAX_LOCAL_NOTICES_PER_SESSION = 1000;
 /**
  * 持久化 currentProjectPath 到 localStorage —— Vite HMR full reload / Electron renderer
  * 重载时，避免 zustand store 重置为 null 让 App.tsx 启动 effect 误把 currentProjectPath
@@ -757,6 +766,18 @@ function appendSessionEvent(
   bucket: readonly SessionEvent[],
   event: SessionEvent,
 ): readonly SessionEvent[] {
+  if (event.kind === 'workflow_notice' && event.key !== undefined) {
+    const existingIndex = bucket.findIndex(
+      (item) => item.kind === 'workflow_notice' && item.key === event.key,
+    );
+    if (existingIndex !== -1) {
+      return bucket.map((item, index) =>
+        index === existingIndex && item.kind === 'workflow_notice'
+          ? { ...event, sentAt: item.sentAt ?? event.sentAt }
+          : item,
+      );
+    }
+  }
   const last = bucket[bucket.length - 1];
   if (event.kind === 'text_delta' && last?.kind === 'text_delta') {
     return [...bucket.slice(0, -1), { ...last, text: last.text + event.text }];
@@ -837,8 +858,91 @@ function capWorkflowRuns(runs: Record<string, WorkflowRunT>): Record<string, Wor
   return trimmed;
 }
 
-function createUserMessage(sessionId: string, content: string, sentAt = Date.now()): UserMessage {
-  return { id: `u_${sessionId}_${++userMessageCounter}`, content, sentAt };
+function nextLocalTranscriptSentAt(): number {
+  const now = Date.now();
+  const next = now > lastLocalTranscriptSentAt ? now : lastLocalTranscriptSentAt + 1;
+  lastLocalTranscriptSentAt = next;
+  return next;
+}
+
+function createUserMessage(sessionId: string, content: string, sentAt?: number): UserMessage {
+  return {
+    id: `u_${sessionId}_${++userMessageCounter}`,
+    content,
+    sentAt: sentAt ?? nextLocalTranscriptSentAt(),
+  };
+}
+
+function normalizeLocalNoticeOptions(
+  options?: number | { readonly sentAt?: number; readonly variant?: 'echo' | 'output' },
+): { sentAt?: number; variant?: 'echo' | 'output' } {
+  if (typeof options === 'number') return { sentAt: options };
+  return options ?? {};
+}
+
+function defaultLocalNoticeVariant(content: string): 'echo' | 'output' {
+  return content.trimStart().startsWith('/') ? 'echo' : 'output';
+}
+
+function createLocalNotice(
+  sessionId: string,
+  content: string,
+  options?: number | { readonly sentAt?: number; readonly variant?: 'echo' | 'output' },
+): LocalNoticeMessage {
+  const normalized = normalizeLocalNoticeOptions(options);
+  return {
+    id: `ln_${sessionId}_${++localNoticeCounter}`,
+    content,
+    sentAt: normalized.sentAt ?? nextLocalTranscriptSentAt(),
+    variant: normalized.variant ?? defaultLocalNoticeVariant(content),
+  };
+}
+
+function mergeLocalNotices(
+  ...buckets: readonly (readonly LocalNoticeMessage[])[]
+): readonly LocalNoticeMessage[] {
+  const byId = new Map<string, LocalNoticeMessage>();
+  for (const bucket of buckets) {
+    for (const notice of bucket) byId.set(notice.id, notice);
+  }
+  return [...byId.values()]
+    .sort((a, b) => a.sentAt - b.sentAt || a.id.localeCompare(b.id))
+    .slice(-MAX_LOCAL_NOTICES_PER_SESSION);
+}
+
+interface LocalNoticeIpcBridge {
+  invoke(
+    channel: 'session.localNotice.append',
+    payload: { readonly sessionId: string; readonly notice: LocalNoticeMessage },
+  ): Promise<unknown>;
+  invoke(
+    channel: 'session.localNotice.replace',
+    payload: { readonly sessionId: string; readonly notices: readonly LocalNoticeMessage[] },
+  ): Promise<unknown>;
+}
+
+function getLocalNoticeBridge(): LocalNoticeIpcBridge | undefined {
+  if (typeof window === 'undefined') return undefined;
+  return (window as Window & { readonly kodaxSpace?: LocalNoticeIpcBridge }).kodaxSpace;
+}
+
+function persistLocalNoticeAppend(sessionId: string, notice: LocalNoticeMessage): void {
+  const bridge = getLocalNoticeBridge();
+  if (!bridge) return;
+  void bridge
+    .invoke('session.localNotice.append', { sessionId, notice })
+    .catch(() => undefined);
+}
+
+function persistLocalNoticeReplace(
+  sessionId: string,
+  notices: readonly LocalNoticeMessage[],
+): void {
+  const bridge = getLocalNoticeBridge();
+  if (!bridge) return;
+  void bridge
+    .invoke('session.localNotice.replace', { sessionId, notices })
+    .catch(() => undefined);
 }
 
 function normalizeQueuedMatchContent(content: string): string {
@@ -913,6 +1017,7 @@ export const useAppStore = create<AppState>((set) => ({
   transientArtifactsBySession: {},
   userMessagesBySession: {},
   queuedUserMessagesBySession: {},
+  localNoticesBySession: {},
   workflowNoticesBySession: {},
   permissionQueue: [],
   askUserQueue: [],
@@ -1065,7 +1170,7 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => {
       if (!state.sessions.some((s) => s.sessionId === sessionId)) return state;
       const bucket = state.userMessagesBySession[sessionId] ?? [];
-      const msg = createUserMessage(sessionId, content, sentAt ?? Date.now());
+      const msg = createUserMessage(sessionId, content, sentAt);
       return {
         userMessagesBySession: {
           ...state.userMessagesBySession,
@@ -1074,22 +1179,22 @@ export const useAppStore = create<AppState>((set) => ({
       };
     }),
 
-  appendLocalNotice: (sessionId, content, sentAt) =>
+  appendLocalNotice: (sessionId, content, options) => {
+    let persistedNotice: LocalNoticeMessage | null = null;
     set((state) => {
       if (!state.sessions.some((s) => s.sessionId === sessionId)) return state;
-      const bucket = state.userMessagesBySession[sessionId] ?? [];
-      // 与真实用户消息同列存储(共用时间排序 + 渲染),仅打 local 标记让 composeMessages 不消费事件段。
-      const msg: UserMessage = {
-        ...createUserMessage(sessionId, content, sentAt ?? Date.now()),
-        local: true,
-      };
+      const bucket = state.localNoticesBySession[sessionId] ?? [];
+      const msg = createLocalNotice(sessionId, content, options);
+      persistedNotice = msg;
       return {
-        userMessagesBySession: {
-          ...state.userMessagesBySession,
-          [sessionId]: [...bucket, msg],
+        localNoticesBySession: {
+          ...state.localNoticesBySession,
+          [sessionId]: mergeLocalNotices(bucket, [msg]),
         },
       };
-    }),
+    });
+    if (persistedNotice !== null) persistLocalNoticeAppend(sessionId, persistedNotice);
+  },
 
   appendQueuedUserMessage: (sessionId, input) => {
     const localId = `qu_${sessionId}_${++queuedUserMessageCounter}`;
@@ -1170,7 +1275,7 @@ export const useAppStore = create<AppState>((set) => ({
           ...state.userMessagesBySession,
           [sessionId]: [
             ...userBucket,
-            createUserMessage(sessionId, entry.content, sentAt ?? Date.now()),
+            createUserMessage(sessionId, entry.content, sentAt),
           ],
         },
       };
@@ -1282,6 +1387,7 @@ export const useAppStore = create<AppState>((set) => ({
       //   composeMessages 按 session_complete 切段配对 user message ↔ events。
       const histMsgs: UserMessage[] = [];
       const histEvents: SessionEvent[] = [];
+      const histLocalNotices: LocalNoticeMessage[] = [];
       // 用来跟踪"上一项是否为 user (turn 边界)"-- 在 user 到来前如果有 pending assistant
       // events 还没 session_complete,先 flush 一个 complete
       let assistantPendingComplete = false;
@@ -1343,6 +1449,13 @@ export const useAppStore = create<AppState>((set) => ({
           ensureLeadingUserSentinel();
           histEvents.push({ kind: 'workflow_notice', sessionId, text: item.text });
           assistantPendingComplete = true;
+        } else if (item.kind === 'local_notice') {
+          histLocalNotices.push({
+            id: item.id,
+            content: item.content,
+            sentAt: item.sentAt,
+            ...(item.variant !== undefined ? { variant: item.variant } : {}),
+          });
         } else {
           // tool_call: emit tool_start + (optional) tool_result。 result 缺失时 (history 损坏
           // 或 tool_use 没匹配上 tool_result) 仍 emit tool_start 让 UI 显示一张 "running" 卡片。
@@ -1370,6 +1483,7 @@ export const useAppStore = create<AppState>((set) => ({
       flushTurnIfNeeded();
       const currentMsgs = state.userMessagesBySession[sessionId] ?? [];
       const currentEvents = state.eventsBySession[sessionId] ?? [];
+      const currentLocalNotices = state.localNoticesBySession[sessionId] ?? [];
       // v0.1.9 fix: 历史 events 已经发生过,director 不应该再"自动展开"那些信号触发的
       // popout (用户点已有 session 不该弹 worker/diff/plan popout)。 扫一遍 histEvents,
       // 提前 mark 该 session 已经"促发"过的 SmartPopoutKind,让 director 视为 already
@@ -1399,6 +1513,10 @@ export const useAppStore = create<AppState>((set) => ({
         eventsBySession: {
           ...state.eventsBySession,
           [sessionId]: [...histEvents, ...currentEvents],
+        },
+        localNoticesBySession: {
+          ...state.localNoticesBySession,
+          [sessionId]: mergeLocalNotices(histLocalNotices, currentLocalNotices),
         },
         transientArtifactsBySession: {
           ...state.transientArtifactsBySession,
@@ -1510,7 +1628,12 @@ export const useAppStore = create<AppState>((set) => ({
       // 切项目 / 删除 session 后，旧 session 的迟到事件仍会通过同一 push channel 到达。
       // 如果 renderer 没有这条 session 的记录就 drop——否则会累积无人引用的 bucket。
       // main 端事件是权威；renderer 只缓存自己 UI 里能见到的部分。
-      if (!state.sessions.some((s) => s.sessionId === event.sessionId)) return state;
+      if (
+        !state.sessions.some((s) => s.sessionId === event.sessionId) &&
+        state.currentSessionId !== event.sessionId
+      ) {
+        return state;
+      }
       const bucket = state.eventsBySession[event.sessionId] ?? [];
       if (event.kind === 'session_error' && event.error === 'cancelled') {
         // 乐观取消(BottomBar handleCancel)与 main 端真实 cancelled 去重,防同一次取消显示两条。
@@ -1832,7 +1955,7 @@ export const useAppStore = create<AppState>((set) => ({
       return { sessions: next };
     }),
 
-  removeSession: (sessionId) =>
+  removeSession: (sessionId) => {
     set((state) => {
       // 同时清掉对应事件 buffer 和 user message buffer——session 不在了，留着就是泄漏
       const { [sessionId]: _evt, ...restEvents } = state.eventsBySession;
@@ -1845,6 +1968,7 @@ export const useAppStore = create<AppState>((set) => ({
       const { [sessionId]: _ta, ...restTransientArtifacts } = state.transientArtifactsBySession;
       const { [sessionId]: _msg, ...restMsgs } = state.userMessagesBySession;
       const { [sessionId]: _queuedMsg, ...restQueuedMsgs } = state.queuedUserMessagesBySession;
+      const { [sessionId]: _localNotice, ...restLocalNotices } = state.localNoticesBySession;
       const { [sessionId]: _wfn, ...restWorkflowNotices } = state.workflowNoticesBySession;
       const { [sessionId]: _bud, ...restBudgets } = state.workBudgetBySession;
       const { [sessionId]: _prof, ...restProfiles } = state.harnessProfileBySession;
@@ -1870,6 +1994,7 @@ export const useAppStore = create<AppState>((set) => ({
         transientArtifactsBySession: restTransientArtifacts,
         userMessagesBySession: restMsgs,
         queuedUserMessagesBySession: restQueuedMsgs,
+        localNoticesBySession: restLocalNotices,
         workflowNoticesBySession: restWorkflowNotices,
         workBudgetBySession: restBudgets,
         harnessProfileBySession: restProfiles,
@@ -1886,7 +2011,9 @@ export const useAppStore = create<AppState>((set) => ({
         // F009: 删 session 不能让 pending tool path / lastDiffPath 留指着已删 session
         lastDiffPath: state.currentSessionId === sessionId ? null : state.lastDiffPath,
       };
-    }),
+    });
+    persistLocalNoticeReplace(sessionId, []);
+  },
 
   enqueuePermission: (req) =>
     set((state) => {
@@ -2115,6 +2242,7 @@ export const useAppStore = create<AppState>((set) => ({
       transientArtifactsBySession: {},
       userMessagesBySession: {},
       queuedUserMessagesBySession: {},
+      localNoticesBySession: {},
       workflowNoticesBySession: {},
       permissionQueue: [],
       askUserQueue: [],
@@ -2128,7 +2256,7 @@ export const useAppStore = create<AppState>((set) => ({
       pendingToolPaths: {},
     }),
 
-  resetSessionMessages: (sessionId) =>
+  resetSessionMessages: (sessionId) => {
     set((state) => {
       // 同步剥掉本 session 在 pendingToolPaths 中暂存的 tool_id → path 记录
       // 否则 /clear 后若一个迟来的 tool_result 带相同 toolId，会触发 FilePanel
@@ -2147,10 +2275,13 @@ export const useAppStore = create<AppState>((set) => ({
         transientArtifactsBySession: { ...state.transientArtifactsBySession, [sessionId]: [] },
         userMessagesBySession: { ...state.userMessagesBySession, [sessionId]: [] },
         queuedUserMessagesBySession: { ...state.queuedUserMessagesBySession, [sessionId]: [] },
+        localNoticesBySession: { ...state.localNoticesBySession, [sessionId]: [] },
         workflowNoticesBySession: { ...state.workflowNoticesBySession, [sessionId]: [] },
         pendingToolPaths: nextPending,
       };
-    }),
+    });
+    persistLocalNoticeReplace(sessionId, []);
+  },
 
   // FEATURE_033: fork = clone full buffer 到 newSessionId。
   // forkPointTurnIdx 当前仅作 metadata 记录（main 端已经写 session 上）；不在 renderer 层
@@ -2161,11 +2292,14 @@ export const useAppStore = create<AppState>((set) => ({
   // toolId 是 per-invocation UUID 全局唯一，永不复用——source 的 in-flight 工具 tool_result
   // 会路由回 source session（不是 fork），让 source 的 pending 自己清。fork 的"pending tool"
   // 概念只对 fork 自己产生的新 tool_start 才有意义。所以 fork 启动时 pendingToolPaths 自然为空。
-  forkSessionBuffers: (srcSessionId, newSessionId, _forkPointTurnIdx) =>
+  forkSessionBuffers: (srcSessionId, newSessionId, _forkPointTurnIdx) => {
+    let copiedLocalNotices: readonly LocalNoticeMessage[] | null = null;
     set((state) => {
       const srcEvents = state.eventsBySession[srcSessionId] ?? [];
       const srcMsgs = state.userMessagesBySession[srcSessionId] ?? [];
+      const srcLocalNotices = state.localNoticesBySession[srcSessionId] ?? [];
       const srcNotices = state.workflowNoticesBySession[srcSessionId] ?? [];
+      copiedLocalNotices = srcLocalNotices.slice();
       // events 里的 sessionId 字段是 source 的——为新 session 重建 events 时需要改 sessionId，
       // 否则 ConversationStreamV2 按 sessionId 过滤会读不到。这里直接做映射。
       const remapped = srcEvents.map((e) => ({ ...e, sessionId: newSessionId }) as SessionEvent);
@@ -2180,12 +2314,18 @@ export const useAppStore = create<AppState>((set) => ({
           ...state.queuedUserMessagesBySession,
           [newSessionId]: [],
         },
+        localNoticesBySession: {
+          ...state.localNoticesBySession,
+          [newSessionId]: srcLocalNotices.slice(),
+        },
         workflowNoticesBySession: {
           ...state.workflowNoticesBySession,
           [newSessionId]: srcNotices.slice(),
         },
       };
-    }),
+    });
+    if (copiedLocalNotices !== null) persistLocalNoticeReplace(newSessionId, copiedLocalNotices);
+  },
 
   // FEATURE_033 rewind: 截断 userMessages 与 events buffer 到 rewindPastTurnIdx (含)。
   //   - userMessages 保留前 idx+1 条
@@ -2197,16 +2337,20 @@ export const useAppStore = create<AppState>((set) => ({
   // 由 appendEvent 累积。rewind 跨过 turn 边界后，这些值不再对应剩余 events——若不重置会
   // 在 UI 上显示 stale 数据（如已被截掉那轮的 todo list、过高的 work budget 计数）。
   // 重置后用户继续 send 时自然由新 events 重新填充。
-  rewindSessionBuffers: (sessionId, rewindPastTurnIdx) =>
+  rewindSessionBuffers: (sessionId, rewindPastTurnIdx) => {
+    let persistedLocalNotices: readonly LocalNoticeMessage[] | null = null;
     set((state) => {
       const msgs = state.userMessagesBySession[sessionId] ?? [];
+      const localNotices = state.localNoticesBySession[sessionId] ?? [];
       const notices = state.workflowNoticesBySession[sessionId] ?? [];
       const events = state.eventsBySession[sessionId] ?? [];
       // idx 越界 → 啥都不做
       if (rewindPastTurnIdx < 0 || rewindPastTurnIdx >= msgs.length) return state;
       const newMsgs = msgs.slice(0, rewindPastTurnIdx + 1);
-      const latestKeptSentAt = newMsgs[newMsgs.length - 1]?.sentAt ?? 0;
-      const newNotices = notices.filter((notice) => notice.sentAt <= latestKeptSentAt);
+      const firstRemovedSentAt = msgs[rewindPastTurnIdx + 1]?.sentAt ?? Number.POSITIVE_INFINITY;
+      const newLocalNotices = localNotices.filter((notice) => notice.sentAt < firstRemovedSentAt);
+      persistedLocalNotices = newLocalNotices;
+      const newNotices = notices.filter((notice) => notice.sentAt < firstRemovedSentAt);
       // events 按 session_complete/session_error 分段，保留前 (rewindPastTurnIdx + 1) 段。
       //
       // 命名说明：`completedTurnsBefore` 表示"在当前位置之前已经完成的 turn 数"——
@@ -2234,6 +2378,10 @@ export const useAppStore = create<AppState>((set) => ({
       return {
         userMessagesBySession: { ...state.userMessagesBySession, [sessionId]: newMsgs },
         queuedUserMessagesBySession: { ...state.queuedUserMessagesBySession, [sessionId]: [] },
+        localNoticesBySession: {
+          ...state.localNoticesBySession,
+          [sessionId]: newLocalNotices,
+        },
         workflowNoticesBySession: {
           ...state.workflowNoticesBySession,
           [sessionId]: newNotices,
@@ -2249,5 +2397,9 @@ export const useAppStore = create<AppState>((set) => ({
         harnessProfileBySession: restProfiles,
         tokensBySession: restTokens,
       };
-    }),
+    });
+    if (persistedLocalNotices !== null) {
+      persistLocalNoticeReplace(sessionId, persistedLocalNotices);
+    }
+  },
 }));
