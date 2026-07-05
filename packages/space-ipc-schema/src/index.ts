@@ -333,6 +333,7 @@ export {
   workflowGetChannel,
   workflowEventChannel,
   workflowRerunChannel,
+  workflowSaveChannel,
   workflowSavedRenameChannel,
   workflowSavedDeleteChannel,
   workflowProcessItemSchema,

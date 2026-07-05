@@ -11,6 +11,7 @@ import {
   Play,
   PlayCircle,
   RefreshCw,
+  Save,
   Square,
   Trash2,
   Workflow,
@@ -105,7 +106,7 @@ export function WorkflowManagementPanel(): JSX.Element {
       ),
     [currentProjectPath, currentSessionId, currentSurface, projectSessionIds, workflowRuns],
   );
-  const saved = library?.saved ?? [];
+  const saved = useMemo(() => library?.saved ?? [], [library]);
   const activeRuns = runs.filter((run) => run.status === 'running' || run.status === 'paused');
   const selectedRun =
     selection?.kind === 'run' ? runs.find((run) => run.runId === selection.id) : undefined;
@@ -309,6 +310,7 @@ export function WorkflowManagementPanel(): JSX.Element {
               currentSessionId={currentSessionId}
               projectSessionIds={projectSessionIds}
               onSelectRun={selectRun}
+              onChanged={refreshLibrary}
               isRenaming={renaming?.kind === 'run' && renaming.id === selectedRun.runId}
               renameDraft={renameDraft}
               onRenameDraftChange={setRenameDraft}
@@ -323,7 +325,9 @@ export function WorkflowManagementPanel(): JSX.Element {
               currentSessionId={currentSessionId}
               onSelectRun={selectRun}
               onChanged={refreshLibrary}
-              isRenaming={renaming?.kind === 'saved' && renaming.id === savedWorkflowKey(selectedSaved)}
+              isRenaming={
+                renaming?.kind === 'saved' && renaming.id === savedWorkflowKey(selectedSaved)
+              }
               renameDraft={renameDraft}
               onRenameDraftChange={setRenameDraft}
               onStartRename={() => startRenameSaved(selectedSaved)}
@@ -450,6 +454,7 @@ function RunDetail({
   currentSessionId,
   projectSessionIds,
   onSelectRun,
+  onChanged,
   isRenaming,
   renameDraft,
   onRenameDraftChange,
@@ -462,6 +467,7 @@ function RunDetail({
   readonly currentSessionId: string | null;
   readonly projectSessionIds: ReadonlySet<string>;
   readonly onSelectRun: (run: WorkflowRunT) => void;
+  readonly onChanged: () => void;
   readonly isRenaming: boolean;
   readonly renameDraft: string;
   readonly onRenameDraftChange: (value: string) => void;
@@ -470,6 +476,47 @@ function RunDetail({
   readonly onCancelRename: () => void;
 }): JSX.Element {
   const title = workflowRunTitle(run);
+  const [saving, setSaving] = useState(false);
+  const [saveDraft, setSaveDraft] = useState('');
+  const [savePending, setSavePending] = useState(false);
+
+  useEffect(() => {
+    setSaving(false);
+    setSaveDraft('');
+    setSavePending(false);
+  }, [run.runId]);
+
+  const startSave = useCallback(() => {
+    setSaveDraft(suggestSavedWorkflowName(run));
+    setSaving(true);
+  }, [run]);
+
+  const cancelSave = useCallback(() => {
+    setSaving(false);
+    setSaveDraft('');
+  }, []);
+
+  const commitSave = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
+      event.preventDefault();
+      if (savePending) return;
+      const name = saveDraft.trim();
+      if (!name) return;
+      setSavePending(true);
+      try {
+        const result = await saveWorkflowRun(run, name, currentSessionId, projectSessionIds);
+        if (result) {
+          setSaving(false);
+          setSaveDraft('');
+          onChanged();
+        }
+      } finally {
+        setSavePending(false);
+      }
+    },
+    [currentSessionId, onChanged, projectSessionIds, run, saveDraft, savePending],
+  );
+
   return (
     <div className="space-y-3">
       <DetailHeader
@@ -500,8 +547,49 @@ function RunDetail({
           currentSessionId={currentSessionId}
           projectSessionIds={projectSessionIds}
           onStartRename={onStartRename}
+          onStartSave={startSave}
         />
       </DetailHeader>
+      {saving && (
+        <form
+          onSubmit={(event) => void commitSave(event)}
+          className="rounded-md border border-border-default/60 bg-surface-2/60 p-2"
+        >
+          <div className="mb-1 text-[10px] font-mono uppercase tracking-wider text-fg-faint">
+            Save workflow
+          </div>
+          <div className="flex min-w-0 items-center gap-2">
+            <input
+              type="text"
+              autoFocus
+              value={saveDraft}
+              disabled={savePending}
+              onChange={(event) => setSaveDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') cancelSave();
+              }}
+              maxLength={256}
+              className="min-w-0 flex-1 rounded border border-border-strong bg-surface px-2 py-1 text-[12px] text-fg-primary"
+              aria-label="Saved workflow name"
+            />
+            <button
+              type="submit"
+              disabled={saveDraft.trim().length === 0 || savePending}
+              className="h-7 rounded-md border border-run/45 bg-run/10 px-2 text-[11px] font-medium text-fg-primary disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              {savePending ? 'Saving...' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={cancelSave}
+              disabled={savePending}
+              className="h-7 rounded-md border border-border-default/60 px-2 text-[11px] text-fg-muted hover:bg-surface-3 hover:text-fg-primary disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
       <WorkflowPanel
         runs={[run]}
         variant="full"
@@ -642,11 +730,13 @@ function RunActions({
   currentSessionId,
   projectSessionIds,
   onStartRename,
+  onStartSave,
 }: {
   readonly run: WorkflowRunT;
   readonly currentSessionId: string | null;
   readonly projectSessionIds: ReadonlySet<string>;
   readonly onStartRename: () => void;
+  readonly onStartSave: () => void;
 }): JSX.Element {
   const active = run.status === 'running' || run.status === 'paused';
   const terminal =
@@ -678,6 +768,11 @@ function RunActions({
       <ActionButton label="Rename" onClick={onStartRename}>
         <Pencil size={13} />
       </ActionButton>
+      {run.status === 'completed' && (
+        <ActionButton label="Save workflow" onClick={onStartSave}>
+          <Save size={13} />
+        </ActionButton>
+      )}
       {terminal && (
         <ActionButton label="Delete" danger onClick={() => void deleteWorkflowRun(run)}>
           <Trash2 size={13} />
@@ -847,6 +942,26 @@ async function stopWorkflow(runId: string, name: string): Promise<void> {
   );
 }
 
+async function saveWorkflowRun(
+  run: WorkflowRunT,
+  name: string,
+  currentSessionId: string | null,
+  projectSessionIds: ReadonlySet<string>,
+): Promise<{ readonly name?: string; readonly path?: string } | null> {
+  const title = workflowRunTitle(run);
+  const sessionId = workflowRerunSessionId({ run, currentSessionId, projectSessionIds });
+  if (!sessionId) {
+    pushToast('Open a session before saving a workflow', 'warning');
+    return null;
+  }
+  const result = await invokeWorkflowControl(
+    window.kodaxSpace?.invoke('workflow.save', { runId: run.runId, name, sessionId }),
+    `Save failed: ${title}`,
+  );
+  if (result) pushToast(`Workflow saved: ${result.name ?? name}`, 'success');
+  return result;
+}
+
 async function rerunWorkflow(
   run: WorkflowRunT,
   currentSessionId: string | null,
@@ -964,6 +1079,15 @@ async function invokeWorkflowControl<T>(
     pushToast(err instanceof Error ? err.message : fallback, 'error');
     return null;
   }
+}
+
+function suggestSavedWorkflowName(run: WorkflowRunT): string {
+  const raw = (run.workflowName ?? run.displayName ?? workflowRunTitle(run)).trim();
+  const stripped = raw
+    .replace(/\.workflow\.(mjs|cjs|js|ts|tsx)$/i, '')
+    .replace(/\.(mjs|cjs|js|ts|tsx)$/i, '')
+    .trim();
+  return (stripped || 'workflow').slice(0, 128);
 }
 
 function shortRunId(runId: string): string {

@@ -379,6 +379,21 @@ export const workflowStartChannel = {
   }),
 } as const;
 
+export const workflowSaveChannel = {
+  name: 'workflow.save',
+  direction: 'invoke',
+  input: z.object({
+    runId: z.string().min(1).max(SHORT),
+    name: z.string().min(1).max(SHORT),
+    sessionId: z.string().min(1).max(128),
+  }),
+  output: z.object({
+    name: z.string().max(SHORT).optional(),
+    path: z.string().max(4096).optional(),
+    error: z.string().max(MSG).optional(),
+  }),
+} as const;
+
 export const workflowSavedRenameChannel = {
   name: 'workflow.saved.rename',
   direction: 'invoke',

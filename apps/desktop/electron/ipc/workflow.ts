@@ -147,6 +147,29 @@ export function registerWorkflowChannels(): void {
     return 'error' in res ? { error: res.error } : { runId: res.runId };
   });
 
+  // Save a generated workflow run into the trusted workflow library for this session's project.
+  registerChannel('workflow.save', async (input) => {
+    const run = workflowController.get(input.runId);
+    if (!run) return { error: 'workflow run not found' };
+    let session = kodaxHost.get(input.sessionId);
+    if (!session && (await kodaxHost.tryResume(input.sessionId))) {
+      session = kodaxHost.get(input.sessionId);
+    }
+    if (!session) return { error: 'session not found' };
+    if (!sameProjectRoot(run.projectRoot, session.projectRoot)) {
+      return { error: 'workflow run belongs to another project' };
+    }
+    if (run.surface && run.surface !== session.surface) {
+      return { error: 'workflow run belongs to another surface' };
+    }
+    const res = await workflowController.saveGeneratedWorkflowFromRun(
+      input.runId,
+      input.name,
+      session.projectRoot,
+    );
+    return 'error' in res ? { error: res.error } : { name: res.name, path: res.path };
+  });
+
   // F064 Host policy（AMAW 自启治理 + caps）。
   registerChannel('workflow.saved.rename', async (input) => {
     const session = kodaxHost.get(input.sessionId);
