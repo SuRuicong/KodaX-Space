@@ -256,6 +256,23 @@ test('prependSessionHistory restores local notices outside real user turns', () 
   );
 });
 
+test('appendLocalNotice keeps generated ids within the IPC schema bound', () => {
+  const longSid = `s_${'x'.repeat(126)}`;
+  useAppStore.setState({
+    sessions: [{ ...session, sessionId: longSid }],
+    currentSessionId: longSid,
+    userMessagesBySession: {},
+    localNoticesBySession: {},
+    eventsBySession: {},
+  });
+
+  useAppStore.getState().appendLocalNotice(longSid, '/status', 1234);
+
+  const notice = useAppStore.getState().localNoticesBySession[longSid]?.[0];
+  assert.ok(notice);
+  assert.ok(notice.id.length <= 128);
+});
+
 test('rewindSessionBuffers truncates local notices by true user turn timestamp', () => {
   useAppStore.setState({
     userMessagesBySession: {

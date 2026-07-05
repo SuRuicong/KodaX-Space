@@ -884,16 +884,24 @@ function defaultLocalNoticeVariant(content: string): 'echo' | 'output' {
   return content.trimStart().startsWith('/') ? 'echo' : 'output';
 }
 
+function randomLocalNoticeSuffix(): string {
+  const cryptoObj = globalThis.crypto;
+  if (cryptoObj && typeof cryptoObj.randomUUID === 'function') {
+    return cryptoObj.randomUUID();
+  }
+  return Math.random().toString(36).slice(2, 10);
+}
+
 function createLocalNotice(
-  sessionId: string,
   content: string,
   options?: number | { readonly sentAt?: number; readonly variant?: 'echo' | 'output' },
 ): LocalNoticeMessage {
   const normalized = normalizeLocalNoticeOptions(options);
+  const sentAt = normalized.sentAt ?? nextLocalTranscriptSentAt();
   return {
-    id: `ln_${sessionId}_${++localNoticeCounter}`,
+    id: `ln_${sentAt}_${++localNoticeCounter}_${randomLocalNoticeSuffix()}`,
     content,
-    sentAt: normalized.sentAt ?? nextLocalTranscriptSentAt(),
+    sentAt,
     variant: normalized.variant ?? defaultLocalNoticeVariant(content),
   };
 }
@@ -1184,7 +1192,7 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => {
       if (!state.sessions.some((s) => s.sessionId === sessionId)) return state;
       const bucket = state.localNoticesBySession[sessionId] ?? [];
-      const msg = createLocalNotice(sessionId, content, options);
+      const msg = createLocalNotice(content, options);
       persistedNotice = msg;
       return {
         localNoticesBySession: {
