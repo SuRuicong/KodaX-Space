@@ -23,9 +23,9 @@ import {
   Eye,
   Folder,
   FolderOpen,
-  Maximize2,
-  Minimize2,
   Minus,
+  PanelRightClose,
+  PanelRightOpen,
   X,
 } from 'lucide-react';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
@@ -193,7 +193,7 @@ function RightSidebarWidthToolbar({
   const isExpanded = hasRoomToExpand && currentWidth >= (effectiveDefaultWidth + expandedWidth) / 2;
   const isAtDefaultWidth = Math.abs(currentWidth - effectiveDefaultWidth) <= 8;
   const shouldRestore = isExpanded || !hasRoomToExpand;
-  const Icon = shouldRestore ? Minimize2 : Maximize2;
+  const Icon = shouldRestore ? PanelRightClose : PanelRightOpen;
   const label = shouldRestore ? t('right.restoreDefaultWidth') : t('right.expandWidth');
   const disabled = !hasRoomToExpand && isAtDefaultWidth;
   return (
