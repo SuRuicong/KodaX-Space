@@ -121,8 +121,10 @@ const DEFAULT_IMPL: SessionStoreImpl = {
     return typeof sdk.loadFullTranscript === 'function' ? sdk.loadFullTranscript(id) : null;
   },
   appendClientNotice: async (id, opts) => {
-    const sdk = await loadSdkModule();
-    return typeof sdk.appendClientNotice === 'function' ? sdk.appendClientNotice(id, opts) : null;
+    const manager = await getManager();
+    return typeof manager.appendClientNotice === 'function'
+      ? manager.appendClientNotice(id, opts)
+      : null;
   },
   compactSession: async (id, opts) => (await getManager()).compactSession(id, opts),
   createSessionManager: (opts?: { sessionsDir?: string }) => {
