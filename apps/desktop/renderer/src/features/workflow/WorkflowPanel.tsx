@@ -12,7 +12,7 @@
 //   - WorkflowPanel({ runs })    —— 纯展示，不自取 store
 //   - WorkflowPanelConnected     —— popout 用（自取 runs 再渲染 WorkflowPanel）
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import {
   Loader2,
@@ -525,57 +525,44 @@ function WorkflowResultView({
   const [open, setOpen] = useState(defaultOpen);
   const [result, setResult] = useState<string | null>(fallback ?? null);
   const [loading, setLoading] = useState(false);
-  const [fetchAttempted, setFetchAttempted] = useState(false);
+  const fetchAttemptedRef = useRef(false);
   const mountedRef = useRef(true);
   useEffect(() => () => void (mountedRef.current = false), []);
   useEffect(() => {
     if (fallback) setResult((current) => current ?? fallback);
   }, [fallback]);
-  useEffect(() => {
-    if (!open || fetchAttempted) return;
-    setFetchAttempted(true);
-    setLoading(result === null);
+  const loadResult = useCallback(async (): Promise<void> => {
+    if (fetchAttemptedRef.current) return;
+    fetchAttemptedRef.current = true;
+    setLoading(true);
     const resultPromise =
       window.kodaxSpace?.invoke('workflow.result', { runId }).catch(() => null) ??
       Promise.resolve(null);
     const timeoutPromise = new Promise<null>((resolve) =>
       window.setTimeout(() => resolve(null), RESULT_LOAD_TIMEOUT_MS),
     );
-    void Promise.race([resultPromise, timeoutPromise])
-      .then((r) => {
-        if (!mountedRef.current) return;
-        setResult(r?.ok ? (r.data.result ?? fallback ?? '') : (fallback ?? ''));
-      })
-      .finally(() => {
-        if (mountedRef.current) setLoading(false);
-      });
-  }, [fallback, fetchAttempted, open, result, runId]);
-  async function toggle(): Promise<void> {
+    try {
+      const r = await Promise.race([resultPromise, timeoutPromise]);
+      if (!mountedRef.current) return;
+      setResult(r?.ok ? (r.data.result ?? fallback ?? '') : (fallback ?? ''));
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
+  }, [fallback, runId]);
+  useEffect(() => {
+    if (open) void loadResult();
+  }, [loadResult, open]);
+  function toggle(): void {
     const next = !open;
     setOpen(next);
-    if (next && !fetchAttempted) {
-      setFetchAttempted(true);
-      setLoading(result === null);
-      try {
-        const resultPromise =
-          window.kodaxSpace?.invoke('workflow.result', { runId }).catch(() => null) ??
-          Promise.resolve(null);
-        const timeoutPromise = new Promise<null>((resolve) =>
-          window.setTimeout(() => resolve(null), RESULT_LOAD_TIMEOUT_MS),
-        );
-        const r = await Promise.race([resultPromise, timeoutPromise]);
-        if (!mountedRef.current) return; // 卸载后不再 setState
-        setResult(r?.ok ? (r.data.result ?? fallback ?? '') : (fallback ?? ''));
-      } finally {
-        if (mountedRef.current) setLoading(false);
-      }
-    }
+    if (next) void loadResult();
   }
+  const copyDisabled = loading || !result;
   return (
     <div className="mt-1">
       <button
         type="button"
-        onClick={() => void toggle()}
+        onClick={toggle}
         className="inline-flex items-center gap-1 text-[10px] text-fg-muted hover:text-fg-primary"
         aria-expanded={open}
         data-testid="workflow-result-toggle"
@@ -586,7 +573,7 @@ function WorkflowResultView({
       {open && (
         <div className="mt-1">
           {loading && !result ? (
-            <div className="text-[10px] text-fg-faint">加载中…</div>
+            <div className="text-[10px] text-fg-faint">加载中...</div>
           ) : result ? (
             <div className="relative">
               <pre
@@ -597,14 +584,18 @@ function WorkflowResultView({
               </pre>
               <button
                 type="button"
-                onClick={() =>
+                onClick={() => {
+                  if (copyDisabled || !result) return;
                   void navigator.clipboard
                     ?.writeText(result)
-                    .then(() => pushToast('已复制结果', 'success'))
+                    .then(() => pushToast('已复制结果', 'success'));
+                }}
+                disabled={copyDisabled}
+                title={loading ? '完整结果加载中' : '复制'}
+                aria-label={
+                  loading ? '完整结果加载中，暂不能复制' : '复制结果'
                 }
-                title="复制"
-                aria-label="复制结果"
-                className="absolute top-1 right-1 w-5 h-5 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-2"
+                className="absolute top-1 right-1 w-5 h-5 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-fg-muted"
               >
                 <Copy size={11} />
               </button>
