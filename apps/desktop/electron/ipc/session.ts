@@ -693,7 +693,15 @@ export function registerSessionChannels(): void {
       if (entry.type === 'task_result' || taskResults.length > 0) {
         appendWorkflowTaskResultNotices(taskResults, seenWorkflowRunIds, items);
         if (items.length >= 2000) break;
-        continue;
+        // Consume the entry only if a real workflow run was recognized. Legacy transcripts
+        // (recorded before structured task-result metadata) have the SDK reconstruct
+        // `_taskResults` stamped source:'child_task' even for real run_workflow results, so
+        // the block above renders nothing. Fall through to the `<task-completed>` text parse
+        // below — which cross-checks isWorkflowRunDir() against disk instead of trusting
+        // `source` — so those notices still restore (App.tsx's old run-dir side-store restore
+        // that used to cover this was removed this release). Guard on a parseable message so a
+        // messageless task_result entry still short-circuits instead of hitting `msg.role`.
+        if (taskResults.some((r) => r.source === 'workflow') || !isRecord(entry.message)) continue;
       }
       const msg = entry.message;
       const meta = msg as {

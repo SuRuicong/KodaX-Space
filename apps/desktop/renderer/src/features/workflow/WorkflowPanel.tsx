@@ -534,7 +534,10 @@ function WorkflowResultView({
   const loadResult = useCallback(async (): Promise<void> => {
     if (fetchAttemptedRef.current) return;
     fetchAttemptedRef.current = true;
-    setLoading(true);
+    // Only show the loading state (which disables the copy button) when there is no
+    // fallback result already displayed. A run with a resultSummary shows immediately and
+    // its copy affordance stays usable; the ref above still guards the fetch reentrancy race.
+    setLoading(result === null);
     const resultPromise =
       window.kodaxSpace?.invoke('workflow.result', { runId }).catch(() => null) ??
       Promise.resolve(null);

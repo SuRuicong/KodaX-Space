@@ -217,7 +217,8 @@ export function LocalNoticeBubble({
   sentAt,
   variant,
 }: Extract<ConversationMessage, { kind: 'local_notice' }>): JSX.Element {
-  const label = variant === 'echo' ? 'slash' : 'output';
+  const { t } = useI18n();
+  const label = t(variant === 'echo' ? 'session.localNoticeSlashLabel' : 'session.localNoticeOutputLabel');
   return (
     <div className="group flex flex-col items-start" data-testid="local-notice-bubble">
       <div
