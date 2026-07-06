@@ -141,9 +141,15 @@ function nodePtyRuntimePatternsForAsar(asarPath) {
     ];
   }
 
+  // Linux: node-pty 1.1.0 bundles no linux prebuild, so `prebuild-install` downloads
+  // it into prebuilds/linux-<arch>/ (same {pty.node, spawn-helper} shape as the darwin
+  // prebuild); a from-source build instead lands in build/Release/. Accept either
+  // location — this mirrors node-pty's own loader search order (build/Release first,
+  // then prebuilds/<platform>-<arch>, see node-pty/lib/utils.js).
+  const nativeDir = String.raw`node_modules/node-pty/(?:build/Release|prebuilds/linux-(?:x64|arm64|arm))`;
   return [
-    /\/node_modules\/node-pty\/build\/Release\/pty\.node$/,
-    /\/node_modules\/node-pty\/build\/Release\/spawn-helper$/,
+    new RegExp(`/${nativeDir}/pty\\.node$`),
+    new RegExp(`/${nativeDir}/spawn-helper$`),
   ];
 }
 
