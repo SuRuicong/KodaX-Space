@@ -42,6 +42,24 @@ test('task dock run projection routes active worker to agents', () => {
   assert.match(view.headline, /Review worker/);
 });
 
+test('task dock plan metric counts completed items only', () => {
+  const view = buildTaskDockRunView({
+    hasProject: true,
+    hasSession: true,
+    pendingSend: false,
+    todos: [
+      { id: 'a', content: 'A', status: 'completed' },
+      { id: 'b', content: 'B', status: 'in_progress' },
+      { id: 'c', content: 'C', status: 'pending' },
+    ],
+  });
+
+  assert.deepEqual(
+    view.metrics.find((metric) => metric.label === 'Plan'),
+    { label: 'Plan', value: '1/3' },
+  );
+});
+
 test('task dock run projection gives no-project actionable state', () => {
   const view = buildTaskDockRunView({
     hasProject: false,

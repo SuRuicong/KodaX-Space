@@ -5,6 +5,7 @@
 // 列表全量替换（每次 onTodoUpdate 都发完整列表），渲染不需要 reducer 合并。
 
 import { ListChecks } from 'lucide-react';
+import { summarizeTodoProgress } from '../../lib/liveTaskProgress.js';
 import { useAppStore } from '../../store/appStore.js';
 
 export function PlanPanel(): JSX.Element {
@@ -33,8 +34,9 @@ export function PlanPanel(): JSX.Element {
     );
   }
 
-  const total = todos.length;
-  const done = todos.filter((t) => t.status === 'completed').length;
+  const progress = summarizeTodoProgress(todos);
+  const total = progress.total;
+  const done = progress.completed;
   const running = todos.find((t) => t.status === 'in_progress');
 
   return (

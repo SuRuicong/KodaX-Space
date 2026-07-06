@@ -40,6 +40,7 @@ import {
   upsertTransientArtifact,
   type TransientArtifactSnapshot,
 } from '../features/artifact/transientArtifact.js';
+import { applyLiveBudgetFallback } from '../lib/liveTaskProgress.js';
 
 export type MascotMode = 'legacy' | 'sprite' | 'off';
 
@@ -1941,6 +1942,15 @@ export const useAppStore = create<AppState>((set) => ({
             };
           }
         }
+      }
+      const currentBudget =
+        (next.workBudgetBySession ?? state.workBudgetBySession)[event.sessionId];
+      const liveBudget = applyLiveBudgetFallback(currentBudget, event);
+      if (liveBudget && liveBudget !== currentBudget) {
+        next.workBudgetBySession = {
+          ...(next.workBudgetBySession ?? state.workBudgetBySession),
+          [event.sessionId]: liveBudget,
+        };
       }
       return next;
     }),

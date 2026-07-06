@@ -1,3 +1,8 @@
+import {
+  isOpenTodoStatus,
+  summarizeTodoProgress,
+} from '../lib/liveTaskProgress.js';
+
 export type SidebarTodoStatus =
   | 'pending'
   | 'in_progress'
@@ -29,8 +34,9 @@ const MAX_VISIBLE_ROWS = 6;
 const MAX_VISIBLE_ITEMS_WITH_SUMMARIES = 4;
 
 export function buildSidebarPlanView(todos: readonly SidebarTodoItem[]): SidebarPlanViewModel {
-  const total = todos.length;
-  const completed = todos.filter((todo) => todo.status === 'completed').length;
+  const progress = summarizeTodoProgress(todos);
+  const total = progress.total;
+  const completed = progress.completed;
   const running = todos.find((todo) => todo.status === 'in_progress');
 
   if (total <= MAX_VISIBLE_ROWS) {
@@ -48,7 +54,7 @@ export function buildSidebarPlanView(todos: readonly SidebarTodoItem[]): Sidebar
     .map((item, index) => ({ item, index }))
     .filter(({ index }) => !selectedSet.has(index));
   const hiddenCompleted = hidden.filter(({ item }) => item.status === 'completed').length;
-  const hiddenOpen = hidden.filter(({ item }) => isOpenStatus(item.status)).length;
+  const hiddenOpen = hidden.filter(({ item }) => isOpenTodoStatus(item.status)).length;
   const rows: SidebarPlanRow[] = [];
 
   if (hiddenCompleted > 0) rows.push({ kind: 'done-summary', count: hiddenCompleted });
@@ -105,10 +111,6 @@ function findReplacementSlot(
   if (replaceableCompleted >= 0) return replaceableCompleted;
 
   return findLastIndex(selected, (index) => index !== anchor);
-}
-
-function isOpenStatus(status: SidebarTodoStatus): boolean {
-  return status === 'pending' || status === 'in_progress' || status === 'failed';
 }
 
 function range(start: number, end: number): number[] {

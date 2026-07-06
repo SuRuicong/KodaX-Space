@@ -1,4 +1,5 @@
 import type { SessionEvent, WorkflowRunT } from '@kodax-space/space-ipc-schema';
+import { summarizeTodoProgress } from '../lib/liveTaskProgress.js';
 import { buildAgentStatuses, type AgentStatusViewModel } from './agentStatusProjection.js';
 
 type TodoItem = {
@@ -187,8 +188,8 @@ function buildMetrics(
   const metrics: TaskDockMetric[] = [];
   const todos = input.todos ?? [];
   if (todos.length > 0) {
-    const done = todos.filter((todo) => todo.status === 'completed').length;
-    metrics.push({ label: 'Plan', value: `${done}/${todos.length}` });
+    const progress = summarizeTodoProgress(todos);
+    metrics.push({ label: 'Plan', value: `${progress.completed}/${progress.total}` });
   }
   if (agents.length > 0) {
     metrics.push({ label: 'Agents', value: String(agents.length) });
