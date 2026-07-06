@@ -55,6 +55,8 @@ import { VisualQualityToggle } from './VisualQualityToggle.js';
 import { GlassAurora } from './GlassAurora.js';
 import { useSpotlight } from '../lib/useSpotlight.js';
 import { RightSidebar } from './RightSidebar.js';
+import { EnvironmentHub } from './EnvironmentHub.js';
+import { PinnedTaskSummary } from './PinnedTaskSummary.js';
 import { HelpOverlayController } from './HelpOverlay.js';
 import { CommandPaletteController } from './CommandPalette.js';
 import { ToastContainer } from './ToastContainer.js';
@@ -68,6 +70,11 @@ import { HandoffInbox } from './HandoffInbox.js';
 import { SettingsModal } from '../features/settings/SettingsModal.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import { isPopoutKind, SHELL_POPOUT_EVENT, type ShellPopoutRequest } from './popoutControl.js';
+import {
+  TASK_DOCK_FOCUS_EVENT,
+  type TaskDockFocusRequest,
+  type TaskDockFocusState,
+} from './taskDockControl.js';
 
 interface ShellProps {
   readonly version?: SpaceVersionOutput | null;
@@ -156,6 +163,10 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatusT | null>(null);
+  const [taskDockFocusRequest, setTaskDockFocusRequest] = useState<TaskDockFocusState>({
+    section: null,
+    nonce: 0,
+  });
   const [viewportWidth, setViewportWidth] = useState(() => getViewportWidth());
   const leftWidth = clampSidebarWidthPx(leftWidthDraft ?? persistedLeftWidth);
   const closeDiagnostics = useCallback((): void => {
@@ -260,6 +271,20 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
     setRightSidebarWidth(targetWidth);
     setRightSidebarOpen(true);
   }, [leftSidebarVisible, leftWidth, setRightSidebarOpen, setRightSidebarWidth, viewportWidth]);
+
+  useEffect(() => {
+    const onTaskDockFocus = (event: Event): void => {
+      const section = (event as CustomEvent<TaskDockFocusRequest>).detail?.section;
+      if (section) {
+        setTaskDockFocusRequest((current) => ({ section, nonce: current.nonce + 1 }));
+      }
+      if (fullscreenRead) setFullscreenRead(false);
+      if (!rightSidebarOpen) openRightSidebarAtDefaultWidth();
+      else setRightSidebarOpen(true);
+    };
+    window.addEventListener(TASK_DOCK_FOCUS_EVENT, onTaskDockFocus);
+    return () => window.removeEventListener(TASK_DOCK_FOCUS_EVENT, onTaskDockFocus);
+  }, [fullscreenRead, openRightSidebarAtDefaultWidth, rightSidebarOpen, setRightSidebarOpen]);
 
   // 右侧栏跟 KodaX 计划列表（todoListBySession）联动：plan 出现 → 自动打开；
   // plan 清空 → 自动折叠。只在 hasPlan 状态切换的瞬间动一次，中间段用户的手动 toggle 不会被打扰。
@@ -408,7 +433,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
 
   // KX-I-02: director — 监听 events,首次出现 plan/diff/tasks 信号时 auto setActivePopout
   // (前提:activePopout === null 且该 kind 在本 session 未 promoted 过)。
-  useSmartPopoutDirector({ activePopout, setActivePopout });
+  useSmartPopoutDirector({ activePopout });
 
   // BottomBar 发出的"打开 popout"请求消费 — /memory → 'agents' 等。
   // 拿到 non-null 后立即 setActivePopout + 清回 null,避免被反复消费。
@@ -574,6 +599,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
                 />
                 <Breadcrumb />
                 <CommandToolbar active={activePopout} onToggle={setActivePopout} />
+                <EnvironmentHub />
                 {fullscreenRead && (
                   <button
                     type="button"
@@ -593,6 +619,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
               </div>
 
               <div className="relative flex flex-1 min-h-0 flex-col">
+                <PinnedTaskSummary />
                 <ConversationStreamV2 />
 
                 {activePopout !== null && (
@@ -619,6 +646,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
                   width={rightWidth}
                   defaultWidth={RIGHT_SIDEBAR_DEFAULT_WIDTH}
                   expandedWidth={rightSidebarExpandedWidth}
+                  shellFocusRequest={taskDockFocusRequest}
                 />
               </>
             )}

@@ -46,6 +46,7 @@ import { AgentsMdPanel } from './AgentsMdPanel.js';
 import { McpPanel } from './McpPanel.js';
 import { ArtifactsView } from '../../features/artifact/ArtifactsView.js';
 import { WorkflowManagementPanel } from '../../features/workflow/WorkflowManagementPanel.js';
+import { floatingSurfaceForPopout } from '../floatingSurfacePolicy.js';
 
 interface PopoutOverlayProps {
   kind: PopoutKind;
@@ -53,6 +54,7 @@ interface PopoutOverlayProps {
 }
 
 export function PopoutOverlay({ kind, onClose }: PopoutOverlayProps): JSX.Element {
+  const surface = floatingSurfaceForPopout(kind);
   const fullCover = FULL_COVER_KINDS.has(kind);
   const transparentContent = TRANSPARENT_CONTENT_KINDS.has(kind);
   // full-cover：left-0 铺满整个对话区；窄 panel：固定宽度从右侧贴边 slide-in。
@@ -70,6 +72,8 @@ export function PopoutOverlay({ kind, onClose }: PopoutOverlayProps): JSX.Elemen
       <aside
         data-testid={`popout-${kind}`}
         data-popout-kind={kind}
+        data-surface-kind={surface.kind}
+        data-surface-placement={surface.placement}
         // `!absolute`：`.glass`（styles.css，无 @layer 的裸规则）带 `position: relative`，
         // 在级联里永远压过 Tailwind `@layer utilities` 的 `.absolute` —— 不加 important 这个
         // 浮层会退回文档流、掉到 BottomBar(输入框) 下面（F060 起的回归）。important utility
@@ -79,7 +83,7 @@ export function PopoutOverlay({ kind, onClose }: PopoutOverlayProps): JSX.Elemen
         className={`glass ix-zone ${transparentContent ? 'glass-cover' : ''} !absolute right-0 top-10 bottom-0 ${widthCls} border-l border-border-default z-40 flex flex-col`}
       >
         <div className="px-3 py-2 border-b border-border-default flex items-center text-xs text-fg-muted flex-shrink-0">
-          <span className="capitalize">{kind}</span>
+          <span>{surface.label}</span>
           <button
             type="button"
             onClick={onClose}

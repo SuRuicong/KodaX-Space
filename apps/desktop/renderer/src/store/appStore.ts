@@ -937,9 +937,7 @@ function getLocalNoticeBridge(): LocalNoticeIpcBridge | undefined {
 function persistLocalNoticeAppend(sessionId: string, notice: LocalNoticeMessage): void {
   const bridge = getLocalNoticeBridge();
   if (!bridge) return;
-  void bridge
-    .invoke('session.localNotice.append', { sessionId, notice })
-    .catch(() => undefined);
+  void bridge.invoke('session.localNotice.append', { sessionId, notice }).catch(() => undefined);
 }
 
 function persistLocalNoticeReplace(
@@ -948,9 +946,7 @@ function persistLocalNoticeReplace(
 ): void {
   const bridge = getLocalNoticeBridge();
   if (!bridge) return;
-  void bridge
-    .invoke('session.localNotice.replace', { sessionId, notices })
-    .catch(() => undefined);
+  void bridge.invoke('session.localNotice.replace', { sessionId, notices }).catch(() => undefined);
 }
 
 function normalizeQueuedMatchContent(content: string): string {
@@ -1068,7 +1064,8 @@ export const useAppStore = create<AppState>((set) => ({
   transcriptFontSize: 'base',
   // 默认关：右侧栏存在意义=KodaX 计划列表，没 plan 时空着没价值；plan 来时由 Shell
   // 的 useEffect (planLength transition) 自动开。'1' 才视作"用户主动开过"。
-  rightSidebarOpen: lsGet('kodax-space.rightSidebarOpen') === '1',
+  // Task Dock starts closed; Shell opens it for explicit focus requests and task-relevant events.
+  rightSidebarOpen: false,
   leftSidebarOpen: lsGet('kodax-space.leftSidebarOpen') !== '0', // 默认开，"0" 表示用户主动关过
   // 2026-06: 默认对齐 Codex 桌面端 — 左 260, 右 320。坏值（NaN / <100 / >800）退回默认。
   leftSidebarWidth: clampSidebarWidth(
@@ -1281,10 +1278,7 @@ export const useAppStore = create<AppState>((set) => ({
         },
         userMessagesBySession: {
           ...state.userMessagesBySession,
-          [sessionId]: [
-            ...userBucket,
-            createUserMessage(sessionId, entry.content, sentAt),
-          ],
+          [sessionId]: [...userBucket, createUserMessage(sessionId, entry.content, sentAt)],
         },
       };
     }),
@@ -1832,8 +1826,7 @@ export const useAppStore = create<AppState>((set) => ({
         const dismissedPendingCount =
           state.todoDriftDismissedPendingCountBySession[event.sessionId];
         const currentTurn =
-          (next.userMessagesBySession ?? state.userMessagesBySession)[event.sessionId]?.length ??
-          0;
+          (next.userMessagesBySession ?? state.userMessagesBySession)[event.sessionId]?.length ?? 0;
         const sameTurn = dismissedTurn !== undefined && currentTurn <= dismissedTurn;
         const notEscalated =
           dismissedPendingCount !== undefined &&
@@ -2089,7 +2082,7 @@ export const useAppStore = create<AppState>((set) => ({
     }),
 
   setRightSidebarOpen: (open) => {
-    lsSet('kodax-space.rightSidebarOpen', open ? '1' : '0');
+    lsSet('kodax-space.rightSidebarOpen', '0');
     set({ rightSidebarOpen: open });
   },
 

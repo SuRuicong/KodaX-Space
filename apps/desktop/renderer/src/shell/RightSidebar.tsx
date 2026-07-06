@@ -1,20 +1,20 @@
-// RightSidebar — F041 (v0.1.4) "任务态 mission control"
+﻿// RightSidebar 鈥?F041 (v0.1.4) "浠诲姟鎬?mission control"
 //
-// 重塑前：Progress / Working folder / Context 三节，Progress 与 PlanPanel popout 重复渲染同一份 todoList。
-// 重塑后：Plan / Workers / Changes 三节常驻（默认展开）+ Working folder / Context 降级到底部（默认折叠）。
-// 退役 StashNotice 横幅（计数版"● Uncommitted: N modified..."），其职责由 Changes 节文件列表上位替代。
+// 閲嶅鍓嶏細Progress / Working folder / Context 涓夎妭锛孭rogress 涓?PlanPanel popout 閲嶅娓叉煋鍚屼竴浠?todoList銆?
+// 閲嶅鍚庯細Plan / Workers / Changes 涓夎妭甯搁┗锛堥粯璁ゅ睍寮€锛? Working folder / Context 闄嶇骇鍒板簳閮紙榛樿鎶樺彔锛夈€?
+// 閫€褰?StashNotice 妯箙锛堣鏁扮増"鈼?Uncommitted: N modified..."锛夛紝鍏惰亴璐ｇ敱 Changes 鑺傛枃浠跺垪琛ㄤ笂浣嶆浛浠ｃ€?
 //
-// 数据源：
-//   - Plan:    todoListBySession（同 PlanPanel popout 单一来源，删除原 ProgressSection 重复）
-//   - Workers: managedTaskStatusBySession + buildWorkerTree（同 TasksPanel popout 单一来源）
-//   - Changes: project.gitChanges IPC（新增，F041 加；同款 5s TTL cache + 200 文件上限）
+// 鏁版嵁婧愶細
+//   - Plan:    todoListBySession锛堝悓 PlanPanel popout 鍗曚竴鏉ユ簮锛屽垹闄ゅ師 ProgressSection 閲嶅锛?
+//   - Workers: managedTaskStatusBySession + buildWorkerTree锛堝悓 TasksPanel popout 鍗曚竴鏉ユ簮锛?
+//   - Changes: project.gitChanges IPC锛堟柊澧烇紝F041 鍔狅紱鍚屾 5s TTL cache + 200 鏂囦欢涓婇檺锛?
 //   - Working folder: currentProjectPath
-//   - Context:        eventsBySession[sid].tool_start 投影
+//   - Context:        eventsBySession[sid].tool_start 鎶曞奖
 //
-// 每节标题右侧的 ⤢ 按钮 → 同步通知 Shell 切 popout，看完整细节。Plan/Workers/Diff overlays 复用。
+// 姣忚妭鏍囬鍙充晶鐨?猡?鎸夐挳 鈫?鍚屾閫氱煡 Shell 鍒?popout锛岀湅瀹屾暣缁嗚妭銆侾lan/Workers/Diff overlays 澶嶇敤銆?
 //
-// CommandToolbar 的 POPOUTS 移除了 tasks / plan（避免两个入口重复触发 PlanPanel / TasksPanel）；
-// Diff / Preview / Terminal / Agents / MCP 保留。
+// CommandToolbar 鐨?POPOUTS 绉婚櫎浜?tasks / plan锛堥伩鍏嶄袱涓叆鍙ｉ噸澶嶈Е鍙?PlanPanel / TasksPanel锛夛紱
+// Diff / Preview / Terminal / Agents / MCP 淇濈暀銆?
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -32,7 +32,6 @@ import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { clampSidebarWidthPx, useAppStore } from '../store/appStore.js';
 import { openFileSmart, isPreviewablePath, revealPath } from '../lib/openPath.js';
 import { Caret } from '../components/Caret.js';
-import { buildWorkerTree } from './popouts/worker-tree.js';
 import { ArtifactsView } from '../features/artifact/ArtifactsView.js';
 import { useArtifacts, useArtifactCreated } from '../features/artifact/useArtifacts.js';
 import { useTranscriptArtifacts } from '../features/artifact/useTranscriptArtifacts.js';
@@ -50,20 +49,30 @@ import {
 import { useI18n } from '../i18n/I18nProvider.js';
 import { requestShellPopout } from './popoutControl.js';
 import type { PopoutKind } from './CommandToolbar.js';
+import {
+  TASK_DOCK_FOCUS_EVENT,
+  type TaskDockFocusState,
+  type TaskDockFocusRequest,
+  type TaskDockSectionId,
+} from './taskDockControl.js';
+import { buildAgentStatuses, type AgentStatusViewModel } from './agentStatusProjection.js';
+import { buildTaskDockRunView } from './taskDockProjection.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 
 interface RightSidebarProps {
-  /** 2026-06: 动态宽度（px）。 */
+  /** 2026-06: 鍔ㄦ€佸搴︼紙px锛夈€?*/
   readonly width?: number;
   readonly defaultWidth?: number;
   readonly expandedWidth?: number;
+  readonly shellFocusRequest?: TaskDockFocusState;
 }
 
 export function RightSidebar({
   width,
   defaultWidth = 320,
   expandedWidth = 320,
+  shellFocusRequest,
 }: RightSidebarProps = {}): JSX.Element {
   const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
@@ -77,11 +86,31 @@ export function RightSidebar({
     hasArtifacts || hasTranscriptArtifacts || artifactError !== null || tab === 'artifact';
   const [focusedArtifactSnapshot, setFocusedArtifactSnapshot] =
     useState<TransientArtifactSnapshot | null>(null);
-  // 锁存"对话卡片点选的 artifact id"，传给 ArtifactsView——它从概览切过来时是新挂载、
-  // 错过 window 事件，靠这个 prop 在挂载时认领选中。
+  // 閿佸瓨"瀵硅瘽鍗＄墖鐐归€夌殑 artifact id"锛屼紶缁?ArtifactsView鈥斺€斿畠浠庢瑙堝垏杩囨潵鏃舵槸鏂版寕杞姐€?
+  // 閿欒繃 window 浜嬩欢锛岄潬杩欎釜 prop 鍦ㄦ寕杞芥椂璁ら閫変腑銆?
   const [focusedArtifactId, setFocusedArtifactId] = useState<string | null>(null);
+  const [focusRequest, setFocusRequest] = useState<TaskDockFocusState>({
+    section: null,
+    nonce: 0,
+  });
 
-  // 切 session → 回概览（不带着上个会话的 Artifact 视图）。
+  useEffect(() => {
+    const onFocus = (event: Event): void => {
+      const section = (event as CustomEvent<TaskDockFocusRequest>).detail?.section;
+      if (!section) return;
+      setTab(section === 'artifacts' ? 'artifact' : 'overview');
+      setFocusRequest((current) => ({ section, nonce: current.nonce + 1 }));
+    };
+    window.addEventListener(TASK_DOCK_FOCUS_EVENT, onFocus);
+    return () => window.removeEventListener(TASK_DOCK_FOCUS_EVENT, onFocus);
+  }, []);
+
+  const effectiveFocusRequest =
+    shellFocusRequest && shellFocusRequest.nonce > focusRequest.nonce
+      ? shellFocusRequest
+      : focusRequest;
+
+  // 鍒?session 鈫?鍥炴瑙堬紙涓嶅甫鐫€涓婁釜浼氳瘽鐨?Artifact 瑙嗗浘锛夈€?
   useEffect(() => {
     setTab('overview');
     setFocusedArtifactId(null);
@@ -90,10 +119,10 @@ export function RightSidebar({
   useEffect(() => {
     if (!hasArtifacts && hasTranscriptArtifacts) setTab('artifact');
   }, [hasArtifacts, hasTranscriptArtifacts, currentSessionId]);
-  // agent 新产出 artifact → 自动切到 Artifact（精确信号：reason==='created'，
-  // 不被版本更新 / 删除 / 切会话误触发）。
+  // agent 鏂颁骇鍑?artifact 鈫?鑷姩鍒囧埌 Artifact锛堢簿纭俊鍙凤細reason==='created'锛?
+  // 涓嶈鐗堟湰鏇存柊 / 鍒犻櫎 / 鍒囦細璇濊瑙﹀彂锛夈€?
   useArtifactCreated(currentSessionId, () => setTab('artifact'));
-  // 对话里点 artifact 卡片 → 切到 Artifact tab + 锁存 id（ArtifactsView 据此选中那一份）。
+  // 瀵硅瘽閲岀偣 artifact 鍗＄墖 鈫?鍒囧埌 Artifact tab + 閿佸瓨 id锛圓rtifactsView 鎹閫変腑閭ｄ竴浠斤級銆?
   useEffect(() => {
     const onFocus = (e: Event): void => {
       setTab('artifact');
@@ -106,17 +135,18 @@ export function RightSidebar({
     return () => window.removeEventListener(FOCUS_ARTIFACT_EVENT, onFocus);
   }, []);
 
-  // 产物被删空 → 强制回概览（tab 卡在 artifact 时兜底）。
+  // 浜х墿琚垹绌?鈫?寮哄埗鍥炴瑙堬紙tab 鍗″湪 artifact 鏃跺厹搴曪級銆?
   const showArtifact = hasArtifactSurface && tab === 'artifact';
 
   return (
     <aside
       data-testid="right-sidebar"
+      data-dock-kind="task-dock"
       style={width !== undefined ? { width: `${width}px` } : undefined}
       className="glass lift ix-zone border border-border-default rounded-xl overflow-hidden bg-surface flex flex-col flex-shrink-0 text-[13px]"
     >
-      {/* F059c 动态右侧栏：有产物时顶部出 [概览 | Artifact] 切换；Artifact 占满整栏满高，
-          不再挤在底部的 280px 小框。⤢ 展开到中间大图（full-cover，像 diff）。 */}
+      {/* F059c 鍔ㄦ€佸彸渚ф爮锛氭湁浜х墿鏃堕《閮ㄥ嚭 [姒傝 | Artifact] 鍒囨崲锛汚rtifact 鍗犳弧鏁存爮婊￠珮锛?
+          涓嶅啀鎸ゅ湪搴曢儴鐨?280px 灏忔銆傗あ 灞曞紑鍒颁腑闂村ぇ鍥撅紙full-cover锛屽儚 diff锛夈€?*/}
       <RightSidebarWidthToolbar
         width={width}
         defaultWidth={defaultWidth}
@@ -128,7 +158,8 @@ export function RightSidebar({
             {t('right.overview')}
           </SidebarTab>
           <SidebarTab active={showArtifact} onClick={() => setTab('artifact')}>
-            {t('right.artifact')} {artifactCount > 0 ? `(${artifactCount})` : artifactError ? '(!)' : ''}
+            {t('right.artifact')}{' '}
+            {artifactCount > 0 ? `(${artifactCount})` : artifactError ? '(!)' : ''}
           </SidebarTab>
           {showArtifact && (
             <button
@@ -162,14 +193,22 @@ export function RightSidebar({
           <ArtifactsView focusedId={focusedArtifactId} focusedSnapshot={focusedArtifactSnapshot} />
         </div>
       ) : (
-        // 概览：原任务态多节堆叠（自身滚动）。
+        // 姒傝锛氬師浠诲姟鎬佸鑺傚爢鍙狅紙鑷韩婊氬姩锛夈€?
         <div className="flex-1 min-h-0 overflow-y-auto">
-          <PlanSection />
-          <WorkflowSection />
-          <WorkersSection />
-          <ChangesSection />
-          <WorkingFolderSection />
-          <ContextSection />
+          <RunSection focusRequest={effectiveFocusRequest} />
+          <PlanSection focusRequest={effectiveFocusRequest} />
+          <AgentSection focusRequest={effectiveFocusRequest} />
+          <WorkflowSection focusRequest={effectiveFocusRequest} />
+          <ChangesSection focusRequest={effectiveFocusRequest} />
+          <SourcesSection focusRequest={effectiveFocusRequest} />
+          <ArtifactsSummarySection
+            focusRequest={effectiveFocusRequest}
+            artifactCount={artifactCount}
+            hasArtifactSurface={hasArtifactSurface}
+            artifactError={artifactError}
+            onOpenArtifact={() => setTab('artifact')}
+          />
+          <ContextSection focusRequest={effectiveFocusRequest} />
         </div>
       )}
     </aside>
@@ -216,7 +255,7 @@ function RightSidebarWidthToolbar({
   );
 }
 
-/** 右侧栏顶部的 [概览|Artifact] 分段按钮。active = 微高亮底色。 */
+/** 鍙充晶鏍忛《閮ㄧ殑 [姒傝|Artifact] 鍒嗘鎸夐挳銆俛ctive = 寰珮浜簳鑹层€?*/
 function SidebarTab({
   active,
   onClick,
@@ -240,26 +279,48 @@ function SidebarTab({
   );
 }
 
-// ---- Section 容器 ----
+// ---- Section 瀹瑰櫒 ----
 
 interface SectionProps {
   title: string;
+  sectionId?: TaskDockSectionId;
+  focusRequest?: TaskDockFocusState;
   defaultOpen?: boolean;
-  /** F041: 设了的话 header 右侧显示 `⤢` 按钮，点击同步打开/关闭对应 popout。 */
+  /** F041: 璁句簡鐨勮瘽 header 鍙充晶鏄剧ず `猡 鎸夐挳锛岀偣鍑诲悓姝ユ墦寮€/鍏抽棴瀵瑰簲 popout銆?*/
   popoutKind?: PopoutKind;
   children: React.ReactNode;
 }
 
-function Section({ title, defaultOpen = true, popoutKind, children }: SectionProps): JSX.Element {
+function Section({
+  title,
+  sectionId,
+  focusRequest,
+  defaultOpen = true,
+  popoutKind,
+  children,
+}: SectionProps): JSX.Element {
   const { t } = useI18n();
   const [open, setOpen] = useState(defaultOpen);
-  // v0.1.9 fix: ⤢ 改 toggle —— 当前 popout 已经是 popoutKind 时再点关掉,否则打开。
+  const ref = useRef<HTMLElement | null>(null);
+  // v0.1.9 fix: 猡?鏀?toggle 鈥斺€?褰撳墠 popout 宸茬粡鏄?popoutKind 鏃跺啀鐐瑰叧鎺?鍚﹀垯鎵撳紑銆?
   const activePopoutKind = useAppStore((s) => s.activePopoutKind);
   const isThisPopoutActive = popoutKind !== undefined && activePopoutKind === popoutKind;
+
+  useEffect(() => {
+    if (!sectionId || focusRequest?.section !== sectionId) return;
+    setOpen(true);
+    const frame = requestAnimationFrame(() => {
+      ref.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focusRequest?.nonce, focusRequest?.section, sectionId]);
+
   return (
     <section
+      ref={ref}
       className="border-b border-border-default/60"
       data-testid={popoutKind ? `right-sidebar-section-${popoutKind}` : undefined}
+      data-task-dock-section={sectionId}
     >
       <div className="w-full px-3 py-2 flex items-center justify-between text-xs uppercase tracking-wider text-fg-muted">
         <button
@@ -270,9 +331,9 @@ function Section({ title, defaultOpen = true, popoutKind, children }: SectionPro
         >
           <span>{title}</span>
         </button>
-        {/* v0.1.9 fix: 按钮加大点击区 (w/h 22px) + 间距,换 Lucide-style SVG icon 取代
-            难辨的 ⤢ / ⌃ / ⌄ Unicode 字符。activePopout 当前已经是本 kind 时 ⤢ 切到 ×
-            实现"再点关闭"行为。 */}
+        {/* v0.1.9 fix: 鎸夐挳鍔犲ぇ鐐瑰嚮鍖?(w/h 22px) + 闂磋窛,鎹?Lucide-style SVG icon 鍙栦唬
+            闅捐鲸鐨?猡?/ 鈱?/ 鈱?Unicode 瀛楃銆俛ctivePopout 褰撳墠宸茬粡鏄湰 kind 鏃?猡?鍒囧埌 脳
+            瀹炵幇"鍐嶇偣鍏抽棴"琛屼负銆?*/}
         <div className="flex items-center gap-0.5 -mr-1">
           {popoutKind && (
             <button
@@ -333,7 +394,7 @@ function Section({ title, defaultOpen = true, popoutKind, children }: SectionPro
             aria-label={open ? t('right.collapseSection') : t('right.expandSection')}
             aria-expanded={open}
           >
-            {/* 统一走 Caret（chevron-right 旋转）：collapsed 指右、expanded 朝下 */}
+            {/* 缁熶竴璧?Caret锛坈hevron-right 鏃嬭浆锛夛細collapsed 鎸囧彸銆乪xpanded 鏈濅笅 */}
             <Caret open={open} />
           </button>
         </div>
@@ -343,9 +404,127 @@ function Section({ title, defaultOpen = true, popoutKind, children }: SectionPro
   );
 }
 
-// ---- Plan section（KodaX Scout todo list） ----
+// ---- Plan section锛圞odaX Scout todo list锛?----
 
-function PlanSection(): JSX.Element | null {
+function RunSection({ focusRequest }: { readonly focusRequest: TaskDockFocusState }): JSX.Element {
+  const currentProjectPath = useAppStore((s) => s.currentProjectPath);
+  const currentSessionId = useAppStore((s) => s.currentSessionId);
+  const pendingSend = useAppStore((s) =>
+    currentSessionId ? (s.pendingSendBySession[currentSessionId] ?? false) : false,
+  );
+  const todos = useAppStore((s) =>
+    currentSessionId ? s.todoListBySession[currentSessionId] : undefined,
+  );
+  const status = useAppStore((s) =>
+    currentSessionId ? s.managedTaskStatusBySession[currentSessionId] : undefined,
+  );
+  const budget = useAppStore((s) =>
+    currentSessionId ? s.workBudgetBySession[currentSessionId] : undefined,
+  );
+  const events = useAppStore((s) =>
+    currentSessionId ? (s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS) : EMPTY_EVENTS,
+  );
+  const hasPermissionRequest = useAppStore((s) =>
+    currentSessionId
+      ? s.permissionQueue.some((request) => request.sessionId === currentSessionId)
+      : false,
+  );
+  const hasAskUserRequest = useAppStore((s) =>
+    currentSessionId
+      ? s.askUserQueue.some((request) => request.sessionId === currentSessionId)
+      : false,
+  );
+  const workflowRuns = useSessionWorkflowRuns();
+
+  const view = buildTaskDockRunView({
+    hasProject: currentProjectPath !== null,
+    hasSession: currentSessionId !== null,
+    pendingSend,
+    todos,
+    managedStatus: status,
+    workflowRuns,
+    events,
+    budget,
+    hasPermissionRequest,
+    hasAskUserRequest,
+  });
+
+  return (
+    <Section title="Run" sectionId="run" focusRequest={focusRequest}>
+      <div
+        className={`rounded-lg border px-2.5 py-2 ${runCardClass(view.severity)}`}
+        data-testid="task-dock-run-summary"
+      >
+        <div className="flex items-start gap-2">
+          <span className={`mt-1 h-2 w-2 rounded-full ${runDotClass(view.severity)}`} aria-hidden />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[13px] font-medium text-fg-primary" title={view.headline}>
+              {view.headline}
+            </div>
+            {view.detail && (
+              <div className="mt-0.5 line-clamp-2 text-[12px] leading-4 text-fg-muted">
+                {view.detail}
+              </div>
+            )}
+          </div>
+        </div>
+        {view.metrics.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {view.metrics.map((metric) => (
+              <span
+                key={metric.label}
+                className="rounded border border-border-default bg-surface-2 px-1.5 py-0.5 text-[11px] text-fg-secondary"
+              >
+                <span className="text-fg-faint">{metric.label}</span>{' '}
+                <span className="font-mono text-fg-primary">{metric.value}</span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+function runCardClass(severity: ReturnType<typeof buildTaskDockRunView>['severity']): string {
+  switch (severity) {
+    case 'running':
+      return 'border-run/40 bg-run/10';
+    case 'warning':
+      return 'border-warn/40 bg-warn/10';
+    case 'danger':
+      return 'border-danger/40 bg-danger/10';
+    case 'success':
+      return 'border-ok/40 bg-ok/10';
+    case 'info':
+      return 'border-border-default bg-surface-2';
+    case 'neutral':
+      return 'border-border-default bg-surface-2';
+  }
+}
+
+function runDotClass(severity: ReturnType<typeof buildTaskDockRunView>['severity']): string {
+  switch (severity) {
+    case 'running':
+      return 'bg-run animate-pulse';
+    case 'warning':
+      return 'bg-warn';
+    case 'danger':
+      return 'bg-danger';
+    case 'success':
+      return 'bg-ok';
+    case 'info':
+      return 'bg-accent-ink';
+    case 'neutral':
+      return 'bg-fg-faint';
+  }
+}
+
+function PlanSection({
+  focusRequest,
+}: {
+  readonly focusRequest: TaskDockFocusState;
+}): JSX.Element | null {
   const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const todos = useAppStore((s) =>
@@ -357,10 +536,15 @@ function PlanSection(): JSX.Element | null {
   const plan = buildSidebarPlanView(todos);
 
   return (
-    <Section title={`${t('right.plan')} (${plan.completed}/${plan.total})`} popoutKind="plan">
+    <Section
+      title={`${t('right.plan')} (${plan.completed}/${plan.total})`}
+      sectionId="plan"
+      focusRequest={focusRequest}
+      popoutKind="plan"
+    >
       {plan.running?.activeForm && (
         <div className="text-xs text-fg-muted mb-2 truncate" title={plan.running.activeForm}>
-          → {plan.running.activeForm}
+          Now: {plan.running.activeForm}
         </div>
       )}
       <ul className="space-y-1 text-xs">
@@ -382,7 +566,7 @@ function PlanRow({ row }: { row: SidebarPlanRow }): JSX.Element {
     return (
       <li className="flex items-center gap-2 px-1.5 py-0.5 text-[11px] font-mono text-fg-faint">
         <span className="w-3 text-center text-ok" aria-hidden>
-          ✓
+          <Check className="inline h-2.5 w-2.5" strokeWidth={3} />
         </span>
         <span>{row.count} done</span>
       </li>
@@ -456,21 +640,25 @@ function planTodoTextClass(status: SidebarTodoStatus): string {
   }
 }
 
-// ---- Workers section（active worker 摘要） ----
+// ---- Workers section锛坅ctive worker 鎽樿锛?----
 
-// F061 Workflow 进度 Section（Coder-only —— RightSidebar 本就只挂 code surface）。
-// 无归属当前 session 的工作流 run 时整段隐藏；有历史 run 时保留最近一次终态，
-// 避免 workflow 刚完成右栏突然消失，用户无法回看流程图 / 子 agent 状态。
-function WorkflowSection(): JSX.Element | null {
+// F061 Workflow 杩涘害 Section锛圕oder-only 鈥斺€?RightSidebar 鏈氨鍙寕 code surface锛夈€?
+// 鏃犲綊灞炲綋鍓?session 鐨勫伐浣滄祦 run 鏃舵暣娈甸殣钘忥紱鏈夊巻鍙?run 鏃朵繚鐣欐渶杩戜竴娆＄粓鎬侊紝
+// 閬垮厤 workflow 鍒氬畬鎴愬彸鏍忕獊鐒舵秷澶憋紝鐢ㄦ埛鏃犳硶鍥炵湅娴佺▼鍥?/ 瀛?agent 鐘舵€併€?
+function WorkflowSection({
+  focusRequest,
+}: {
+  readonly focusRequest: TaskDockFocusState;
+}): JSX.Element | null {
   const { t } = useI18n();
   const runs = useSessionWorkflowRuns();
-  // 用户反馈：workflow 失败后修复重跑，右栏还挂着那条失败的旧 run，和正在跑的同名新 run 混在
-  // 一起分不清哪个是当前的。右栏只关心"正在进行"：只要有 active（running/paused）run，就**只**
-  // 显示 active，把终态（completed/failed/cancelled）旧 run 收起——历史仍可在 workflow popout
-  // （WorkflowPanelConnected 走全量 useSessionWorkflowRuns）里回看流程图/结果。
+  // 鐢ㄦ埛鍙嶉锛歸orkflow 澶辫触鍚庝慨澶嶉噸璺戯紝鍙虫爮杩樻寕鐫€閭ｆ潯澶辫触鐨勬棫 run锛屽拰姝ｅ湪璺戠殑鍚屽悕鏂?run 娣峰湪
+  // 涓€璧峰垎涓嶆竻鍝釜鏄綋鍓嶇殑銆傚彸鏍忓彧鍏冲績"姝ｅ湪杩涜"锛氬彧瑕佹湁 active锛坮unning/paused锛塺un锛屽氨**鍙?*
+  // 鏄剧ず active锛屾妸缁堟€侊紙completed/failed/cancelled锛夋棫 run 鏀惰捣鈥斺€斿巻鍙蹭粛鍙湪 workflow popout
+  // 锛圵orkflowPanelConnected 璧板叏閲?useSessionWorkflowRuns锛夐噷鍥炵湅娴佺▼鍥?缁撴灉銆?
   //
-  // 完全没有 active 时保留最近一次终态 run 一条——避免 workflow 一结束右栏整段消失、用户来不及
-  // 回看刚跑完的结果（#15 保留终态的初衷）。runs 已按 startedAt 倒序，[0] 即最近一次。
+  // 瀹屽叏娌℃湁 active 鏃朵繚鐣欐渶杩戜竴娆＄粓鎬?run 涓€鏉♀€斺€旈伩鍏?workflow 涓€缁撴潫鍙虫爮鏁存娑堝け銆佺敤鎴锋潵涓嶅強
+  // 鍥炵湅鍒氳窇瀹岀殑缁撴灉锛?15 淇濈暀缁堟€佺殑鍒濊》锛夈€俽uns 宸叉寜 startedAt 鍊掑簭锛孾0] 鍗虫渶杩戜竴娆°€?
   const displayRuns = useMemo(() => {
     const active = runs.filter((run) => run.status === 'running' || run.status === 'paused');
     return active.length > 0 ? active : runs.slice(0, 1);
@@ -479,14 +667,17 @@ function WorkflowSection(): JSX.Element | null {
   const title =
     displayRuns.length > 1 ? `${t('right.workflow')} (${displayRuns.length})` : t('right.workflow');
   return (
-    <Section title={title} popoutKind="workflow">
+    <Section title={title} sectionId="workflow" focusRequest={focusRequest} popoutKind="workflow">
       <WorkflowPanel runs={displayRuns} variant="compact" />
     </Section>
   );
 }
 
-function WorkersSection(): JSX.Element | null {
-  const { t } = useI18n();
+function AgentSection({
+  focusRequest,
+}: {
+  readonly focusRequest: TaskDockFocusState;
+}): JSX.Element | null {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const status = useAppStore((s) =>
     currentSessionId ? s.managedTaskStatusBySession[currentSessionId] : undefined,
@@ -495,25 +686,29 @@ function WorkersSection(): JSX.Element | null {
     currentSessionId ? s.workBudgetBySession[currentSessionId] : undefined,
   );
 
-  const workers = useMemo(() => buildWorkerTree(status), [status]);
+  const agents = useMemo(() => buildAgentStatuses(status), [status]);
 
-  // 无 worker 数据时不渲染 —— 跟 PlanSection 同样的"无内容隐藏"策略
-  if (workers.length === 0 && !budget) return null;
+  // 鏃?worker 鏁版嵁鏃朵笉娓叉煋 鈥斺€?璺?PlanSection 鍚屾牱鐨?鏃犲唴瀹归殣钘?绛栫暐
+  if (agents.length === 0 && !budget) return null;
 
-  // active = 当前真在动的 worker（isActive=true 或最近有事件流入）。idle/done 不放摘要。
-  const active = workers.filter((w) => w.isActive);
-  // #7 fix: 之前"active.length===0 → All workers idle"没看 idleWaiting(等待子结果/审批,
-  // 不是真闲) / childFanoutCount(刚 fan-out,worker-tree 可能还没体现出来) /
-  // budgetApprovalRequired(卡在预算审批) 这几个 TasksPanel 已有的信号，导致这几种"进行中但
-  // 暂无 active worker"的状态被紧凑视图误显示成一片空闲。这里镜像 TasksPanel 的判断顺序。
+  // active = 褰撳墠鐪熷湪鍔ㄧ殑 worker锛坕sActive=true 鎴栨渶杩戞湁浜嬩欢娴佸叆锛夈€俰dle/done 涓嶆斁鎽樿銆?
+  const runningCount = agents.filter((agent) => agent.state === 'active').length;
+  const waitingCount = agents.filter((agent) => agent.state === 'waiting').length;
+  const completedCount = agents.filter((agent) => agent.state === 'completed').length;
+  // #7 fix: 涔嬪墠"active.length===0 鈫?All workers idle"娌＄湅 idleWaiting(绛夊緟瀛愮粨鏋?瀹℃壒,
+  // 涓嶆槸鐪熼棽) / childFanoutCount(鍒?fan-out,worker-tree 鍙兘杩樻病浣撶幇鍑烘潵) /
+  // budgetApprovalRequired(鍗″湪棰勭畻瀹℃壒) 杩欏嚑涓?TasksPanel 宸叉湁鐨勪俊鍙凤紝瀵艰嚧杩欏嚑绉?杩涜涓絾
+  // 鏆傛棤 active worker"鐨勭姸鎬佽绱у噾瑙嗗浘璇樉绀烘垚涓€鐗囩┖闂层€傝繖閲岄暅鍍?TasksPanel 鐨勫垽鏂『搴忋€?
   const fanoutLabel =
     status?.childFanoutCount !== undefined && status.childFanoutCount > 0
-      ? `${status.childFanoutCount} active${status.childFanoutClass ? ` · ${status.childFanoutClass}` : ''}`
+      ? `${status.childFanoutCount} active${status.childFanoutClass ? ` / ${status.childFanoutClass}` : ''}`
       : null;
 
   return (
     <Section
-      title={`${t('right.workers')} (${workers.length})`}
+      title={`Agents (${agents.length})`}
+      sectionId="agents"
+      focusRequest={focusRequest}
       defaultOpen={false}
       popoutKind="tasks"
     >
@@ -522,7 +717,7 @@ function WorkersSection(): JSX.Element | null {
           <div className="text-fg-secondary font-mono">
             budget {budget.used}/{budget.cap}
             {status?.budgetApprovalRequired && (
-              <span className="ml-2 text-warn">· approval needed</span>
+              <span className="ml-2 text-warn">/ approval needed</span>
             )}
           </div>
           <div className="h-1 bg-surface-3 rounded overflow-hidden mt-0.5">
@@ -533,46 +728,158 @@ function WorkersSection(): JSX.Element | null {
           </div>
         </div>
       )}
-      {active.length === 0 ? (
+      {agents.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1">
+          {runningCount > 0 && <AgentMetric label="Running" value={runningCount} />}
+          {waitingCount > 0 && <AgentMetric label="Waiting" value={waitingCount} />}
+          {completedCount > 0 && <AgentMetric label="Done" value={completedCount} />}
+          {fanoutLabel && <AgentMetric label="Fan-out" value={fanoutLabel} />}
+        </div>
+      )}
+      {agents.length === 0 ? (
         status?.idleWaiting ? (
           <div className="text-xs text-fg-muted">
-            waiting · {status.idleWaitingPendingCount ?? 0} pending
+            waiting / {status.idleWaitingPendingCount ?? 0} pending
           </div>
         ) : fanoutLabel ? (
           <div className="text-xs text-fg-muted">{fanoutLabel}</div>
         ) : status?.budgetApprovalRequired ? (
           <div className="text-xs text-warn">budget approval needed</div>
         ) : (
-          <div className="text-xs text-fg-muted">All workers idle.</div>
+          <div className="text-xs text-fg-muted">No delegated agents yet.</div>
         )
       ) : (
-        <ul className="text-xs space-y-1">
-          {active.slice(0, 5).map((w) => (
-            <li key={w.workerId} className="flex items-center gap-1.5 truncate">
-              <span
-                className="w-1.5 h-1.5 rounded-full bg-run flex-shrink-0 animate-pulse"
-                aria-hidden
-              />
-              <span className="text-fg-secondary truncate" title={w.workerTitle}>
-                {w.workerTitle}
-              </span>
-              {w.latestPhase && (
-                <span className="text-fg-muted text-[11px] flex-shrink-0" aria-hidden>
-                  · {w.latestPhase}
-                </span>
-              )}
-            </li>
-          ))}
-          {active.length > 5 && (
-            <li className="text-fg-muted">+{active.length - 5} more — click ⤢ for full tree</li>
-          )}
-        </ul>
+        <AgentInlineList agents={agents} />
       )}
     </Section>
   );
 }
 
-// ---- Changes section（git porcelain 文件列表） ----
+// ---- Changes section锛坓it porcelain 鏂囦欢鍒楄〃锛?----
+
+function AgentMetric({
+  label,
+  value,
+}: {
+  readonly label: string;
+  readonly value: string | number;
+}): JSX.Element {
+  return (
+    <span className="rounded border border-border-default bg-surface-2 px-1.5 py-0.5 text-[11px] text-fg-secondary">
+      <span className="text-fg-faint">{label}</span>{' '}
+      <span className="font-mono text-fg-primary">{value}</span>
+    </span>
+  );
+}
+
+function AgentInlineList({
+  agents,
+}: {
+  readonly agents: readonly AgentStatusViewModel[];
+}): JSX.Element {
+  return (
+    <ul className="space-y-1.5">
+      {agents.slice(0, 4).map((agent) => (
+        <AgentStatusCard key={agent.id} agent={agent} compact />
+      ))}
+    </ul>
+  );
+}
+
+function AgentStatusCard({
+  agent,
+  compact = false,
+}: {
+  readonly agent: AgentStatusViewModel;
+  readonly compact?: boolean;
+}): JSX.Element {
+  return (
+    <li
+      className={`rounded-lg border px-2 py-1.5 ${agentCardClass(agent.state)}`}
+      data-testid="task-dock-agent-card"
+    >
+      <div className="flex min-w-0 items-start gap-2">
+        <span
+          className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${agentDotClass(agent.state)}`}
+          aria-hidden
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate font-medium text-fg-primary" title={agent.title}>
+              {agent.title}
+            </span>
+            <span className="flex-shrink-0 rounded bg-surface-3 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-fg-muted">
+              {agentStateLabel(agent.state)}
+            </span>
+          </div>
+          <div className="mt-0.5 flex min-w-0 flex-wrap gap-x-1.5 gap-y-0.5 text-[11px] text-fg-muted">
+            {agent.role && <span>{agent.role}</span>}
+            {agent.responsibility && <span className="truncate">/ {agent.responsibility}</span>}
+          </div>
+          {agent.latest && (
+            <div
+              className={`mt-1 text-[12px] leading-4 text-fg-secondary ${
+                compact ? 'line-clamp-2' : ''
+              }`}
+              title={agent.latest}
+            >
+              {agent.latest}
+            </div>
+          )}
+          <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-fg-faint">
+            {agent.evidenceCount !== undefined && <span>{agent.evidenceCount} notes</span>}
+            {agent.traceCount !== undefined && <span>{agent.traceCount} trace events</span>}
+          </div>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+function agentCardClass(state: AgentStatusViewModel['state']): string {
+  switch (state) {
+    case 'active':
+      return 'border-run/40 bg-run/10';
+    case 'waiting':
+      return 'border-warn/40 bg-warn/10';
+    case 'completed':
+      return 'border-ok/35 bg-ok/10';
+    case 'error':
+      return 'border-danger/40 bg-danger/10';
+    case 'idle':
+      return 'border-border-default bg-surface-2';
+  }
+}
+
+function agentDotClass(state: AgentStatusViewModel['state']): string {
+  switch (state) {
+    case 'active':
+      return 'bg-run animate-pulse';
+    case 'waiting':
+      return 'bg-warn';
+    case 'completed':
+      return 'bg-ok';
+    case 'error':
+      return 'bg-danger';
+    case 'idle':
+      return 'bg-fg-faint';
+  }
+}
+
+function agentStateLabel(state: AgentStatusViewModel['state']): string {
+  switch (state) {
+    case 'active':
+      return 'Running';
+    case 'waiting':
+      return 'Waiting';
+    case 'completed':
+      return 'Done';
+    case 'error':
+      return 'Issue';
+    case 'idle':
+      return 'Idle';
+  }
+}
 
 interface GitChange {
   path: string;
@@ -589,12 +896,16 @@ interface GitChangesSnapshot {
 
 const CHANGES_REFRESH_DEBOUNCE_MS = 800;
 
-function ChangesSection(): JSX.Element | null {
+function ChangesSection({
+  focusRequest,
+}: {
+  readonly focusRequest: TaskDockFocusState;
+}): JSX.Element | null {
   const { t } = useI18n();
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
 
-  // 监听 write/edit/bash tool_result → debounce 触发 refetch（沿用 StashNotice 同款逻辑）
+  // 鐩戝惉 write/edit/bash tool_result 鈫?debounce 瑙﹀彂 refetch锛堟部鐢?StashNotice 鍚屾閫昏緫锛?
   const lastToolResultMarker = useAppStore((s) => {
     if (!currentSessionId) return 0;
     const evs = s.eventsBySession[currentSessionId] ?? [];
@@ -612,14 +923,14 @@ function ChangesSection(): JSX.Element | null {
 
   const [snapshot, setSnapshot] = useState<GitChangesSnapshot | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // #11 fix: 之前是 boolean guard——项目 A 的请求还没回来时，切到项目 B 触发的新请求会被这个
-  // guard 直接吞掉（不是"过期后丢弃"，是"根本没发出去"），Changes 就一直停在旧快照，直到下一次
-  // tool_result/focus/30s 兜底轮询才可能补救。改成记录"当前在飞的目标 projectPath"——同一个
-  // path 才去重跳过，换了新项目总能发出请求。
+  // #11 fix: 涔嬪墠鏄?boolean guard鈥斺€旈」鐩?A 鐨勮姹傝繕娌″洖鏉ユ椂锛屽垏鍒伴」鐩?B 瑙﹀彂鐨勬柊璇锋眰浼氳杩欎釜
+  // guard 鐩存帴鍚炴帀锛堜笉鏄?杩囨湡鍚庝涪寮?锛屾槸"鏍规湰娌″彂鍑哄幓"锛夛紝Changes 灏变竴鐩村仠鍦ㄦ棫蹇収锛岀洿鍒颁笅涓€娆?
+  // tool_result/focus/30s 鍏滃簳杞鎵嶅彲鑳借ˉ鏁戙€傛敼鎴愯褰?褰撳墠鍦ㄩ鐨勭洰鏍?projectPath"鈥斺€斿悓涓€涓?
+  // path 鎵嶅幓閲嶈烦杩囷紝鎹簡鏂伴」鐩€昏兘鍙戝嚭璇锋眰銆?
   const inFlightPathRef = useRef<string | null>(null);
 
-  // F054: 改动量大时按目录树折叠。collapsed = 已折叠目录的 path 集合（默认全展开）。
-  // 跨 refetch 持久（keyed by dir path），30s 刷新不会重置用户的折叠态。
+  // F054: 鏀瑰姩閲忓ぇ鏃舵寜鐩綍鏍戞姌鍙犮€俢ollapsed = 宸叉姌鍙犵洰褰曠殑 path 闆嗗悎锛堥粯璁ゅ叏灞曞紑锛夈€?
+  // 璺?refetch 鎸佷箙锛坘eyed by dir path锛夛紝30s 鍒锋柊涓嶄細閲嶇疆鐢ㄦ埛鐨勬姌鍙犳€併€?
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const toggleDir = useCallback((dirPath: string): void => {
     setCollapsed((prev) => {
@@ -629,13 +940,10 @@ function ChangesSection(): JSX.Element | null {
       return next;
     });
   }, []);
-  const pickFile = useCallback(
-    (filePath: string): void => {
-      useAppStore.getState().setLastDiffPath(filePath);
-      requestShellPopout('diff');
-    },
-    [],
-  );
+  const pickFile = useCallback((filePath: string): void => {
+    useAppStore.getState().setLastDiffPath(filePath);
+    requestShellPopout('diff');
+  }, []);
   const tree = useMemo(() => buildChangeTree(snapshot?.files ?? []), [snapshot?.files]);
 
   const fetchChanges = useCallback((path: string): void => {
@@ -646,7 +954,7 @@ function ChangesSection(): JSX.Element | null {
       .invoke('project.gitChanges', { projectRoot: path })
       .then((r) => {
         if (!r.ok) return;
-        // 用户切走时丢弃
+        // 鐢ㄦ埛鍒囪蛋鏃朵涪寮?
         if (useAppStore.getState().currentProjectPath !== path) return;
         setSnapshot({
           isGitRepo: r.data.isGitRepo,
@@ -661,8 +969,8 @@ function ChangesSection(): JSX.Element | null {
   }, []);
 
   useEffect(() => {
-    // #11 fix: 项目切换时先同步清空快照——避免在新请求回来之前，右侧栏短暂（在旧 boolean
-    // guard 场景下甚至可能长期）显示上一个项目的改动文件列表。
+    // #11 fix: 椤圭洰鍒囨崲鏃跺厛鍚屾娓呯┖蹇収鈥斺€旈伩鍏嶅湪鏂拌姹傚洖鏉ヤ箣鍓嶏紝鍙充晶鏍忕煭鏆傦紙鍦ㄦ棫 boolean
+    // guard 鍦烘櫙涓嬬敋鑷冲彲鑳介暱鏈燂級鏄剧ず涓婁竴涓」鐩殑鏀瑰姩鏂囦欢鍒楄〃銆?
     setSnapshot(null);
     if (!currentProjectPath) {
       return;
@@ -670,7 +978,7 @@ function ChangesSection(): JSX.Element | null {
     fetchChanges(currentProjectPath);
   }, [currentProjectPath, fetchChanges]);
 
-  // tool_result debounced 重读 + window focus + 30s 兜底（沿用 StashNotice 同款触发器）
+  // tool_result debounced 閲嶈 + window focus + 30s 鍏滃簳锛堟部鐢?StashNotice 鍚屾瑙﹀彂鍣級
   useEffect(() => {
     if (!currentProjectPath || lastToolResultMarker === 0) return;
     if (debounceRef.current !== null) clearTimeout(debounceRef.current);
@@ -699,13 +1007,45 @@ function ChangesSection(): JSX.Element | null {
     };
   }, [currentProjectPath, fetchChanges]);
 
-  if (!snapshot || !snapshot.isGitRepo) {
-    return null;
+  if (!currentProjectPath) {
+    return (
+      <Section
+        title={t('right.changes')}
+        sectionId="changes"
+        focusRequest={focusRequest}
+        defaultOpen={false}
+      >
+        <div className="text-xs text-fg-muted">Open a project to review workspace changes.</div>
+      </Section>
+    );
+  }
+
+  if (!snapshot) {
+    return (
+      <Section title={t('right.changes')} sectionId="changes" focusRequest={focusRequest}>
+        <div className="text-xs text-fg-muted">Loading workspace changes...</div>
+      </Section>
+    );
+  }
+
+  if (!snapshot.isGitRepo) {
+    return (
+      <Section
+        title={t('right.changes')}
+        sectionId="changes"
+        focusRequest={focusRequest}
+        defaultOpen={false}
+      >
+        <div className="text-xs text-fg-muted">This project is not a git repository.</div>
+      </Section>
+    );
   }
 
   return (
     <Section
       title={`${t('right.changes')} (${snapshot.files.length}${snapshot.truncated ? '+' : ''})`}
+      sectionId="changes"
+      focusRequest={focusRequest}
     >
       {snapshot.branch && (
         <div className="text-[11px] text-fg-muted mb-1.5 font-mono">on {snapshot.branch}</div>
@@ -728,16 +1068,16 @@ function ChangesSection(): JSX.Element | null {
   );
 }
 
-// ---- Changes 目录树（F054：改动量大时按目录折叠，含单链目录压缩）----
+// ---- Changes 鐩綍鏍戯紙F054锛氭敼鍔ㄩ噺澶ф椂鎸夌洰褰曟姌鍙狅紝鍚崟閾剧洰褰曞帇缂╋級----
 
 interface ChangeTreeNode {
-  /** 显示用段名（压缩后可能是 "a/b/c"）。root 为空串。 */
+  /** 鏄剧ず鐢ㄦ鍚嶏紙鍘嬬缉鍚庡彲鑳芥槸 "a/b/c"锛夈€俽oot 涓虹┖涓层€?*/
   name: string;
-  /** 目录全路径（折叠状态的 key）。 */
+  /** 鐩綍鍏ㄨ矾寰勶紙鎶樺彔鐘舵€佺殑 key锛夈€?*/
   path: string;
   dirs: ChangeTreeNode[];
   files: GitChange[];
-  /** 该子树下变动文件总数。 */
+  /** 璇ュ瓙鏍戜笅鍙樺姩鏂囦欢鎬绘暟銆?*/
   count: number;
 }
 
@@ -747,9 +1087,9 @@ function basename(p: string): string {
 }
 
 /**
- * 把扁平文件列表建成目录树。两步：
- *   1) 按 '/' 分段建嵌套目录 + 把文件挂到所在目录
- *   2) finalize：算 count、排序、压缩单链目录（无文件且仅 1 子目录 → 并成 "a/b/c"，VS Code 同款）
+ * 鎶婃墎骞虫枃浠跺垪琛ㄥ缓鎴愮洰褰曟爲銆備袱姝ワ細
+ *   1) 鎸?'/' 鍒嗘寤哄祵濂楃洰褰?+ 鎶婃枃浠舵寕鍒版墍鍦ㄧ洰褰?
+ *   2) finalize锛氱畻 count銆佹帓搴忋€佸帇缂╁崟閾剧洰褰曪紙鏃犳枃浠朵笖浠?1 瀛愮洰褰?鈫?骞舵垚 "a/b/c"锛孷S Code 鍚屾锛?
  */
 function buildChangeTree(files: readonly GitChange[]): ChangeTreeNode {
   const root: ChangeTreeNode = { name: '', path: '', dirs: [], files: [], count: 0 };
@@ -780,7 +1120,7 @@ function buildChangeTree(files: readonly GitChange[]): ChangeTreeNode {
     node.count = c;
     node.dirs.sort((a, b) => a.name.localeCompare(b.name));
     node.files.sort((a, b) => a.path.localeCompare(b.path));
-    // 压缩单链：无直属文件且仅 1 子目录的节点与子合并
+    // 鍘嬬缉鍗曢摼锛氭棤鐩村睘鏂囦欢涓斾粎 1 瀛愮洰褰曠殑鑺傜偣涓庡瓙鍚堝苟
     node.dirs = node.dirs.map((d) => {
       let cur = d;
       while (cur.files.length === 0 && cur.dirs.length === 1) {
@@ -809,7 +1149,7 @@ interface ChangeTreeViewProps {
   onPick: (filePath: string) => void;
 }
 
-/** 递归渲染目录树：目录行可折叠（chevron + folder + count），文件行 → 点开 diff。 */
+/** 閫掑綊娓叉煋鐩綍鏍戯細鐩綍琛屽彲鎶樺彔锛坈hevron + folder + count锛夛紝鏂囦欢琛?鈫?鐐瑰紑 diff銆?*/
 function ChangeTreeView({
   node,
   depth,
@@ -862,6 +1202,7 @@ function ChangeTreeView({
             style={pad(depth)}
             className="w-full text-left flex items-center gap-1.5 pr-1 py-0.5 rounded hover:bg-hover-bg text-fg-secondary hover:text-fg-primary"
             title={f.path}
+            data-testid="task-dock-change-file"
           >
             <StatusBadge status={f.status} staged={f.staged} />
             <span className="truncate flex-1">{basename(f.path)}</span>
@@ -879,7 +1220,7 @@ function StatusBadge({
   status: GitChange['status'];
   staged: boolean;
 }): JSX.Element {
-  // 颜色：staged 绿 / worktree-only 琥珀 / untracked 灰；字母 = 状态首字
+  // 棰滆壊锛歴taged 缁?/ worktree-only 鐞ョ弨 / untracked 鐏帮紱瀛楁瘝 = 鐘舵€侀瀛?
   const color = status === 'U' ? 'text-fg-muted' : staged ? 'text-ok' : 'text-warn';
   return (
     <span
@@ -892,17 +1233,66 @@ function StatusBadge({
   );
 }
 
-// ---- Working folder（降级到底部） ----
+function ArtifactsSummarySection({
+  focusRequest,
+  artifactCount,
+  hasArtifactSurface,
+  artifactError,
+  onOpenArtifact,
+}: {
+  readonly focusRequest: TaskDockFocusState;
+  readonly artifactCount: number;
+  readonly hasArtifactSurface: boolean;
+  readonly artifactError: unknown;
+  readonly onOpenArtifact: () => void;
+}): JSX.Element {
+  return (
+    <Section
+      title="Artifacts"
+      sectionId="artifacts"
+      focusRequest={focusRequest}
+      defaultOpen={false}
+    >
+      {hasArtifactSurface ? (
+        <div className="space-y-2 text-xs text-fg-secondary">
+          <div>
+            {artifactError
+              ? 'Artifact loading needs attention.'
+              : `${artifactCount} artifact${artifactCount === 1 ? '' : 's'} available.`}
+          </div>
+          <button
+            type="button"
+            onClick={onOpenArtifact}
+            className="rounded-md border border-border-default px-2 py-1 text-[12px] text-fg-secondary hover:bg-hover-bg hover:text-fg-primary"
+          >
+            Open Artifact workspace
+          </button>
+        </div>
+      ) : (
+        <div className="text-xs text-fg-muted">Generated artifacts will appear here.</div>
+      )}
+    </Section>
+  );
+}
 
-function WorkingFolderSection(): JSX.Element {
+// ---- Working folder锛堥檷绾у埌搴曢儴锛?----
+
+function SourcesSection({
+  focusRequest,
+}: {
+  readonly focusRequest: TaskDockFocusState;
+}): JSX.Element {
   const { t } = useI18n();
   const projectPath = useAppStore((s) => s.currentProjectPath);
   const projectName = projectPath ? projectPath.split(/[\\/]/).filter(Boolean).pop() : null;
 
   return (
-    <Section title={t('right.workingFolder')} defaultOpen={false}>
+    <Section title="Sources" sectionId="sources" focusRequest={focusRequest} defaultOpen={false}>
       {projectPath ? (
         <div className="text-xs text-fg-secondary space-y-1">
+          <div className="text-[11px] uppercase tracking-wider text-fg-muted">
+            {t('right.workingFolder')}
+          </div>
           <div className="flex items-center gap-1.5">
             <Folder
               className="w-3.5 h-3.5 text-accent-ink flex-shrink-0"
@@ -913,11 +1303,11 @@ function WorkingFolderSection(): JSX.Element {
               {projectName}
             </span>
           </div>
-          {/* 2026-06-18: 工作目录路径可点击 → 在文件管理器中定位（同"路径不再是死文本"主旨）。 */}
+          {/* 2026-06-18: 宸ヤ綔鐩綍璺緞鍙偣鍑?鈫?鍦ㄦ枃浠剁鐞嗗櫒涓畾浣嶏紙鍚?璺緞涓嶅啀鏄鏂囨湰"涓绘棬锛夈€?*/}
           <button
             type="button"
             onClick={() => void revealPath(projectPath)}
-            title="在文件管理器中显示"
+            title="Reveal in file manager"
             className="group/wf w-full text-left flex items-start gap-1 text-fg-muted text-[11px] font-mono break-all hover:text-fg-secondary"
           >
             <span className="break-all">{projectPath}</span>
@@ -935,9 +1325,13 @@ function WorkingFolderSection(): JSX.Element {
   );
 }
 
-// ---- Context（降级到底部） ----
+// ---- Context锛堥檷绾у埌搴曢儴锛?----
 
-function ContextSection(): JSX.Element {
+function ContextSection({
+  focusRequest,
+}: {
+  readonly focusRequest: TaskDockFocusState;
+}): JSX.Element {
   const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const events = useAppStore((s) =>
@@ -948,7 +1342,12 @@ function ContextSection(): JSX.Element {
 
   if (refs.tools.length === 0 && refs.files.length === 0) {
     return (
-      <Section title={t('right.context')} defaultOpen={false}>
+      <Section
+        title={t('right.context')}
+        sectionId="context"
+        focusRequest={focusRequest}
+        defaultOpen={false}
+      >
         <div className="text-xs text-fg-muted leading-relaxed">
           Track tools and referenced files used in this task.
         </div>
@@ -957,7 +1356,12 @@ function ContextSection(): JSX.Element {
   }
 
   return (
-    <Section title={t('right.context')} defaultOpen={false}>
+    <Section
+      title={t('right.context')}
+      sectionId="context"
+      focusRequest={focusRequest}
+      defaultOpen={false}
+    >
       {refs.tools.length > 0 && (
         <div className="mb-3">
           <div className="text-[11px] uppercase tracking-wider text-fg-muted mb-1">Tools used</div>
@@ -966,10 +1370,10 @@ function ContextSection(): JSX.Element {
               <span
                 key={t.name}
                 className="text-[11px] px-1.5 py-0.5 rounded bg-surface-2 text-fg-secondary"
-                title={`${t.count}× ${t.name}`}
+                title={`${t.count}x ${t.name}`}
               >
                 {t.name}
-                {t.count > 1 && <span className="text-fg-muted ml-0.5">×{t.count}</span>}
+                {t.count > 1 && <span className="text-fg-muted ml-0.5">x{t.count}</span>}
               </span>
             ))}
           </div>
@@ -989,7 +1393,7 @@ function ContextSection(): JSX.Element {
                     type="button"
                     onClick={() => void openFileSmart(f)}
                     className="group/ctxfile w-full text-left flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-hover-bg text-fg-secondary hover:text-fg-primary"
-                    title={previewable ? `预览 ${f}` : `在文件管理器中显示 ${f}`}
+                    title={previewable ? `Preview ${f}` : `Reveal ${f}`}
                   >
                     <span className="truncate flex-1">{f}</span>
                     {previewable ? (
@@ -1052,7 +1456,7 @@ function collectContextRefs(events: readonly SessionEvent[]): ContextRefs {
   };
 }
 
-// ---- 圆点 svg-free 实现 ----
+// ---- 鍦嗙偣 svg-free 瀹炵幇 ----
 
 function CircleDone({ tiny = true }: { tiny?: boolean } = {}): JSX.Element {
   const size = tiny ? 'w-3 h-3' : 'w-4 h-4';

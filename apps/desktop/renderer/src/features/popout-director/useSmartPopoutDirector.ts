@@ -1,20 +1,8 @@
-// KX-I-02 Smart Popout Director — React hook that runs the pure rules against
-// the current session's event stream and auto-opens plan/diff/tasks popouts
-// when their first relevant signal arrives.
-//
-// Lifecycle:
-//   - Mounted at the top of Shell (alongside the activePopout state)
-//   - Reads only the latest popout-relevant tail event for currentSessionId from store
-//   - Each relevant event runs decideAutoPromote([event], activePopout, promoted)
-//   - Non-null result → calls onPromote(kind) + marks promoted
-//
-// 副作用纯单向 (events change → maybe set popout); 没有内部 state。
-// hook 不持有 React.state — 任何 "已 promoted" 记账走 store.markPopoutPromoted。
-
 import { useEffect } from 'react';
+import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
 import { useSurfaceStore } from '../../store/surface.js';
-import type { SessionEvent } from '@kodax-space/space-ipc-schema';
+import { requestTaskDockFocus } from '../../shell/taskDockControl.js';
 import { decideAutoPromote, type SmartPopoutKind } from './rules.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
@@ -22,20 +10,11 @@ const EMPTY_PROMOTED: ReadonlySet<SmartPopoutKind> = new Set<SmartPopoutKind>();
 const RELEVANT_EVENT_LOOKBACK = 32;
 
 interface UseSmartPopoutDirectorArgs {
-  /** 当前 active popout (Shell state)。非 null 时 director 不会 promote。 */
   readonly activePopout: string | null;
-  /** Shell setActivePopout setter。命中 promote 时被调。 */
-  readonly setActivePopout: (kind: SmartPopoutKind) => void;
 }
 
-export function useSmartPopoutDirector({
-  activePopout,
-  setActivePopout,
-}: UseSmartPopoutDirectorArgs): void {
+export function useSmartPopoutDirector({ activePopout }: UseSmartPopoutDirectorArgs): void {
   const enabled = useAppStore((s) => s.smartPopoutEnabled);
-  // F046 review HIGH-1: director 只在 Coder 面生效。Partner 面 Shell 不挂 PopoutOverlay，
-  // 若 director 仍跑，会把 (session, kind) 标 promoted（污染 store）——用户切回 Coder 续这条
-  // session 时，本该首次自动弹的 plan/diff/tasks 因已 promoted 而永不弹，feature 静默失效。
   const surfaceIsCode = useSurfaceStore((s) => s.currentSurface === 'code');
   const sessionId = useAppStore((s) => s.currentSessionId);
   const latestRelevantEvent = useAppStore((s) => {
@@ -51,9 +30,6 @@ export function useSmartPopoutDirector({
     }
     return null;
   });
-  // KX-I-02 review HIGH-2 fix: 只 subscribe **当前 session** 的 promoted Set 引用,而非
-  // 整个 Map。这样别 session markPromoted 时 (会换 outer map 引用) 本 hook 不会被惊动重跑。
-  // EMPTY_PROMOTED 是模块级稳定引用,sessionId === null 时 selector 不会每 render 新建。
   const promoted = useAppStore((s) =>
     sessionId
       ? ((s.promotedPopoutsBySession[sessionId] ?? EMPTY_PROMOTED) as ReadonlySet<SmartPopoutKind>)
@@ -62,24 +38,20 @@ export function useSmartPopoutDirector({
   const markPromoted = useAppStore((s) => s.markPopoutPromoted);
 
   useEffect(() => {
-    if (!enabled) return;
-    if (!surfaceIsCode) return; // Partner 面不跑 director（见上）
-    if (sessionId === null) return;
+    if (!enabled || !surfaceIsCode || sessionId === null) return;
     const events = latestRelevantEvent ? [latestRelevantEvent] : EMPTY_EVENTS;
     const decision = decideAutoPromote({ events, activePopout, promoted });
     if (decision === null) return;
-    // Mark first — 即便 setActivePopout 之后 trigger re-render,markPromoted 已经写进
-    // store,下一帧 selector 拿到 prom 含 decision,decideAutoPromote 不会再 emit。
+
     markPromoted(sessionId, decision);
-    setActivePopout(decision);
+    requestTaskDockFocus(decision === 'plan' ? 'plan' : 'changes');
   }, [
-    enabled,
-    surfaceIsCode,
-    sessionId,
-    latestRelevantEvent,
     activePopout,
-    promoted,
+    enabled,
+    latestRelevantEvent,
     markPromoted,
-    setActivePopout,
+    promoted,
+    sessionId,
+    surfaceIsCode,
   ]);
 }

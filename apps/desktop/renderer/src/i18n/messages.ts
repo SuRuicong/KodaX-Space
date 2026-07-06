@@ -158,9 +158,9 @@ export const messages = {
     'partner.sources.startSessionFirst': 'Start a Partner session first',
     'partner.sources.attachSelected': 'Attach selected file',
     'partner.sources.add': 'Add source',
-    'settings.smartPopout.title': 'Auto-open Plan, Diff, and Tasks panels',
+    'settings.smartPopout.title': 'Auto-focus Task Dock and Review paths',
     'settings.smartPopout.description':
-      'Space opens the right panel the first time a plan is drafted, a file is edited, or workers fan out. Disable this when you want panels to stay strictly manual.',
+      'Space focuses the Task Dock when a plan is drafted or file changes begin. Disable this when you want task surfaces to stay strictly manual.',
     'settings.notifications.title': 'System notifications for background session completion',
     'settings.notifications.description':
       'Space sends an OS notification only for live sessions that run longer than a minute and finish while the app is not active. Completion notices still appear inside Space and can be dismissed there.',
