@@ -141,6 +141,8 @@ test('Environment Hub routes anchored menus and changes into Task Dock and Revie
     const { page } = space;
 
     await openHub(page);
+    await expect(page.getByTestId('environment-hub-sources-row')).toContainText('workspace');
+    await expect(page.getByTestId('environment-hub-sources-row')).not.toContainText('attached');
     await expect(page.getByTestId('environment-hub-popover')).toHaveAttribute(
       'data-surface-kind',
       'anchored_menu',

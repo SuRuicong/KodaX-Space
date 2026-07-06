@@ -3,6 +3,12 @@ import { buildWorkerTree } from './popouts/worker-tree.js';
 
 type ManagedTaskStatus = Extract<SessionEvent, { kind: 'managed_task_status' }>['status'];
 
+const EMPTY_AGENT_STATUSES: readonly AgentStatusViewModel[] = [];
+const AGENT_STATUS_CACHE = new WeakMap<
+  NonNullable<ManagedTaskStatus>,
+  readonly AgentStatusViewModel[]
+>();
+
 export interface AgentStatusViewModel {
   readonly id: string;
   readonly title: string;
@@ -18,8 +24,12 @@ export interface AgentStatusViewModel {
 export function buildAgentStatuses(
   status: ManagedTaskStatus | undefined,
 ): readonly AgentStatusViewModel[] {
+  if (!status) return EMPTY_AGENT_STATUSES;
+  const cached = AGENT_STATUS_CACHE.get(status);
+  if (cached) return cached;
+
   const workers = buildWorkerTree(status);
-  return workers.map((worker) => {
+  const view = workers.map((worker) => {
     const latestKind = worker.latestKind;
     const state: AgentStatusViewModel['state'] = worker.isActive
       ? 'active'
@@ -50,6 +60,8 @@ export function buildAgentStatuses(
       evidenceCount: countEvidence(worker.events),
     };
   });
+  AGENT_STATUS_CACHE.set(status, view);
+  return view;
 }
 
 function sanitizeWorkerTitle(title: string): string {

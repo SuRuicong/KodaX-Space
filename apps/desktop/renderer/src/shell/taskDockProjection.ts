@@ -1,5 +1,5 @@
 import type { SessionEvent, WorkflowRunT } from '@kodax-space/space-ipc-schema';
-import { buildAgentStatuses } from './agentStatusProjection.js';
+import { buildAgentStatuses, type AgentStatusViewModel } from './agentStatusProjection.js';
 
 type TodoItem = {
   readonly id: string;
@@ -47,6 +47,12 @@ export interface BuildTaskDockRunInput {
 }
 
 export function buildTaskDockRunView(input: BuildTaskDockRunInput): TaskDockRunViewModel {
+  let agentStatuses: readonly AgentStatusViewModel[] | null = null;
+  const getAgents = (): readonly AgentStatusViewModel[] => {
+    if (agentStatuses === null) agentStatuses = buildAgentStatuses(input.managedStatus);
+    return agentStatuses;
+  };
+
   if (!input.hasProject) {
     return {
       mode: 'no_project',
@@ -65,7 +71,11 @@ export function buildTaskDockRunView(input: BuildTaskDockRunInput): TaskDockRunV
     return attention('Answer needed', 'The agent is waiting for your response.', 'ask_user');
   }
   if (input.managedStatus?.budgetApprovalRequired) {
-    return attention('Budget approval needed', 'Work is paused until the budget is approved.', 'budget');
+    return attention(
+      'Budget approval needed',
+      'Work is paused until the budget is approved.',
+      'budget',
+    );
   }
 
   const latestError = latestEventKind(input.events, 'session_error');
@@ -75,7 +85,7 @@ export function buildTaskDockRunView(input: BuildTaskDockRunInput): TaskDockRunV
       severity: 'danger',
       headline: 'Run hit an error',
       detail: 'Open the run context for recovery details.',
-      metrics: buildMetrics(input),
+      metrics: buildMetrics(input, getAgents()),
       primaryTarget: 'run',
       attentionKind: 'error',
     };
@@ -90,12 +100,12 @@ export function buildTaskDockRunView(input: BuildTaskDockRunInput): TaskDockRunV
       severity: 'running',
       headline: activeWorkflow.displayName || activeWorkflow.workflowName || 'Workflow running',
       detail: activeWorkflow.latestMessage ?? 'Workflow is active.',
-      metrics: buildMetrics(input),
+      metrics: buildMetrics(input, getAgents()),
       primaryTarget: 'workflow',
     };
   }
 
-  const agents = buildAgentStatuses(input.managedStatus);
+  const agents = getAgents();
   const activeAgent = agents.find((agent) => agent.state === 'active');
   if (activeAgent) {
     return {
@@ -103,7 +113,7 @@ export function buildTaskDockRunView(input: BuildTaskDockRunInput): TaskDockRunV
       severity: 'running',
       headline: `${activeAgent.title} is working`,
       detail: activeAgent.latest ?? activeAgent.responsibility ?? 'Agent work is active.',
-      metrics: buildMetrics(input),
+      metrics: buildMetrics(input, agents),
       primaryTarget: 'agents',
     };
   }
@@ -115,7 +125,7 @@ export function buildTaskDockRunView(input: BuildTaskDockRunInput): TaskDockRunV
       severity: 'running',
       headline: 'Plan in progress',
       detail: activeTodo.activeForm ?? activeTodo.content,
-      metrics: buildMetrics(input),
+      metrics: buildMetrics(input, agents),
       primaryTarget: 'plan',
     };
   }
@@ -126,7 +136,7 @@ export function buildTaskDockRunView(input: BuildTaskDockRunInput): TaskDockRunV
       severity: 'running',
       headline: 'Sending message',
       detail: 'The current turn is starting.',
-      metrics: buildMetrics(input),
+      metrics: buildMetrics(input, agents),
       primaryTarget: 'run',
     };
   }
@@ -137,19 +147,19 @@ export function buildTaskDockRunView(input: BuildTaskDockRunInput): TaskDockRunV
       severity: 'success',
       headline: 'Run complete',
       detail: 'Review changes, sources, and artifacts before moving on.',
-      metrics: buildMetrics(input),
+      metrics: buildMetrics(input, agents),
       primaryTarget: 'changes',
     };
   }
 
   return {
-    mode: input.hasSession ? 'idle' : 'idle',
+    mode: 'idle',
     severity: input.hasSession ? 'info' : 'neutral',
     headline: input.hasSession ? 'Ready for the next step' : 'Ready',
     detail: input.hasSession
       ? 'Task context will update as the agent works.'
       : 'Start or select a session to see run details.',
-    metrics: buildMetrics(input),
+    metrics: buildMetrics(input, agents),
     primaryTarget: 'run',
   };
 }
@@ -170,14 +180,16 @@ function attention(
   };
 }
 
-function buildMetrics(input: BuildTaskDockRunInput): readonly TaskDockMetric[] {
+function buildMetrics(
+  input: BuildTaskDockRunInput,
+  agents: readonly AgentStatusViewModel[],
+): readonly TaskDockMetric[] {
   const metrics: TaskDockMetric[] = [];
   const todos = input.todos ?? [];
   if (todos.length > 0) {
     const done = todos.filter((todo) => todo.status === 'completed').length;
     metrics.push({ label: 'Plan', value: `${done}/${todos.length}` });
   }
-  const agents = buildAgentStatuses(input.managedStatus);
   if (agents.length > 0) {
     metrics.push({ label: 'Agents', value: String(agents.length) });
   }

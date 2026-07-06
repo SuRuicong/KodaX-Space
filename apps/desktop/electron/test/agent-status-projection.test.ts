@@ -51,3 +51,21 @@ test('agent status projection avoids surfacing uuid-like titles', () => {
   assert.equal(statuses.length, 1);
   assert.equal(statuses[0].title, 'Worker');
 });
+
+test('agent status projection reuses cached view for the same status snapshot', () => {
+  const status = makeStatus({
+    activeWorkerId: 'worker-1',
+    activeWorkerTitle: 'Research worker',
+    events: [
+      {
+        key: 'e1',
+        kind: 'progress',
+        workerId: 'worker-1',
+        workerTitle: 'Research worker',
+        summary: 'Checking cache reuse',
+      },
+    ],
+  });
+
+  assert.strictEqual(buildAgentStatuses(status), buildAgentStatuses(status));
+});

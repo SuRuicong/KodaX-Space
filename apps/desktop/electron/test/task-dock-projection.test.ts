@@ -52,3 +52,15 @@ test('task dock run projection gives no-project actionable state', () => {
   assert.equal(view.mode, 'no_project');
   assert.equal(view.severity, 'neutral');
 });
+
+test('task dock run projection gives neutral idle state before a session exists', () => {
+  const view = buildTaskDockRunView({
+    hasProject: true,
+    hasSession: false,
+    pendingSend: false,
+  });
+
+  assert.equal(view.mode, 'idle');
+  assert.equal(view.severity, 'neutral');
+  assert.equal(view.headline, 'Ready');
+});

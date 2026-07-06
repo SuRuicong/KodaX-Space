@@ -28,18 +28,11 @@ import {
   replaceActiveSlashCompletion,
   shouldOpenSlashCompletion,
 } from './slashInput.js';
-import {
-  parseLegacySkillToken,
-  safeSkillSlashText,
-  skillSlashEchoText,
-} from './skillSlash.js';
+import { parseLegacySkillToken, safeSkillSlashText, skillSlashEchoText } from './skillSlash.js';
 import { registerInsertReceiver } from './inputBridge.js';
 import { resolveSessionCreateInputs } from './createSession.js';
 import { useIsStreaming } from './ActivitySpinner.js';
 import { AgentModeSelector } from './AgentModeSelector.js';
-import { AmaWorkStrip } from './AmaWorkStrip.js';
-import { BackgroundTaskBar } from './BackgroundTaskBar.js';
-import { WorkflowWorkStrip } from './WorkflowWorkStrip.js';
 // Retired StashNotice; file changes now live in RightSidebar.ChangesSection.
 import { RetryBanner } from './RetryBanner.js';
 import { NotificationsSurface } from './NotificationsSurface.js';
@@ -2015,9 +2008,9 @@ export function BottomBar(): JSX.Element {
         ? item.insertText
         : item.kind === 'slash-arg'
           ? item.insertText
-        : item.kind === 'skill'
-          ? item.insertText
-          : `/${item.meta.name} `;
+          : item.kind === 'skill'
+            ? item.insertText
+            : `/${item.meta.name} `;
     const replacement =
       activeSlash !== null
         ? replaceActiveSlashCompletion(prompt, activeSlash, insertText)
@@ -2055,7 +2048,10 @@ export function BottomBar(): JSX.Element {
       .invoke('session.cancel', { sessionId: sid })
       .then((r) => {
         if (!r.ok) {
-          pushToast(`Cancel failed (${sessionTitle}): ${r.error?.message ?? 'unknown error'}`, 'error');
+          pushToast(
+            `Cancel failed (${sessionTitle}): ${r.error?.message ?? 'unknown error'}`,
+            'error',
+          );
         }
       })
       .catch((err: unknown) => {
@@ -2152,10 +2148,6 @@ export function BottomBar(): JSX.Element {
 
       <RetryBanner />
 
-      {currentSurface !== 'partner' && <WorkflowWorkStrip />}
-      {currentSurface !== 'partner' && <AmaWorkStrip />}
-
-      {currentSurface !== 'partner' && <BackgroundTaskBar />}
       <div className="relative">
         {mascotMode === 'legacy' && (
           <KodaXDogMascot

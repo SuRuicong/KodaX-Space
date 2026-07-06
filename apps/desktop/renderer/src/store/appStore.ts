@@ -555,7 +555,7 @@ interface AppState {
   setPendingSend(sessionId: string, pending: boolean): void;
   /** P0: 推一条 prompt 进 input history（用户提交时调），上限 200 条。 */
   appendInputHistory(sessionId: string, prompt: string): void;
-  /** P2: 切右侧栏开/关。立即写 localStorage。*/
+  /** P2: Toggle the Task Dock. Open state is runtime-only; width remains persisted separately. */
   setRightSidebarOpen(open: boolean): void;
   /** 切左侧栏开/关。立即写 localStorage。*/
   setLeftSidebarOpen(open: boolean): void;
@@ -2082,7 +2082,6 @@ export const useAppStore = create<AppState>((set) => ({
     }),
 
   setRightSidebarOpen: (open) => {
-    lsSet('kodax-space.rightSidebarOpen', '0');
     set({ rightSidebarOpen: open });
   },
 

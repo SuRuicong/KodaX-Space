@@ -77,6 +77,21 @@ export function EnvironmentHub(): JSX.Element {
   }, [refreshGitStatus]);
 
   useEffect(() => {
+    if (!currentProjectPath) return;
+    const onVisibility = (): void => {
+      if (document.visibilityState === 'visible') refreshGitStatus();
+    };
+    window.addEventListener('focus', refreshGitStatus);
+    document.addEventListener('visibilitychange', onVisibility);
+    const interval = setInterval(refreshGitStatus, 30_000);
+    return () => {
+      window.removeEventListener('focus', refreshGitStatus);
+      document.removeEventListener('visibilitychange', onVisibility);
+      clearInterval(interval);
+    };
+  }, [currentProjectPath, refreshGitStatus]);
+
+  useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: MouseEvent): void => {
       if (ref.current && !ref.current.contains(event.target as Node)) {
@@ -105,7 +120,6 @@ export function EnvironmentHub(): JSX.Element {
   };
 
   const branchLabel = gitStatus.isGitRepo ? (gitStatus.branch ?? 'HEAD') : 'No git';
-  const sourceCount = [currentProjectPath, currentSessionId].filter(Boolean).length;
 
   return (
     <div ref={ref} className="relative flex-shrink-0" data-testid="environment-hub-root">
@@ -122,7 +136,7 @@ export function EnvironmentHub(): JSX.Element {
         }`}
         title="Environment information"
         aria-label="Environment information"
-        aria-haspopup="dialog"
+        aria-haspopup="true"
         aria-expanded={open}
         data-testid="environment-hub-button"
       >
@@ -133,9 +147,9 @@ export function EnvironmentHub(): JSX.Element {
 
       {open && (
         <div
-          className="absolute right-0 top-full z-[65] mt-2 w-[min(380px,calc(100vw-28px))] rounded-xl border border-border-default bg-surface-4 p-2 text-[13px] text-fg-secondary shadow-2xl"
+          className="absolute right-0 top-full z-[65] mt-2 max-h-[min(560px,calc(100vh-84px))] w-[min(380px,calc(100vw-28px))] overflow-y-auto overscroll-contain rounded-xl border border-border-default bg-surface-4 p-2 text-[13px] text-fg-secondary shadow-2xl"
           data-testid="environment-hub-popover"
-          role="dialog"
+          role="group"
           aria-label="Environment information"
           data-surface-kind="anchored_menu"
         >
@@ -210,7 +224,7 @@ export function EnvironmentHub(): JSX.Element {
           <HubRow
             icon={<Globe className="h-4 w-4" strokeWidth={1.8} aria-hidden />}
             label="Sources"
-            value={`${sourceCount} attached`}
+            value={sourcesLabel(currentProjectPath, currentSessionId)}
             active={menu === 'sources'}
             testId="environment-hub-sources-row"
             onClick={() => setMenu((value) => (value === 'sources' ? null : 'sources'))}
@@ -274,7 +288,6 @@ function LocationMenu(): JSX.Element {
     <div
       className="mb-1 ml-7 rounded-lg border border-border-default bg-surface-3 py-1"
       data-testid="environment-hub-location-menu"
-      role="menu"
     >
       <MenuLine checked label="Work locally" detail="Current machine" />
       <MenuLine
@@ -304,7 +317,6 @@ function BranchMenu({
     <div
       className="mb-1 ml-7 rounded-lg border border-border-default bg-surface-3 py-1"
       data-testid="environment-hub-branch-menu"
-      role="menu"
     >
       <MenuLine
         checked={isGitRepo}
@@ -340,7 +352,6 @@ function SourcesMenu({
     <div
       className="mb-1 ml-7 rounded-lg border border-border-default bg-surface-3 py-1"
       data-testid="environment-hub-sources-menu"
-      role="menu"
     >
       <MenuLine
         checked={currentProjectPath !== null}
@@ -380,7 +391,6 @@ function MenuLine({
       className={`grid grid-cols-[18px_minmax(0,1fr)] gap-2 px-2.5 py-1.5 ${
         disabled ? 'text-fg-faint' : 'text-fg-secondary'
       }`}
-      role="menuitem"
       aria-disabled={disabled}
     >
       <span className="flex h-4 w-4 items-center justify-center">
@@ -400,6 +410,13 @@ function projectName(path: string | null): string {
   if (!path) return 'No project';
   const parts = path.split(/[\\/]/).filter(Boolean);
   return parts[parts.length - 1] ?? path;
+}
+
+function sourcesLabel(projectPath: string | null, sessionId: string | null): string {
+  if (projectPath && sessionId) return 'workspace + session';
+  if (projectPath) return 'workspace';
+  if (sessionId) return 'session';
+  return 'none';
 }
 
 function changesLabel(status: GitStatusSnapshot, dirtyCount: number): string {

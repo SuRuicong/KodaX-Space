@@ -1,20 +1,21 @@
-﻿// RightSidebar 鈥?F041 (v0.1.4) "浠诲姟鎬?mission control"
+// RightSidebar - F041 (v0.1.4) task mission control
 //
-// 閲嶅鍓嶏細Progress / Working folder / Context 涓夎妭锛孭rogress 涓?PlanPanel popout 閲嶅娓叉煋鍚屼竴浠?todoList銆?
-// 閲嶅鍚庯細Plan / Workers / Changes 涓夎妭甯搁┗锛堥粯璁ゅ睍寮€锛? Working folder / Context 闄嶇骇鍒板簳閮紙榛樿鎶樺彔锛夈€?
-// 閫€褰?StashNotice 妯箙锛堣鏁扮増"鈼?Uncommitted: N modified..."锛夛紝鍏惰亴璐ｇ敱 Changes 鑺傛枃浠跺垪琛ㄤ笂浣嶆浛浠ｃ€?
+// Before: Progress / Working folder / Context repeated the same todo state as PlanPanel.
+// After: Run / Plan / Agents / Workflow / Changes / Sources / Artifacts / Context own task detail.
+// StashNotice is retired; Changes owns file-level workspace status.
 //
-// 鏁版嵁婧愶細
-//   - Plan:    todoListBySession锛堝悓 PlanPanel popout 鍗曚竴鏉ユ簮锛屽垹闄ゅ師 ProgressSection 閲嶅锛?
-//   - Workers: managedTaskStatusBySession + buildWorkerTree锛堝悓 TasksPanel popout 鍗曚竴鏉ユ簮锛?
-//   - Changes: project.gitChanges IPC锛堟柊澧烇紝F041 鍔狅紱鍚屾 5s TTL cache + 200 鏂囦欢涓婇檺锛?
+// Data sources:
+//   - Run:      taskDockProjection from session/task/workflow/agent state
+//   - Plan:     todoListBySession, same source as PlanPanel
+//   - Agents:   managedTaskStatusBySession projected to semantic agent cards
+//   - Changes:  project.gitChanges IPC, 200-file cap
 //   - Working folder: currentProjectPath
-//   - Context:        eventsBySession[sid].tool_start 鎶曞奖
+//   - Context:  eventsBySession[sid].tool_start projection
 //
-// 姣忚妭鏍囬鍙充晶鐨?猡?鎸夐挳 鈫?鍚屾閫氱煡 Shell 鍒?popout锛岀湅瀹屾暣缁嗚妭銆侾lan/Workers/Diff overlays 澶嶇敤銆?
+// Section header buttons notify Shell to open or close the corresponding full detail surface.
 //
-// CommandToolbar 鐨?POPOUTS 绉婚櫎浜?tasks / plan锛堥伩鍏嶄袱涓叆鍙ｉ噸澶嶈Е鍙?PlanPanel / TasksPanel锛夛紱
-// Diff / Preview / Terminal / Agents / MCP 淇濈暀銆?
+// CommandToolbar no longer duplicates tasks/plan entry points. Diff / Preview / Terminal /
+// Agents / MCP remain available where they own a separate workspace.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -61,7 +62,7 @@ import { buildTaskDockRunView } from './taskDockProjection.js';
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 
 interface RightSidebarProps {
-  /** 2026-06: 鍔ㄦ€佸搴︼紙px锛夈€?*/
+  /** Dynamic sidebar width in px. */
   readonly width?: number;
   readonly defaultWidth?: number;
   readonly expandedWidth?: number;
@@ -86,8 +87,8 @@ export function RightSidebar({
     hasArtifacts || hasTranscriptArtifacts || artifactError !== null || tab === 'artifact';
   const [focusedArtifactSnapshot, setFocusedArtifactSnapshot] =
     useState<TransientArtifactSnapshot | null>(null);
-  // 閿佸瓨"瀵硅瘽鍗＄墖鐐归€夌殑 artifact id"锛屼紶缁?ArtifactsView鈥斺€斿畠浠庢瑙堝垏杩囨潵鏃舵槸鏂版寕杞姐€?
-  // 閿欒繃 window 浜嬩欢锛岄潬杩欎釜 prop 鍦ㄦ寕杞芥椂璁ら閫変腑銆?
+  // Latch the artifact id selected from the transcript so ArtifactsView can claim it
+  // after switching from overview to artifact mode.
   const [focusedArtifactId, setFocusedArtifactId] = useState<string | null>(null);
   const [focusRequest, setFocusRequest] = useState<TaskDockFocusState>({
     section: null,
@@ -110,7 +111,7 @@ export function RightSidebar({
       ? shellFocusRequest
       : focusRequest;
 
-  // 鍒?session 鈫?鍥炴瑙堬紙涓嶅甫鐫€涓婁釜浼氳瘽鐨?Artifact 瑙嗗浘锛夈€?
+  // Reset to overview on session switches so the previous artifact view does not leak.
   useEffect(() => {
     setTab('overview');
     setFocusedArtifactId(null);
@@ -119,10 +120,10 @@ export function RightSidebar({
   useEffect(() => {
     if (!hasArtifacts && hasTranscriptArtifacts) setTab('artifact');
   }, [hasArtifacts, hasTranscriptArtifacts, currentSessionId]);
-  // agent 鏂颁骇鍑?artifact 鈫?鑷姩鍒囧埌 Artifact锛堢簿纭俊鍙凤細reason==='created'锛?
-  // 涓嶈鐗堟湰鏇存柊 / 鍒犻櫎 / 鍒囦細璇濊瑙﹀彂锛夈€?
+  // New agent-created artifact: switch to Artifact mode. Updates, deletes, and session switches
+  // should not trigger this path.
   useArtifactCreated(currentSessionId, () => setTab('artifact'));
-  // 瀵硅瘽閲岀偣 artifact 鍗＄墖 鈫?鍒囧埌 Artifact tab + 閿佸瓨 id锛圓rtifactsView 鎹閫変腑閭ｄ竴浠斤級銆?
+  // Transcript artifact card click: switch to Artifact mode and remember the target id.
   useEffect(() => {
     const onFocus = (e: Event): void => {
       setTab('artifact');
@@ -135,7 +136,7 @@ export function RightSidebar({
     return () => window.removeEventListener(FOCUS_ARTIFACT_EVENT, onFocus);
   }, []);
 
-  // 浜х墿琚垹绌?鈫?寮哄埗鍥炴瑙堬紙tab 鍗″湪 artifact 鏃跺厹搴曪級銆?
+  // If artifacts disappear, overview is the safe fallback.
   const showArtifact = hasArtifactSurface && tab === 'artifact';
 
   return (
@@ -145,8 +146,8 @@ export function RightSidebar({
       style={width !== undefined ? { width: `${width}px` } : undefined}
       className="glass lift ix-zone border border-border-default rounded-xl overflow-hidden bg-surface flex flex-col flex-shrink-0 text-[13px]"
     >
-      {/* F059c 鍔ㄦ€佸彸渚ф爮锛氭湁浜х墿鏃堕《閮ㄥ嚭 [姒傝 | Artifact] 鍒囨崲锛汚rtifact 鍗犳弧鏁存爮婊￠珮锛?
-          涓嶅啀鎸ゅ湪搴曢儴鐨?280px 灏忔銆傗あ 灞曞紑鍒颁腑闂村ぇ鍥撅紙full-cover锛屽儚 diff锛夈€?*/}
+      {/* F059c: when artifacts exist, expose Overview / Artifact tabs. Artifact mode owns
+          the full sidebar height instead of being squeezed into a small bottom box. */}
       <RightSidebarWidthToolbar
         width={width}
         defaultWidth={defaultWidth}
@@ -193,7 +194,7 @@ export function RightSidebar({
           <ArtifactsView focusedId={focusedArtifactId} focusedSnapshot={focusedArtifactSnapshot} />
         </div>
       ) : (
-        // 姒傝锛氬師浠诲姟鎬佸鑺傚爢鍙狅紙鑷韩婊氬姩锛夈€?
+        // Overview: stacked task sections with local scrolling.
         <div className="flex-1 min-h-0 overflow-y-auto">
           <RunSection focusRequest={effectiveFocusRequest} />
           <PlanSection focusRequest={effectiveFocusRequest} />
@@ -255,7 +256,7 @@ function RightSidebarWidthToolbar({
   );
 }
 
-/** 鍙充晶鏍忛《閮ㄧ殑 [姒傝|Artifact] 鍒嗘鎸夐挳銆俛ctive = 寰珮浜簳鑹层€?*/
+/** Segmented tab button for the right sidebar top switcher. */
 function SidebarTab({
   active,
   onClick,
@@ -279,14 +280,14 @@ function SidebarTab({
   );
 }
 
-// ---- Section 瀹瑰櫒 ----
+// ---- Section container ----
 
 interface SectionProps {
   title: string;
   sectionId?: TaskDockSectionId;
   focusRequest?: TaskDockFocusState;
   defaultOpen?: boolean;
-  /** F041: 璁句簡鐨勮瘽 header 鍙充晶鏄剧ず `猡 鎸夐挳锛岀偣鍑诲悓姝ユ墦寮€/鍏抽棴瀵瑰簲 popout銆?*/
+  /** When set, the header shows a full-detail button that toggles the matching popout. */
   popoutKind?: PopoutKind;
   children: React.ReactNode;
 }
@@ -302,7 +303,7 @@ function Section({
   const { t } = useI18n();
   const [open, setOpen] = useState(defaultOpen);
   const ref = useRef<HTMLElement | null>(null);
-  // v0.1.9 fix: 猡?鏀?toggle 鈥斺€?褰撳墠 popout 宸茬粡鏄?popoutKind 鏃跺啀鐐瑰叧鎺?鍚﹀垯鎵撳紑銆?
+  // Toggle behavior: if this popout is already active, the button closes it.
   const activePopoutKind = useAppStore((s) => s.activePopoutKind);
   const isThisPopoutActive = popoutKind !== undefined && activePopoutKind === popoutKind;
 
@@ -331,9 +332,7 @@ function Section({
         >
           <span>{title}</span>
         </button>
-        {/* v0.1.9 fix: 鎸夐挳鍔犲ぇ鐐瑰嚮鍖?(w/h 22px) + 闂磋窛,鎹?Lucide-style SVG icon 鍙栦唬
-            闅捐鲸鐨?猡?/ 鈱?/ 鈱?Unicode 瀛楃銆俛ctivePopout 褰撳墠宸茬粡鏄湰 kind 鏃?猡?鍒囧埌 脳
-            瀹炵幇"鍐嶇偣鍏抽棴"琛屼负銆?*/}
+        {/* Larger hit targets and SVG icons avoid ambiguous Unicode controls. */}
         <div className="flex items-center gap-0.5 -mr-1">
           {popoutKind && (
             <button
@@ -394,7 +393,7 @@ function Section({
             aria-label={open ? t('right.collapseSection') : t('right.expandSection')}
             aria-expanded={open}
           >
-            {/* 缁熶竴璧?Caret锛坈hevron-right 鏃嬭浆锛夛細collapsed 鎸囧彸銆乪xpanded 鏈濅笅 */}
+            {/* Shared caret: collapsed points right, expanded points down. */}
             <Caret open={open} />
           </button>
         </div>
@@ -404,7 +403,7 @@ function Section({
   );
 }
 
-// ---- Plan section锛圞odaX Scout todo list锛?----
+// ---- Plan section ----
 
 function RunSection({ focusRequest }: { readonly focusRequest: TaskDockFocusState }): JSX.Element {
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
@@ -640,11 +639,11 @@ function planTodoTextClass(status: SidebarTodoStatus): string {
   }
 }
 
-// ---- Workers section锛坅ctive worker 鎽樿锛?----
+// ---- Agents and workflow sections ----
 
-// F061 Workflow 杩涘害 Section锛圕oder-only 鈥斺€?RightSidebar 鏈氨鍙寕 code surface锛夈€?
-// 鏃犲綊灞炲綋鍓?session 鐨勫伐浣滄祦 run 鏃舵暣娈甸殣钘忥紱鏈夊巻鍙?run 鏃朵繚鐣欐渶杩戜竴娆＄粓鎬侊紝
-// 閬垮厤 workflow 鍒氬畬鎴愬彸鏍忕獊鐒舵秷澶憋紝鐢ㄦ埛鏃犳硶鍥炵湅娴佺▼鍥?/ 瀛?agent 鐘舵€併€?
+// F061 workflow progress section. RightSidebar is mounted only for the code surface.
+// Hide when there are no runs for this session. When a run just finished, keep the
+// latest terminal run visible so the user can review the workflow result.
 function WorkflowSection({
   focusRequest,
 }: {
@@ -652,13 +651,13 @@ function WorkflowSection({
 }): JSX.Element | null {
   const { t } = useI18n();
   const runs = useSessionWorkflowRuns();
-  // 鐢ㄦ埛鍙嶉锛歸orkflow 澶辫触鍚庝慨澶嶉噸璺戯紝鍙虫爮杩樻寕鐫€閭ｆ潯澶辫触鐨勬棫 run锛屽拰姝ｅ湪璺戠殑鍚屽悕鏂?run 娣峰湪
-  // 涓€璧峰垎涓嶆竻鍝釜鏄綋鍓嶇殑銆傚彸鏍忓彧鍏冲績"姝ｅ湪杩涜"锛氬彧瑕佹湁 active锛坮unning/paused锛塺un锛屽氨**鍙?*
-  // 鏄剧ず active锛屾妸缁堟€侊紙completed/failed/cancelled锛夋棫 run 鏀惰捣鈥斺€斿巻鍙蹭粛鍙湪 workflow popout
-  // 锛圵orkflowPanelConnected 璧板叏閲?useSessionWorkflowRuns锛夐噷鍥炵湅娴佺▼鍥?缁撴灉銆?
+  // If a retry starts after a workflow failure, show active runs only. Otherwise the
+  // previous failed run and current run look mixed together in the compact sidebar.
+  // When no run is active, keep the latest terminal run so the section does not
+  // disappear before the user can inspect the result.
   //
-  // 瀹屽叏娌℃湁 active 鏃朵繚鐣欐渶杩戜竴娆＄粓鎬?run 涓€鏉♀€斺€旈伩鍏?workflow 涓€缁撴潫鍙虫爮鏁存娑堝け銆佺敤鎴锋潵涓嶅強
-  // 鍥炵湅鍒氳窇瀹岀殑缁撴灉锛?15 淇濈暀缁堟€佺殑鍒濊》锛夈€俽uns 宸叉寜 startedAt 鍊掑簭锛孾0] 鍗虫渶杩戜竴娆°€?
+  // Runs are already sorted newest-first; [0] is the latest run.
+
   const displayRuns = useMemo(() => {
     const active = runs.filter((run) => run.status === 'running' || run.status === 'paused');
     return active.length > 0 ? active : runs.slice(0, 1);
@@ -688,17 +687,17 @@ function AgentSection({
 
   const agents = useMemo(() => buildAgentStatuses(status), [status]);
 
-  // 鏃?worker 鏁版嵁鏃朵笉娓叉煋 鈥斺€?璺?PlanSection 鍚屾牱鐨?鏃犲唴瀹归殣钘?绛栫暐
+  // Hide empty agent content, matching the no-content strategy used by PlanSection.
   if (agents.length === 0 && !budget) return null;
 
-  // active = 褰撳墠鐪熷湪鍔ㄧ殑 worker锛坕sActive=true 鎴栨渶杩戞湁浜嬩欢娴佸叆锛夈€俰dle/done 涓嶆斁鎽樿銆?
+  // active = workers that are actually moving now; idle/done should not dominate summary.
   const runningCount = agents.filter((agent) => agent.state === 'active').length;
   const waitingCount = agents.filter((agent) => agent.state === 'waiting').length;
   const completedCount = agents.filter((agent) => agent.state === 'completed').length;
-  // #7 fix: 涔嬪墠"active.length===0 鈫?All workers idle"娌＄湅 idleWaiting(绛夊緟瀛愮粨鏋?瀹℃壒,
-  // 涓嶆槸鐪熼棽) / childFanoutCount(鍒?fan-out,worker-tree 鍙兘杩樻病浣撶幇鍑烘潵) /
-  // budgetApprovalRequired(鍗″湪棰勭畻瀹℃壒) 杩欏嚑涓?TasksPanel 宸叉湁鐨勪俊鍙凤紝瀵艰嚧杩欏嚑绉?杩涜涓絾
-  // 鏆傛棤 active worker"鐨勭姸鎬佽绱у噾瑙嗗浘璇樉绀烘垚涓€鐗囩┖闂层€傝繖閲岄暅鍍?TasksPanel 鐨勫垽鏂『搴忋€?
+  // #7 fix: empty active workers does not always mean idle. idleWaiting, child fan-out,
+  // and budget approval are still in-progress states, even before worker-tree has
+  // concrete active cards. Mirror TasksPanel ordering so compact status is not blank.
+
   const fanoutLabel =
     status?.childFanoutCount !== undefined && status.childFanoutCount > 0
       ? `${status.childFanoutCount} active${status.childFanoutClass ? ` / ${status.childFanoutClass}` : ''}`
@@ -755,7 +754,7 @@ function AgentSection({
   );
 }
 
-// ---- Changes section锛坓it porcelain 鏂囦欢鍒楄〃锛?----
+// ---- Changes section: git porcelain file list ----
 
 function AgentMetric({
   label,
@@ -905,7 +904,7 @@ function ChangesSection({
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
 
-  // 鐩戝惉 write/edit/bash tool_result 鈫?debounce 瑙﹀彂 refetch锛堟部鐢?StashNotice 鍚屾閫昏緫锛?
+  // Watch write/edit/bash tool_result events and debounce a git changes refresh.
   const lastToolResultMarker = useAppStore((s) => {
     if (!currentSessionId) return 0;
     const evs = s.eventsBySession[currentSessionId] ?? [];
@@ -923,14 +922,14 @@ function ChangesSection({
 
   const [snapshot, setSnapshot] = useState<GitChangesSnapshot | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // #11 fix: 涔嬪墠鏄?boolean guard鈥斺€旈」鐩?A 鐨勮姹傝繕娌″洖鏉ユ椂锛屽垏鍒伴」鐩?B 瑙﹀彂鐨勬柊璇锋眰浼氳杩欎釜
-  // guard 鐩存帴鍚炴帀锛堜笉鏄?杩囨湡鍚庝涪寮?锛屾槸"鏍规湰娌″彂鍑哄幓"锛夛紝Changes 灏变竴鐩村仠鍦ㄦ棫蹇収锛岀洿鍒颁笅涓€娆?
-  // tool_result/focus/30s 鍏滃簳杞鎵嶅彲鑳借ˉ鏁戙€傛敼鎴愯褰?褰撳墠鍦ㄩ鐨勭洰鏍?projectPath"鈥斺€斿悓涓€涓?
-  // path 鎵嶅幓閲嶈烦杩囷紝鎹簡鏂伴」鐩€昏兘鍙戝嚭璇锋眰銆?
+  // #11 fix: the old boolean in-flight guard dropped project B refreshes while
+  // project A was still loading. Track the in-flight project path instead so same-path
+  // refreshes dedupe, but project switches always issue a fresh request.
+
   const inFlightPathRef = useRef<string | null>(null);
 
-  // F054: 鏀瑰姩閲忓ぇ鏃舵寜鐩綍鏍戞姌鍙犮€俢ollapsed = 宸叉姌鍙犵洰褰曠殑 path 闆嗗悎锛堥粯璁ゅ叏灞曞紑锛夈€?
-  // 璺?refetch 鎸佷箙锛坘eyed by dir path锛夛紝30s 鍒锋柊涓嶄細閲嶇疆鐢ㄦ埛鐨勬姌鍙犳€併€?
+  // F054: collapse large change lists by directory. Keep collapsed paths across refreshes.
+
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const toggleDir = useCallback((dirPath: string): void => {
     setCollapsed((prev) => {
@@ -954,7 +953,7 @@ function ChangesSection({
       .invoke('project.gitChanges', { projectRoot: path })
       .then((r) => {
         if (!r.ok) return;
-        // 鐢ㄦ埛鍒囪蛋鏃朵涪寮?
+        // Drop stale responses after the user switches projects.
         if (useAppStore.getState().currentProjectPath !== path) return;
         setSnapshot({
           isGitRepo: r.data.isGitRepo,
@@ -969,8 +968,8 @@ function ChangesSection({
   }, []);
 
   useEffect(() => {
-    // #11 fix: 椤圭洰鍒囨崲鏃跺厛鍚屾娓呯┖蹇収鈥斺€旈伩鍏嶅湪鏂拌姹傚洖鏉ヤ箣鍓嶏紝鍙充晶鏍忕煭鏆傦紙鍦ㄦ棫 boolean
-    // guard 鍦烘櫙涓嬬敋鑷冲彲鑳介暱鏈燂級鏄剧ず涓婁竴涓」鐩殑鏀瑰姩鏂囦欢鍒楄〃銆?
+    // Clear the old snapshot on project switch so another project's file list cannot flash
+    // while the new request is loading.
     setSnapshot(null);
     if (!currentProjectPath) {
       return;
@@ -978,7 +977,7 @@ function ChangesSection({
     fetchChanges(currentProjectPath);
   }, [currentProjectPath, fetchChanges]);
 
-  // tool_result debounced 閲嶈 + window focus + 30s 鍏滃簳锛堟部鐢?StashNotice 鍚屾瑙﹀彂鍣級
+  // Debounced tool-result refresh, plus focus/visibility and 30s fallback polling.
   useEffect(() => {
     if (!currentProjectPath || lastToolResultMarker === 0) return;
     if (debounceRef.current !== null) clearTimeout(debounceRef.current);
@@ -1068,16 +1067,16 @@ function ChangesSection({
   );
 }
 
-// ---- Changes 鐩綍鏍戯紙F054锛氭敼鍔ㄩ噺澶ф椂鎸夌洰褰曟姌鍙狅紝鍚崟閾剧洰褰曞帇缂╋級----
+// ---- Changes tree: directory folding with single-chain compression ----
 
 interface ChangeTreeNode {
-  /** 鏄剧ず鐢ㄦ鍚嶏紙鍘嬬缉鍚庡彲鑳芥槸 "a/b/c"锛夈€俽oot 涓虹┖涓层€?*/
+  /** Display segment name; compressed nodes may look like "a/b/c". Root is empty. */
   name: string;
-  /** 鐩綍鍏ㄨ矾寰勶紙鎶樺彔鐘舵€佺殑 key锛夈€?*/
+  /** Full directory path used as the collapse key. */
   path: string;
   dirs: ChangeTreeNode[];
   files: GitChange[];
-  /** 璇ュ瓙鏍戜笅鍙樺姩鏂囦欢鎬绘暟銆?*/
+  /** Total changed files under this subtree. */
   count: number;
 }
 
@@ -1087,9 +1086,9 @@ function basename(p: string): string {
 }
 
 /**
- * 鎶婃墎骞虫枃浠跺垪琛ㄥ缓鎴愮洰褰曟爲銆備袱姝ワ細
- *   1) 鎸?'/' 鍒嗘寤哄祵濂楃洰褰?+ 鎶婃枃浠舵寕鍒版墍鍦ㄧ洰褰?
- *   2) finalize锛氱畻 count銆佹帓搴忋€佸帇缂╁崟閾剧洰褰曪紙鏃犳枃浠朵笖浠?1 瀛愮洰褰?鈫?骞舵垚 "a/b/c"锛孷S Code 鍚屾锛?
+ * Build a directory tree from a flat changed-file list:
+ *   1) split paths on '/' and attach files to their containing directory
+ *   2) finalize count/sort/compress single-child directory chains, VS Code style
  */
 function buildChangeTree(files: readonly GitChange[]): ChangeTreeNode {
   const root: ChangeTreeNode = { name: '', path: '', dirs: [], files: [], count: 0 };
@@ -1120,7 +1119,7 @@ function buildChangeTree(files: readonly GitChange[]): ChangeTreeNode {
     node.count = c;
     node.dirs.sort((a, b) => a.name.localeCompare(b.name));
     node.files.sort((a, b) => a.path.localeCompare(b.path));
-    // 鍘嬬缉鍗曢摼锛氭棤鐩村睘鏂囦欢涓斾粎 1 瀛愮洰褰曠殑鑺傜偣涓庡瓙鍚堝苟
+    // Compress chains with no direct files and exactly one child directory.
     node.dirs = node.dirs.map((d) => {
       let cur = d;
       while (cur.files.length === 0 && cur.dirs.length === 1) {
@@ -1149,7 +1148,7 @@ interface ChangeTreeViewProps {
   onPick: (filePath: string) => void;
 }
 
-/** 閫掑綊娓叉煋鐩綍鏍戯細鐩綍琛屽彲鎶樺彔锛坈hevron + folder + count锛夛紝鏂囦欢琛?鈫?鐐瑰紑 diff銆?*/
+/** Recursive directory tree renderer: folders fold, file rows open diff. */
 function ChangeTreeView({
   node,
   depth,
@@ -1220,7 +1219,7 @@ function StatusBadge({
   status: GitChange['status'];
   staged: boolean;
 }): JSX.Element {
-  // 棰滆壊锛歴taged 缁?/ worktree-only 鐞ョ弨 / untracked 鐏帮紱瀛楁瘝 = 鐘舵€侀瀛?
+  // Color: staged = ok, worktree-only = warning, untracked = muted; letter is git status.
   const color = status === 'U' ? 'text-fg-muted' : staged ? 'text-ok' : 'text-warn';
   return (
     <span
@@ -1275,7 +1274,7 @@ function ArtifactsSummarySection({
   );
 }
 
-// ---- Working folder锛堥檷绾у埌搴曢儴锛?----
+// ---- Working folder section ----
 
 function SourcesSection({
   focusRequest,
@@ -1303,7 +1302,7 @@ function SourcesSection({
               {projectName}
             </span>
           </div>
-          {/* 2026-06-18: 宸ヤ綔鐩綍璺緞鍙偣鍑?鈫?鍦ㄦ枃浠剁鐞嗗櫒涓畾浣嶏紙鍚?璺緞涓嶅啀鏄鏂囨湰"涓绘棬锛夈€?*/}
+          {/* Clickable working folder path: reveal in the file manager. */}
           <button
             type="button"
             onClick={() => void revealPath(projectPath)}
@@ -1325,7 +1324,7 @@ function SourcesSection({
   );
 }
 
-// ---- Context锛堥檷绾у埌搴曢儴锛?----
+// ---- Context section ----
 
 function ContextSection({
   focusRequest,
@@ -1456,7 +1455,7 @@ function collectContextRefs(events: readonly SessionEvent[]): ContextRefs {
   };
 }
 
-// ---- 鍦嗙偣 svg-free 瀹炵幇 ----
+// ---- SVG-free status dots ----
 
 function CircleDone({ tiny = true }: { tiny?: boolean } = {}): JSX.Element {
   const size = tiny ? 'w-3 h-3' : 'w-4 h-4';
