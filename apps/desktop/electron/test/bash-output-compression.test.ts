@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { performance } from 'node:perf_hooks';
 import {
   parseBashOutputCompression,
   stripBashOutputRecoveryHint,
@@ -34,6 +35,23 @@ test('parseBashOutputCompression dedupes multiple filter markers', () => {
   assert.deepEqual(parseBashOutputCompression(result), {
     filters: ['package-manager-progress', 'lint'],
   });
+});
+
+test('parse/strip stay near-linear on adversarial large input (ReDoS guard)', () => {
+  // Repeated opening literals that never close would backtrack O(n^2) with an
+  // unbounded lazy quantifier before the long fixed suffix; the bounded, newline-
+  // excluded capture groups keep it near-linear. ~1 MB (above the 512 KiB
+  // tool_result ceiling) so a regression would freeze the renderer for seconds.
+  const rawHintAttack = '[Bash output compressed; full raw output saved to: '.repeat(20_000);
+  const filterAttack = '[Bash output compressed by '.repeat(40_000);
+  const start = performance.now();
+  assert.equal(parseBashOutputCompression(rawHintAttack), null); // never closes → no match
+  assert.equal(parseBashOutputCompression(filterAttack), null);
+  assert.ok(stripBashOutputRecoveryHint(rawHintAttack).length > 0);
+  const elapsedMs = performance.now() - start;
+  // Bounded form is ~tens of ms even at MBs; the unbounded regression was multiple
+  // seconds at this size. Generous threshold to stay non-flaky on loaded CI.
+  assert.ok(elapsedMs < 2_000, `bash-output-compression parse too slow (${elapsedMs.toFixed(0)}ms) — ReDoS?`);
 });
 
 test('stripBashOutputRecoveryHint removes only the raw-output hint', () => {
