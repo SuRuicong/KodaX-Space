@@ -1,6 +1,6 @@
 {
   "name": "@kodax-space/desktop",
-  "version": "0.1.27",
+  "version": "0.1.28",
   "description": "KodaX Space desktop app — Electron main + Vite renderer",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
-    "@kodax-ai/kodax": "0.7.60",
+    "@kodax-ai/kodax": "0.7.61",
     "@kodax-space/space-ipc-schema": "*",
     "@kodax-space/space-ui-kit": "*",
     "@monaco-editor/react": "^4.7.0",
@@ -27,8 +27,8 @@
     "monaco-editor": "^0.52.2",
     "node-pty": "^1.0.0",
     "pdfjs-dist": "^4.10.38",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
     "react-markdown": "^9.1.0",
     "recharts": "^3.8.1",
     "rehype-highlight": "^7.0.2",
@@ -38,8 +38,8 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
-    "@types/react": "^18.3.18",
-    "@types/react-dom": "^18.3.5",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
     "@types/yauzl": "^2.10.3",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",

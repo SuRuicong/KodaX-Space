@@ -2,7 +2,7 @@
 
 > Provider-neutral, local-first AI agent desktop client — KodaX 生态桌面客户端
 
-[![status](https://img.shields.io/badge/status-released-green)]() [![license](https://img.shields.io/badge/license-Apache--2.0-blue)]() [![version](https://img.shields.io/badge/version-0.1.22-blue)]()
+[![status](https://img.shields.io/badge/status-released-green)]() [![license](https://img.shields.io/badge/license-Apache--2.0-blue)]() [![version](https://img.shields.io/badge/version-0.1.28-blue)]()
 
 KodaX Space 是 [KodaX](../KodaX) 生态的 Electron 桌面客户端。对标 Anthropic Claude Desktop 中的 Claude Code，Provider 中立、开源、本地优先（[ADR-004](docs/ADR/ADR-004-panel-model.md)）。
 

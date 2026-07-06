@@ -15,6 +15,11 @@ import { FileOutput, Maximize2 } from 'lucide-react';
 import { ToolDiffView } from './ToolDiffView.js';
 import { registerToolInputRenderer, registerToolResultRenderer } from './toolRegistry.js';
 import { useAppStore } from '../../../store/appStore.js';
+import { openFileSmart } from '../../../lib/openPath.js';
+import {
+  parseBashOutputCompression,
+  stripBashOutputRecoveryHint,
+} from './bashOutputCompression.js';
 
 /** 工具：从 input record 里抽 string 字段（其它类型当成不存在）。 */
 function pickString(o: Record<string, unknown> | undefined, key: string): string | null {
@@ -22,6 +27,57 @@ function pickString(o: Record<string, unknown> | undefined, key: string): string
   const v = o[key];
   return typeof v === 'string' ? v : null;
 }
+
+// ---- bash result (KodaX 0.7.61 compressed output) ----
+
+function BashCompressedResult({
+  result,
+  rawOutputPath,
+  filters,
+}: {
+  readonly result: string;
+  readonly rawOutputPath?: string;
+  readonly filters: readonly string[];
+}): JSX.Element {
+  const visibleResult = stripBashOutputRecoveryHint(result);
+  const label = filters.length > 0 ? filters.join(', ') : 'compressed';
+  return (
+    <section className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[11px] text-fg-muted uppercase">
+          result <span className="normal-case text-info/80">compressed</span>
+          <span className="normal-case text-fg-muted"> / {label}</span>
+        </div>
+        {rawOutputPath && (
+          <button
+            type="button"
+            onClick={() => void openFileSmart(rawOutputPath)}
+            title={rawOutputPath}
+            className="inline-flex items-center gap-1 text-[11px] text-info/80 hover:text-info min-w-0"
+          >
+            <FileOutput className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={1.75} aria-hidden />
+            <span className="truncate">Raw output</span>
+          </button>
+        )}
+      </div>
+      <pre className="text-xs whitespace-pre-wrap break-all max-h-64 overflow-auto text-ok">
+        {visibleResult}
+      </pre>
+    </section>
+  );
+}
+
+registerToolResultRenderer('bash', ({ result }) => {
+  const compression = parseBashOutputCompression(result);
+  if (!compression) return null;
+  return (
+    <BashCompressedResult
+      result={result}
+      rawOutputPath={compression.rawOutputPath}
+      filters={compression.filters}
+    />
+  );
+});
 
 // ---- write ----
 

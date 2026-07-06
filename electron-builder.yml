@@ -57,6 +57,7 @@ files:
   - '!**/__mocks__/**'
   - '!**/*.{md,markdown}'
   - '!**/*.map'
+  - '!**/*.pdb'
   - '!**/.bin/**'
   - '!**/*.{ts,tsx,scss,less}'
   # 安全兜底：放宽目录排除后，显式挡掉任何依赖里可能夹带的凭据文件（避免被打进 asar 安装包）。
@@ -79,14 +80,31 @@ electronLanguages:
 extraResources:
   - from: resources/kodax-license-policy.json
     to: kodax-license-policy.json
+  # Built-in Terminal uses node-pty from the desktop workspace. Keeping it as an
+  # extra resource avoids electron-builder trying to rebuild this workspace-only
+  # native dependency while still placing it on Node's runtime module path
+  # (resources/node_modules) for require('node-pty') from app.asar.
+  - from: node_modules/node-pty
+    to: node_modules/node-pty
+    filter:
+      - 'package.json'
+      - 'lib/**/*'
+      - 'prebuilds/**/*'
+      - 'build/Release/*.node'
+      - 'build/Release/conpty/**/*'
+      - 'build/Release/spawn-helper'
+      - 'build/Release/winpty-agent.exe'
+      - 'build/Release/winpty.dll'
+      - '!prebuilds/**/*.pdb'
+      - '!**/*.map'
+      - '!**/*.{md,markdown}'
+      - '!**/*.{ts,tsx}'
 
 # build:smoke 已经把 renderer + main 全 bundle 进 dist*。
 # native 模块（keytar 等）走 asarUnpack——asar 内 require .node 会失败
-# node-pty (F011) 还需要 conpty/winpty 的辅助二进制 (.exe/.dll) 在 fs 可读位置
 asarUnpack:
   - '**/*.node'
   - '**/node_modules/@napi-rs/keyring-*/**'
-  - '**/node_modules/node-pty/**'
   - '**/node_modules/better-sqlite3/**'
   # Keep better-sqlite3's native-binding resolver chain on the filesystem next to
   # the unpacked .node (tiny: ~25 KB) so require('bindings') never has to cross

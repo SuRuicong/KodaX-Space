@@ -11,7 +11,7 @@
 //
 // 不 streaming 且不 pending 时 return null，所以挂在 BottomBar 里零成本。
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type JSX as ReactJSX } from 'react';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 
@@ -261,7 +261,7 @@ function resolveStartedAtMemo(events: readonly SessionEvent[]): number {
   return now;
 }
 
-export function ActivitySpinner(): JSX.Element | null {
+export function ActivitySpinner(): ReactJSX.Element | null {
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const events = useAppStore((s) =>
     currentSessionId ? (s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS) : EMPTY_EVENTS,

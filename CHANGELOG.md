@@ -14,6 +14,29 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 
 ## [Unreleased]
 
+## [0.1.28] - 2026-07-06
+
+### Theme
+
+**React 19 upgrade + KodaX 0.7.61 SDK catch-up — with a packaged-build Terminal fix (node-pty) and bash-output-compression rendering, plus a full documentation refresh.**
+
+This release upgrades the renderer to React 19, catches up to KodaX SDK `0.7.61`, surfaces the SDK's new bash-output compression in the tool cards, and fixes the built-in Terminal in packaged installers. Documentation was refreshed across the per-version feature docs, `FEATURE_LIST`, and a new Chinese user manual.
+
+### Changed
+
+- **React 19** - The desktop renderer and `@kodax-space/space-ui-kit` now run on React `19.2.7` / react-dom `19.2.7` (up from 18.3), with `@types/react` / `@types/react-dom` on 19.x and the UI-kit's React peer range widened to `^18.0.0 || ^19.0.0`. A small ambient `JSX`-namespace shim (`apps/desktop/renderer/src/types/react-jsx-compat.d.ts`) preserves the pre-19 global `JSX.Element` types the renderer relies on, so the upgrade is type-transparent to existing components.
+- **KodaX 0.7.61 SDK catch-up** - Root and desktop workspaces resolve `@kodax-ai/kodax` `0.7.61`.
+- **Smaller installer** - `.pdb` native debug symbols are excluded from the packaged bundle.
+
+### Added
+
+- **Bash output compression surfaced in tool cards** - When KodaX (`0.7.61`) compresses a bash tool's output, the tool card now shows a "compressed" marker with the filter(s) that applied, and — when the full raw output was saved to disk — a clickable link to open it. The recovery-hint boilerplate is stripped from the displayed result so the card stays clean.
+- **Chinese user manual** - A new `docs/USER_MANUAL.zh-CN.md`, alongside a refreshed pass over the per-version feature docs and `docs/FEATURE_LIST.md`.
+
+### Fixed
+
+- **Built-in Terminal works in packaged installers** - `node-pty` and its conpty/winpty helper binaries are now shipped under `resources/node_modules/node-pty` on Node's runtime module path, instead of being left to electron-builder's native rebuild (which skips this workspace-only dependency and left the packaged Terminal unable to spawn a shell). `scripts/smoke-pack.mjs` now asserts the node-pty prebuilds are present in the built installer so this can't silently regress.
+
 ## [0.1.27] - 2026-07-05
 
 ### Theme

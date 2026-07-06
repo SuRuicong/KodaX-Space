@@ -1,7 +1,7 @@
 # F067 — LiveCanvas Artifact Sandbox 重新集成（交互 React tier）
 
 > Status: **Blocked**（blocked on LiveCanvas 包结构稳定）
-> Category: New · Priority: Medium · Version: v0.2.5
+> Category: New · Priority: Medium · Version: v0.2.9
 > 关联记忆：`livecanvas_artifact_plan`、`recharts_v3_and_lc_sandbox_bridge_block`
 
 ## 背景：为什么先被移除（2026-06-17）

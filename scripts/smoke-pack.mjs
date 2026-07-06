@@ -100,6 +100,53 @@ function keyringNativePatternForAsar(asarPath) {
   return /keyring\..+\.node$/;
 }
 
+function nodePtyRuntimePatternsForAsar(asarPath) {
+  const normalizedPath = asarPath.replace(/\\/g, '/');
+  let platform = process.platform;
+  let arch = process.arch;
+
+  if (normalizedPath.includes('/win-unpacked/')) {
+    platform = 'win32';
+    arch = 'x64';
+  } else if (normalizedPath.includes('/linux-unpacked/')) {
+    platform = 'linux';
+    arch = 'x64';
+  } else if (normalizedPath.includes('/mac-arm64/')) {
+    platform = 'darwin';
+    arch = 'arm64';
+  } else if (normalizedPath.includes('/mac/')) {
+    platform = 'darwin';
+    const macArtifacts = safeReadOutEntries().filter((name) => /\.dmg$/i.test(name));
+    const hasArm64Dmg = macArtifacts.some((name) => /-arm64\.dmg$/i.test(name));
+    const hasX64Dmg = macArtifacts.some((name) => /-x64\.dmg$/i.test(name));
+    if (hasArm64Dmg && !hasX64Dmg) arch = 'arm64';
+    else if (hasX64Dmg && !hasArm64Dmg) arch = 'x64';
+  }
+
+  if (platform === 'win32') {
+    const dir = arch === 'arm64' ? 'win32-arm64' : 'win32-x64';
+    return [
+      new RegExp(`/node_modules/node-pty/prebuilds/${dir}/conpty\\.node$`),
+      new RegExp(`/node_modules/node-pty/prebuilds/${dir}/pty\\.node$`),
+      new RegExp(`/node_modules/node-pty/prebuilds/${dir}/conpty/conpty\\.dll$`),
+      new RegExp(`/node_modules/node-pty/prebuilds/${dir}/conpty/OpenConsole\\.exe$`),
+    ];
+  }
+
+  if (platform === 'darwin') {
+    const dir = arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64';
+    return [
+      new RegExp(`/node_modules/node-pty/prebuilds/${dir}/pty\\.node$`),
+      new RegExp(`/node_modules/node-pty/prebuilds/${dir}/spawn-helper$`),
+    ];
+  }
+
+  return [
+    /\/node_modules\/node-pty\/build\/Release\/pty\.node$/,
+    /\/node_modules\/node-pty\/build\/Release\/spawn-helper$/,
+  ];
+}
+
 function safeReadOutEntries() {
   try {
     return readdirSync(outDir);
@@ -229,6 +276,10 @@ async function checkAsarContents(asarPath) {
   const unpackedFiles = (await pathExists(unpackedDir))
     ? (await listFilesRecursive(unpackedDir)).map((f) => f.replace(/\\/g, '/'))
     : [];
+  const resourceNodeModulesDir = path.join(path.dirname(asarPath), 'node_modules');
+  const resourceNodeModuleFiles = (await pathExists(resourceNodeModulesDir))
+    ? (await listFilesRecursive(resourceNodeModulesDir)).map((f) => f.replace(/\\/g, '/'))
+    : [];
   const hasKeyringNativeUnpacked = unpackedFiles.some(
     (f) => /\/node_modules\/@napi-rs\/keyring-[^/]+\/.+\.node$/.test(f) && nativePattern.test(f),
   );
@@ -267,6 +318,33 @@ async function checkAsarContents(asarPath) {
   // 只有 jest 约定的 __tests__/__mocks__ 才该被排除；它们若出现说明排除 glob 没生效（仅 WARN，体积问题）。
   // 注意：doc/docs/test/example 这类目录现在是“故意保留”的（可能是包的运行时代码），不再当泄漏报警。
   const leaks = normalized.filter((f) => /\/(__tests__|__mocks__)\//.test(f));
+
+  // Terminal runtime: node-pty is required dynamically from the Electron main
+  // process. It comes from the desktop workspace, so root-level packaging must
+  // explicitly include it and unpack native bits.
+  const allPackagedFiles = [...normalized, ...unpackedFiles, ...resourceNodeModuleFiles];
+  const hasNodePtyEntrypoint = allPackagedFiles.some((f) =>
+    /\/node_modules\/node-pty\/lib\/index\.js$/.test(f),
+  );
+  if (!hasNodePtyEntrypoint) {
+    fail(
+      'node-pty JS runtime missing from package. Built-in Terminal will fail ' +
+        'with "Cannot find module node-pty".',
+    );
+  }
+  ok('node-pty JS runtime present');
+
+  const nativeFilesystemFiles = [...unpackedFiles, ...resourceNodeModuleFiles];
+  for (const pattern of nodePtyRuntimePatternsForAsar(asarPath)) {
+    if (!nativeFilesystemFiles.some((f) => pattern.test(f))) {
+      fail(
+        `node-pty native runtime missing from filesystem resources (expected ${pattern}). ` +
+          'Built-in Terminal cannot create a PTY.',
+      );
+    }
+  }
+  ok('node-pty native runtime present in filesystem resources');
+
   if (leaks.length > 0) {
     console.warn(
       `[smoke-pack] WARN: ${leaks.length} __tests__/__mocks__ paths leaked into asar (first 5):`,

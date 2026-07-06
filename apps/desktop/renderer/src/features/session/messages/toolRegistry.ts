@@ -12,6 +12,8 @@
 // 现状：input 侧 v0.1.8 接 write/edit/multi_edit；result 侧 v0.1.9 开放 registry 但暂不注册
 // 内置（保持现有 JSON dump 行为）。未来可加 bash terminal-style / grep file-list 等专用渲染。
 
+import type { JSX as ReactJSX } from 'react';
+
 // ---- input ----
 
 export interface ToolInputRendererArgs {
@@ -20,7 +22,7 @@ export interface ToolInputRendererArgs {
 }
 
 /** Pure function — 返 null 让 caller 回退 raw-JSON collapse 视图。 */
-export type ToolInputRenderer = (args: ToolInputRendererArgs) => JSX.Element | null;
+export type ToolInputRenderer = (args: ToolInputRendererArgs) => ReactJSX.Element | null;
 
 const inputRegistry = new Map<string, ToolInputRenderer>();
 
@@ -55,7 +57,7 @@ export interface ToolResultRendererArgs {
 }
 
 /** Pure function — 返 null 让 caller 回退 raw-text collapse 视图。 */
-export type ToolResultRenderer = (args: ToolResultRendererArgs) => JSX.Element | null;
+export type ToolResultRenderer = (args: ToolResultRendererArgs) => ReactJSX.Element | null;
 
 const resultRegistry = new Map<string, ToolResultRenderer>();
 

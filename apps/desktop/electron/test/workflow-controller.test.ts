@@ -1016,6 +1016,35 @@ test('start: builtin workflow resolves via real SDK + startFromOptions + origin 
   }
 });
 
+test('start: SDK pre-start workflow failure returns error without origin registration', async () => {
+  const { dir, file } = freshFile();
+  try {
+    const ctrl = new WorkflowController(() => {}, file);
+    const mgr = fakeManager();
+    let capturedRunId = '';
+    mgr.startFromOptions = (input) => {
+      capturedRunId = String((input as { runId?: unknown }).runId ?? '');
+      mgr._seed(sampleSnapshot(capturedRunId));
+      throw new Error('workflow capsule preflight failed: unawaited wf.runAgent result');
+    };
+    await ctrl.init(mgr);
+
+    const res = await ctrl.start({
+      target: 'parallel-investigation',
+      source: 'builtin',
+      session: LAUNCH_SESSION,
+    });
+
+    assert.deepEqual(res, {
+      error: 'workflow capsule preflight failed: unawaited wf.runAgent result',
+    });
+    assert.ok(capturedRunId.startsWith('wf_'));
+    assert.equal(ctrl.get(capturedRunId)?.sessionId, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('start: unknown builtin returns error (no run started)', async () => {
   const { dir, file } = freshFile();
   try {
