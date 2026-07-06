@@ -28,6 +28,11 @@ import {
   replaceActiveSlashCompletion,
   shouldOpenSlashCompletion,
 } from './slashInput.js';
+import {
+  parseLegacySkillToken,
+  safeSkillSlashText,
+  skillSlashEchoText,
+} from './skillSlash.js';
 import { registerInsertReceiver } from './inputBridge.js';
 import { resolveSessionCreateInputs } from './createSession.js';
 import { useIsStreaming } from './ActivitySpinner.js';
@@ -1723,21 +1728,30 @@ export function BottomBar(): JSX.Element {
         appendUserMessage(sessionId, '[skills] no project / IPC unavailable');
         return;
       }
-      const r = await invokeComposerIpc('skill.discover', {
-        projectRoot: currentProjectPath,
-        forceReload: true,
-      });
-      if (!r.ok) {
-        appendUserMessage(sessionId, `[skills] discover failed: ${r.error?.message ?? 'unknown'}`);
+      const [skillsResult, commandsResult] = await Promise.all([
+        invokeComposerIpc('skill.discover', {
+          projectRoot: currentProjectPath,
+          forceReload: true,
+        }),
+        invokeComposerIpc('slash.discover', undefined),
+      ]);
+      if (!skillsResult.ok) {
+        appendUserMessage(
+          sessionId,
+          `[skills] discover failed: ${skillsResult.error?.message ?? 'unknown'}`,
+        );
         return;
       }
-      const lines = [`[skills] ${r.data.skills.length} skill(s):`];
-      if (r.data.skills.length === 0) lines.push('  none found');
-      for (const skill of r.data.skills.slice(0, 40)) {
+      const commands = commandsResult.ok ? commandsResult.data.commands : [];
+      const lines = [`[skills] ${skillsResult.data.skills.length} skill(s):`];
+      if (skillsResult.data.skills.length === 0) lines.push('  none found');
+      for (const skill of skillsResult.data.skills.slice(0, 40)) {
         const hint = skill.argumentHint ? ` ${skill.argumentHint}` : '';
-        lines.push(`  /skill:${skill.name}${hint}  ${skill.description}`);
+        lines.push(`  ${safeSkillSlashText(skill.name, commands)}${hint}  ${skill.description}`);
       }
-      if (r.data.skills.length > 40) lines.push(`  ... ${r.data.skills.length - 40} more`);
+      if (skillsResult.data.skills.length > 40) {
+        lines.push(`  ... ${skillsResult.data.skills.length - 40} more`);
+      }
       appendUserMessage(sessionId, lines.join('\n'));
       return;
     }
@@ -1766,7 +1780,7 @@ export function BottomBar(): JSX.Element {
       setErr(error ?? `skill /${name} failed`);
       return;
     }
-    const skillEcho = `/skill:${name} ${args.join(' ')}`.trim();
+    const skillEcho = skillSlashEchoText(name, args);
     const queuedLocalId = isStreaming
       ? appendQueuedUserMessage(sessionId, {
           content: skillEcho,
@@ -1834,7 +1848,7 @@ export function BottomBar(): JSX.Element {
           : token.toLowerCase() === 'workflow'
             ? tokenizeWorkflowArgs(rest)
             : tokenizeArgs(rest);
-      const skillNamespaceMatch = token.match(/^skill:(.+)$/);
+      const legacySkillName = parseLegacySkillToken(token);
       setBusy(true);
       let sid: string | null = null;
       try {
@@ -1847,11 +1861,11 @@ export function BottomBar(): JSX.Element {
       setPendingImages([]);
       setPendingFileRefs([]);
       setImageErr(null);
-      if (skillNamespaceMatch) {
+      if (legacySkillName) {
         setBusy(true);
         setErr(null);
         try {
-          await invokeSkill(sid, skillNamespaceMatch[1]!, args, queueMode);
+          await invokeSkill(sid, legacySkillName, args, queueMode);
         } finally {
           setBusy(false);
         }
@@ -2002,7 +2016,7 @@ export function BottomBar(): JSX.Element {
         : item.kind === 'slash-arg'
           ? item.insertText
         : item.kind === 'skill'
-          ? `/skill:${item.meta.name} `
+          ? item.insertText
           : `/${item.meta.name} `;
     const replacement =
       activeSlash !== null

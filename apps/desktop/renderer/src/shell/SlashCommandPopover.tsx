@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ProviderInfo, SessionMeta, SlashCommandMeta, SkillMeta, WorkflowRunT } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
+import { safeSkillSlashText, skillSlashInsertText } from './skillSlash.js';
 
 /**
  * 统一的 picker 项类型——把 slash command 和 skill 合并成一个列表。
@@ -18,7 +19,12 @@ import { useAppStore } from '../store/appStore.js';
  */
 export type SlashPickerItem =
   | { readonly kind: 'slash'; readonly meta: SlashCommandMeta }
-  | { readonly kind: 'skill'; readonly meta: SkillMeta }
+  | {
+      readonly kind: 'skill';
+      readonly meta: SkillMeta;
+      readonly displayName: string;
+      readonly insertText: string;
+    }
   | {
       readonly kind: 'workflow';
       readonly label: string;
@@ -522,7 +528,12 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
         if (cancelled) return;
         const merged: SlashPickerItem[] = [
           ...cmds.map((c): SlashPickerItem => ({ kind: 'slash', meta: c })),
-          ...skills.map((s): SlashPickerItem => ({ kind: 'skill', meta: s })),
+          ...skills.map((s): SlashPickerItem => ({
+            kind: 'skill',
+            meta: s,
+            displayName: safeSkillSlashText(s.name, cmds),
+            insertText: skillSlashInsertText(s.name, cmds),
+          })),
         ];
         merged.sort((a, b) => pickerItemName(a).localeCompare(pickerItemName(b)));
         setItems(merged);
@@ -559,11 +570,11 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
     setSelectedIdx(0);
   }, [props.query]);
 
-  // v0.1.10 fix: 跟 KodaX REPL 对齐 — `/skill:<name>` 显式 namespace skill。
+  // KodaX skills can be invoked directly as `/<name>`.
   // Filter 模式两条:
-  //   - 用户输入 `/skill:<前缀>` → 只列 skills, 前缀匹配 skill name
+  //   - 用户输入 `/skill:<前缀>` → 兼容旧 namespace, 只列 skills
   //   - 用户输入 `/<前缀>`        → 同时列 slash commands + skills (前缀匹配 name)
-  // 这样 KodaX 老用户的 `/skill:foo` muscle memory work, Space 用户的 `/foo` 也 work。
+  // 默认补全和展示使用 `/<name>`; 和 slash command 重名时回退 `/skill:<name>` 防止误执行。
   const queryLower = props.query.toLowerCase();
   const skillNamespaceMatch = queryLower.match(/^\/skill:(.*)$/);
   const skillOnlyMode = skillNamespaceMatch !== null;
@@ -643,7 +654,7 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
         const displayName = item.kind === 'workflow' || item.kind === 'slash-arg'
           ? item.label
           : item.kind === 'skill'
-            ? `/skill:${item.meta.name}`
+            ? item.displayName
             : `/${item.meta.name}`;
         return (
           <div
@@ -669,8 +680,7 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
                     : 'text-warn'
               }`}
             >
-              {/* v0.1.10 fix: skill 显示成 `/skill:<name>` 对齐 KodaX REPL namespace;
-                  slash command 仍 `/<name>` 紧凑显示 */}
+              {/* Skill names may use /skill:name when needed to avoid command conflicts. */}
               {displayName}
             </span>
             {argsHint && <span className="text-[11px] text-fg-faint font-mono">{argsHint}</span>}

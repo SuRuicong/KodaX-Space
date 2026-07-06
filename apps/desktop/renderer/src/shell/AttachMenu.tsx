@@ -30,11 +30,12 @@ import {
   ChevronLeft,
   type LucideIcon,
 } from 'lucide-react';
-import type { McpServerMeta, SkillMeta } from '@kodax-space/space-ipc-schema';
+import type { McpServerMeta, SkillMeta, SlashCommandMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 import { Caret } from '../components/Caret.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import type { MessageKey } from '../i18n/messages.js';
+import { safeSkillSlashText, skillSlashInsertText } from './skillSlash.js';
 
 interface AttachMenuProps {
   open: boolean;
@@ -58,6 +59,7 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
   const [sub, setSub] = useState<SubMenu>('root');
   const [mcpServers, setMcpServers] = useState<readonly McpServerMeta[] | null>(null);
   const [skills, setSkills] = useState<readonly SkillMeta[] | null>(null);
+  const [slashCommands, setSlashCommands] = useState<readonly SlashCommandMeta[]>([]);
   const [discoverErr, setDiscoverErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -65,6 +67,7 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
       setSub('root');
       setMcpServers(null);
       setSkills(null);
+      setSlashCommands([]);
       setDiscoverErr(null);
       return;
     }
@@ -130,11 +133,15 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
     }
     setSub('skills');
     setDiscoverErr(null);
-    const r = await window.kodaxSpace.invoke('skill.discover', { projectRoot: currentProjectPath });
-    if (r.ok) {
-      setSkills(r.data.skills);
+    const [skillsResult, commandsResult] = await Promise.all([
+      window.kodaxSpace.invoke('skill.discover', { projectRoot: currentProjectPath }),
+      window.kodaxSpace.invoke('slash.discover', undefined),
+    ]);
+    setSlashCommands(commandsResult.ok ? commandsResult.data.commands : []);
+    if (skillsResult.ok) {
+      setSkills(skillsResult.data.skills);
     } else {
-      setDiscoverErr(r.error?.message ?? t('attach.loadSkillsFailed'));
+      setDiscoverErr(skillsResult.error?.message ?? t('attach.loadSkillsFailed'));
     }
   }
 
@@ -204,15 +211,14 @@ export function AttachMenu({ open, onClose, onInsertText }: AttachMenuProps): JS
             key={`${sk.source}:${sk.name}`}
             type="button"
             onClick={() => {
-              // 插 `/skill:<name> ` —— 与 `/` 补全弹窗 + KodaX REPL namespace 一致
-              // （handleSend 认 `/skill:` 前缀直接走 invokeSkill）。带尾空格让用户接着补 args。
-              onInsertText(`/skill:${sk.name} `);
+              // Insert a skill trigger, falling back to /skill:name for command-name conflicts.
+              onInsertText(skillSlashInsertText(sk.name, slashCommands));
               onClose();
             }}
             className="w-full text-left px-3 py-1.5 hover:bg-hover-bg flex items-center gap-2 text-xs"
             title={`${sk.path} (${sk.source})`}
           >
-            <code className="text-ok font-mono">/skill:{sk.name}</code>
+            <code className="text-ok font-mono">{safeSkillSlashText(sk.name, slashCommands)}</code>
             <span className="text-fg-muted truncate flex-1">{sk.description}</span>
             <span className="text-[11px] text-fg-faint">{sk.source}</span>
           </button>
