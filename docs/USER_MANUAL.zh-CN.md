@@ -1,24 +1,36 @@
 # KodaX Space 用户说明书
 
-适用版本：KodaX Space 0.1.27  
-更新日期：2026-07-05  
-适用对象：首次使用 KodaX Space 的开发者、技术团队成员、代码相关知识工作者。
+适用版本：KodaX Space 0.1.28
 
-## 1. 产品简介
+更新日期：2026-07-07
 
-KodaX Space 是 KodaX 的桌面客户端。它把 KodaX 的代码理解、对话、工具调用、权限确认、工作流、文件预览和本地知识能力放到一个图形化桌面工作台里。
+适用对象：首次使用或评审 KodaX Space 的开发者、技术团队成员、代码相关知识工作者。
 
-你可以把它理解为一个本地优先的 AI Agent 工作台：
+## 1. 产品定位
 
-- 支持多个 LLM Provider，不锁定 Anthropic 或 OpenAI。
-- 默认围绕本机项目目录工作，不把文件强制上传到云端服务。
-- 可以打开项目、创建会话、审阅工具调用、查看 Diff、运行工作流。
-- 支持图片粘贴、文件拖入、PDF/docx/xlsx 预览、内置终端和命令面板。
-- 复用 KodaX CLI 的部分配置、MCP、AGENTS.md 和会话历史。
+KodaX Space 是 KodaX 的本地优先桌面 AI Agent 工作台。它把项目、会话、模型、工具调用、权限确认、工作流、文件预览、Artifact 产物、MCP 扩展和记忆治理放在同一个 Electron 桌面界面里。
 
-## 2. 安装与启动
+你可以把它理解为“围绕本机项目工作的 AI 协作者”：
 
-### 2.1 下载安装包
+- 不锁定单一模型服务商，可配置内置或自定义 Provider。
+- 默认以本地项目目录为工作边界，围绕项目文件、git 状态和会话历史工作。
+- 写文件、运行命令、调用有副作用的工具前受权限模式和确认弹窗控制。
+- 右侧 Task Dock 和 popout 面板把 Plan、Diff、Tasks、Terminal、Preview、MCP、Memory、Workflow、Artifact 等状态从聊天流里分离出来。
+- 复用 KodaX SDK/CLI 的 session、skill、MCP、AGENTS.md 和部分配置。
+
+## 2. `kodax_manual` 是什么
+
+`kodax_manual` 是应用内 AI 可调用的自说明手册。当你在 Space 里问“这个工具怎么用”“右侧面板是什么”“怎么配置 provider”“为什么 Partner 点不了”时，AI 会通过它核对 Space 当前的能力和 UI 交互。
+
+所以它可以算是工具的“自查手册”，但更精确地说：
+
+- 它是 AI 面向的产品能力说明和交互索引。
+- 它帮助 AI 避免用 SDK/CLI 的说法回答桌面端 UI 问题。
+- 它不是完整 QA 测试用例，也不能替代发布检查、安全评审或人工验收。
+
+这份中文说明书是人读版；`apps/desktop/electron/kodax/space-manual-topics.ts` 是注入给 SDK `kodax_manual` 的机读版。
+
+## 3. 安装与启动
 
 从项目 Release 页面下载安装包：
 
@@ -32,19 +44,9 @@ KodaX Space 是 KodaX 的桌面客户端。它把 KodaX 的代码理解、对话
 | macOS   | `.dmg`                                                                                   |
 | Linux   | `AppImage` 或 `.deb`                                                                     |
 
-### 2.2 首次打开的系统提示
+当前安装包未做公开发行签名，首次打开可能出现系统安全提示。请只从可信来源获取安装包。Windows SmartScreen 可选择“更多信息”后继续运行；macOS 可右键应用选择“打开”；Linux AppImage 可能需要添加可执行权限。
 
-当前安装包未做公开发行签名，因此首次打开可能出现系统安全提示。
-
-- Windows SmartScreen：点击“更多信息”，确认来源后选择“仍要运行”。
-- macOS Gatekeeper：右键应用选择“打开”，或在系统设置的安全与隐私里允许打开。
-- Linux：如使用 AppImage，可能需要先给文件添加可执行权限。
-
-请只从可信来源获取安装包。若你是企业用户，请以团队内部发布渠道为准。
-
-### 2.3 源码方式启动
-
-如果你是内部测试或开发用户，也可以从源码启动：
+源码开发方式：
 
 ```bash
 git clone https://github.com/icetomoyo/KodaX-Space.git
@@ -53,435 +55,435 @@ npm install --include=dev
 npm run dev
 ```
 
-打开窗口后即可开始配置。
-
-## 3. 5 分钟快速上手
-
-按下面步骤完成第一次可用配置。
+## 4. 5 分钟快速上手
 
 1. 打开 KodaX Space。
-2. 选择界面语言：进入 `Settings` → `Preferences` → `Language`，选择 `简体中文`、`English` 或 `Follow system`。
-3. 打开项目目录：在左侧项目区选择 `Open` 或输入框提示的 `Open a folder first`，选择一个本地项目目录。
-4. 配置模型服务：进入 `Settings` → `Providers`，选择一个 Provider，填入 API Key，点击 `Test` 测试连接。
-5. 设为默认 Provider：测试成功后，可点击 `Set default`。
-6. 回到输入框，输入你的第一个任务，例如：
+2. 进入 `Settings` -> `Preferences`，选择界面语言和默认 workspace。
+3. 打开项目目录。项目目录会成为会话的工作目录，也是工具读写文件的边界。
+4. 进入 `Settings` -> `Providers`，选择 Provider，填入 API Key，点击 `Test`，需要时设为默认。
+5. 新建或选择一个 session，在底部 composer 输入任务并发送。
+
+示例任务：
 
 ```text
-请阅读这个项目的 README，并告诉我如何启动它。
+请阅读这个项目的 README 和 package.json，告诉我如何启动它。
 ```
 
-发送后，KodaX Space 会自动创建会话，并在主界面显示 AI 回复、工具调用、工作进度和相关产物。
+发送后，中央 transcript 会显示模型回复和工具调用；右侧 Task Dock 会汇总运行状态、计划、变更、上下文和产物。
 
-## 4. 核心概念
+## 5. 界面总览
 
-### 4.1 Project 项目
+KodaX Space 主界面由这些区域组成：
 
-Project 是 KodaX Space 的工作目录。打开项目后，AI 才能围绕该目录读取文件、分析代码、生成修改建议或运行命令。
+| 区域            | 用途                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------ |
+| 左侧栏          | 项目列表、最近 session、归档项目、会话切换与项目操作                                 |
+| 顶部            | Environment Hub、activity popout 入口、Settings、Handoff inbox、全局状态             |
+| 中央 transcript | 用户消息、模型回复、工具卡片、权限状态、Artifact 卡片、运行事件                      |
+| 右侧 Task Dock  | Run、Plan、Agents、Workflow、Changes、Sources、Artifacts、Context 的当前状态概览     |
+| 底部 composer   | 输入任务、添加文件/图片、选择模型、权限模式、agent mode、reasoning effort            |
+| popout/overlay  | Preview、Diff、Terminal、Agents、MCP、Memory、Workflow、Plan、Tasks、Artifact 等详情 |
 
-建议每次只打开你希望 AI 操作的项目根目录，避免把无关目录暴露给工具。
+按 `?` 可打开应用内帮助；按 `Ctrl/Cmd+Shift+P` 可打开命令面板。
 
-### 4.2 Session 会话
+## 6. 项目与会话
 
-Session 是你和 AI 围绕一个项目进行的一段连续对话。会话会保留上下文、标题、工具调用记录和历史消息。
+Project 是本地工作目录。建议选择项目根目录，而不是过大的父目录。
+
+Session 是围绕某个项目的一段连续对话。它保存上下文、工具调用、模型状态、Artifact、Workflow、Plan/Diff/Tasks 等历史。
 
 常见操作：
 
-- 新建会话：发送第一条消息或使用 `/new`。
-- 切换历史会话：在左侧 Sessions 列表点击。
-- 复制、重命名、删除、Fork、Rewind：通过会话菜单或右键菜单操作。
+- 打开项目：左侧栏或启动页选择本地目录。
+- 新建会话：左侧项目区、`/new`、命令面板或发送第一条任务。
+- 切换会话：左侧最近会话，或命令面板搜索 session。
+- 管理会话：重命名、删除、Fork、Rewind，可通过菜单或 `/sessions`、`/load`、`/delete`、`/fork`、`/rewind` 等命令。
+- 归档项目：左侧项目菜单归档，减少列表干扰。
 
-### 4.3 Provider 与 Model
+## 7. Provider、Model 与 Reasoning
 
-Provider 是模型服务商，例如 Anthropic、OpenAI、DeepSeek、Kimi、Qwen、Zhipu、Gemini CLI、Codex CLI 等。Model 是具体模型。
+打开 `Settings` -> `Providers` 配置模型服务：
 
-KodaX Space 支持内置 Provider，也支持添加自定义 Provider。自定义 Provider 可选择 OpenAI 兼容或 Anthropic 兼容协议，并配置 Base URL、默认模型和推理强度。
+- 添加或更新 API Key。
+- 点击 `Test` 验证连接。
+- 设置默认 Provider。
+- 添加自定义 Provider。
+- 查看 key 来源、默认模型和配置状态。
 
-### 4.4 Permission Mode 权限模式
+API Key 会优先保存到系统 Keychain；Keychain 不可用时会退回临时内存状态。
 
-KodaX Space 有三种权限模式：
+自定义 Provider 支持 OpenAI-compatible 和 Anthropic-compatible 协议。通常需要填写：
 
-| 模式         | 适合场景                     | 行为                                   |
-| ------------ | ---------------------------- | -------------------------------------- |
-| Plan         | 只想让 AI 分析、计划、读文件 | 尽量只读，不直接写入文件               |
-| Accept edits | 日常推荐                     | 涉及写文件、执行命令等操作时，由你确认 |
-| Auto         | 熟悉项目和规则后使用         | 根据规则或模型判断自动放行部分操作     |
+- Display name
+- Protocol
+- Base URL
+- Credential/API Key 或环境变量名
+- Default model
+- 可选模型列表
+- 可选 reasoning effort 声明
 
-快捷方式：
-
-- `Shift+Tab`：循环切换权限模式。
-- `Ctrl+M`：打开权限模式选择器。
-- `/mode plan`、`/mode accept-edits`、`/mode auto`：用命令切换。
-
-### 4.5 Artifact 产物
-
-Artifact 是 AI 生成的可查看成果，例如报告、HTML、图表、代码片段或交互式 HTML。产物会出现在右侧 Artifact 面板，也可能在对话中以可点击卡片显示。
-
-### 4.6 Workflow 工作流
-
-Workflow 用于多步骤任务，例如生成方案、拆解任务、复盘结果、管理长流程。当前 Workflow 入口在 Coder 面中使用，Partner 面暂不可用。
-
-你可以通过 `/workflow` 查看和启动相关能力。
-
-## 5. Provider 配置
-
-### 5.1 添加 API Key
-
-1. 打开 `Settings`。
-2. 进入 `Providers`。
-3. 找到要使用的 Provider。
-4. 点击 `Add key` 或 `Update key`。
-5. 粘贴 API Key。
-6. 点击 `Save key`。
-7. 点击 `Test`，确认连接成功。
-
-API Key 会优先保存到系统 Keychain。Keychain 不可用时会退回内存模式，重启后可能需要重新配置。
-
-### 5.2 使用环境变量
-
-如果你不想在界面里保存 Key，也可以在启动 KodaX Space 前设置环境变量。例如：
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-export OPENAI_API_KEY=sk-...
-```
-
-Windows PowerShell 示例：
-
-```powershell
-$env:OPENAI_API_KEY="sk-..."
-npm run dev
-```
-
-界面会显示 Key 来源是 `env`。
-
-### 5.3 添加自定义 Provider
-
-在 `Settings` → `Providers` 中点击 `Add custom`，填写：
-
-- Display name：显示名称。
-- Protocol：OpenAI compatible 或 Anthropic compatible。
-- Base URL：模型服务地址。
-- Credential：API Key 或环境变量名。
-- Default model：默认模型。
-- Models：可选，多个模型用逗号分隔。
-- Reasoning：可选，声明该 Provider 支持的推理强度。
-
-只有在你明确信任内部网关时，才勾选跳过 Base URL 安全校验。
-
-## 6. 日常使用
-
-### 6.1 提问和执行任务
-
-在底部输入框输入需求，按 `Enter` 发送。常见任务示例：
+会话中也可以通过底部模型选择器或命令调整：
 
 ```text
-阅读这个项目，告诉我主要模块和启动方式。
+/provider <id>
+/model <model-id>
+/reasoning <off|auto|quick|balanced|deep>
+/thinking <on|off>
 ```
 
-```text
-帮我检查最近的改动有没有明显 bug，先不要修改文件。
-```
+`Ctrl+T` 可循环 reasoning effort。
 
-```text
-请修复登录页按钮样式错位的问题，并说明改了哪些文件。
-```
+## 8. 权限模式与确认
 
-如果 AI 需要写文件、运行命令或访问敏感工具，界面会弹出权限确认。
+KodaX Space 有三种常用权限模式：
 
-### 6.2 在运行中追加消息
+| 模式         | 适合场景                 | 行为                                 |
+| ------------ | ------------------------ | ------------------------------------ |
+| Plan         | 只想分析、读文件、做计划 | 尽量只读，不主动改文件               |
+| Accept Edits | 日常推荐                 | 写文件、运行命令等风险操作由你确认   |
+| Auto         | 明确信任项目和规则后使用 | 更自动地放行操作，仍受策略和工具限制 |
 
-如果当前会话正在运行，你仍然可以输入后续消息。KodaX Space 会把消息放入当前会话队列，等安全时机继续处理。
+切换方式：
 
-### 6.3 停止生成
+- 底部 `ModeSelector`
+- `Shift+Tab` 循环切换
+- `Ctrl+M` 打开模式选择器
+- `/mode plan`、`/mode accept-edits`、`/mode auto`
 
-当 AI 正在回复或运行任务时，发送按钮会变成停止按钮。你可以点击停止按钮，或按 `Esc` 发送停止信号。
+当 AI 请求写文件、编辑、运行命令或调用有副作用的 MCP 工具时，Space 会弹出权限确认。常见选择包括 `Allow once`、`Allow always` 和 `Deny`。模型需要用户补充信息时，会通过 `ask_user` 弹出选择题或文本输入框；支持 Other/自定义输入的请求可以直接填写自由文本。
 
-### 6.4 引用项目文件
+## 9. Composer 输入框
 
-在输入框中输入 `@` 可以触发项目文件提示。选择文件后，输入框会插入类似：
+底部 composer 是主要操作入口。
 
-```text
-@src/main.ts
-```
+快捷输入：
 
-这适合让 AI 聚焦某个文件、目录或改动。
+- `Enter`：发送。
+- `Shift+Enter`：换行。
+- `Ctrl/Cmd+Enter`：把消息排到当前 turn 之后。
+- 运行中发送按钮会变为停止按钮，`Esc` 可停止或关闭当前 popover。
+- 输入 `/` 打开 slash command 与 skill 补全。
+- 输入 `@` 打开项目路径补全。
+- 上下键可在补全和输入历史中导航。
 
-### 6.5 拖入文件
+附件与引用：
 
-你可以把本地文件拖到输入框：
+- 粘贴或拖入 PNG/JPEG/WEBP 图片，会生成图片 chip。单张约 6 MiB，单轮最多 8 张。
+- 添加项目内文件会尽量插入 `@relative/path`。
+- 添加项目外文件会插入 `file://` 链接。
+- 草稿最多保留 32 个文件引用。
+- `+` 菜单可添加文件/文件夹、插入 slash command、打开 connectors/MCP、查看 skills。
+- Agent picker 可插入 `@agent-name`。
 
-- 项目内文件会尽量插入 `@relative/path`。
-- 项目外文件会插入 `file://` 链接。
-- PNG/JPEG/WEBP 图片会作为图片输入一起发送。
-- 每次草稿最多保留 32 个文件引用。
+## 10. Slash 命令与命令面板
 
-普通文件目前主要作为路径引用提供给 AI。结构化文件 Artifact 和视频输入仍属于后续能力。
+输入 `/` 会打开会话内命令和 skill 补全。常用命令：
 
-### 6.6 粘贴截图或图片
+| 命令                  | 用途                      |
+| --------------------- | ------------------------- |
+| `/help`               | 查看命令帮助              |
+| `/new`                | 新建会话                  |
+| `/clear`              | 清空当前视图              |
+| `/copy`               | 复制会话内容              |
+| `/sessions`           | 查看/管理 session         |
+| `/load`               | 加载 session              |
+| `/delete`             | 删除 session              |
+| `/fork`               | Fork session              |
+| `/rewind`             | 回退 session              |
+| `/mode`               | 切换权限模式              |
+| `/provider`           | 切换 provider             |
+| `/model`              | 切换模型                  |
+| `/reasoning`          | 设置 reasoning effort     |
+| `/thinking`           | 开关 thinking 输出        |
+| `/agent-mode`         | 切换 agent mode           |
+| `/workflow`           | 查看、启动、管理 workflow |
+| `/memory`、`/learn`   | 记忆与学习建议相关入口    |
+| `/extensions`、`/mcp` | 扩展和 MCP 入口           |
+| `/repointel`          | 仓库智能诊断/预热         |
+| `/doctor`、`/status`  | 诊断当前运行状态          |
 
-在输入框直接粘贴 PNG/JPEG/WEBP 截图即可。图片会以缩略图显示在输入框上方，发送前可删除。
+命令面板是全局 UI 操作入口：
 
-限制：
-
-- 单张图片上限约 6 MiB。
-- 单轮最多 8 张图片。
-- GIF 动图目前不保证保留动画。
-
-### 6.7 查看 Diff、Plan、Tasks
-
-当 AI 生成计划、修改文件或启动子任务时，右侧面板可能自动展开：
-
-- Plan：任务计划或待办。
-- Diff：文件修改差异。
-- Tasks：子任务或工作进度。
-
-这个自动展开能力叫 Smart Popout Director，可在 `Settings` → `Preferences` 中关闭。
-
-### 6.8 使用内置终端
-
-点击右上工具栏的终端图标可打开内置终端。它是真实 PTY shell，不是日志查看器。
-
-支持：
-
-- 多 Tab。
-- Windows 使用 `cmd.exe`。
-- macOS 使用 `zsh`。
-- Linux 使用 `bash`。
-
-出于安全考虑，终端环境会剥离 `*_KEY`、`*_TOKEN` 等敏感变量。
-
-### 6.9 预览文件
-
-打开 Preview 面板后输入或选择文件路径，可预览：
-
-| 文件类型         | 预览方式          |
-| ---------------- | ----------------- |
-| `.pdf`           | 单页渲染，可翻页  |
-| `.docx`          | 简化 HTML 预览    |
-| `.xlsx` / `.xls` | 多 Sheet 表格预览 |
-| 其他文本文件     | Monaco 只读查看   |
-
-超大文件会给出错误提示，不会卡死界面。
-
-### 6.10 使用命令面板
-
-快捷键：
-
-- macOS：`⌘+Shift+P`
+- macOS：`Cmd+Shift+P`
 - Windows/Linux：`Ctrl+Shift+P`
 
-命令面板可搜索：
+它可搜索 action、最近 session、项目文件引用和 slash 命令。
 
-- Actions：新建会话、切换主题、清空视图等。
-- Sessions：切换最近会话。
-- Files：插入项目文件引用。
-- Slash：插入 Slash 命令。
+## 11. Task Dock
 
-### 6.11 Quick Ask 临时问答
+右侧 Task Dock 是当前会话的工作状态总览。有 Artifact 时，顶部可在 `Overview` 和 `Artifact` 之间切换。
 
-快捷键：
+常见分区：
 
-- macOS：`⌘+K`
+- Run：当前运行、项目、session、权限模式、ask_user、workflow 摘要。
+- Plan：模型当前计划。
+- Agents：子 agent 或 markdown agent 状态。
+- Workflow：当前 workflow run。
+- Changes：git branch、ahead/behind、变更文件，可打开 diff/preview。
+- Sources：当前 working folder，可在系统文件管理器中打开。
+- Artifacts：产物摘要。
+- Context：本轮引用的工具、文件和上下文。
+
+可展开的分区右上角有详情按钮，会打开对应 popout。右侧栏左缘可拖拽调整宽度。
+
+## 12. Popout 面板
+
+Popout 把专业视图从聊天流里分离出来。顶部 activity 入口和 Task Dock 分区都可能打开 popout。
+
+| 面板     | 用途                                                                           |
+| -------- | ------------------------------------------------------------------------------ |
+| Preview  | 预览 PDF、DOCX、XLS/XLSX 和普通文本/代码文件                                   |
+| Diff     | 查看 AI 修改和 git working tree 差异                                           |
+| Terminal | 项目目录下的真实 PTY 多标签终端                                                |
+| Agents   | 查看 AGENTS.md/markdown agents 相关信息                                        |
+| MCP      | 查看 MCP server 状态、工具、诊断和 .mcpb 扩展                                  |
+| Memory   | 管理 Coder memory proposals、refs、governance、hints                           |
+| Workflow | 查看 active/completed runs 和 saved workflows，执行 pause/resume/stop/rerun 等 |
+| Plan     | 查看计划详情                                                                   |
+| Tasks    | 查看任务列表                                                                   |
+| Artifact | 查看、切换版本、复制、导出、迭代和独立打开产物                                 |
+
+Smart Popout Director 会在第一次出现 plan、diff 或 task 信号时自动打开对应面板。可在 `Settings` -> `Preferences` 关闭。
+
+## 13. Artifact 产物
+
+Artifact 是 AI 生成的独立成果，不等于项目文件。常见类型包括：
+
+- Markdown 报告
+- 代码片段
+- HTML / interactive HTML
+- SVG
+- Image
+- PDF
+- DOCX
+- XLSX
+- Chart
+
+Artifact 面板支持：
+
+- 选择不同 artifact。
+- 切换版本。
+- Copy。
+- Save/Export。
+- “再改一版”迭代。
+- 打开 standalone window。
+
+interactive HTML 会进入 sandbox 预览。React artifact 当前是占位类型，不作为可交互 LiveCanvas 运行。
+
+## 14. Workflow 工作流
+
+Workflow 适合多步骤任务，例如分析、执行、验证、生成产物、保存流程、复跑历史。
+
+入口：
+
+- `/workflow`
+- Workflow Launcher
+- Task Dock 的 Workflow 分区
+- Workflow popout
+
+Workflow manager 可执行：
+
+- 查看 active/completed runs。
+- 查看 saved workflows。
+- pause/resume/stop 当前 run。
+- rerun 历史 run 或 saved workflow。
+- rename/delete run。
+- 将已完成 run 保存为 workflow。
+- 运行 saved workflow，并在启动前做 preflight 和应用内确认。
+
+当前 workflow 面向 Coder session。Partner 入口仍处于开发中。危险工具调用仍遵循权限模式和确认弹窗。
+
+## 15. Memory Governance
+
+Memory popout 是 Coder-only 的记忆治理界面，需要当前有活跃 Coder session。
+
+四个主要标签：
+
+- Inbox：查看待批准 memory proposals，approve 或 reject，可填写拒绝原因。
+- Refs：检查已批准记忆引用。
+- Governance：运行 curator/report，发现过期、冲突或可合并信息。
+- Hints：为当前任务构建 memory pack/hints。
+
+Partner 的 Knowledge Base 是另一个产品面，不等同于 Coder memory governance。当前 Partner UI 未开放。
+
+## 16. MCP、Extensions、Skills 与 Agents
+
+MCP 面板可查看：
+
+- server 状态：idle、connecting、ready、error、disabled。
+- command 或 URL。
+- start/stop。
+- tool 列表。
+- diagnostics。
+- 已安装 `.mcpb` 扩展和 uninstall。
+- 配置错误与 reveal path。
+
+`Settings` -> `Runtime` 可 reload MCP 配置，也可查看 global/project MCP 配置。
+
+Extensions 分两类：
+
+- MCP/.mcpb 扩展：通过 MCP 面板安装和管理。
+- SDK filesystem extensions：通过 `/extensions sdk` 查看发现和诊断。默认偏 discovery-only，执行第三方扩展代码需要显式启用，并应只使用可信来源。
+
+Skills 是 SDK 级能力：
+
+- 用户级：`~/.kodax/skills/`
+- 项目级：`<project>/.kodax/skills/`
+- 在 composer 输入 `/` 时会和 slash command 一起出现。
+- 若与 slash command 重名，可用 `/skill:<name>` 消歧。
+- `Settings` -> `Runtime` -> `Skills` 可查看目录并安装文件夹、zip 或 archive。
+
+Agents：
+
+- `AGENTS.md` 和 markdown agents 给模型补充角色、规则和项目约定。
+- Agent picker 可插入 `@agent-name`。
+- Agent mode 支持 AMA、AMAW、SA，实际能力由 SDK 和当前工具状态决定。
+
+## 17. Environment Hub、Quick Ask 与 Handoff
+
+Environment Hub 位于顶部，显示当前项目、git branch、变更数量、ahead/behind、本地工作位置、sources 和 session context。点击后可跳转到 Task Dock 的 Changes、Sources、Run、Context 等分区。
+
+Quick Ask：
+
+- macOS：`Cmd+K`
 - Windows/Linux：`Ctrl+K`
 
-Quick Ask 适合临时问一句，不想打断当前主会话时使用。回答有用时，可以选择 Continue in Coder，把它提升为正常 Coder 会话。
+Quick Ask 会创建临时 plan-mode code session，用于快速问一次。它不是完全无 session 的 side query。回答有用时可选择 `Continue in Coder`，把内容提升到正常 Coder 会话。
 
-### 6.12 Slash 命令
+Handoff inbox 会在 `~/.kodax/handoffs/*.json` 存在时出现在标题栏。它可显示有效/总数、stale/error 状态，并支持 accept 或 dismiss。Accept 会验证目标 session 是否仍存在，成功后切换到对应会话并移除 descriptor。
 
-在输入框输入 `/` 会打开命令提示。常用命令：
+## 18. Repo-intelligence 与本地上下文
 
-| 命令                                            | 作用                         |
-| ----------------------------------------------- | ---------------------------- |
-| `/help`                                         | 查看命令                     |
-| `/new`                                          | 新建会话                     |
-| `/clear`                                        | 清空当前会话视图             |
-| `/provider <id>`                                | 切换当前会话 Provider        |
-| `/model <id>`                                   | 切换模型                     |
-| `/reasoning <off\|auto\|quick\|balanced\|deep>` | 设置推理深度                 |
-| `/thinking <on\|off>`                           | 开关 thinking 输出           |
-| `/mode <plan\|accept-edits\|auto>`              | 切换权限模式                 |
-| `/workflow ...`                                 | 查看、创建、启动或管理工作流 |
-| `/repointel status`                             | 查看仓库智能诊断状态         |
-| `/repointel warm`                               | 对当前项目做最佳努力预热     |
-| `/learn pending`                                | 查看学习建议                 |
-| `/recover candidate`                            | 查看会话恢复候选             |
-| `/extensions sdk`                               | 查看 SDK 扩展发现情况        |
+Repo-intelligence 为当前项目提供只读仓库理解能力，包括仓库概览、符号查找、模块上下文和文件/引用理解。
 
-不同版本和不同项目环境下，可用命令可能略有差异，以 `/help` 显示为准。
-
-## 7. Workflow 工作流
-
-### 7.1 什么时候使用 Workflow
-
-适合使用 Workflow 的场景：
-
-- 需要多步骤分析、执行、验证。
-- 需要多个子任务协作。
-- 需要保存、复用或重跑某类流程。
-- 希望在右侧面板查看阶段、子步骤、结果和产物。
-
-### 7.2 常用 Workflow 命令
+常见入口：
 
 ```text
-/workflow help
-/workflow list
-/workflow runs
-/workflow show <runId>
-/workflow create <你的任务描述>
-/workflow stop
-/workflow rerun <runId 或 savedName>
+/repointel status
+/repointel warm
 ```
 
-Workflow 结果会进入会话记录，也可能生成 Artifact。已完成的工作流在重启后会尽量恢复历史详情。
+composer 首次输入时，Space 可能对当前项目做 best-effort 预热。该能力不直接修改文件。可用性可能受项目结构、SDK 状态、license 或 policy 控制。
 
-### 7.3 注意事项
-
-- Workflow 当前只面向 Coder 面。
-- Partner 面入口在 0.1.27 中是开发中状态，不能直接使用。
-- Repo-intelligence / Repointel 能力受 License 状态控制。
-- 有风险的工具调用仍会遵循权限模式和确认弹窗。
-
-## 8. KodaX CLI 配置复用
-
-如果你已经使用 KodaX CLI，Space 会自动复用部分配置。
-
-| 配置                                          | Space 行为                   |
-| --------------------------------------------- | ---------------------------- |
-| `~/.kodax/config.json` 中的 `mcpServers`      | 自动加载到 MCP 面板          |
-| `~/.kodax/config.json` 中的 `provider`        | 首次可作为默认 Provider 候选 |
-| `~/.kodax/config.json` 中的 `permissionMode`  | 作为权限模式初始值           |
-| `~/.kodax/config.json` 中的 `customProviders` | 自动注册为自定义 Provider    |
-| `~/.kodax/AGENTS.md`                          | 自动加载                     |
-| 项目内 `AGENTS.md`                            | 自动加载                     |
-| `~/.kodax/sessions/`                          | 会话历史共享                 |
-
-注意：
-
-- API Key 通常需要在 Space 里配置一次，或通过环境变量传入。
-- `~/.kodax/config.json` 修改后，如 Space 没有立刻识别，重启应用即可。
-- KodaX 用户命令目录 `~/.kodax/commands/` 当前还不会完整显示在 Space 中。
-
-## 9. License 与 Repo-intelligence
-
-KodaX Space 支持离线 License 授权。社区、教育、研究和个人用途一般不会被要求导入 License。企业或托管部署可能需要导入 `.kodax-license` 文件。
-
-查看或导入 License：
-
-1. 打开 `Settings`。
-2. 进入 `License`。
-3. 查看当前状态。
-4. 如团队提供了授权文件，点击 `Import` 导入。
-
-Repo-intelligence / Repointel 属于受授权控制的能力。未授权或授权异常时，相关诊断、预热或仓库智能能力可能不可用。
-
-## 10. 安全与隐私
+## 19. 安全与隐私
 
 KodaX Space 的默认原则是本地优先和显式授权。
 
-- 项目文件默认在你的本机目录中读取和处理。
-- API Key 不会通过 Renderer 状态、IPC 列表响应、错误消息或日志暴露。
-- 写文件、运行命令等高风险操作会受权限模式控制。
-- 打开项目目录时，Space 会校验路径，降低误读或路径穿越风险。
-- 第三方 Provider 会收到你发送给模型的内容。请按你的团队数据规则选择 Provider 和模型。
-- 终端会剥离常见敏感环境变量，降低 Key 泄漏风险。
+- 项目文件默认在本机目录中读取和处理。
+- API Key 不会通过 renderer 状态、IPC 列表响应、错误消息或日志暴露。
+- 写文件、运行命令和有副作用工具调用受权限模式控制。
+- 终端会剥离常见 `*_KEY`、`*_TOKEN` 等敏感环境变量。
+- 第三方 Provider 会收到你发送给模型的内容，请按团队数据规则选择 Provider 和模型。
+- 只从可信来源安装 MCP、SDK 扩展和 skill。
 
-## 11. 当前限制
+## 20. 当前限制
 
-以下限制适用于 0.1.27：
+适用于当前 0.1.28 工作树：
 
-- Partner 面已包含底层代码、Sources 和 Knowledge Base 能力，但用户界面入口暂时置灰，等待产出链路补齐。
-- Display Language 主要覆盖高频界面。模型回复、工具输出、部分专业面板仍可能显示英文。
-- GIF、视频、普通文件结构化 Artifact 仍是后续能力。当前普通文件主要作为路径引用。
-- Quick Ask 当前使用临时 plan-mode session，并非完全无 session 的 side query。
+- Partner 面底层代码和只读资料/产物链路存在，但 UI 入口仍置灰，用户暂不能使用。
+- Display Language 主要覆盖高频界面；模型输出、工具日志和部分专业面板仍可能显示英文。
+- Quick Ask 使用临时 plan-mode session，不是完全无 session 的 side query。
+- React artifact 当前不是可交互 LiveCanvas。
+- GIF、视频和普通文件的结构化输入仍有限；普通文件主要作为路径引用。
+- Worktree/cloud 工作位置入口仍是后续能力，当前以本地 workspace 为主。
 - 未签名安装包可能触发 SmartScreen 或 Gatekeeper。
-- Workspace、Workflow、Repo-intelligence 的可用性可能受 SDK、License 和当前项目状态影响。
+- Repo-intelligence、Workflow、Memory、MCP 的可用性可能受 SDK、license、项目状态和配置影响。
 
-## 12. 常见问题
+## 21. 常用快捷键
 
-### 12.1 打不开应用，系统提示不安全
+| 快捷键                        | 作用                       |
+| ----------------------------- | -------------------------- |
+| `Enter`                       | 发送消息                   |
+| `Shift+Enter`                 | 换行                       |
+| `Ctrl/Cmd+Enter`              | after-turn 排队发送        |
+| `/`                           | slash command / skill 补全 |
+| `@`                           | 项目路径补全               |
+| `Esc`                         | 停止运行或关闭当前浮层     |
+| `Ctrl/Cmd+K`                  | Quick Ask                  |
+| `Ctrl/Cmd+Shift+P`            | 命令面板                   |
+| `?`                           | 帮助                       |
+| `Shift+Tab`                   | 循环权限模式               |
+| `Ctrl+M`                      | 权限模式选择器             |
+| `Ctrl+T`                      | 循环 reasoning effort      |
+| `Ctrl+Shift+O`                | Transcript view menu       |
+| `Ctrl+Shift+V`                | Preview 面板               |
+| `Ctrl+Shift+D`                | Diff 面板                  |
+| `Ctrl+Backtick`               | Terminal 面板              |
+| `Ctrl+wheel` / `Ctrl+=` / `-` | 全局缩放                   |
+| `Ctrl+0`                      | 重置缩放                   |
 
-请确认安装包来源可信。Windows 可在 SmartScreen 中选择“更多信息”后继续运行；macOS 可右键应用选择“打开”。
+## 22. 常见问题
 
-### 12.2 Provider 显示 No key
+### 22.1 Provider 显示 No key
 
-进入 `Settings` → `Providers`，为对应 Provider 添加 API Key，或在启动前设置环境变量。
+进入 `Settings` -> `Providers`，为对应 Provider 添加 API Key，或在启动前设置环境变量。
 
-### 12.3 Test connection 失败
+### 22.2 Test connection 失败
 
-优先检查：
+检查 API Key、Base URL、协议、公司代理、防火墙和 provider 当前服务状态。自定义 provider 尤其要确认协议是 OpenAI-compatible 还是 Anthropic-compatible。
 
-- API Key 是否正确。
-- Provider 是否支持当前网络环境。
-- 自定义 Provider 的 Base URL 和协议是否正确。
-- 公司代理、防火墙或网关是否拦截。
+### 22.3 AI 不能读取项目文件
 
-### 12.4 AI 不能读取项目文件
+确认已经打开项目目录。输入框如果提示先打开文件夹，说明当前没有项目上下文。也要确认引用路径在 workspace 内。
 
-确认你已经打开项目目录。输入框如果显示 `Open a folder first`，说明还没有项目上下文。
+### 22.4 为什么修改文件前会弹确认
 
-### 12.5 AI 修改文件前为什么弹确认
+这是权限模式的安全设计。日常推荐 `Accept Edits`，让 AI 可以提出修改，但关键操作由你确认。
 
-这是权限模式的安全设计。日常推荐使用 `Accept edits`，这样 AI 可以提出修改，但关键操作由你确认。
+### 22.5 为什么 Partner 按钮不可点击
 
-### 12.6 为什么 Partner 按钮不可点击
+当前 Partner UI 入口仍处于开发中，这是预期状态。不要把它当成可用入口。
 
-0.1.27 中 Partner 底层能力已预置，但交付物生成链路尚未完整开放，因此界面入口暂时显示“开发中”。
+### 22.6 Quick Ask 为什么不是完全独立查询
 
-### 12.7 Workflow 看不到或无法启动
+Quick Ask 为了复用项目上下文和安全策略，会创建临时 plan-mode session。关闭时会清理；需要继续时可 `Continue in Coder`。
 
-请检查：
+### 22.7 MCP 工具不可见
 
-- 当前是否在 Coder 面。
-- 是否已打开项目目录。
-- 当前会话是否属于当前项目。
-- 如涉及 Repointel / repo-intelligence，License 是否有效。
+打开 MCP 面板，点击 Refresh 或 Reload config，查看 server 状态和 diagnostics。也可在 `Settings` -> `Runtime` 检查 global/project MCP 配置。
 
-### 12.8 粘贴图片失败
+### 22.8 粘贴图片失败
 
-确认图片格式为 PNG/JPEG/WEBP，大小不超过限制。若是 GIF 或系统剪贴板没有给出图片文件，当前版本可能无法直接作为图片发送。
+确认图片格式为 PNG/JPEG/WEBP，大小不超过限制。GIF、视频或某些剪贴板格式当前可能无法作为图片输入。
 
-### 12.9 语言切换后仍有英文
+### 22.9 语言切换后仍有英文
 
-这是当前版本的已知限制。菜单、Settings、侧栏和常用弹窗已支持中英切换，但模型输出、工具日志和部分专业面板可能仍保留英文。
+这是当前限制。菜单、Settings、侧栏和常用弹窗优先覆盖；模型输出、工具日志和部分专业面板可能仍保留英文。
 
-## 13. 建议的第一次体验任务
+## 23. 建议的第一次体验任务
 
-你可以按顺序试用下面几类任务：
-
-1. 项目理解：
+项目理解：
 
 ```text
-请阅读这个项目，给我一份模块结构和启动方式摘要。
+请阅读这个项目，给我一份模块结构、启动方式和主要风险摘要。
 ```
 
-2. 代码审查：
+代码审查：
 
 ```text
-请检查当前项目有没有明显的启动风险或配置问题，先不要修改文件。
+请检查当前改动有没有明显 bug，先不要修改文件。
 ```
 
-3. 小修复：
+小修复：
 
 ```text
 请修复一个你能确认的问题，修改前先说明计划。
 ```
 
-4. 文档生成：
+文档生成：
 
 ```text
-请根据 README 和 package.json 生成一份开发者快速上手文档。
+请根据 README 和 package.json 生成一份开发者快速上手文档，并作为 Artifact 展示。
 ```
 
-5. 图片理解：
-
-粘贴一张截图后输入：
+图片理解：
 
 ```text
 请根据这张截图指出界面上的主要问题，并给出修改建议。
 ```
 
-## 14. 获取帮助与反馈
+## 24. 获取帮助与反馈
 
-- 普通问题或 Bug：提交 GitHub Issue。
-- 安全相关问题：不要公开提交 Issue，请通过项目维护者指定的私下渠道反馈。
-- 应用内帮助：按 `?` 打开快捷键与命令帮助，或输入 `/help` 查看命令。
+- 应用内：按 `?` 打开帮助，或输入 `/help`。
+- 普通问题或 Bug：提交 GitHub Issue，并附版本号、复现步骤、日志和截图。
+- 安全相关问题：不要公开提交 Issue，请通过维护者指定的私下渠道反馈。
