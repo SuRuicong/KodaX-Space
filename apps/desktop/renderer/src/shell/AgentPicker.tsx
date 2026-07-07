@@ -72,12 +72,12 @@ export function AgentPicker({ insertAtCaret }: Props): JSX.Element | null {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-[11px] flex items-center gap-1 text-fg-muted hover:text-fg-secondary px-1.5 py-0.5 rounded hover:bg-hover-bg"
+        className="w-6 h-6 rounded-md text-fg-muted hover:text-fg-secondary hover:bg-hover-bg flex items-center justify-center"
         title="Insert @agent reference (markdown agents)"
         aria-label="Pick an agent"
       >
         <Bot className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden />
-        <span>Agent</span>
+        <span className="sr-only">Agent</span>
       </button>
 
       {open && (

@@ -10,15 +10,25 @@
 //     provider default → 200k hard fallback），UI 用同一函数 = single source of truth
 //   - 历史 fallback: 查询期间 / IPC 失败时仍用 modelContextCaps 硬编码表兜底，避免空窗显示
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
-import { Caret } from '../components/Caret.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 import { useAppStore, type UserMessage } from '../store/appStore.js';
 import { getModelContextCap } from './modelContextCaps.js';
 import { resolveActiveModel } from './resolveActiveModel.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 const EMPTY_USER_MESSAGES: readonly UserMessage[] = [];
+// Mirrors the current KodaX auto-compaction default. If the user-configured
+// value is exposed to the renderer later, only this fallback needs replacing.
+const AUTO_COMPACT_TRIGGER_PERCENT = 50;
+
+type ContextGaugeStyle = CSSProperties & {
+  '--cw-level': string;
+  '--cw-level-dim': string;
+  '--cw-level-glow': string;
+  '--cw-level-height': string;
+};
 
 /**
  * 粗略 token 估算——历史 session restore 后没有 iteration_end 事件，
@@ -115,6 +125,7 @@ function useResolvedContextWindow(
 }
 
 export function ContextWindowIndicator(): JSX.Element | null {
+  const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const events = useAppStore((s) =>
     currentSessionId ? (s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS) : EMPTY_EVENTS,
@@ -154,11 +165,12 @@ export function ContextWindowIndicator(): JSX.Element | null {
   });
   const activeModel = session
     ? (session.model ?? activeProvider?.defaultModel ?? null)
-    : (preferredModel !== '—' ? preferredModel : null);
+    : preferredModel !== '—'
+      ? preferredModel
+      : null;
   const hardcodedCap = getModelContextCap(activeModel);
   const cap = useResolvedContextWindow(activeProviderId, activeModel, hardcodedCap);
-
-  if (!currentSessionId) return null;
+  const autoCompactThreshold = Math.max(1, Math.round((cap * AUTO_COMPACT_TRIGGER_PERCENT) / 100));
 
   let tokenCount = 0;
   let isEstimate = false;
@@ -188,28 +200,68 @@ export function ContextWindowIndicator(): JSX.Element | null {
     tokenCount = total;
     isEstimate = true;
   }
-  const percent = Math.min(100, (tokenCount / cap) * 100);
+  const autoCompactPercent = (tokenCount / autoCompactThreshold) * 100;
+  const displayPercent = Math.min(100, autoCompactPercent);
   // 历史恢复时是 estimate（无 iteration_end）— 加 "~" 前缀让用户知道是近似
   const tokenStr = `${isEstimate ? '~' : ''}${formatTokens(tokenCount)}`;
   const capStr = formatTokens(cap);
+  const thresholdStr = formatTokens(autoCompactThreshold);
+  const remainingPercent = Math.max(0, 100 - displayPercent);
+  const remainingTokenCount = Math.max(0, autoCompactThreshold - tokenCount);
 
-  const color = percent < 50 ? 'text-fg-secondary' : percent < 80 ? 'text-warn' : 'text-danger';
-  const barColor = percent < 50 ? 'bg-fg-faint' : percent < 80 ? 'bg-warn' : 'bg-danger';
+  const gaugeTone = remainingPercent <= 20 ? 'danger' : remainingPercent <= 40 ? 'warn' : 'ok';
+  const toneClass =
+    gaugeTone === 'ok' ? 'text-ok' : gaugeTone === 'warn' ? 'text-warn' : 'text-danger';
+  const barColor = gaugeTone === 'ok' ? 'bg-ok' : gaugeTone === 'warn' ? 'bg-warn' : 'bg-danger';
+  const gaugeStyle: ContextGaugeStyle = {
+    '--cw-level':
+      gaugeTone === 'ok'
+        ? 'rgb(var(--ok))'
+        : gaugeTone === 'warn'
+          ? 'rgb(var(--warn))'
+          : 'rgb(var(--danger))',
+    '--cw-level-dim':
+      gaugeTone === 'ok'
+        ? 'rgb(var(--ok) / 0.7)'
+        : gaugeTone === 'warn'
+          ? 'rgb(var(--warn) / 0.68)'
+          : 'rgb(var(--danger) / 0.68)',
+    '--cw-level-glow':
+      gaugeTone === 'ok'
+        ? 'rgb(var(--ok) / 0.34)'
+        : gaugeTone === 'warn'
+          ? 'rgb(var(--warn) / 0.36)'
+          : 'rgb(var(--danger) / 0.44)',
+    '--cw-level-height': `${remainingPercent}%`,
+  };
+  const contextLabel = currentSessionId ? t('contextWindow.title') : t('contextWindow.title.next');
+  const tooltip = t('contextWindow.tooltip', {
+    label: contextLabel,
+    percent: remainingPercent.toFixed(0),
+    used: tokenStr,
+    threshold: thresholdStr,
+  });
 
   return (
     <div className="relative">
       <button
         type="button"
+        data-testid="context-window-indicator"
         onClick={() => setOpen((v) => !v)}
-        className={`text-[11px] font-mono flex items-center gap-1.5 ${color} hover:text-fg-primary`}
-        title="Click for breakdown"
+        className={[
+          'relative w-9 h-9 rounded-full border border-border-default/70 bg-transparent flex items-center justify-center shadow-sm',
+          'hover:bg-hover-bg hover:text-fg-primary transition-colors',
+          toneClass,
+        ].join(' ')}
+        title={`${tooltip} - ${t('contextWindow.clickForBreakdown')}`}
+        aria-label={tooltip}
       >
-        <span>Context window</span>
-        <span>
-          {tokenStr} / {capStr}
+        <span className="sr-only">{contextLabel}</span>
+        <span aria-hidden className="context-liquid-gauge h-7 w-7" style={gaugeStyle}>
+          <span className="context-liquid-gauge__fill" />
+          <span className="context-liquid-gauge__surface" />
+          <span className="context-liquid-gauge__wave" />
         </span>
-        <span>({percent.toFixed(0)}%)</span>
-        <Caret open={false} className="text-fg-muted" />
       </button>
 
       {open && (
@@ -217,30 +269,37 @@ export function ContextWindowIndicator(): JSX.Element | null {
           className="absolute right-0 bottom-full mb-2 w-72 bg-surface-4 border border-border-default rounded-lg shadow-xl p-3 text-xs z-50"
           onMouseLeave={() => setOpen(false)}
         >
-          <div className="text-fg-muted text-[11px] uppercase tracking-wider mb-2">
-            Context window
-          </div>
+          <div className="text-fg-muted text-[11px] font-medium mb-2">{contextLabel}</div>
           {/* 顶部数字 */}
           <div className="flex justify-between text-fg-primary font-mono mb-1.5">
             <span>{tokenStr}</span>
-            <span className="text-fg-muted">/ {capStr}</span>
+            <span className="text-fg-muted">/ {thresholdStr}</span>
           </div>
           {/* 进度条 */}
           <div className="h-1.5 bg-surface-3 rounded overflow-hidden">
-            <div className={`h-full ${barColor} transition-all`} style={{ width: `${percent}%` }} />
+            <div
+              className={`h-full ${barColor} transition-all`}
+              style={{ width: `${displayPercent}%` }}
+            />
           </div>
           {/* 百分比 + 注释 */}
           <div className="mt-2 text-[11px] text-fg-muted flex justify-between">
-            <span>{percent.toFixed(1)}% used</span>
-            <span>{formatTokens(Math.max(0, cap - tokenCount))} left</span>
+            <span>
+              {t('contextWindow.progressToAutoCompact', {
+                percent: autoCompactPercent.toFixed(1),
+              })}
+            </span>
+            <span>
+              {t('contextWindow.remainingTokens', { tokens: formatTokens(remainingTokenCount) })}
+            </span>
           </div>
 
-          {/* alpha.1 breakdown 占位：等 KodaX SDK usage 出 segment 数据再分项 */}
           <div className="mt-3 border-t border-border-default pt-2 text-[11px] text-fg-muted leading-relaxed">
-            Token breakdown by category — coming in v0.1.x
-            <br />
-            Cap follows current model{activeModel ? ` (${activeModel})` : ''}; updates when you
-            switch.
+            {t('contextWindow.thresholdNote', {
+              triggerPercent: AUTO_COMPACT_TRIGGER_PERCENT,
+              cap: capStr,
+              model: activeModel ? ` (${activeModel})` : '',
+            })}
           </div>
         </div>
       )}

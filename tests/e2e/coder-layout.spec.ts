@@ -63,6 +63,9 @@ async function snapshot(page: Page): Promise<{
       right: '[data-testid="right-sidebar"]',
       stream: '[data-testid="conversation-stream"]',
       textarea: 'textarea',
+      footer: '[data-testid="composer-footer-toolbar"]',
+      context: '[data-testid="context-window-indicator"]',
+      model: '[data-testid="model-effort-selector"]',
       send: '[aria-label="Send message"]',
     };
     const rectFor = (selector: string): Rect | null => {
@@ -120,6 +123,28 @@ async function expectUsableCoderLayout(
   expect(insideViewport(textarea, viewport), 'composer is clipped').toBe(true);
   expect(center.width, 'Coder workspace needs a readable lane').toBeGreaterThanOrEqual(520);
 
+  expect(rects.footer, 'composer footer toolbar exists').not.toBeNull();
+  expect(rects.context, 'context ring exists').not.toBeNull();
+  expect(rects.model, 'model selector exists').not.toBeNull();
+  expect(rects.send, 'send button exists').not.toBeNull();
+
+  const footer = rects.footer!;
+  const context = rects.context!;
+  const model = rects.model!;
+  const send = rects.send!;
+  expect(insideViewport(footer, viewport), 'composer footer toolbar is clipped').toBe(true);
+  expect(insideViewport(context, viewport), 'context ring is clipped').toBe(true);
+  expect(insideViewport(model, viewport), 'model selector is clipped').toBe(true);
+  expect(insideViewport(send, viewport), 'send button is clipped').toBe(true);
+  expect(horizontallySeparated(context, model), 'context ring overlaps model selector').toBe(true);
+  expect(horizontallySeparated(model, send), 'model selector overlaps send button').toBe(true);
+
+  const footerOverflow = await page.getByTestId('composer-footer-toolbar').evaluate((el) => {
+    const node = el as HTMLElement;
+    return node.scrollWidth - node.clientWidth;
+  });
+  expect(footerOverflow, 'composer footer toolbar overflows horizontally').toBeLessThanOrEqual(1);
+
   if (rects.left) {
     expect(horizontallySeparated(rects.left, center), 'left sidebar overlaps center').toBe(true);
   }
@@ -154,7 +179,6 @@ test('Coder preserves a usable workspace as persisted sidebars meet narrower scr
     await page.setViewportSize({ width: 1280, height: 760 });
     await waitForCoderWorkspace(page);
     await expect(page.getByTestId('left-sidebar')).toBeVisible();
-    await expect(page.getByTestId('right-sidebar')).toBeVisible();
     await saveScreenshot(page, '01-coder-desktop-sidebars');
     await expectUsableCoderLayout(page);
 

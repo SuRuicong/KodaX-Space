@@ -24,6 +24,7 @@
 // Ctrl+I 切换打开；底部 effort 块保持以前用法。
 
 import { useEffect, useState } from 'react';
+import { BrainCircuit, ChevronDown } from 'lucide-react';
 import type { ProviderInfo, SessionMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 import { pushToast } from '../store/toastStore.js';
@@ -285,6 +286,10 @@ export function ModelEffortSelector(): JSX.Element {
   const modelEffortLine = currentSessionId
     ? `${activeModel} · ${activeEffortLabel}`
     : `${activeModel} · ${activeEffortLabel} (${t('modelPicker.nextSuffix')})`;
+  const compactSuffix = currentSessionId
+    ? activeEffortLabel
+    : `${activeEffortLabel} (${t('modelPicker.nextSuffix')})`;
+  const selectorTitle = `${providerLabel} · ${modelEffortLine}`;
 
   // 打开时把 preview 重置到 active provider
   function openPicker(): void {
@@ -295,21 +300,30 @@ export function ModelEffortSelector(): JSX.Element {
   }
 
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       <button
         type="button"
+        data-testid="model-effort-selector"
         onClick={openPicker}
-        className="font-mono text-[11px] hover:text-fg-primary flex items-center gap-1.5"
-        title={session ? t('modelPicker.title.active') : t('modelPicker.title.next')}
+        className={[
+          'h-7 max-w-[240px] min-w-0 px-2 rounded-md border border-border-default',
+          'bg-surface-2 text-fg-secondary hover:bg-hover-bg hover:text-fg-primary',
+          'flex items-center gap-1.5 transition-colors',
+        ].join(' ')}
+        title={`${session ? t('modelPicker.title.active') : t('modelPicker.title.next')} - ${selectorTitle}`}
+        aria-label={session ? t('modelPicker.title.active') : t('modelPicker.title.next')}
       >
-        {/* 两行：上行 provider displayName（强调），下行 model · effort（次要） */}
-        <span className="flex flex-col items-end leading-tight text-right">
-          <span className="text-fg-primary truncate max-w-[260px]">{providerLabel}</span>
-          <span className="text-fg-muted truncate max-w-[260px]">{modelEffortLine}</span>
+        <BrainCircuit
+          className="w-3.5 h-3.5 shrink-0 text-fg-muted"
+          strokeWidth={1.8}
+          aria-hidden
+        />
+        <span className="font-mono text-[11px] truncate min-w-0">{activeModel}</span>
+        <span className="text-fg-muted shrink-0" aria-hidden>
+          ·
         </span>
-        <span className="text-fg-muted" aria-hidden>
-          ▿
-        </span>
+        <span className="text-[11px] shrink-0 text-fg-muted">{compactSuffix}</span>
+        <ChevronDown className="w-3 h-3 shrink-0 text-fg-muted" strokeWidth={2} aria-hidden />
       </button>
 
       {open && (

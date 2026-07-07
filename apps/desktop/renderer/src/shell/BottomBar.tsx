@@ -2304,13 +2304,12 @@ export function BottomBar(): JSX.Element {
                     ? 'Describe a task or ask a question - Type / for commands'
                     : 'Describe a task or ask a question - session will be created on send'
               }
-              className={`w-full bg-transparent text-sm text-fg-primary placeholder-fg-muted resize-none focus:outline-none px-0.5 py-1 pr-44 ${
+              className={`w-full bg-transparent text-sm text-fg-primary placeholder-fg-muted resize-none focus:outline-none px-0.5 py-1 pr-28 ${
                 busy ? 'opacity-70 cursor-wait' : ''
               }`}
             />
-            <div className="absolute right-1 bottom-1 pointer-events-auto flex items-center gap-3">
+            <div className="absolute right-1 bottom-1 pointer-events-auto flex items-center gap-2">
               <QueueIndicator />
-              <ContextWindowIndicator />
             </div>
             {slashMode && activeSlash && (
               <SlashCommandPopover
@@ -2349,7 +2348,10 @@ export function BottomBar(): JSX.Element {
             )}
           </div>
 
-          <div className="flex items-center gap-2 text-[11px]">
+          <div
+            data-testid="composer-footer-toolbar"
+            className="flex min-w-0 items-center gap-2 text-[11px]"
+          >
             <div className="relative">
               <button
                 type="button"
@@ -2370,6 +2372,7 @@ export function BottomBar(): JSX.Element {
             <ModeSelector />
             {currentSurface !== 'partner' && <AgentModeSelector />}
             <span className="ml-auto" />
+            <ContextWindowIndicator />
             <ModelEffortSelector />
             {isStreaming ? (
               <button

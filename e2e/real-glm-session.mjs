@@ -317,15 +317,15 @@ async function main() {
   await win.keyboard.press('Escape');
   await win.waitForTimeout(300);
 
-  // 11) Context window popup — 点底部右下文字
+  // 11) Context window popup — compact ring button
   console.log('[e2e] testing Context window popup');
-  const ctxBtn = win.locator('button:has-text("Context window")').first();
+  const ctxBtn = win.getByTestId('context-window-indicator').first();
   if (await ctxBtn.isVisible().catch(() => false)) {
     await ctxBtn.click();
     await win.waitForTimeout(400);
     await win.screenshot({ path: `${SHOT_DIR}/16-context-popup.png`, fullPage: false });
     results.contextExpanded = await win
-      .locator('text=/% used/')
+      .locator('text=/remaining|to auto-compact|自动压缩|还剩/')
       .isVisible()
       .catch(() => false);
     console.log(`[e2e] context window expanded: ${results.contextExpanded}`);
