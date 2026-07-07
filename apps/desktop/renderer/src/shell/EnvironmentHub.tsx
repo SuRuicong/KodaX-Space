@@ -5,10 +5,10 @@ import {
   CircleDot,
   FileText,
   GitBranch,
-  GitCommit,
   GitCompare,
-  Globe,
   Laptop,
+  ListTree,
+  PanelRight,
   Plus,
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
@@ -179,6 +179,13 @@ export function EnvironmentHub(): JSX.Element {
               <Plus className="h-4 w-4" strokeWidth={1.8} aria-hidden />
             </button>
           </div>
+          {menu === 'sources' && (
+            <SourcesMenu
+              currentProjectPath={currentProjectPath}
+              sessionLabel={currentSession?.title ?? currentSessionId ?? null}
+              onOpenSources={() => focusDock('sources')}
+            />
+          )}
 
           <HubRow
             icon={<GitCompare className="h-4 w-4" strokeWidth={1.8} aria-hidden />}
@@ -221,31 +228,22 @@ export function EnvironmentHub(): JSX.Element {
           )}
 
           <HubRow
-            icon={<GitCommit className="h-4 w-4" strokeWidth={1.8} aria-hidden />}
-            label={t('environment.commitOrPush')}
-            value={commitLabel(gitStatus, dirtyCount, t)}
-            tone={gitStatus.ahead ? 'accent' : 'muted'}
-            testId="environment-hub-commit-row"
-            onClick={() => focusDock('changes')}
+            icon={<PanelRight className="h-4 w-4" strokeWidth={1.8} aria-hidden />}
+            label={t('environment.taskDock')}
+            value={t('environment.rightSidebar')}
+            testId="environment-hub-task-dock-row"
+            onClick={() => focusDock('run')}
           />
 
           <div className="my-2 h-px bg-border-default" />
 
           <HubRow
-            icon={<Globe className="h-4 w-4" strokeWidth={1.8} aria-hidden />}
-            label={t('environment.sources')}
-            value={sourcesLabel(currentProjectPath, currentSessionId, t)}
-            active={menu === 'sources'}
-            testId="environment-hub-sources-row"
-            onClick={() => setMenu((value) => (value === 'sources' ? null : 'sources'))}
+            icon={<ListTree className="h-4 w-4" strokeWidth={1.8} aria-hidden />}
+            label={t('environment.context')}
+            value={t('environment.toolsAndFiles')}
+            testId="environment-hub-context-row"
+            onClick={() => focusDock('context')}
           />
-          {menu === 'sources' && (
-            <SourcesMenu
-              currentProjectPath={currentProjectPath}
-              sessionLabel={currentSession?.title ?? currentSessionId ?? null}
-              onOpenSources={() => focusDock('sources')}
-            />
-          )}
         </div>
       )}
     </div>
@@ -439,13 +437,6 @@ function projectName(path: string | null): string {
 
 type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
-function sourcesLabel(projectPath: string | null, sessionId: string | null, t: Translate): string {
-  if (projectPath && sessionId) return t('environment.sources.workspaceSession');
-  if (projectPath) return t('environment.sources.workspace');
-  if (sessionId) return t('environment.sources.session');
-  return t('environment.sources.none');
-}
-
 function changesLabel(status: GitStatusSnapshot, dirtyCount: number, t: Translate): string {
   if (!status.isGitRepo) return t('environment.changes.notGit');
   if (dirtyCount === 0) return t('environment.clean');
@@ -457,12 +448,4 @@ function changesLabel(status: GitStatusSnapshot, dirtyCount: number, t: Translat
       : null,
   ].filter(Boolean);
   return parts.join(' / ');
-}
-
-function commitLabel(status: GitStatusSnapshot, dirtyCount: number, t: Translate): string {
-  if (!status.isGitRepo) return t('environment.commit.disabled');
-  if (status.ahead && status.ahead > 0)
-    return t('environment.commit.ahead', { count: status.ahead });
-  if (dirtyCount > 0) return t('environment.commit.ready');
-  return t('environment.clean');
 }
