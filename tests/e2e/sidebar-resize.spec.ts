@@ -14,7 +14,15 @@ async function reload(page: Page): Promise<void> {
   await page.waitForLoadState('domcontentloaded');
 }
 
-test('sidebar width writes to localStorage and survives reload', async () => {
+async function openRightSidebar(page: Page): Promise<void> {
+  const sidebar = page.getByTestId('right-sidebar');
+  if ((await sidebar.count()) === 0) {
+    await page.getByLabel('Show right sidebar').click();
+  }
+  await expect(sidebar).toBeVisible();
+}
+
+test('sidebar width writes to localStorage and survives reload after manual open', async () => {
   const space = await launchSpace(TEST_ID);
   try {
     const { page } = space;
@@ -36,11 +44,6 @@ test('sidebar width writes to localStorage and survives reload', async () => {
 
     await expect(inlineWidth(page, 'left-sidebar')).resolves.toBe('300px');
 
-    await page.evaluate(() => {
-      window.localStorage.setItem('kodax-space.rightSidebarOpen', '1');
-    });
-    await reload(page);
-
     // The right sidebar additionally clamps to a responsive "expanded" ceiling
     // (~half the available paired width) that depends on the viewport, so a
     // persisted 380 renders narrower on small windows (e.g. the Windows CI
@@ -51,6 +54,7 @@ test('sidebar width writes to localStorage and survives reload', async () => {
       window.localStorage.setItem('kodax-space.rightSidebarWidth', '9999');
     });
     await reload(page);
+    await openRightSidebar(page);
     const ceilingPx = Number.parseInt(await inlineWidth(page, 'right-sidebar'), 10);
     expect(ceilingPx).toBeGreaterThan(0);
 
@@ -58,9 +62,11 @@ test('sidebar width writes to localStorage and survives reload', async () => {
       window.localStorage.setItem('kodax-space.rightSidebarWidth', '380');
     });
     await reload(page);
+    await openRightSidebar(page);
     const expectedRight = `${Math.min(380, ceilingPx)}px`;
     await expect(inlineWidth(page, 'right-sidebar')).resolves.toBe(expectedRight);
     await reload(page);
+    await openRightSidebar(page);
     await expect(inlineWidth(page, 'right-sidebar')).resolves.toBe(expectedRight);
   } finally {
     await space.close();

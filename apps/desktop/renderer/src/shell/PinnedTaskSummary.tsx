@@ -8,15 +8,11 @@ import {
   GitCompare,
   Workflow,
 } from 'lucide-react';
-import type { SessionEvent } from '@kodax-space/space-ipc-schema';
-import { useSessionWorkflowRuns } from '../features/workflow/WorkflowPanel.js';
-import { useAppStore } from '../store/appStore.js';
-import { buildTaskDockRunView, type TaskDockRunViewModel } from './taskDockProjection.js';
+import type { TaskDockRunViewModel } from './taskDockProjection.js';
 import { requestTaskDockFocus, type TaskDockSectionId } from './taskDockControl.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import type { MessageKey } from '../i18n/messages.js';
-
-const EMPTY_EVENTS: readonly SessionEvent[] = [];
+import { useTaskDockRunView } from './useTaskDockRunView.js';
 
 interface SummaryChip {
   readonly key: string;
@@ -28,57 +24,13 @@ interface SummaryChip {
 
 export function PinnedTaskSummary(): JSX.Element | null {
   const { t } = useI18n();
-  const currentProjectPath = useAppStore((s) => s.currentProjectPath);
-  const currentSessionId = useAppStore((s) => s.currentSessionId);
-  const pendingSend = useAppStore((s) =>
-    currentSessionId ? (s.pendingSendBySession[currentSessionId] ?? false) : false,
-  );
-  const todos = useAppStore((s) =>
-    currentSessionId ? s.todoListBySession[currentSessionId] : undefined,
-  );
-  const managedStatus = useAppStore((s) =>
-    currentSessionId ? s.managedTaskStatusBySession[currentSessionId] : undefined,
-  );
-  const budget = useAppStore((s) =>
-    currentSessionId ? s.workBudgetBySession[currentSessionId] : undefined,
-  );
-  const events = useAppStore((s) =>
-    currentSessionId ? (s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS) : EMPTY_EVENTS,
-  );
-  const hasPermissionRequest = useAppStore((s) =>
-    currentSessionId
-      ? s.permissionQueue.some((request) => request.sessionId === currentSessionId)
-      : false,
-  );
-  const hasAskUserRequest = useAppStore((s) =>
-    currentSessionId
-      ? s.askUserQueue.some((request) => request.sessionId === currentSessionId)
-      : false,
-  );
-  const workflowRuns = useSessionWorkflowRuns();
-
-  const view = buildTaskDockRunView({
-    hasProject: currentProjectPath !== null,
-    hasSession: currentSessionId !== null,
-    pendingSend,
-    todos,
-    managedStatus,
-    workflowRuns,
-    events,
-    budget,
-    hasPermissionRequest,
-    hasAskUserRequest,
-    t,
-  });
+  const { view, hasProject, hasSession } = useTaskDockRunView();
 
   const chips = useMemo(() => buildSummaryChips(view, t), [view, t]);
   const primaryTarget = view.primaryTarget ?? 'run';
   const primaryTargetLabel = sectionLabel(primaryTarget, t);
   const shouldRender =
-    currentProjectPath !== null ||
-    currentSessionId !== null ||
-    view.mode === 'attention' ||
-    view.mode === 'running';
+    hasProject || hasSession || view.mode === 'attention' || view.mode === 'running';
   if (!shouldRender) return null;
 
   return (

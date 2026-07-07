@@ -166,6 +166,11 @@ test('Environment Hub routes anchored menus and changes into Task Dock and Revie
     await page.getByTestId('environment-hub-sources-row').click();
     await expect(page.getByTestId('environment-hub-sources-menu')).toBeVisible();
     await page.getByTestId('environment-hub-commit-row').click();
+    await expect(page.getByTestId('environment-hub-commit-menu')).toBeVisible();
+    await expect(page.getByTestId('environment-hub-commit-menu')).toContainText(
+      'Commit and push actions are not wired yet',
+    );
+    await page.getByText('Review changes in Task Dock').click();
     await expect(page.locator('[data-task-dock-section="changes"]')).toBeVisible({
       timeout: 5_000,
     });

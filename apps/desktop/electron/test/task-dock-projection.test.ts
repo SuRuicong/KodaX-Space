@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import type { WorkflowRunT } from '@kodax-space/space-ipc-schema';
+import type { MessageKey } from '../../renderer/src/i18n/messages.js';
 import { buildTaskDockRunView } from '../../renderer/src/shell/taskDockProjection.js';
+import { getCachedTaskDockRunView } from '../../renderer/src/shell/useTaskDockRunView.js';
 
 test('task dock run projection prioritizes blocking permission attention', () => {
   const view = buildTaskDockRunView({
@@ -56,7 +59,7 @@ test('task dock plan metric counts completed items only', () => {
 
   assert.deepEqual(
     view.metrics.find((metric) => metric.label === 'Plan'),
-    { label: 'Plan', value: '1/3' },
+    { key: 'plan', label: 'Plan', value: '1/3' },
   );
 });
 
@@ -82,3 +85,44 @@ test('task dock run projection gives neutral idle state before a session exists'
   assert.equal(view.severity, 'neutral');
   assert.equal(view.headline, 'Ready');
 });
+
+test('task dock run view cache reuses the same raw input snapshot', () => {
+  const events = [] as const;
+  const workflowRun = workflowRunFixture();
+  const workflowRuns = [workflowRun];
+  const t = (key: MessageKey): string => key;
+  const input = {
+    hasProject: true,
+    hasSession: true,
+    pendingSend: false,
+    workflowRuns,
+    events,
+    t,
+  };
+
+  const first = getCachedTaskDockRunView(input);
+  const second = getCachedTaskDockRunView({ ...input, workflowRuns: [workflowRun] });
+  const third = getCachedTaskDockRunView({ ...input, events: [] });
+
+  assert.equal(second, first);
+  assert.notEqual(third, first);
+});
+
+function workflowRunFixture(): WorkflowRunT {
+  return {
+    runId: 'wf-test',
+    workflowName: 'review',
+    status: 'completed',
+    startedAt: '2026-07-07T00:00:00.000Z',
+    updatedAt: '2026-07-07T00:00:01.000Z',
+    items: [],
+    counts: { pending: 0, running: 0, completed: 0, failed: 0, cancelled: 0, skipped: 0 },
+    progress: {
+      spawnedAgents: 0,
+      finishedAgents: 0,
+      activeAgents: 0,
+      failedAgents: 0,
+      stoppedAgents: 0,
+    },
+  };
+}

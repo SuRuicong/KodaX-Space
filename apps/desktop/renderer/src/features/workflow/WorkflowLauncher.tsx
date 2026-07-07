@@ -3,12 +3,13 @@
 // 挂在 workflow popout 顶部（WorkflowPanelConnected）。无 run 时也能从这里发起第一个工作流
 // （解决"无 run→无 Section→无入口"的鸡蛋问题：workflow popout 在 CommandToolbar 常驻可达）。
 
-import { useState } from 'react';
+import { useState, type JSX, type ReactNode } from 'react';
 import { Play, ChevronDown, ChevronRight, ShieldCheck, RefreshCw, Lock } from 'lucide-react';
 import { useAppStore } from '../../store/appStore.js';
 import { pushToast } from '../../store/toastStore.js';
 import { requestConfirm } from '../../store/confirmStore.js';
 import { useI18n } from '../../i18n/I18nProvider.js';
+import type {} from '../../types/global.js';
 
 interface MetaLite {
   name: string;
@@ -191,7 +192,7 @@ export function WorkflowLauncher(): JSX.Element {
   );
 }
 
-function LibGroup({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
+function LibGroup({ title, children }: { title: string; children: ReactNode }): JSX.Element {
   return (
     <div>
       <div className="text-[10px] font-mono uppercase tracking-wide text-fg-faint px-1 pb-0.5">

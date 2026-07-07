@@ -10,6 +10,7 @@ import {
   ListTree,
   PanelRight,
   Plus,
+  Upload,
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
 import { requestTaskDockFocus } from './taskDockControl.js';
@@ -27,7 +28,7 @@ interface GitStatusSnapshot {
   readonly behind?: number;
 }
 
-type HubMenu = 'location' | 'branch' | 'sources' | null;
+type HubMenu = 'location' | 'branch' | 'commit' | 'sources' | null;
 
 const EMPTY_GIT_STATUS: GitStatusSnapshot = {
   isGitRepo: false,
@@ -54,6 +55,7 @@ export function EnvironmentHub(): JSX.Element {
     [currentProjectPath, t],
   );
   const dirtyCount = gitStatus.modifiedCount + gitStatus.stagedCount + gitStatus.untrackedCount;
+  const hasSessionContext = currentSession !== undefined || currentSessionId !== null;
 
   const refreshGitStatus = useCallback((): void => {
     if (!currentProjectPath || !window.kodaxSpace) {
@@ -179,14 +181,6 @@ export function EnvironmentHub(): JSX.Element {
               <Plus className="h-4 w-4" strokeWidth={1.8} aria-hidden />
             </button>
           </div>
-          {menu === 'sources' && (
-            <SourcesMenu
-              currentProjectPath={currentProjectPath}
-              sessionLabel={currentSession?.title ?? currentSessionId ?? null}
-              onOpenSources={() => focusDock('sources')}
-            />
-          )}
-
           <HubRow
             icon={<GitCompare className="h-4 w-4" strokeWidth={1.8} aria-hidden />}
             label={t('environment.changes')}
@@ -224,6 +218,39 @@ export function EnvironmentHub(): JSX.Element {
               ahead={gitStatus.ahead}
               behind={gitStatus.behind}
               isGitRepo={gitStatus.isGitRepo}
+            />
+          )}
+
+          <HubRow
+            icon={<Upload className="h-4 w-4" strokeWidth={1.8} aria-hidden />}
+            label={t('environment.commitPush')}
+            value={commitPushLabel(gitStatus, dirtyCount, t)}
+            tone={commitPushTone(gitStatus, dirtyCount)}
+            active={menu === 'commit'}
+            testId="environment-hub-commit-row"
+            onClick={() => setMenu((value) => (value === 'commit' ? null : 'commit'))}
+          />
+          {menu === 'commit' && (
+            <CommitPushMenu
+              gitStatus={gitStatus}
+              dirtyCount={dirtyCount}
+              onOpenChanges={() => focusDock('changes')}
+            />
+          )}
+
+          <HubRow
+            icon={<FileText className="h-4 w-4" strokeWidth={1.8} aria-hidden />}
+            label={t('environment.sources')}
+            value={sourcesLabel(currentProjectPath !== null, hasSessionContext, t)}
+            active={menu === 'sources'}
+            testId="environment-hub-sources-row"
+            onClick={() => setMenu((value) => (value === 'sources' ? null : 'sources'))}
+          />
+          {menu === 'sources' && (
+            <SourcesMenu
+              currentProjectPath={currentProjectPath}
+              sessionLabel={currentSession?.title ?? currentSessionId ?? null}
+              onOpenSources={() => focusDock('sources')}
             />
           )}
 
@@ -361,6 +388,44 @@ function BranchMenu({
   );
 }
 
+function CommitPushMenu({
+  gitStatus,
+  dirtyCount,
+  onOpenChanges,
+}: {
+  readonly gitStatus: GitStatusSnapshot;
+  readonly dirtyCount: number;
+  readonly onOpenChanges: () => void;
+}): JSX.Element {
+  const { t } = useI18n();
+  const hasRemoteState = (gitStatus.ahead ?? 0) > 0 || (gitStatus.behind ?? 0) > 0;
+  return (
+    <div
+      className="mb-1 ml-7 rounded-lg border border-border-default bg-surface-3 py-1"
+      data-testid="environment-hub-commit-menu"
+    >
+      <MenuLine
+        checked={gitStatus.isGitRepo && (dirtyCount > 0 || hasRemoteState)}
+        label={t('environment.commitPushStatus')}
+        detail={commitPushLabel(gitStatus, dirtyCount, t)}
+      />
+      <MenuLine
+        label={t('environment.commitPush')}
+        detail={t('environment.commitPushActionsComing')}
+        disabled
+      />
+      <button
+        type="button"
+        onClick={onOpenChanges}
+        className="mt-1 flex w-full items-center gap-2 border-t border-border-default px-2.5 py-1.5 text-left text-[12px] text-fg-secondary hover:bg-hover-bg hover:text-fg-primary"
+      >
+        <GitCompare className="h-3.5 w-3.5 text-fg-muted" strokeWidth={1.8} aria-hidden />
+        <span>{t('environment.openChangesTaskDock')}</span>
+      </button>
+    </div>
+  );
+}
+
 function SourcesMenu({
   currentProjectPath,
   sessionLabel,
@@ -448,4 +513,30 @@ function changesLabel(status: GitStatusSnapshot, dirtyCount: number, t: Translat
       : null,
   ].filter(Boolean);
   return parts.join(' / ');
+}
+
+function commitPushLabel(status: GitStatusSnapshot, dirtyCount: number, t: Translate): string {
+  if (!status.isGitRepo) return t('environment.noGit');
+  if (dirtyCount > 0) return t('environment.uncommittedFiles', { count: dirtyCount });
+  if ((status.ahead ?? 0) > 0 || (status.behind ?? 0) > 0) {
+    return t('environment.aheadBehind', {
+      ahead: status.ahead ?? 0,
+      behind: status.behind ?? 0,
+    });
+  }
+  return t('environment.workingTreeClean');
+}
+
+function commitPushTone(status: GitStatusSnapshot, dirtyCount: number): 'accent' | 'muted' {
+  if (!status.isGitRepo) return 'muted';
+  return dirtyCount > 0 || (status.ahead ?? 0) > 0 || (status.behind ?? 0) > 0
+    ? 'accent'
+    : 'muted';
+}
+
+function sourcesLabel(hasWorkspace: boolean, hasSession: boolean, t: Translate): string {
+  if (hasWorkspace && hasSession) return t('environment.sources.workspaceSession');
+  if (hasWorkspace) return t('environment.sources.workspace');
+  if (hasSession) return t('environment.sources.session');
+  return t('environment.sources.none');
 }

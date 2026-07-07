@@ -65,7 +65,8 @@ import {
   type TaskDockSectionId,
 } from './taskDockControl.js';
 import { buildAgentStatuses, type AgentStatusViewModel } from './agentStatusProjection.js';
-import { buildTaskDockRunView } from './taskDockProjection.js';
+import type { TaskDockRunViewModel } from './taskDockProjection.js';
+import { useTaskDockRunView } from './useTaskDockRunView.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 const SECTION_OPEN_STORAGE_KEY = 'kodax-space.rightSidebar.sectionOpen';
@@ -460,48 +461,7 @@ function Section({
 
 function RunSection({ focusRequest }: { readonly focusRequest: TaskDockFocusState }): JSX.Element {
   const { t } = useI18n();
-  const currentProjectPath = useAppStore((s) => s.currentProjectPath);
-  const currentSessionId = useAppStore((s) => s.currentSessionId);
-  const pendingSend = useAppStore((s) =>
-    currentSessionId ? (s.pendingSendBySession[currentSessionId] ?? false) : false,
-  );
-  const todos = useAppStore((s) =>
-    currentSessionId ? s.todoListBySession[currentSessionId] : undefined,
-  );
-  const status = useAppStore((s) =>
-    currentSessionId ? s.managedTaskStatusBySession[currentSessionId] : undefined,
-  );
-  const budget = useAppStore((s) =>
-    currentSessionId ? s.workBudgetBySession[currentSessionId] : undefined,
-  );
-  const events = useAppStore((s) =>
-    currentSessionId ? (s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS) : EMPTY_EVENTS,
-  );
-  const hasPermissionRequest = useAppStore((s) =>
-    currentSessionId
-      ? s.permissionQueue.some((request) => request.sessionId === currentSessionId)
-      : false,
-  );
-  const hasAskUserRequest = useAppStore((s) =>
-    currentSessionId
-      ? s.askUserQueue.some((request) => request.sessionId === currentSessionId)
-      : false,
-  );
-  const workflowRuns = useSessionWorkflowRuns();
-
-  const view = buildTaskDockRunView({
-    hasProject: currentProjectPath !== null,
-    hasSession: currentSessionId !== null,
-    pendingSend,
-    todos,
-    managedStatus: status,
-    workflowRuns,
-    events,
-    budget,
-    hasPermissionRequest,
-    hasAskUserRequest,
-    t,
-  });
+  const { view } = useTaskDockRunView();
 
   return (
     <Section title={t('right.run')} sectionId="run" focusRequest={focusRequest}>
@@ -540,7 +500,7 @@ function RunSection({ focusRequest }: { readonly focusRequest: TaskDockFocusStat
   );
 }
 
-function runCardClass(severity: ReturnType<typeof buildTaskDockRunView>['severity']): string {
+function runCardClass(severity: TaskDockRunViewModel['severity']): string {
   switch (severity) {
     case 'running':
       return 'border-run/40 bg-run/10';
@@ -557,7 +517,7 @@ function runCardClass(severity: ReturnType<typeof buildTaskDockRunView>['severit
   }
 }
 
-function runDotClass(severity: ReturnType<typeof buildTaskDockRunView>['severity']): string {
+function runDotClass(severity: TaskDockRunViewModel['severity']): string {
   switch (severity) {
     case 'running':
       return 'bg-run animate-pulse';

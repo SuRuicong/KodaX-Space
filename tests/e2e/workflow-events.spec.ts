@@ -386,10 +386,9 @@ test('workflow push events update the sidebar and transcript through completion'
     await expect(sidebar.getByLabel('Workflow runtime status')).toContainText('Collect changes', {
       timeout: 15_000,
     });
-    await expect(space.page.getByTestId('workflow-live-strip')).toContainText(
-      'E2E Workflow Review',
-      { timeout: 15_000 },
-    );
+    const pinnedSummary = space.page.getByTestId('pinned-task-summary');
+    await expect(pinnedSummary).toContainText('E2E Workflow Review', { timeout: 15_000 });
+    await expect(space.page.getByTestId('workflow-live-strip')).toHaveCount(0);
 
     await emitWorkflowEvent(space, {
       type: 'workflow_updated',
@@ -432,6 +431,7 @@ test('workflow push events update the sidebar and transcript through completion'
     await expect(sidebar.getByLabel('Workflow runtime status')).toContainText('Reviewer', {
       timeout: 15_000,
     });
+    await expect(pinnedSummary).toContainText('agent spawned: Reviewer', { timeout: 15_000 });
     await expect(
       stream.locator('[data-testid="system-notice"][data-notice-variant="workflow"]', {
         hasText: '[workflow] agent summary: Collector',

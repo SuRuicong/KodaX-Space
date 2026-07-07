@@ -12,7 +12,7 @@
 //   - WorkflowPanel({ runs })    —— 纯展示，不自取 store
 //   - WorkflowPanelConnected     —— popout 用（自取 runs 再渲染 WorkflowPanel）
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import {
   Loader2,
@@ -49,6 +49,7 @@ import { WorkflowRunGraph } from './WorkflowRunGraph.js';
 import { WorkflowLauncher } from './WorkflowLauncher.js';
 import { useI18n } from '../../i18n/I18nProvider.js';
 import type { MessageKey } from '../../i18n/messages.js';
+import type {} from '../../types/global.js';
 import { workflowPhaseCounter } from './workflowPhaseDisplay.js';
 
 // ---- run / item 状态 → 图标 + 颜色 ----

@@ -14,15 +14,36 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 
 ## [Unreleased]
 
+## [0.1.29] - 2026-07-08
+
+### Theme
+
+**Workspace Environment Hub + Task Dock + Floating Surface Host, with Memory Governance, scoped Markdown agents, KAI-FCL licensing, and KodaX 0.7.63 baseline alignment.**
+
+This release ships the F103 shell redesign: a Codex-inspired Environment Hub for project/location/branch/source routing, a right-side Task Dock for run/plan/agents/workflow/changes/sources/artifacts/context detail, and a Floating Surface Host for popouts and blocking modals. It also brings the Memory Governance surface over the SDK memory control plane, enables scoped Markdown agents, refreshes the manual, and aligns release metadata to `0.1.29`.
+
 ### Added
 
-- **KodaX 0.7.62 `ask_user` custom input** - Space now supports the SDK's default-on custom input option for select questions. The ask-user modal can render an "Other" answer, collect free text, and return `{ kind: 'customInput', value }` through IPC back to the SDK, including multi-select answers.
+- **Workspace Environment Hub and Task Dock (F103)** - Added the compact Environment Hub for Changes, Local, Branch, Commit/Push, Sources, Task Dock, and Context routing. The right sidebar now acts as a Task Dock with Run, Plan, Agents, Workflow, Changes, Sources, Artifacts, and Context sections.
+- **Floating Surface Host** - Popouts and blocking modals now share surface policy for z-index, backdrop, Escape handling, focus trap/restore, and topmost-surface behavior.
 - **Memory Governance Surface (F088)** - Added a Coder-only Memory popout, `memory.*` IPC schema/service, and upgraded `/memory` slash commands over KodaX 0.7.62's `MemoryControlPlane`. Users can review pending memory proposals, approve with preview fingerprints, reject proposals, inspect approved refs, run curator reports, and test deterministic memory packs while Partner KB remains separate.
+- **KodaX 0.7.62 `ask_user` custom input** - Space now supports the SDK's default-on custom input option for select questions. The ask-user modal can render an "Other" answer, collect free text, and return `{ kind: 'customInput', value }` through IPC back to the SDK, including multi-select answers.
+- **Scoped Markdown agents** - Markdown agent discovery/runtime paths are wired through the SDK 0.7.63 runtime so Space can activate scoped project agents without exposing them as global state.
 
 ### Changed
 
-- **KodaX 0.7.62 SDK catch-up** - Root and desktop workspaces resolve `@kodax-ai/kodax` `0.7.62`. This brings in the SDK memory-governance baseline (FEATURE_228) while Space's dedicated Memory Governance Surface remains tracked separately as F088.
+- **KodaX 0.7.63 SDK catch-up** - Root and desktop workspaces resolve `@kodax-ai/kodax` `0.7.63`, while Memory Governance continues to consume the 0.7.62 controller surface introduced upstream.
+- **Right sidebar opens only when useful** - The Task Dock no longer restores stale open state on startup; Environment Hub routes and task-relevant signals focus the appropriate section when needed.
+- **Run projection performance** - The pinned summary and Task Dock Run section share one cached run projection so high-frequency task status updates do not repeat expensive agent/status grouping.
+- **Environment Hub interaction honesty** - Commit/Push now opens an explanatory menu and clearly marks commit/push actions as not yet wired, while still offering a direct route to review changes.
 - **Project license switched to KAI-FCL** - Current and future official KodaX-AI distributions for KodaX Space 0.1.27 and later use the source-available KodaX-AI Fair Core License (`KAI-FCL`) or accompanying customer terms when distributed with that notice. Historical tags, source archives, installers, or other copies already distributed with Apache-2.0 notices remain under Apache-2.0 for those specific copies; dependency license metadata is unchanged.
+- **Manual refresh** - The Chinese user manual and release planning docs now describe the Environment Hub, Task Dock, Memory Governance, and current 0.1.29 behavior.
+
+### Fixed
+
+- **Task Dock review closeout** - Fixed stale right-sidebar preference handling, misleading Sources counts, duplicate Run projection work, and the old subagent compact view that surfaced worker rounds instead of semantic agent status.
+- **Toolbar regression coverage** - Added E2E coverage for opening the Review popout from the Activity views toolbar, while keeping the layout-position test focused on popout geometry.
+- **Workflow and React 19 type compatibility** - Workflow renderer files now import the React 19 JSX types and include renderer `.d.ts` files in the desktop TypeScript project.
 
 ## [0.1.28] - 2026-07-06
 

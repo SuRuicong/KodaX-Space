@@ -2,6 +2,8 @@ import { test, expect, type Page } from '@playwright/test';
 import { launchSpace } from './fixtures.js';
 
 const TEST_ID = `settings-interactions-${Date.now()}`;
+const TASK_FOCUS_TOGGLE = 'Auto-focus Task Dock and Review paths';
+const CONFIRM_DIALOG = '[role="dialog"][aria-label="Confirm action"]';
 
 async function openSettings(page: Page): Promise<void> {
   await page.waitForTimeout(2000);
@@ -195,7 +197,7 @@ test('Settings preferences controls are keyboardable, minimal, and persist edits
     await saveWorkspace.click();
     await expect(dialog.getByText('Saved', { exact: true })).toBeVisible();
 
-    const smartToggle = dialog.getByLabel('Auto-open Plan, Diff, and Tasks panels');
+    const smartToggle = dialog.getByLabel(TASK_FOCUS_TOGGLE);
     await smartToggle.uncheck();
     await expect(smartToggle).not.toBeChecked();
     await smartToggle.check();
@@ -242,7 +244,7 @@ test('Settings interactive inventory has no unnamed controls across dynamic stat
       'Default workspace',
       'Browse',
       'Save workspace',
-      'Auto-open Plan, Diff, and Tasks panels',
+      TASK_FOCUS_TOGGLE,
       'Advanced limits',
     ]);
 
@@ -507,7 +509,7 @@ test('Provider cards support default switching, key editing, removal, and deleti
     // Delete now uses the in-app ConfirmDialog (window.confirm stole webContents
     // focus under Electron sandbox). Cancel path: dialog shows, Cancel keeps card.
     await beta.getByRole('button', { name: 'Delete' }).click();
-    const betaConfirm = page.locator('[role="dialog"][aria-labelledby="confirm-dialog-title"]');
+    const betaConfirm = page.locator(CONFIRM_DIALOG);
     await expect(betaConfirm).toContainText('Delete custom provider "Beta Gateway"');
     await betaConfirm.getByRole('button', { name: 'Cancel' }).click();
     await expect(beta).toBeVisible();
@@ -515,7 +517,7 @@ test('Provider cards support default switching, key editing, removal, and deleti
     // Confirm path: dialog Delete button actually removes the card.
     await beta.getByRole('button', { name: 'Delete' }).click();
     await page
-      .locator('[role="dialog"][aria-labelledby="confirm-dialog-title"]')
+      .locator(CONFIRM_DIALOG)
       .getByRole('button', { name: 'Delete' })
       .click();
     await expect(beta).toHaveCount(0);
@@ -589,7 +591,7 @@ test('Provider cards cover add-key Enter, test failure, and default cleanup stat
     // Delete now uses the in-app ConfirmDialog; click its confirm button.
     await gamma.getByRole('button', { name: 'Delete' }).click();
     await page
-      .locator('[role="dialog"][aria-labelledby="confirm-dialog-title"]')
+      .locator(CONFIRM_DIALOG)
       .getByRole('button', { name: 'Delete' })
       .click();
     await expect(gamma).toHaveCount(0);

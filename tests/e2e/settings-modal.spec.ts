@@ -10,8 +10,9 @@ import { test, expect } from '@playwright/test';
 import { launchSpace } from './fixtures.js';
 
 const TEST_ID = `settings-modal-${Date.now()}`;
+const TASK_FOCUS_TOGGLE = 'Auto-focus Task Dock and Review paths';
 
-test('SettingsModal opens via sidebar ⚙, Esc closes, smart-popout toggle persists', async () => {
+test('SettingsModal opens via sidebar, Esc closes, Task Dock focus toggle persists', async () => {
   const space = await launchSpace(TEST_ID);
   try {
     const { page } = space;
@@ -28,8 +29,8 @@ test('SettingsModal opens via sidebar ⚙, Esc closes, smart-popout toggle persi
     const defaultEnabled = await page.evaluate(() =>
       window.localStorage.getItem('kodax-space.smartPopoutEnabled'),
     );
-    // 默认没写过 → null;开关默认 on (代码 lsGet !== '0' 判定)
-    expect(defaultEnabled === null || defaultEnabled === '1').toBe(true);
+    // 默认没写过 -> null; auto-focus is opt-in and only writes after explicit toggles.
+    expect(defaultEnabled).toBeNull();
 
     // 点 LeftSidebar 底栏设置按钮
     const settingsBtn = page.getByTestId('settings-button');
@@ -45,9 +46,15 @@ test('SettingsModal opens via sidebar ⚙, Esc closes, smart-popout toggle persi
     const prefPanel = page.locator('#settings-panel-preferences');
     await expect(prefPanel).toBeVisible();
 
-    // 找到 "Auto-open Plan / Diff / Tasks popouts" 复选框
-    const dirToggle = page.locator('input[type="checkbox"]').nth(0);
-    await expect(dirToggle).toBeChecked();
+    // 找到 Task Dock / Review path auto-focus 复选框
+    const dirToggle = page.getByLabel(TASK_FOCUS_TOGGLE);
+    await expect(dirToggle).not.toBeChecked();
+    await dirToggle.check();
+    await page.waitForTimeout(100);
+    const afterFirstCheck = await page.evaluate(() =>
+      window.localStorage.getItem('kodax-space.smartPopoutEnabled'),
+    );
+    expect(afterFirstCheck).toBe('1');
 
     // 关掉 director toggle
     await dirToggle.uncheck();

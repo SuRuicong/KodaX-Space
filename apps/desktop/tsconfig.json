@@ -14,6 +14,6 @@
       "@livecanvas/sandbox-bridge": ["./renderer/src/types/livecanvas-sandbox-bridge.d.ts"]
     }
   },
-  "include": ["renderer/src/**/*.ts", "renderer/src/**/*.tsx"],
+  "include": ["renderer/src/**/*.ts", "renderer/src/**/*.tsx", "renderer/src/**/*.d.ts"],
   "exclude": ["node_modules", "dist", "electron", "vite.config.ts"]
 }

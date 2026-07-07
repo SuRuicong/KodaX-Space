@@ -23,6 +23,7 @@ import { QuickAskPopover } from './features/quick-ask/QuickAskPopover.js';
 import { useSessionCompleteNotification } from './features/notifications/useSessionCompleteNotification.js';
 import { Shell } from './shell/Shell.js';
 import { formatWorkflowEventNotices } from './features/workflow/workflowNotices.js';
+import { requestTaskDockFocus } from './shell/taskDockControl.js';
 
 // Shell owns the visible layout; App keeps process-wide bootstrapping and global listeners.
 const HIDDEN_SESSION_EVENT_FLUSH_MS = 100;
@@ -130,7 +131,6 @@ export default function App(): JSX.Element {
   const upsertWorkflowRun = useAppStore((s) => s.upsertWorkflowRun);
   const seedWorkflowRuns = useAppStore((s) => s.seedWorkflowRuns);
   const appendWorkflowActivity = useAppStore((s) => s.appendWorkflowActivity);
-  const setRightSidebarOpen = useAppStore((s) => s.setRightSidebarOpen);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const setSessionFlag = useAppStore((s) => s.setSessionFlag);
   const unsubsRef = useRef<Array<() => void>>([]);
@@ -335,7 +335,7 @@ export default function App(): JSX.Element {
           payload.surface !== 'partner' &&
           useAppStore.getState().currentSessionId === payload.sessionId
         ) {
-          setRightSidebarOpen(true);
+          requestTaskDockFocus('workflow');
         }
       }),
     );
@@ -376,7 +376,6 @@ export default function App(): JSX.Element {
     upsertWorkflowRun,
     seedWorkflowRuns,
     appendWorkflowActivity,
-    setRightSidebarOpen,
   ]);
 
   // (Esc 关 settings 面板已下放到 SettingsModal 自己 own —— 见 features/settings/SettingsModal.tsx)

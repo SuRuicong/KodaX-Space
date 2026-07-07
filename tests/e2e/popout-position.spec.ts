@@ -16,8 +16,13 @@ test('diff popout overlays the conversation without blocking the composer', asyn
     await space.seedProject(projectDir);
     await page.waitForTimeout(1500);
 
-    await page.getByRole('button', { name: 'Activity views' }).click();
-    await page.getByRole('button', { name: /^Diff\b/ }).click();
+    await page.evaluate(() => {
+      window.dispatchEvent(
+        new CustomEvent('kodax-space.shell-popout', {
+          detail: { kind: 'diff' },
+        }),
+      );
+    });
 
     const closeBtn = page.getByRole('button', { name: 'Close popout' });
     await expect(closeBtn).toBeVisible({ timeout: 5000 });
@@ -63,6 +68,26 @@ test('diff popout overlays the conversation without blocking the composer', asyn
 
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('popout-diff')).toBeHidden({ timeout: 2_000 });
+  } finally {
+    await space.close();
+    await fs.rm(projectDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test('activity toolbar opens the review popout', async () => {
+  const testId = `popout-toolbar-${Date.now()}`;
+  const projectDir = path.join(os.tmpdir(), `kodax-test-proj-${testId}`);
+  await fs.mkdir(projectDir, { recursive: true });
+
+  const space = await launchSpace(testId);
+  try {
+    const { page } = space;
+    await space.seedProject(projectDir);
+
+    await page.getByRole('button', { name: 'Activity views' }).click();
+    await page.getByRole('button', { name: /^Review\b/ }).click();
+
+    await expect(page.getByTestId('popout-diff')).toBeVisible({ timeout: 5_000 });
   } finally {
     await space.close();
     await fs.rm(projectDir, { recursive: true, force: true }).catch(() => {});

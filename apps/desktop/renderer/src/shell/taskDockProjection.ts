@@ -1,7 +1,7 @@
 import type { SessionEvent, WorkflowRunT } from '@kodax-space/space-ipc-schema';
 import { summarizeTodoProgress } from '../lib/liveTaskProgress.js';
 import { buildAgentStatuses, type AgentStatusViewModel } from './agentStatusProjection.js';
-import type { MessageKey } from '../i18n/messages.js';
+import { messages, type MessageKey } from '../i18n/messages.js';
 
 type TodoItem = {
   readonly id: string;
@@ -51,7 +51,7 @@ export interface BuildTaskDockRunInput {
 }
 
 export function buildTaskDockRunView(input: BuildTaskDockRunInput): TaskDockRunViewModel {
-  const t = input.t ?? ((key: MessageKey): string => key);
+  const t = input.t ?? defaultTranslate;
   let agentStatuses: readonly AgentStatusViewModel[] | null = null;
   const getAgents = (): readonly AgentStatusViewModel[] => {
     if (agentStatuses === null) agentStatuses = buildAgentStatuses(input.managedStatus);
@@ -166,6 +166,15 @@ export function buildTaskDockRunView(input: BuildTaskDockRunInput): TaskDockRunV
     metrics: buildMetrics(input, agents, t),
     primaryTarget: 'run',
   };
+}
+
+function defaultTranslate(key: MessageKey, vars?: Record<string, string | number>): string {
+  const message = messages['en-US'][key];
+  if (!vars) return message;
+  return message.replace(/\{([a-zA-Z0-9_]+)\}/g, (match, name) => {
+    const value = vars[name];
+    return value === undefined ? match : String(value);
+  });
 }
 
 function attention(
