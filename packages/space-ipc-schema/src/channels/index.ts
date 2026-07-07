@@ -92,6 +92,7 @@ import {
   filesTreeChannel,
   filesReadChannel,
   filesReadBinaryChannel,
+  filesStatChannel,
   filesDiffChannel,
 } from './files.js';
 import {
@@ -116,7 +117,7 @@ import {
   licenseRequireEntitlementChannel,
 } from './license.js';
 import { notificationShowChannel, notificationClickedChannel } from './notification.js';
-import { windowActivityChannel } from './window.js';
+import { windowActivityChannel, windowControlChannel, windowStateChannel } from './window.js';
 import { updaterCheckChannel, updaterInstallChannel, updaterStatusChannel } from './updater.js';
 import {
   mcpbInstallChannel,
@@ -170,6 +171,15 @@ import {
   workflowPolicySetChannel,
   workflowResultChannel,
 } from './workflow.js';
+import {
+  memoryListChannel,
+  memoryProposalChannel,
+  memoryApproveChannel,
+  memoryRejectChannel,
+  memoryReadRefChannel,
+  memoryCurateChannel,
+  memoryPackChannel,
+} from './memory.js';
 
 export const invokeChannels = {
   [versionChannel.name]: versionChannel,
@@ -240,6 +250,7 @@ export const invokeChannels = {
   [filesTreeChannel.name]: filesTreeChannel,
   [filesReadChannel.name]: filesReadChannel,
   [filesReadBinaryChannel.name]: filesReadBinaryChannel,
+  [filesStatChannel.name]: filesStatChannel,
   [filesDiffChannel.name]: filesDiffChannel,
   [partnerSourcesListChannel.name]: partnerSourcesListChannel,
   [partnerSourcesAddChannel.name]: partnerSourcesAddChannel,
@@ -257,6 +268,8 @@ export const invokeChannels = {
   [licenseRequireEntitlementChannel.name]: licenseRequireEntitlementChannel,
   [licenseHasFeatureChannel.name]: licenseHasFeatureChannel,
   [notificationShowChannel.name]: notificationShowChannel,
+  [windowStateChannel.name]: windowStateChannel,
+  [windowControlChannel.name]: windowControlChannel,
   [updaterCheckChannel.name]: updaterCheckChannel,
   [updaterInstallChannel.name]: updaterInstallChannel,
   [mcpbInstallChannel.name]: mcpbInstallChannel,
@@ -296,6 +309,13 @@ export const invokeChannels = {
   [workflowPolicyGetChannel.name]: workflowPolicyGetChannel,
   [workflowPolicySetChannel.name]: workflowPolicySetChannel,
   [workflowResultChannel.name]: workflowResultChannel,
+  [memoryListChannel.name]: memoryListChannel,
+  [memoryProposalChannel.name]: memoryProposalChannel,
+  [memoryApproveChannel.name]: memoryApproveChannel,
+  [memoryRejectChannel.name]: memoryRejectChannel,
+  [memoryReadRefChannel.name]: memoryReadRefChannel,
+  [memoryCurateChannel.name]: memoryCurateChannel,
+  [memoryPackChannel.name]: memoryPackChannel,
 } as const;
 
 export const pushChannels = {

@@ -115,6 +115,7 @@ export {
 
 export {
   ASK_USER_BACK_SIGNAL,
+  ASK_USER_CUSTOM_INPUT_SIGNAL,
   askUserRequestChannel,
   askUserReplyChannel,
   askUserCancelledChannel,
@@ -209,11 +210,13 @@ export {
   filesTreeChannel,
   filesReadChannel,
   filesReadBinaryChannel,
+  filesStatChannel,
   filesDiffChannel,
   fileNodeSchema,
   MAX_FILE_BYTES,
   MAX_TREE_NODES,
   type FileNodeT,
+  type FileStatKindT,
 } from './channels/files.js';
 
 export {
@@ -282,8 +285,14 @@ export { notificationShowChannel, notificationClickedChannel } from './channels/
 export {
   windowActivityChannel,
   windowActivityStateSchema,
+  windowControlActionSchema,
+  windowControlChannel,
+  windowStateChannel,
+  windowStateSchema,
   type WindowActivityPayload,
   type WindowActivityStateT,
+  type WindowControlActionT,
+  type WindowStateT,
 } from './channels/window.js';
 
 export {
@@ -357,6 +366,35 @@ export {
   type WorkflowActivityPayload,
   type WorkflowPolicyT,
 } from './channels/workflow.js';
+
+export {
+  memoryListChannel,
+  memoryProposalChannel,
+  memoryApproveChannel,
+  memoryRejectChannel,
+  memoryReadRefChannel,
+  memoryCurateChannel,
+  memoryPackChannel,
+  memoryItemRefSchema,
+  memoryActionProposalSchema,
+  memoryApplyPreviewSchema,
+  memoryApplyResultSchema,
+  memoryRejectResultSchema,
+  memoryBodySnapshotSchema,
+  memoryGovernanceReportSchema,
+  memoryPackSchema,
+  memoryReviewPlanSchema,
+  type MemoryItemRefT,
+  type MemoryRefFilterT,
+  type MemoryApplyPreviewT,
+  type MemoryActionProposalT,
+  type MemoryApplyResultT,
+  type MemoryRejectResultT,
+  type MemoryBodySnapshotT,
+  type MemoryGovernanceReportT,
+  type MemoryPackT,
+  type MemoryReviewPlanT,
+} from './channels/memory.js';
 
 export {
   INVOKE_CHANNEL_NAMES,

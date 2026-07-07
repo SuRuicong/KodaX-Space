@@ -14,6 +14,7 @@ import { z } from 'zod';
  * (@kodax-ai/kodax/agent); a drift test asserts they stay equal.
  */
 export const ASK_USER_BACK_SIGNAL = '__back__';
+export const ASK_USER_CUSTOM_INPUT_SIGNAL = '__custom_input__';
 
 const reqIdSchema = z.string().min(1);
 const sessionIdSchema = z.string().min(1);
@@ -41,9 +42,17 @@ const askUserQuestionOptionSchema = z.object({
 });
 
 const selectionBoundSchema = z.number().int().min(0).max(20);
-const askUserQuestionAnswerSchema = z.union([
+const askUserCustomInputAnswerSchema = z.object({
+  kind: z.literal('customInput'),
+  value: z.string().max(4096),
+});
+const askUserSelectionAnswerSchema = z.union([
   z.string().max(4096),
-  z.array(z.string().max(512)).max(20),
+  askUserCustomInputAnswerSchema,
+]);
+const askUserQuestionAnswerSchema = z.union([
+  askUserSelectionAnswerSchema,
+  z.array(askUserSelectionAnswerSchema).max(20),
 ]);
 
 const guardrailRequestSchema = z.object({
@@ -67,6 +76,10 @@ const questionRequestSchema = z
     minSelections: selectionBoundSchema.optional(),
     maxSelections: selectionBoundSchema.optional(),
     default: z.string().max(4096).optional(),
+    allowCustomInput: z.boolean().optional(),
+    customInputLabel: z.string().min(1).max(160).optional(),
+    customInputPrompt: z.string().max(512).optional(),
+    customInputDefault: z.string().max(4096).optional(),
   })
   .superRefine((payload, ctx) => {
     if (payload.kind === 'select' && (!payload.options || payload.options.length === 0)) {

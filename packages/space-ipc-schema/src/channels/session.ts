@@ -656,6 +656,7 @@ export const sessionRewindChannel = {
   output: z.object({
     ok: z.boolean(),
     reason: z.enum(['session_not_found', 'invalid_index', 'session_busy']).optional(),
+    diskRewound: z.boolean().optional(),
   }),
 } as const;
 

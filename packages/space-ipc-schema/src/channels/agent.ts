@@ -1,13 +1,13 @@
 // Markdown agent discovery channel — FEATURE_197 (KodaX 0.7.43).
 //
-// KodaX 在 session 启动时通过 loadAgentsFromMarkdown(cwd) 自动扫 ~/.kodax/agents/*.md
-// 和 <project>/.kodax/agents/*.md 并注册到 agent registry——这是 V2 chain dispatch
-// 的隐式数据源。discoverMarkdownAgents 是 v0.7.43 新加的纯只读 API（不 admit、不写
-// registry），供 host UI 做 agent picker / debug 面板用。
+// discoverMarkdownAgents is the read-only SDK API for host UI previews: it scans
+// ~/.kodax/agents/*.md and <project>/.kodax/agents/*.md without admission and
+// without writing the SDK registry.
 //
 // Space wire 思路对齐 skill.discover：renderer 拿到 metadata 列表 → 渲染为 picker /
-// AGENTS.md popout 的子标签；不在 main 端直接做"激活"，激活仍由 KodaX session
-// 启动期自己做。
+// AGENTS.md popout 的子标签；不在 main 端直接做"激活"。Runtime activation needs
+// a separate integration because SDK 0.7.62 keeps markdown agents in a
+// process-global registry rather than a project-scoped registry.
 
 import { z } from 'zod';
 

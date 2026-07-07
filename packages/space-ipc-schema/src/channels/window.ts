@@ -1,6 +1,29 @@
 import { z } from 'zod';
 
 export const windowActivityStateSchema = z.enum(['active', 'passive', 'hidden']);
+export const windowControlActionSchema = z.enum(['minimize', 'toggleMaximize', 'close']);
+
+export const windowStateSchema = z.object({
+  maximized: z.boolean(),
+  minimized: z.boolean(),
+  focused: z.boolean(),
+});
+
+export const windowStateChannel = {
+  name: 'window.state',
+  direction: 'invoke',
+  input: z.undefined(),
+  output: windowStateSchema,
+} as const;
+
+export const windowControlChannel = {
+  name: 'window.control',
+  direction: 'invoke',
+  input: z.object({
+    action: windowControlActionSchema,
+  }),
+  output: windowStateSchema,
+} as const;
 
 export const windowActivityChannel = {
   name: 'window.activity',
@@ -16,3 +39,5 @@ export const windowActivityChannel = {
 
 export type WindowActivityStateT = z.infer<typeof windowActivityStateSchema>;
 export type WindowActivityPayload = z.infer<typeof windowActivityChannel.payload>;
+export type WindowControlActionT = z.infer<typeof windowControlActionSchema>;
+export type WindowStateT = z.infer<typeof windowStateSchema>;

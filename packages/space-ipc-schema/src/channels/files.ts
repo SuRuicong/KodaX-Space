@@ -118,6 +118,26 @@ export const filesReadBinaryChannel = {
   }),
 } as const;
 
+const fileStatKindSchema = z.enum(['file', 'dir', 'other']);
+
+// ---- files.stat ----
+//
+// Lightweight existence/type probe for UI surfaces that render historical file
+// references. Missing files return exists=false instead of throwing.
+export const filesStatChannel = {
+  name: 'files.stat',
+  direction: 'invoke',
+  input: z.object({
+    projectRoot: safePathSchema,
+    path: safePathSchema,
+  }),
+  output: z.object({
+    exists: z.boolean(),
+    kind: fileStatKindSchema.nullable(),
+    size: z.number().int().nonnegative().optional(),
+  }),
+} as const;
+
 // ---- files.diff ----
 //
 // v0.1.0 alpha：beforeRef 暂不接 git——只支持 KodaX tool_call write/edit 完成时
@@ -140,3 +160,4 @@ export const filesDiffChannel = {
 } as const;
 
 export type FileNodeT = FileNode;
+export type FileStatKindT = z.infer<typeof fileStatKindSchema>;
