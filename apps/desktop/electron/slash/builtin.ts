@@ -18,6 +18,11 @@ import type {
   AutoModeEngine,
   AgentMode,
   WorkflowRunT,
+  MemoryActionProposalT,
+  MemoryApplyResultT,
+  MemoryGovernanceReportT,
+  MemoryItemRefT,
+  MemoryRejectResultT,
 } from '@kodax-space/space-ipc-schema';
 import type {
   ReviewableLearningProposal,
@@ -42,6 +47,7 @@ import { isBuiltinId } from '../providers/catalog.js';
 import { providerConfigStore } from '../providers/config.js';
 import { listSlashCommands } from './registry.js';
 import { getBuiltin } from '../providers/catalog.js';
+import { memoryGovernanceService } from '../memory/memory-service.js';
 
 const REASONING_MODES = ['off', 'auto', 'quick', 'balanced', 'deep'] as const;
 type ReasoningMode = (typeof REASONING_MODES)[number];
@@ -406,6 +412,256 @@ async function handleLearningCommand(ctx: SlashHandlerContext): Promise<SlashHan
   if (sub === 'reject') return handleLearningReject(ctx);
   if (sub === 'help' || sub === '--help' || sub === '-h') return { ok: true, message: learningHelp(), echo: true };
   return { ok: false, message: learningHelp() };
+}
+
+function memoryHelp(): string {
+  return [
+    'Usage:',
+    '  /memory inbox',
+    '  /memory list',
+    '  /memory show <proposal-or-ref-id>',
+    '  /memory approve <proposal-id>',
+    '  /memory reject <proposal-id> [reason]',
+    '  /memory curate',
+    '  /memory open',
+    '  /memory help',
+  ].join('\n');
+}
+
+function formatMemoryRef(ref: MemoryItemRefT): string {
+  const title = ref.title ? `  ${truncateLearningText(ref.title, 96)}` : '';
+  const storage = ref.storageUri ? `\n  Path: ${truncateLearningText(ref.storageUri, 140)}` : '';
+  const sources = ref.sourceRefs.length ? `\n  Sources: ${ref.sourceRefs.slice(0, 4).join(', ')}` : '';
+  return `${ref.id}  ${ref.lifecycle}  ${ref.kind}/${ref.scope}${title}${storage}${sources}`;
+}
+
+function formatMemoryProposalSummary(proposal: MemoryActionProposalT): string {
+  const targets = proposal.targetRefs.map((ref) => ref.id).slice(0, 4).join(', ') || '(none)';
+  const sources = proposal.sourceRefs.map((ref) => ref.id).slice(0, 4).join(', ') || '(none)';
+  return [
+    `${proposal.id}  ${proposal.action}  risk=${proposal.risk}`,
+    `  Created: ${proposal.createdAt}`,
+    `  Preview: ${truncateLearningText(proposal.preview.summary, 180)}`,
+    `  Rationale: ${truncateLearningText(proposal.rationale, 180)}`,
+    `  Targets: ${targets}`,
+    `  Sources: ${sources}`,
+  ].join('\n');
+}
+
+function formatMemoryProposalDetail(proposal: MemoryActionProposalT): string {
+  const lines = [
+    'Memory proposal',
+    `${proposal.id}  ${proposal.action}  risk=${proposal.risk}`,
+    `Created: ${proposal.createdAt}`,
+    `Rationale: ${proposal.rationale}`,
+    '',
+    `Preview: ${proposal.preview.summary}`,
+    '',
+    'Target refs:',
+    ...(proposal.targetRefs.length ? proposal.targetRefs.map((ref) => `  - ${formatMemoryRef(ref).replace(/\n/g, '\n    ')}`) : ['  (none)']),
+    '',
+    'Source refs:',
+    ...(proposal.sourceRefs.length ? proposal.sourceRefs.map((ref) => `  - ${formatMemoryRef(ref).replace(/\n/g, '\n    ')}`) : ['  (none)']),
+    '',
+    'Changed paths:',
+    ...(proposal.preview.changedPaths.length ? proposal.preview.changedPaths.map((p) => `  - ${p}`) : ['  (none)']),
+  ];
+  const warnings = proposal.preview.warnings;
+  if (warnings.length) lines.push('', 'Warnings:', ...warnings.map((warning) => `  - ${warning}`));
+  const fingerprintKeys = Object.keys(proposal.expectedFingerprints);
+  if (fingerprintKeys.length) lines.push('', 'Fingerprint guard:', ...fingerprintKeys.map((key) => `  - ${key}`));
+  if (proposal.preview.diff) {
+    lines.push('', 'Diff preview:', truncateLearningBlock(proposal.preview.diff, 1600));
+  }
+  lines.push('', `Next: /memory approve ${proposal.id} or /memory reject ${proposal.id} [reason].`);
+  return lines.join('\n');
+}
+
+function formatMemoryApplyResult(result: MemoryApplyResultT): string {
+  if (!result.applied) {
+    return [
+      `Approval blocked for ${result.proposalId}: ${result.skippedReason ?? 'not applied'}`,
+      'Re-run /memory show before approving if the preview changed.',
+      ...(result.warnings.length ? ['', 'Warnings:', ...result.warnings.map((warning) => `  - ${warning}`)] : []),
+    ].join('\n');
+  }
+  return [
+    `Applied ${result.proposalId}.`,
+    ...(result.changedPaths.length ? ['Changed paths:', ...result.changedPaths.map((p) => `  - ${p}`)] : ['No path changes reported.']),
+    ...(result.warnings.length ? ['', 'Warnings:', ...result.warnings.map((warning) => `  - ${warning}`)] : []),
+  ].join('\n');
+}
+
+function formatMemoryRejectResult(result: MemoryRejectResultT): string {
+  if (!result.rejected) {
+    return `Reject skipped for ${result.proposalId}: ${result.skippedReason ?? 'not rejected'}`;
+  }
+  const lines = [`Rejected ${result.proposalId}.`];
+  if (result.warnings.length) lines.push('', 'Warnings:', ...result.warnings.map((warning) => `  - ${warning}`));
+  if (result.review?.warnings.length) {
+    lines.push('', 'Review:', ...result.review.warnings.map((warning) => `  - ${warning}`));
+  }
+  return lines.join('\n');
+}
+
+function formatMemoryReport(report: MemoryGovernanceReportT): string {
+  return [
+    `Memory governance report ${report.reportId}`,
+    `Generated: ${report.generatedAt}`,
+    '',
+    'Findings:',
+    ...(report.findings.length
+      ? report.findings.map((finding) => {
+          const refs = finding.refIds.length ? ` refs=${finding.refIds.join(',')}` : '';
+          return `  - ${finding.kind}/${finding.severity}: ${finding.summary} -> ${finding.suggestedAction}${refs}`;
+        })
+      : ['  (none)']),
+    ...(report.warnings.length ? ['', 'Warnings:', ...report.warnings.map((warning) => `  - ${warning}`)] : []),
+  ].join('\n');
+}
+
+function selectMemoryProposal(
+  proposals: readonly MemoryActionProposalT[],
+  target: string,
+): { readonly ok: true; readonly proposal: MemoryActionProposalT } | { readonly ok: false; readonly message: string } {
+  const normalized = target.trim().toLowerCase();
+  if (!normalized) return { ok: false, message: 'memory proposal id is required' };
+  const exact = proposals.find((proposal) => proposal.id.toLowerCase() === normalized);
+  if (exact) return { ok: true, proposal: exact };
+  const matches = proposals.filter((proposal) => proposal.id.toLowerCase().startsWith(normalized));
+  if (matches.length === 1) return { ok: true, proposal: matches[0]! };
+  if (matches.length > 1) {
+    return { ok: false, message: `ambiguous memory proposal id '${target}': ${matches.map((p) => p.id).join(', ')}` };
+  }
+  return { ok: false, message: `memory proposal not found: ${target}` };
+}
+
+function selectMemoryRef(
+  refs: readonly MemoryItemRefT[],
+  target: string,
+): { readonly ok: true; readonly ref: MemoryItemRefT } | { readonly ok: false; readonly message: string } {
+  const normalized = target.trim().toLowerCase();
+  if (!normalized) return { ok: false, message: 'memory ref id is required' };
+  const exact = refs.find((ref) => ref.id.toLowerCase() === normalized);
+  if (exact) return { ok: true, ref: exact };
+  const matches = refs.filter((ref) => ref.id.toLowerCase().startsWith(normalized));
+  if (matches.length === 1) return { ok: true, ref: matches[0]! };
+  if (matches.length > 1) {
+    return { ok: false, message: `ambiguous memory ref id '${target}': ${matches.map((ref) => ref.id).join(', ')}` };
+  }
+  return { ok: false, message: `memory ref not found: ${target}` };
+}
+
+async function handleMemoryInbox(ctx: SlashHandlerContext): Promise<SlashHandlerResult> {
+  const result = await memoryGovernanceService.list({ sessionId: ctx.sessionId });
+  const lines = result.inbox.length
+    ? [
+        `Memory inbox: ${result.inbox.length}`,
+        ...result.inbox.map(formatMemoryProposalSummary),
+        'Next: /memory show <proposal-id>, /memory approve <proposal-id>, or /memory reject <proposal-id> [reason].',
+      ]
+    : ['No pending memory proposals for this project.'];
+  if (result.warnings.length) lines.push('', 'Warnings:', ...result.warnings.map((warning) => `  - ${warning}`));
+  return { ok: true, message: compactSlashMessage(lines.join('\n\n'), 3200), echo: true };
+}
+
+async function handleMemoryList(ctx: SlashHandlerContext): Promise<SlashHandlerResult> {
+  const query = ctx.args.slice(1).join(' ').trim();
+  const result = await memoryGovernanceService.list({
+    sessionId: ctx.sessionId,
+    ...(query ? { query } : {}),
+  });
+  const lines = result.refs.length
+    ? [`Memory refs: ${result.refs.length}`, ...result.refs.map(formatMemoryRef)]
+    : ['No governed memory refs for this project yet.'];
+  if (result.inbox.length) lines.push('', `Pending proposals: ${result.inbox.length} (run /memory inbox)`);
+  return { ok: true, message: compactSlashMessage(lines.join('\n\n'), 3200), echo: true };
+}
+
+async function handleMemoryShow(ctx: SlashHandlerContext): Promise<SlashHandlerResult> {
+  const target = ctx.args[1];
+  if (!target) return { ok: false, message: memoryHelp() };
+  const listed = await memoryGovernanceService.list({ sessionId: ctx.sessionId });
+  const proposal = selectMemoryProposal(listed.inbox, target);
+  if (proposal.ok) {
+    return { ok: true, message: compactSlashMessage(formatMemoryProposalDetail(proposal.proposal), 4200), echo: true };
+  }
+  const ref = selectMemoryRef(listed.refs, target);
+  if (!ref.ok) return { ok: false, message: `${proposal.message}\n${ref.message}` };
+  const snapshot = await memoryGovernanceService.readRef({ sessionId: ctx.sessionId, ref: ref.ref });
+  const lines = [
+    'Memory ref',
+    formatMemoryRef(snapshot.snapshot.ref),
+    `Fingerprint: ${snapshot.snapshot.bodyFingerprint}`,
+    `Read at: ${snapshot.snapshot.readAt}`,
+    ...(snapshot.snapshot.warnings.length ? ['', 'Warnings:', ...snapshot.snapshot.warnings.map((warning) => `  - ${warning}`)] : []),
+    '',
+    truncateLearningBlock(snapshot.snapshot.body, 2200),
+  ];
+  return { ok: true, message: compactSlashMessage(lines.join('\n'), 4200), echo: true };
+}
+
+async function handleMemoryApprove(ctx: SlashHandlerContext): Promise<SlashHandlerResult> {
+  const target = ctx.args[1];
+  if (!target) return { ok: false, message: memoryHelp() };
+  const listed = await memoryGovernanceService.list({ sessionId: ctx.sessionId });
+  const selected = selectMemoryProposal(listed.inbox, target);
+  if (!selected.ok) return { ok: false, message: selected.message };
+  const approved = await memoryGovernanceService.approve({
+    sessionId: ctx.sessionId,
+    proposalId: selected.proposal.id,
+    expectedFingerprints: selected.proposal.expectedFingerprints,
+  });
+  return {
+    ok: approved.result.applied,
+    message: compactSlashMessage(formatMemoryApplyResult(approved.result), 3200),
+    echo: true,
+  };
+}
+
+async function handleMemoryReject(ctx: SlashHandlerContext): Promise<SlashHandlerResult> {
+  const target = ctx.args[1];
+  if (!target) return { ok: false, message: memoryHelp() };
+  const listed = await memoryGovernanceService.list({ sessionId: ctx.sessionId });
+  const selected = selectMemoryProposal(listed.inbox, target);
+  if (!selected.ok) return { ok: false, message: selected.message };
+  const reason = ctx.args.slice(2).join(' ').trim();
+  const rejected = await memoryGovernanceService.reject({
+    sessionId: ctx.sessionId,
+    proposalId: selected.proposal.id,
+    ...(reason ? { reason } : {}),
+  });
+  return {
+    ok: rejected.result.rejected,
+    message: compactSlashMessage(formatMemoryRejectResult(rejected.result), 3200),
+    echo: true,
+  };
+}
+
+async function handleMemoryCurate(ctx: SlashHandlerContext): Promise<SlashHandlerResult> {
+  const report = await memoryGovernanceService.curate({ sessionId: ctx.sessionId });
+  return { ok: true, message: compactSlashMessage(formatMemoryReport(report.report), 4200), echo: true };
+}
+
+async function handleMemoryCommand(ctx: SlashHandlerContext): Promise<SlashHandlerResult> {
+  const session = kodaxHost.get(ctx.sessionId);
+  if (!session) return { ok: false, message: `session not found: ${ctx.sessionId}` };
+  if (session.surface === 'partner') {
+    return {
+      ok: false,
+      message: 'Memory Governance is available from the Coder surface. Partner KB remains separate.',
+    };
+  }
+  const sub = ctx.args[0]?.toLowerCase();
+  if (!sub || sub === 'inbox' || sub === 'pending') return handleMemoryInbox(ctx);
+  if (sub === 'list' || sub === 'ls') return handleMemoryList(ctx);
+  if (sub === 'show' || sub === 'read') return handleMemoryShow(ctx);
+  if (sub === 'approve') return handleMemoryApprove(ctx);
+  if (sub === 'reject') return handleMemoryReject(ctx);
+  if (sub === 'curate' || sub === 'governance') return handleMemoryCurate(ctx);
+  if (sub === 'open') return { ok: true, message: '__action__:show-memory', echo: false };
+  if (sub === 'help' || sub === '--help' || sub === '-h') return { ok: true, message: memoryHelp(), echo: true };
+  return { ok: false, message: memoryHelp() };
 }
 
 function formatSdkExtensionDiagnostics(diag: Awaited<ReturnType<typeof getSpaceSdkExtensionDiagnostics>>): string[] {
@@ -2193,15 +2449,9 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDef[] = [
 
   {
     name: 'memory',
-    description: 'Show loaded AGENTS.md files (global + project)',
-    argsHint: '[pending|list|rebuild|open|help]',
+    description: 'Review governed memory proposals and refs',
+    argsHint: '[inbox|list|show|approve|reject|curate|open|help]',
     source: 'builtin',
-    handler: async (ctx) => {
-      if (!kodaxHost.get(ctx.sessionId)) {
-        return { ok: false, message: `session not found: ${ctx.sessionId}` };
-      }
-      if (ctx.args[0]?.toLowerCase() === 'pending') return handleLearningPending(ctx, 'memory');
-      return { ok: true, message: '__action__:show-memory', echo: false };
-    },
+    handler: handleMemoryCommand,
   },
 ];

@@ -196,6 +196,27 @@ export async function readFileBinaryWithGuards(
   return { base64: buf.toString('base64'), size: st.size, truncated: false };
 }
 
+export interface StatPathResult {
+  readonly exists: boolean;
+  readonly kind: 'file' | 'dir' | 'other' | null;
+  readonly size?: number;
+}
+
+export async function statPath(absPath: string): Promise<StatPathResult> {
+  try {
+    const st = await fs.stat(absPath);
+    if (st.isFile()) return { exists: true, kind: 'file', size: st.size };
+    if (st.isDirectory()) return { exists: true, kind: 'dir' };
+    return { exists: true, kind: 'other' };
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') {
+      return { exists: false, kind: null };
+    }
+    throw err;
+  }
+}
+
 // ---- Diff cache (in-memory LRU) ----
 //
 // tool_call write/edit 完成时由 adapter 调 recordDiff；前端 invoke files.diff 时取。

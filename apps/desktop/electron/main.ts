@@ -43,6 +43,7 @@ import { autoActivateProvidersFromEnv } from './providers/auto-activate.js';
 import { registerFilesChannels } from './ipc/files.js';
 import { registerPartnerSourceChannels } from './ipc/partner-sources.js';
 import { registerTitlebarChannels } from './ipc/titlebar.js';
+import { registerWindowChannels } from './ipc/window.js';
 import { registerSettingsChannels } from './ipc/settings.js';
 import { registerLicenseChannels } from './ipc/license.js';
 import { registerNotificationChannels, setNotificationWindowGetter } from './ipc/notification.js';
@@ -53,11 +54,13 @@ import { registerClipboardChannels } from './ipc/clipboard.js';
 import { registerShellChannels } from './ipc/shell.js';
 import { registerArtifactChannels } from './ipc/artifact.js';
 import { registerWorkflowChannels } from './ipc/workflow.js';
+import { registerMemoryChannels } from './ipc/memory.js';
 import { workflowController } from './kodax/workflow-controller.js';
 import { workflowPolicyStore } from './kodax/workflow-policy.js';
 import { registerArtifactWindowChannel } from './artifact/artifact-window.js';
 import { installNavigationGuards } from './window/navigation-guards.js';
 import { installWindowActivityPublisher } from './window/activity.js';
+import { installTopmostGuard } from './window/topmost-guard.js';
 import {
   BOOT_SPLASH_URL_PREFIX,
   bootStatusScript,
@@ -236,12 +239,11 @@ function applyCsp(): void {
 function createMainWindow(): void {
   // 自定义 titlebar — 对齐 VSCode / Discord / Slack 现代 chrome：
   //   - titleBarStyle: 'hidden' 把系统标题栏隐掉
-  //   - Windows: titleBarOverlay 让 OS 仍画 close/min/max 但颜色对齐 zinc-950 theme
+  //   - Windows: renderer 自绘 VS Code 风格 close/min/max（hover/press 更清晰）
   //   - macOS: 'hiddenInset' 自动 (Electron 自动 fallback) 让 traffic lights 留在左上角
   //
   // renderer 顶部 row 用 CSS `-webkit-app-region: drag` 当拖动条；按钮 'no-drag'。
   // Menu.setApplicationMenu(null) 在 app.whenReady 里彻底禁掉默认 File/Edit/View 菜单。
-  const isWin = process.platform === 'win32';
   const isMac = process.platform === 'darwin';
   const win = new BrowserWindow({
     width: 1280,
@@ -251,14 +253,9 @@ function createMainWindow(): void {
     title: 'KodaX Space',
     backgroundColor: '#0b0b0c',
     show: false,
+    alwaysOnTop: false,
     titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
-    titleBarOverlay: isWin
-      ? {
-          color: '#0b0b0c',
-          symbolColor: '#a1a1aa',
-          height: 36,
-        }
-      : undefined,
+    titleBarOverlay: undefined,
     autoHideMenuBar: true, // Linux: 按 Alt 也不展开 (Win 上由 titleBarStyle:hidden 已无菜单)
     webPreferences: {
       preload: PRELOAD_PATH,
@@ -275,6 +272,7 @@ function createMainWindow(): void {
   });
   mainWindow = win;
   installWindowActivityPublisher(win);
+  const uninstallTopmostGuard = installTopmostGuard(win, { label: 'main window' });
   const invalidateMainWindow = (): void => {
     if (!win.isDestroyed()) win.webContents.invalidate();
   };
@@ -471,6 +469,7 @@ function createMainWindow(): void {
 
   win.on('closed', () => {
     ipcMain.removeListener('boot.rendererReady', rendererReadyListener);
+    uninstallTopmostGuard();
     clearTimeout(bootFallbackTimer);
     clearAppLoadWatchdog();
     clearTimeout(revealTimer);
@@ -684,6 +683,7 @@ app
     registerFilesChannels();
     registerPartnerSourceChannels();
     registerTitlebarChannels();
+    registerWindowChannels(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null));
     registerSettingsChannels();
     registerLicenseChannels();
     // F020 native OS notification — renderer 调 notification.show 弹 OS 原生通知
@@ -707,6 +707,7 @@ app
     // Artifact 数据层（F057，LC-free）：create/list/read/delete/export + openWindow。
     // LC sandbox（路径 D）的 loopback server 已移除，待 LiveCanvas 稳定后作为独立 feature 重接。
     registerArtifactChannels();
+    registerMemoryChannels();
     // F060 Workflow Harness 支持：list/get IPC + 订阅 SDK 进程事件流转发到 renderer（workflow.event）。
     // init 是 best-effort（lazy-load SDK run manager + 加载持久化归属）；失败只降级为"无实时工作流面"。
     registerWorkflowChannels();
@@ -754,6 +755,7 @@ app
       .load()
       .then(() => injectAllKeysToEnv())
       .then(() => autoActivateProvidersFromEnv())
+      .then(() => injectAllKeysToEnv())
       .catch((err) => {
         console.error(
           '[main] inject keychain keys / auto-activate failed:',

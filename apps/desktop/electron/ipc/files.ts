@@ -12,6 +12,7 @@ import {
   walkTree,
   readFileWithGuards,
   readFileBinaryWithGuards,
+  statPath,
   getDiff,
   recordDiff as recordDiffCore,
   isPathInside,
@@ -70,6 +71,13 @@ export function registerFilesChannels(): void {
       }
       throw err;
     }
+  });
+
+  // files.stat
+  registerChannel('files.stat', async (input) => {
+    const validatedRoot = await projectStore.assertAllowed(input.projectRoot);
+    const absPath = await resolveInsideProject(validatedRoot, input.path);
+    return await statPath(absPath);
   });
 
   // files.diff

@@ -37,6 +37,10 @@ export interface AskUserQuestionRequestInput {
   readonly minSelections?: number;
   readonly maxSelections?: number;
   readonly default?: string;
+  readonly allowCustomInput?: boolean;
+  readonly customInputLabel?: string;
+  readonly customInputPrompt?: string;
+  readonly customInputDefault?: string;
   /** Test-only override. */
   readonly timeoutMs?: number;
 }
@@ -169,6 +173,16 @@ class AskUserBroker {
         ...(minSelections !== undefined ? { minSelections } : {}),
         ...(safeMaxSelections !== undefined ? { maxSelections: safeMaxSelections } : {}),
         ...(req.default !== undefined ? { default: sanitizeForDisplay(req.default, 4096) } : {}),
+        ...(req.allowCustomInput !== undefined ? { allowCustomInput: req.allowCustomInput } : {}),
+        ...(req.customInputLabel !== undefined
+          ? { customInputLabel: sanitizeForDisplay(req.customInputLabel, 160) }
+          : {}),
+        ...(req.customInputPrompt !== undefined
+          ? { customInputPrompt: sanitizeForDisplay(req.customInputPrompt, 512) }
+          : {}),
+        ...(req.customInputDefault !== undefined
+          ? { customInputDefault: sanitizeForDisplay(req.customInputDefault, 4096) }
+          : {}),
       });
     });
   }

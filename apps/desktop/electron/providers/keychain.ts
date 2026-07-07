@@ -31,6 +31,9 @@
 // 不直接静态 `import` keyring——它是 native module，在没有对应平台 prebuild 的环境
 // （罕见）/ Linux 无 libsecret 时运行期可能加载或调用失败。运行时动态 `import()` 失败时
 // fallback 到 memory。这里自己声明用到的最小接口（与 keytar 兼容层一致）。
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
 interface KeyringApi {
   getPassword(service: string, account: string): Promise<string | null>;
   setPassword(service: string, account: string, password: string): Promise<void>;
@@ -39,6 +42,7 @@ interface KeyringApi {
 }
 
 const SERVICE_NAME = 'kodax-space';
+const execFileAsync = promisify(execFile);
 
 // @napi-rs/keyring 的 keytar 兼容子入口——导出 getPassword/setPassword/deletePassword/findCredentials。
 // 带 .js 后缀：该包无 `exports` 字段，ESM 动态 import 子路径必须显式扩展名（CJS require 也认）。
@@ -67,6 +71,8 @@ function loadKeyring(): Promise<KeyringApi | null> {
 
 // In-memory fallback——key 只在本进程生命周期内有效。
 const memoryStore = new Map<string, string>();
+const keychainSecretCache = new Map<string, string>();
+const keychainReadQueue = new Map<string, Promise<string | undefined>>();
 
 let backendStatus: 'unknown' | 'keychain' | 'memory' = 'unknown';
 
@@ -78,6 +84,10 @@ async function detectBackend(): Promise<'keychain' | 'memory'> {
     return 'memory';
   }
   // 探针：尝试一次 findCredentials；失败就走 memory
+  if (process.platform === 'darwin') {
+    backendStatus = 'keychain';
+    return backendStatus;
+  }
   try {
     await keyring.findCredentials(SERVICE_NAME);
     backendStatus = 'keychain';
@@ -120,6 +130,7 @@ export async function setKey(account: string, secret: string): Promise<void> {
   }
   try {
     await keyring.setPassword(SERVICE_NAME, account, secret);
+    keychainSecretCache.set(account, secret);
   } catch (err) {
     // setPassword 失败（一般是 libsecret 在跑时崩了）——降级到 memory，
     // 同时把 backend 标 memory 让 UI 后续也知道
@@ -143,21 +154,32 @@ export async function getKey(account: string): Promise<string | undefined> {
   if (backend === 'memory') {
     return memoryStore.get(account);
   }
+  const cached = keychainSecretCache.get(account);
+  if (cached !== undefined) return cached;
+  const queued = keychainReadQueue.get(account);
+  if (queued) return queued;
   const keyring = await loadKeyring();
   if (!keyring) {
     return memoryStore.get(account);
   }
-  try {
-    const value = await keyring.getPassword(SERVICE_NAME, account);
-    return value ?? undefined;
-  } catch (err) {
-    console.warn(
-      `[keychain] getPassword failed for account=${account}: ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-    );
-    return memoryStore.get(account);
-  }
+  const read = (async () => {
+    try {
+      const value = await keyring.getPassword(SERVICE_NAME, account);
+      if (value !== null) keychainSecretCache.set(account, value);
+      return value ?? undefined;
+    } catch (err) {
+      console.warn(
+        `[keychain] getPassword failed for account=${account}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return memoryStore.get(account);
+    } finally {
+      keychainReadQueue.delete(account);
+    }
+  })();
+  keychainReadQueue.set(account, read);
+  return read;
 }
 
 /** 删 key。返回是否实际删了一条记录。*/
@@ -174,6 +196,7 @@ export async function deleteKey(account: string): Promise<boolean> {
     const removed = await keyring.deletePassword(SERVICE_NAME, account);
     // 镜像 memory（防 backend 切换后残留）
     memoryStore.delete(account);
+    keychainSecretCache.delete(account);
     return removed;
   } catch (err) {
     console.warn(
@@ -204,6 +227,9 @@ export async function listAccounts(): Promise<readonly string[]> {
   }
   try {
     const entries = await keyring.findCredentials(SERVICE_NAME);
+    for (const entry of entries) {
+      keychainSecretCache.set(entry.account, entry.password);
+    }
     return entries.map((e) => e.account);
   } catch (err) {
     console.warn(
@@ -220,8 +246,54 @@ export async function listAccounts(): Promise<readonly string[]> {
  * 真实 OS keychain 里残留的 entries（之前用过的 dev keys）会污染 listAccounts 结果。
  * 单测必须跑在隔离 backend 上——任何 set/list 都走 memory store。
  */
+async function macosHasGenericPassword(account: string): Promise<boolean | undefined> {
+  if (process.platform !== 'darwin') return undefined;
+  try {
+    await execFileAsync(
+      '/usr/bin/security',
+      ['find-generic-password', '-s', SERVICE_NAME, '-a', account],
+      { timeout: 2500, windowsHide: true },
+    );
+    return true;
+  } catch (err) {
+    const maybe = err as { killed?: boolean; signal?: NodeJS.Signals | null };
+    if (maybe.killed || maybe.signal) return undefined;
+    return false;
+  }
+}
+
+export async function hasKey(account: string): Promise<boolean> {
+  const backend = await detectBackend();
+  if (backend === 'memory') {
+    return memoryStore.has(account);
+  }
+  if (keychainSecretCache.has(account)) return true;
+  const macosResult = await macosHasGenericPassword(account);
+  if (macosResult !== undefined) return macosResult;
+  return (await listAccounts()).includes(account);
+}
+
+export async function listConfiguredAccounts(
+  candidateAccounts?: readonly string[],
+): Promise<readonly string[]> {
+  if (!candidateAccounts || candidateAccounts.length === 0) {
+    return listAccounts();
+  }
+  const uniqueCandidates = [...new Set(candidateAccounts)];
+  if (process.platform === 'darwin') {
+    const results = await Promise.all(
+      uniqueCandidates.map(async (account) => ((await hasKey(account)) ? account : undefined)),
+    );
+    return results.filter((account): account is string => account !== undefined);
+  }
+  const accounts = new Set(await listAccounts());
+  return uniqueCandidates.filter((account) => accounts.has(account));
+}
+
 export function _resetMemoryStoreForTesting(): void {
   memoryStore.clear();
+  keychainSecretCache.clear();
+  keychainReadQueue.clear();
   // 跳过 detectBackend：直接锁定 'memory'，detectBackend 早返回
   backendStatus = 'memory';
   // keyringPromise 不重置——keep 它指向 null 或 loaded module 都行，

@@ -46,6 +46,23 @@ export function isCompactedPlaceholder(entry: {
   return false;
 }
 
+export function isRewindMarker(entry: {
+  readonly type?: unknown;
+  readonly summary?: unknown;
+  readonly payload?: unknown;
+}): boolean {
+  if (entry.type !== 'compaction') return false;
+  const payload = entry.payload;
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    (payload as { readonly reason?: unknown }).reason === 'rewind'
+  ) {
+    return true;
+  }
+  return typeof entry.summary === 'string' && entry.summary.startsWith('[Rewind]');
+}
+
 /**
  * Pick the entries history replay should render:
  * 1. Skip SDK `[compacted]` placeholders.
@@ -61,12 +78,13 @@ export function dedupeTranscriptEntries<
     readonly type?: unknown;
     readonly message?: { readonly role?: unknown; readonly content?: unknown } | null;
     readonly summary?: unknown;
+    readonly payload?: unknown;
   },
 >(entries: readonly T[]): T[] {
   const logicalIdCounts = countReusableLogicalIds(entries);
   const activeKeys = new Set<string>();
   for (const entry of entries) {
-    if (entry.active === true && !isCompactedPlaceholder(entry)) {
+    if (entry.active === true && !isCompactedPlaceholder(entry) && !isRewindMarker(entry)) {
       activeKeys.add(dedupeKey(entry, logicalIdCounts));
     }
   }
@@ -75,6 +93,7 @@ export function dedupeTranscriptEntries<
   const out: T[] = [];
   for (const entry of entries) {
     if (isCompactedPlaceholder(entry)) continue;
+    if (isRewindMarker(entry)) continue;
     if (entry.active === true) {
       out.push(entry);
       continue;

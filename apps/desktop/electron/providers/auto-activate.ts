@@ -20,6 +20,7 @@
 
 import { BUILTIN_PROVIDERS } from './catalog.js';
 import { providerConfigStore } from './config.js';
+import { listConfiguredAccounts } from './keychain.js';
 
 // "coding 偏好"优先级。Anthropic / Codex CLI 类 coding-first provider 排前。
 // 在 PRIORITY 表里同时有 env 的 → 取最靠前；不在 PRIORITY 表里的 → 落到表尾（unknown）。
@@ -61,9 +62,12 @@ let autoActivatedThisBoot: readonly string[] = [];
 export async function autoActivateProvidersFromEnv(): Promise<void> {
   if (providerConfigStore.getDefaultProviderId() !== null) return;
 
+  const keychainActive = new Set(
+    await listConfiguredAccounts(BUILTIN_PROVIDERS.map((provider) => provider.id)),
+  );
   const envActive = BUILTIN_PROVIDERS.filter((b) => {
     const v = process.env[b.apiKeyEnv];
-    return v !== undefined && v.trim().length > 0;
+    return (v !== undefined && v.trim().length > 0) || keychainActive.has(b.id);
   });
   if (envActive.length === 0) return;
 

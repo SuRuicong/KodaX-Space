@@ -24,6 +24,7 @@ import {
   deletePersistedSession,
   loadPersistedSession,
   compactPersistedSession,
+  findPersistedTurnEndSelector,
   sdkTagToSurface,
 } from './session-store.js';
 import { loadKodaxUserDefaults, registerKodaxCustomProviders } from './user-config.js';
@@ -607,8 +608,10 @@ class KodaXHost {
     if (!src) return null;
 
     const forkTitle = src.title !== undefined ? `${stripForkSuffix(src.title)} (fork)` : undefined;
+    const selector = await findPersistedTurnEndSelector(sourceSessionId, forkPointTurnIdx);
     const sdkResult = await forkPersistedSession({
       sourceSessionId,
+      ...(selector !== null ? { selector } : {}),
       title: forkTitle,
     });
     if (!sdkResult) return null; // SDK 找不到 source（盘上没记录），不视作错误（fork 一个未持久化的全新 session 是合法的）
@@ -685,7 +688,7 @@ class KodaXHost {
     rewindPastTurnIdx: number,
   ): Promise<{
     ok: boolean;
-    reason?: 'session_not_found' | 'session_busy';
+    reason?: 'session_not_found' | 'invalid_index' | 'session_busy';
     /**
      * reviewer HIGH-3: 报告盘上 rewind 是否成功。
      * false 当 session 不在盘上 OR lineage 没有更早的 user entry 可退——in-flight
@@ -702,11 +705,14 @@ class KodaXHost {
     // await cancel：确保 IPC ack 返回时 stream 已彻底终止，renderer 截 buffer 时不会有
     // late event 把截掉的内容再塞回去。cancel 通常是 ms 级。
     await s.cancel().catch(() => undefined);
+    const selector = await findPersistedTurnEndSelector(sessionId, rewindPastTurnIdx);
     // 持久化截断（NEVER throws；不存在 / 无可退则 no-op；返回 false 让 renderer 知道）
-    const diskRewound = await rewindPersistedSession({ sessionId });
+    const diskRewound = await rewindPersistedSession({
+      sessionId,
+      ...(selector !== null ? { selector } : {}),
+    });
     s.lastActivityAt = Date.now();
     // forkPointTurnIdx 不变（rewind 不影响 fork 元数据）
-    void rewindPastTurnIdx; // 现阶段 main 不消费；renderer 据此截 events
     return { ok: true, diskRewound };
   }
 

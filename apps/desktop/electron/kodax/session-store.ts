@@ -25,6 +25,7 @@
 //
 // 重置：setSessionStoreImpl(null) 恢复默认。
 import type { Surface } from '@kodax-space/space-ipc-schema';
+import { dedupeTranscriptEntries } from '../ipc/transcript-dedup.js';
 
 type SdkSessionModule = typeof import('@kodax-ai/kodax/session');
 type SessionManager = ReturnType<SdkSessionModule['createSessionManager']>;
@@ -233,9 +234,11 @@ export async function listPersistedSessions(opts: {
  */
 export async function forkPersistedSession(opts: {
   readonly sourceSessionId: string;
+  readonly selector?: string;
   readonly title?: string;
 }): Promise<{ readonly newSessionId: string; readonly title: string } | null> {
   const result = await activeImpl.forkSession(opts.sourceSessionId, {
+    ...(opts.selector !== undefined ? { selector: opts.selector } : {}),
     title: opts.title,
   });
   if (!result) return null;
@@ -258,8 +261,12 @@ export async function forkPersistedSession(opts: {
  */
 export async function rewindPersistedSession(opts: {
   readonly sessionId: string;
+  readonly selector?: string;
 }): Promise<boolean> {
-  const data = await activeImpl.rewindSession(opts.sessionId);
+  const data = await activeImpl.rewindSession(
+    opts.sessionId,
+    opts.selector !== undefined ? { selector: opts.selector } : undefined,
+  );
   if (data !== null) {
     invalidatePersistedSessionCache(opts.sessionId); // 截断后旧 data 过期
   }
@@ -418,6 +425,92 @@ export async function loadPersistedTranscript(sessionId: string): Promise<Transc
     transcriptCache.delete(oldestKey);
   }
   return data;
+}
+
+type TranscriptSelectorEntry = {
+  readonly entryId?: unknown;
+  readonly logicalId?: unknown;
+  readonly active?: unknown;
+  readonly type?: unknown;
+  readonly summary?: unknown;
+  readonly payload?: unknown;
+  readonly message?: {
+    readonly role?: unknown;
+    readonly content?: unknown;
+    readonly source?: unknown;
+    readonly _source?: unknown;
+    readonly synthetic?: unknown;
+    readonly _synthetic?: unknown;
+  } | null;
+};
+
+export async function findPersistedTurnEndSelector(
+  sessionId: string,
+  turnIndex: number,
+): Promise<string | null> {
+  if (!Number.isInteger(turnIndex) || turnIndex < 0) return null;
+  const data = await loadPersistedTranscript(sessionId);
+  if (data === null) return null;
+  const rawEntries = (data as { readonly transcriptEntries?: unknown }).transcriptEntries;
+  if (!Array.isArray(rawEntries)) return null;
+  const dedupedEntries = dedupeTranscriptEntries(rawEntries as readonly TranscriptSelectorEntry[]);
+  const hasActiveBranchMarkers = rawEntries.some(
+    (entry) => entry && typeof entry === 'object' && (entry as { readonly active?: unknown }).active === true,
+  );
+  const entries = hasActiveBranchMarkers
+    ? dedupedEntries.filter((entry) => entry.active === true)
+    : dedupedEntries;
+
+  let currentTurn = -1;
+  let candidate: string | null = null;
+  for (const entry of entries) {
+    if (isRealUserPromptEntry(entry)) {
+      if (currentTurn === turnIndex) return candidate;
+      currentTurn += 1;
+      candidate = entryIdOf(entry);
+      continue;
+    }
+    if (currentTurn === turnIndex && isSelectableMessageEntry(entry)) {
+      candidate = entryIdOf(entry);
+    }
+  }
+  return currentTurn === turnIndex ? candidate : null;
+}
+
+function entryIdOf(entry: TranscriptSelectorEntry): string | null {
+  return typeof entry.entryId === 'string' && entry.entryId.length > 0 ? entry.entryId : null;
+}
+
+function isSelectableMessageEntry(entry: TranscriptSelectorEntry): boolean {
+  return (
+    entry.type === 'message' &&
+    entryIdOf(entry) !== null &&
+    entry.message !== null &&
+    entry.message !== undefined
+  );
+}
+
+function isRealUserPromptEntry(entry: TranscriptSelectorEntry): boolean {
+  if (entry.type !== 'message') return false;
+  const msg = entry.message;
+  if (msg === null || msg === undefined || msg.role !== 'user') return false;
+  const source = msg.source ?? msg._source;
+  if (source === 'sidecar-verifier') return false;
+  if (msg.synthetic === true || msg._synthetic === true) return false;
+  return entryIdOf(entry) !== null && extractPromptText(msg.content).trim().length > 0;
+}
+
+function extractPromptText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  let text = '';
+  for (const block of content) {
+    if (!block || typeof block !== 'object') continue;
+    if ((block as { readonly type?: unknown }).type !== 'text') continue;
+    const chunk = (block as { readonly text?: unknown }).text;
+    if (typeof chunk === 'string') text += chunk;
+  }
+  return text;
 }
 
 /** Mutator 调用——deletePersistedSession / fork / rewind 后清对应缓存项。*/

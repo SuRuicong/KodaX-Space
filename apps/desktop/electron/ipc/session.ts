@@ -62,6 +62,7 @@ import { getSessionRuntimeStore } from '../kodax/session-runtime-store.js';
 import { getSessionLocalNoticeStore } from '../kodax/session-local-notice-store.js';
 import { assertArtifactPathInClipboardSandbox } from './clipboard.js';
 import { clearSlashGoalForSession } from '../slash/builtin.js';
+import { ensureProviderKeyInjected } from './provider.js';
 import type {
   AgentsFileMeta,
   InputArtifact,
@@ -146,6 +147,7 @@ export function registerSessionChannels(): void {
     const projectRoot = validateProjectRoot(input.projectRoot);
     await assertProviderExists(input.provider);
     await ensureCustomProviderRegistered(input.provider);
+    await ensureProviderKeyInjected(input.provider);
     const runtimeDefaults = await resolveRuntimeDefaults({
       explicit: {
         reasoningMode: input.reasoningMode,
@@ -237,6 +239,7 @@ export function registerSessionChannels(): void {
         await assertArtifactPathInClipboardSandbox(input.sessionId, a.path);
       }
     }
+    await ensureProviderKeyInjected(session.provider);
     await validateInputArtifactsForSession(input.artifacts, session);
     const result = await session.send(input.prompt, input.artifacts, {
       queueMode: input.queueMode,
@@ -412,6 +415,7 @@ export function registerSessionChannels(): void {
   registerChannel('session.setProvider', async (input) => {
     await assertProviderExists(input.providerId);
     await ensureCustomProviderRegistered(input.providerId);
+    await ensureProviderKeyInjected(input.providerId);
     const ok = kodaxHost.setProvider(input.sessionId, input.providerId);
     return { ok };
   });

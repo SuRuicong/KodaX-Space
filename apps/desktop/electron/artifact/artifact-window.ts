@@ -13,6 +13,7 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { registerChannel } from '../ipc/register.js';
 import { installNavigationGuards } from '../window/navigation-guards.js';
+import { installTopmostGuard } from '../window/topmost-guard.js';
 
 function getElectron(): typeof import('electron') {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -66,6 +67,7 @@ function openArtifactWindow(input: OpenInput, deps: ArtifactWindowDeps): void {
     title: (input.title ?? 'Artifact').replace(BIDI_CONTROLS, ''),
     backgroundColor: '#0b0b0c',
     show: false,
+    alwaysOnTop: false,
     autoHideMenuBar: true,
     webPreferences: {
       preload: deps.preloadPath,
@@ -92,7 +94,11 @@ function openArtifactWindow(input: OpenInput, deps: ArtifactWindowDeps): void {
   }
 
   openWindows.add(win);
-  win.on('closed', () => openWindows.delete(win));
+  const uninstallTopmostGuard = installTopmostGuard(win, { label: 'artifact window' });
+  win.on('closed', () => {
+    uninstallTopmostGuard();
+    openWindows.delete(win);
+  });
 
   win.once('ready-to-show', () => {
     win.maximize(); // "单独打开 ≈ 最大化的单独页面"（用户 2026-06-15 要求）

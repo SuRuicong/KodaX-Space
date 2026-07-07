@@ -12,7 +12,7 @@
 //
 // 行为：
 //   - 点击图标按钮 → 弹下拉
-//   - 下拉里选一项 → 立即切换 (apply <html> class + IPC titlebar.setOverlay)
+//   - 下拉里选一项 → 立即切换 (apply <html> class + legacy titlebar sync IPC)
 //   - 关闭逻辑：点外 / Esc / 选完一项后自动关
 //   - 快捷键 ⇧Ctrl+T (跟 VSCode "Reopen Closed Editor" 不冲突，因为我们没那命令)：循环 dark→light→system→dark
 //

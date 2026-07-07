@@ -103,6 +103,8 @@ function sanitizeAutoModeErrorMessage(msg: string): string {
 }
 
 import type {
+  AskUserAnswer as SdkAskUserAnswer,
+  AskUserSelectionAnswer as SdkAskUserSelectionAnswer,
   AutoModeAskUser,
   AutoModeAskUserVerdict,
   AutoModeEngine,
@@ -178,8 +180,6 @@ interface AgentProfileEventSummary {
   readonly name?: string;
 }
 
-type AskUserSelectionAnswer = string | string[];
-
 function supportsAskUserArrayResults(sdk: SdkCodingModule): boolean {
   const maybeTool = (sdk as { toolAskUserQuestion?: unknown }).toolAskUserQuestion;
   if (typeof maybeTool !== 'function') return false;
@@ -187,8 +187,19 @@ function supportsAskUserArrayResults(sdk: SdkCodingModule): boolean {
   return source.includes('choices') && source.includes('Array.isArray');
 }
 
-function legacyAskUserAnswer(answer: AskUserSelectionAnswer): string {
-  return Array.isArray(answer) ? answer.join(', ') : answer;
+function askUserSelectionToText(answer: SdkAskUserSelectionAnswer): string {
+  return typeof answer === 'string' ? answer : answer.value;
+}
+
+function legacyAskUserAnswer(answer: SdkAskUserAnswer): string {
+  return Array.isArray(answer)
+    ? answer.map((item) => askUserSelectionToText(item)).join(', ')
+    : askUserSelectionToText(answer);
+}
+
+function askUserAnswerToInputText(answer: SdkAskUserAnswer): string | undefined {
+  const first = Array.isArray(answer) ? answer[0] : answer;
+  return first === undefined ? undefined : askUserSelectionToText(first);
 }
 
 const WORKFLOW_TOOL_RUN_ID_RE =
@@ -678,10 +689,18 @@ export class RealKodaXSession implements ManagedSession {
     type FutureSdkAskUserQuestionOptions = SdkAskUserQuestionOptions & {
       readonly minSelections?: number;
       readonly maxSelections?: number;
+      readonly allowCustomInput?: boolean;
+      readonly customInputLabel?: string;
+      readonly customInputPrompt?: string;
+      readonly customInputDefault?: string;
     };
     type FutureSdkAskUserQuestionItem = SdkAskUserMultiOptions['questions'][number] & {
       readonly minSelections?: number;
       readonly maxSelections?: number;
+      readonly allowCustomInput?: boolean;
+      readonly customInputLabel?: string;
+      readonly customInputPrompt?: string;
+      readonly customInputDefault?: string;
     };
 
     const cancelledToolResult =
@@ -689,7 +708,7 @@ export class RealKodaXSession implements ManagedSession {
     const askUserArrayResultsSupported = supportsAskUserArrayResults(sdk);
     const requestSdkUserQuestion = async (
       options: FutureSdkAskUserQuestionOptions,
-    ): Promise<AskUserSelectionAnswer | undefined> => {
+    ): Promise<SdkAskUserAnswer | undefined> => {
       const kind = options.kind ?? 'select';
       if (kind === 'select' && (!options.options || options.options.length === 0)) {
         console.warn(
@@ -706,6 +725,18 @@ export class RealKodaXSession implements ManagedSession {
         ...(options.minSelections !== undefined ? { minSelections: options.minSelections } : {}),
         ...(options.maxSelections !== undefined ? { maxSelections: options.maxSelections } : {}),
         ...(options.default !== undefined ? { default: options.default } : {}),
+        ...(options.allowCustomInput !== undefined
+          ? { allowCustomInput: options.allowCustomInput }
+          : {}),
+        ...(options.customInputLabel !== undefined
+          ? { customInputLabel: options.customInputLabel }
+          : {}),
+        ...(options.customInputPrompt !== undefined
+          ? { customInputPrompt: options.customInputPrompt }
+          : {}),
+        ...(options.customInputDefault !== undefined
+          ? { customInputDefault: options.customInputDefault }
+          : {}),
       });
       if (answer === undefined) return undefined;
       return askUserArrayResultsSupported ? answer : legacyAskUserAnswer(answer);
@@ -720,13 +751,13 @@ export class RealKodaXSession implements ManagedSession {
         question: options.question,
         ...(options.default !== undefined ? { default: options.default } : {}),
       });
-      return Array.isArray(answer) ? answer[0] : answer;
+      return answer === undefined ? undefined : askUserAnswerToInputText(answer);
     };
 
     const requestSdkUserMulti = async (
       options: SdkAskUserMultiOptions,
-    ): Promise<Record<string, AskUserSelectionAnswer> | undefined> => {
-      const answers: Record<string, AskUserSelectionAnswer> = {};
+    ): Promise<Record<string, SdkAskUserAnswer> | undefined> => {
+      const answers: Record<string, SdkAskUserAnswer> = {};
       let questionIndex = 0;
       while (questionIndex < options.questions.length) {
         const question = options.questions[questionIndex] as FutureSdkAskUserQuestionItem;
@@ -780,6 +811,18 @@ export class RealKodaXSession implements ManagedSession {
           ...(question.multiSelect !== undefined ? { multiSelect: question.multiSelect } : {}),
           ...(clampedMin !== undefined ? { minSelections: clampedMin } : {}),
           ...(clampedMax !== undefined ? { maxSelections: clampedMax } : {}),
+          ...(question.allowCustomInput !== undefined
+            ? { allowCustomInput: question.allowCustomInput }
+            : {}),
+          ...(question.customInputLabel !== undefined
+            ? { customInputLabel: question.customInputLabel }
+            : {}),
+          ...(question.customInputPrompt !== undefined
+            ? { customInputPrompt: question.customInputPrompt }
+            : {}),
+          ...(question.customInputDefault !== undefined
+            ? { customInputDefault: question.customInputDefault }
+            : {}),
         });
         if (answer === undefined) return undefined;
         if (!Array.isArray(answer) && answer === ASK_USER_BACK_SIGNAL) {
@@ -1249,7 +1292,7 @@ export class RealKodaXSession implements ManagedSession {
 
       // ---- Interactive user questions ----
       askUser: async (options) =>
-        ((await requestSdkUserQuestion(options)) ?? cancelledToolResult) as string,
+        (await requestSdkUserQuestion(options)) ?? cancelledToolResult,
       askUserMulti: requestSdkUserMulti as NonNullable<KodaXEvents['askUserMulti']>,
       askUserInput: requestSdkUserInput,
 

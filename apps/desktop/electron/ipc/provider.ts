@@ -27,7 +27,8 @@ import {
   setKey,
   deleteKey,
   getKey,
-  listAccounts,
+  listConfiguredAccounts,
+  hasKey,
   getBackendStatus,
 } from '../providers/keychain.js';
 import { testProvider } from '../providers/test-connection.js';
@@ -108,6 +109,15 @@ function restoreManagedEnvs(): void {
   injectedEnvOriginals.clear();
 }
 
+async function listKnownProviderIds(): Promise<readonly string[]> {
+  await providerConfigStore.load();
+  const ids = new Set<string>();
+  for (const provider of BUILTIN_PROVIDERS) ids.add(provider.id);
+  for (const provider of providerConfigStore.listCustom()) ids.add(provider.id);
+  for (const provider of await loadKodaxCustomProviders()) ids.add(provider.id);
+  return [...ids];
+}
+
 /** 校验 apiKey 不含会破坏 HTTP header 的字符（review C2-sec：CRLF injection）。*/
 function validateApiKey(key: string): string | null {
   // \r \n \0 都会让 fetch undici 的 header serializer 抛错或（在老 runtime 上）
@@ -142,9 +152,7 @@ export function injectAllKeysToEnv(): Promise<void> {
 
 async function injectAllKeysToEnvUnlocked(): Promise<void> {
   await providerConfigStore.load();
-  const accounts = await listAccounts();
   const defaultId = providerConfigStore.getDefaultProviderId();
-
   // 1) 收集 keychain 里实际有 key 的 apiKeyEnv 名（按 account → provider info → env name）。
   //    只清这些，留住 shell-exported 的 ZHIPU_API_KEY / DEEPSEEK_API_KEY 等 — 用户在
   //    shell rc 里 export 的 key 是 KodaX/Claude Code 等工具的常用配置方式，删了之后
@@ -156,6 +164,12 @@ async function injectAllKeysToEnvUnlocked(): Promise<void> {
   //    v0.1.6: 之前只 log warn 不删，导致用户启动每次报一遍"a/b/c/x skipping"。
   //    detect 条件保守：account 不匹配任何已知 provider id (built-in catalog 稳定 +
   //    custom_<hex> CSPRNG 永不重生) → 安全删除。
+  if (process.platform === 'darwin') {
+    if (defaultId) await ensureProviderKeyInjected(defaultId);
+    return;
+  }
+
+  const accounts = await listConfiguredAccounts(await listKnownProviderIds());
   const orphanAccounts: string[] = [];
   for (const acct of accounts) {
     const info = await resolveProviderInfo(acct);
@@ -204,6 +218,33 @@ async function resolveProviderInfo(
   return sdkCustom ? { apiKeyEnv: sdkCustom.apiKeyEnv } : undefined;
 }
 
+async function resolveCredentialAccountForProvider(
+  providerId: string,
+  apiKeyEnv: string,
+): Promise<string | undefined> {
+  if (await hasKey(providerId)) return providerId;
+  for (const candidateId of await listKnownProviderIds()) {
+    if (candidateId === providerId) continue;
+    const candidateInfo = await resolveProviderInfo(candidateId);
+    if (candidateInfo?.apiKeyEnv !== apiKeyEnv) continue;
+    if (await hasKey(candidateId)) return candidateId;
+  }
+  return undefined;
+}
+
+export async function ensureProviderKeyInjected(providerId: string): Promise<boolean> {
+  if (providerId === 'mock') return false;
+  await providerConfigStore.load();
+  const info = await resolveProviderInfo(providerId);
+  if (!info) return false;
+  const credentialAccount = await resolveCredentialAccountForProvider(providerId, info.apiKeyEnv);
+  if (!credentialAccount) return false;
+  const value = await getKey(credentialAccount);
+  if (!value) return false;
+  setManagedEnv(info.apiKeyEnv, value);
+  return true;
+}
+
 async function resolveKnownProvider(id: string): Promise<KnownProvider | undefined> {
   if (isBuiltinId(id)) return getBuiltin(id);
   await providerConfigStore.load();
@@ -221,7 +262,7 @@ export function registerProviderChannels(): void {
   // provider.list
   registerChannel('provider.list', async () => {
     await providerConfigStore.load();
-    const keychainAccounts = new Set(await listAccounts());
+    const keychainAccounts = new Set(await listConfiguredAccounts(await listKnownProviderIds()));
     const defaultId = providerConfigStore.getDefaultProviderId();
 
     // v0.1.6：configured 同时认两种来源——
@@ -332,6 +373,7 @@ export function registerProviderChannels(): void {
     // custom provider 的 apiKeyEnv 可能复用 builtin env 名（如自建 Anthropic 网关用
     // ANTHROPIC_API_KEY），预检会因别的 provider 设了同名 env 而误判通过 → 不预检，交给 SDK 的
     // verifyProviderCredential 按 provider 真实凭证返 'unconfigured'，更准确。
+    await ensureProviderKeyInjected(input.providerId);
     if (isBuiltinId(input.providerId) && !hasEnvKey(probe.apiKeyEnv)) {
       return { ok: false, error: 'no API key configured' };
     }
@@ -344,10 +386,11 @@ export function registerProviderChannels(): void {
     if (!provider) {
       throw new Error('unknown providerId');
     }
+    await ensureProviderKeyInjected(input.providerId);
     const source = credentialSource(
       input.providerId,
       provider.apiKeyEnv,
-      new Set(await listAccounts()),
+      (await hasKey(input.providerId)) ? new Set([input.providerId]) : new Set<string>(),
     );
     if (source === 'none') {
       throw new Error(

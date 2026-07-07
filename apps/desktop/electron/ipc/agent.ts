@@ -1,8 +1,10 @@
 // Markdown agent IPC handler — FEATURE_197 (KodaX 0.7.43).
 //
-// 暴露给 renderer 一个只读 listing：扫 ~/.kodax/agents/*.md + <projectRoot>/.kodax/agents/*.md
-// 返回 metadata + 失败列表。不调 admission、不写 registry——
-// loadAgentsFromMarkdown 仍由 KodaX runtime 在 session 启动期跑（真激活路径）。
+// Exposes a read-only listing to the renderer: scan ~/.kodax/agents/*.md and
+// <projectRoot>/.kodax/agents/*.md, then return metadata + parse failures.
+// This path does not call admission and does not write the SDK registry.
+// Runtime activation must be wired separately; SDK 0.7.62 keeps markdown
+// agents in a process-global registry, so project scoping needs care.
 //
 // CJS/ESM trap：@kodax-ai/kodax/coding 的 subpath exports 只声明 "import" 条件（ESM）。
 // Space main 输出 CJS，静态 require 会撞 ERR_PACKAGE_PATH_NOT_EXPORTED。
