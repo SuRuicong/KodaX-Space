@@ -19,6 +19,7 @@ import {
 import { BUILTIN_PROVIDERS } from '../providers/catalog.js';
 import {
   _credentialSourceForTesting,
+  ensureProviderKeyInjected,
   _restoreManagedEnvsForTesting,
   _setManagedEnvForTesting,
 } from '../ipc/provider.js';
@@ -105,6 +106,14 @@ test('managed env from a shared keychain account is reported as runtime', () => 
     _credentialSourceForTesting('codex-cli', 'OPENAI_API_KEY', new Set(['openai'])),
     'runtime',
   );
+});
+
+test('ensureProviderKeyInjected reuses a keychain account with the same apiKeyEnv', async () => {
+  delete process.env.OPENAI_API_KEY;
+  await setKey('openai', 'sk-openai');
+
+  assert.equal(await ensureProviderKeyInjected('codex-cli'), true);
+  assert.equal(process.env.OPENAI_API_KEY, 'sk-openai');
 });
 
 test('external env-only provider is reported as env', () => {

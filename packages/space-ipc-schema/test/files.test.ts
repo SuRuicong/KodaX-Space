@@ -9,12 +9,13 @@ import {
   filesTreeChannel,
   filesReadChannel,
   filesDiffChannel,
+  filesStatChannel,
   fileNodeSchema,
   MAX_FILE_BYTES,
 } from '../src/index.js';
 
-test('all 3 files invoke channels are registered', () => {
-  for (const name of ['files.tree', 'files.read', 'files.diff']) {
+test('all files invoke channels are registered', () => {
+  for (const name of ['files.tree', 'files.read', 'files.readBinary', 'files.stat', 'files.diff']) {
     assert.ok(invokeChannels[name as keyof typeof invokeChannels], `${name} should be in invokeChannels`);
     assert.ok(INVOKE_CHANNEL_NAMES.has(name), `${name} should be in INVOKE_CHANNEL_NAMES`);
   }
@@ -107,6 +108,17 @@ test('files.diff input + output shape', () => {
     filesDiffChannel.output.safeParse({ before: '', after: '', available: false }).success,
     true,
   );
+});
+
+test('files.stat input + output shape', () => {
+  assert.equal(filesStatChannel.input.safeParse({ projectRoot: '/r', path: 'a.ts' }).success, true);
+  assert.equal(filesStatChannel.input.safeParse({ projectRoot: '/r' }).success, false);
+  assert.equal(
+    filesStatChannel.output.safeParse({ exists: true, kind: 'file', size: 12 }).success,
+    true,
+  );
+  assert.equal(filesStatChannel.output.safeParse({ exists: true, kind: 'dir' }).success, true);
+  assert.equal(filesStatChannel.output.safeParse({ exists: false, kind: null }).success, true);
 });
 
 test('MAX_FILE_BYTES is 5 MB', () => {

@@ -13,6 +13,7 @@ import {
   looksBinary,
   readFileWithGuards,
   readFileBinaryWithGuards,
+  statPath,
   recordDiff,
   getDiff,
   resetDiffCache,
@@ -218,6 +219,26 @@ test('readFileWithGuards: throws when target is a directory', async () => {
   const p = path.join(tmpRoot, 'd');
   await fs.mkdir(p);
   await assert.rejects(() => readFileWithGuards(p), /not a regular file/);
+});
+
+// ---- statPath ----
+test('statPath: returns file metadata for existing files', async () => {
+  const p = path.join(tmpRoot, 'a.txt');
+  await fs.writeFile(p, 'hello');
+  assert.deepEqual(await statPath(p), { exists: true, kind: 'file', size: 5 });
+});
+
+test('statPath: returns dir metadata for existing directories', async () => {
+  const p = path.join(tmpRoot, 'd');
+  await fs.mkdir(p);
+  assert.deepEqual(await statPath(p), { exists: true, kind: 'dir' });
+});
+
+test('statPath: returns exists=false for missing paths', async () => {
+  assert.deepEqual(await statPath(path.join(tmpRoot, 'missing.txt')), {
+    exists: false,
+    kind: null,
+  });
 });
 
 // ---- diff cache ----

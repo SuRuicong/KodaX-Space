@@ -119,6 +119,10 @@ test('askUser.request payload accepts select and input question shapes', () => {
     multiSelect: true,
     minSelections: 1,
     maxSelections: 2,
+    allowCustomInput: true,
+    customInputLabel: 'Other',
+    customInputPrompt: 'Type another answer',
+    customInputDefault: 'custom',
   });
   assert.equal(selectResult.success, true);
 
@@ -159,6 +163,20 @@ test('askUser.request payload rejects invalid selection bounds', () => {
 test('askUser.reply input accepts value and cancelled replies', () => {
   assert.equal(askUserReplyChannel.input.safeParse({ reqId: 'r', value: 'answer' }).success, true);
   assert.equal(askUserReplyChannel.input.safeParse({ reqId: 'r', value: ['a', 'b'] }).success, true);
+  assert.equal(
+    askUserReplyChannel.input.safeParse({
+      reqId: 'r',
+      value: { kind: 'customInput', value: 'something else' },
+    }).success,
+    true,
+  );
+  assert.equal(
+    askUserReplyChannel.input.safeParse({
+      reqId: 'r',
+      value: ['a', { kind: 'customInput', value: 'something else' }],
+    }).success,
+    true,
+  );
   assert.equal(askUserReplyChannel.input.safeParse({ reqId: 'r', cancelled: true }).success, true);
   assert.equal(askUserReplyChannel.input.safeParse({ reqId: 'r', cancelled: false }).success, false);
 });

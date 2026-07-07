@@ -1,13 +1,37 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { pushChannels, PUSH_CHANNEL_NAMES, windowActivityChannel } from '../src/index.js';
+import {
+  invokeChannels,
+  INVOKE_CHANNEL_NAMES,
+  pushChannels,
+  PUSH_CHANNEL_NAMES,
+  windowActivityChannel,
+  windowControlChannel,
+  windowStateChannel,
+} from '../src/index.js';
 
 test('window.activity push channel is registered', () => {
   assert.ok(pushChannels['window.activity']);
   assert.ok(PUSH_CHANNEL_NAMES.has('window.activity'));
   assert.equal(windowActivityChannel.name, 'window.activity');
   assert.equal(windowActivityChannel.direction, 'push');
+});
+
+test('window control invoke channels are registered', () => {
+  assert.ok(invokeChannels['window.state']);
+  assert.ok(invokeChannels['window.control']);
+  assert.ok(INVOKE_CHANNEL_NAMES.has('window.state'));
+  assert.ok(INVOKE_CHANNEL_NAMES.has('window.control'));
+  assert.equal(windowStateChannel.direction, 'invoke');
+  assert.equal(windowControlChannel.direction, 'invoke');
+});
+
+test('window.control accepts only known actions', () => {
+  assert.equal(windowControlChannel.input.safeParse({ action: 'minimize' }).success, true);
+  assert.equal(windowControlChannel.input.safeParse({ action: 'toggleMaximize' }).success, true);
+  assert.equal(windowControlChannel.input.safeParse({ action: 'close' }).success, true);
+  assert.equal(windowControlChannel.input.safeParse({ action: 'fullscreen' }).success, false);
 });
 
 test('window.activity payload accepts active, passive, and hidden states', () => {

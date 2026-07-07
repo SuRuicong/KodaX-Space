@@ -60,6 +60,9 @@ test('diff popout overlays the conversation without blocking the composer', asyn
       m.textareaReceivesPointer,
       `textarea hit target was ${m.textareaHitTag ?? 'null'} ${String(m.textareaHitClass ?? '')}`,
     ).toBe(true);
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('popout-diff')).toBeHidden({ timeout: 2_000 });
   } finally {
     await space.close();
     await fs.rm(projectDir, { recursive: true, force: true }).catch(() => {});

@@ -245,6 +245,10 @@ test('requestQuestion select resolves renderer value', async () => {
     multiSelect: true,
     minSelections: 1,
     maxSelections: 2,
+    allowCustomInput: true,
+    customInputLabel: 'Other',
+    customInputPrompt: 'Type another answer',
+    customInputDefault: 'draft',
   });
   await new Promise((r) => setImmediate(r));
   const evt = captured.find((c) => c.channel === 'askUser.request');
@@ -257,6 +261,10 @@ test('requestQuestion select resolves renderer value', async () => {
     multiSelect?: boolean;
     minSelections?: number;
     maxSelections?: number;
+    allowCustomInput?: boolean;
+    customInputLabel?: string;
+    customInputPrompt?: string;
+    customInputDefault?: string;
   };
   assert.equal(payload.kind, 'select');
   assert.equal(payload.question, 'Pick one');
@@ -264,9 +272,33 @@ test('requestQuestion select resolves renderer value', async () => {
   assert.equal(payload.multiSelect, true);
   assert.equal(payload.minSelections, 1);
   assert.equal(payload.maxSelections, 2);
+  assert.equal(payload.allowCustomInput, true);
+  assert.equal(payload.customInputLabel, 'Other');
+  assert.equal(payload.customInputPrompt, 'Type another answer');
+  assert.equal(payload.customInputDefault, 'draft');
 
   assert.equal(askUserBroker.resolve(payload.reqId, { reqId: payload.reqId, value: 'b' }), true);
   assert.equal(await pending, 'b');
+});
+
+test('requestQuestion resolves custom input answer object', async () => {
+  const pending = askUserBroker.requestQuestion({
+    sessionId: 's_question_custom',
+    kind: 'select',
+    question: 'Pick one',
+    options: [{ label: 'A', value: 'a' }],
+  });
+  await new Promise((r) => setImmediate(r));
+  const evt = captured.find((c) => c.channel === 'askUser.request');
+  assert.ok(evt);
+  const payload = evt.payload as { reqId: string };
+  const customAnswer = { kind: 'customInput' as const, value: 'another answer' };
+
+  assert.equal(
+    askUserBroker.resolve(payload.reqId, { reqId: payload.reqId, value: customAnswer }),
+    true,
+  );
+  assert.deepEqual(await pending, customAnswer);
 });
 
 test('requestQuestion multi-select resolves renderer array value', async () => {

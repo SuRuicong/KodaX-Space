@@ -203,6 +203,37 @@ test('tool_start opens a card; tool_result fills it with status done', () => {
   }
 });
 
+test('completed flag is attached only to the final assistant text for a turn', () => {
+  const events: SessionEvent[] = [
+    { kind: 'text_delta', sessionId: sid, text: 'Let me check' },
+    {
+      kind: 'tool_start',
+      sessionId: sid,
+      toolId: 't1',
+      toolName: 'read',
+      input: { path: 'package.json' },
+    },
+    {
+      kind: 'tool_result',
+      sessionId: sid,
+      toolId: 't1',
+      toolName: 'read',
+      content: '{"name":"x"}',
+    },
+    { kind: 'text_delta', sessionId: sid, text: 'Final answer' },
+    { kind: 'session_complete', sessionId: sid },
+  ];
+  const out = composeMessages({ events, userMessages: [userMsg('u1', 'what')] });
+  const replies = out.filter(
+    (m): m is Extract<ConversationMessage, { kind: 'assistant_text' }> =>
+      m.kind === 'assistant_text',
+  );
+  assert.equal(replies.length, 2);
+  assert.equal(replies[0].completed, undefined);
+  assert.equal(replies[1].completed, true);
+  assert.equal(replies[1].turnIndex, 0);
+});
+
 test('tool_start without tool_result → status remains "running"', () => {
   const events: SessionEvent[] = [
     {

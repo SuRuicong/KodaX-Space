@@ -194,6 +194,115 @@ test('rewind: diskRewound=true when SDK has the session, false when not (reviewe
   assert.equal(r2.diskRewound, true, 'disk rewind should succeed when SDK has the record');
 });
 
+test('rewind: resolves turn index to the completed turn end selector', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  seedPersistedSession(sessionId, 'C:\\tmp\\proj');
+  mockState.seedTranscript(sessionId, [
+    { entryId: 'u0', type: 'message', message: { role: 'user', content: 'first prompt' } },
+    {
+      entryId: 'a0_tools',
+      type: 'message',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'tool_1', name: 'bash', input: {} }],
+      },
+    },
+    {
+      entryId: 'tool_result_user',
+      type: 'message',
+      message: {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: 'tool_1', content: 'ok' }],
+      },
+    },
+    { entryId: 'a0_final', type: 'message', message: { role: 'assistant', content: 'done' } },
+    { entryId: 'u1', type: 'message', message: { role: 'user', content: 'second prompt' } },
+    { entryId: 'a1_final', type: 'message', message: { role: 'assistant', content: 'done 2' } },
+  ]);
+
+  const result = await kodaxHost.rewind(sessionId, 0);
+  assert.equal(result.ok, true);
+  assert.equal(mockState.lastRewindSelector(), 'a0_final');
+});
+
+test('rewind: selector ignores compacted placeholders and rewind markers', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  seedPersistedSession(sessionId, 'C:\\tmp\\proj');
+  mockState.seedTranscript(sessionId, [
+    {
+      entryId: 'placeholder',
+      type: 'message',
+      active: false,
+      message: { role: 'user', content: '[compacted]' },
+    },
+    {
+      entryId: 'rewind_marker',
+      type: 'compaction',
+      active: false,
+      summary: '[Rewind] Rewound to entry entry_a (truncated 3 entries)',
+      payload: { reason: 'rewind' },
+      message: { role: 'system', content: '[history]\\n\\n[Rewind]' },
+    },
+    { entryId: 'u0', type: 'message', active: true, message: { role: 'user', content: 'first prompt' } },
+    { entryId: 'a0_final', type: 'message', active: true, message: { role: 'assistant', content: 'done' } },
+    { entryId: 'u1', type: 'message', active: true, message: { role: 'user', content: 'second prompt' } },
+    { entryId: 'a1_final', type: 'message', active: true, message: { role: 'assistant', content: 'done 2' } },
+  ]);
+
+  const result = await kodaxHost.rewind(sessionId, 0);
+  assert.equal(result.ok, true);
+  assert.equal(mockState.lastRewindSelector(), 'a0_final');
+});
+
+test('rewind: selector uses active branch when inactive old branch has unique prompts', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  seedPersistedSession(sessionId, 'C:\\tmp\\proj');
+  mockState.seedTranscript(sessionId, [
+    { entryId: 'old_u0', type: 'message', active: false, message: { role: 'user', content: 'old prompt' } },
+    { entryId: 'old_a0', type: 'message', active: false, message: { role: 'assistant', content: 'old answer' } },
+    { entryId: 'u0', type: 'message', active: true, message: { role: 'user', content: 'first active prompt' } },
+    { entryId: 'a0_final', type: 'message', active: true, message: { role: 'assistant', content: 'active answer' } },
+  ]);
+
+  const result = await kodaxHost.rewind(sessionId, 0);
+  assert.equal(result.ok, true);
+  assert.equal(mockState.lastRewindSelector(), 'a0_final');
+});
+
+test('fork: resolves turn index to the completed turn end selector', async () => {
+  const { sessionId } = kodaxHost.createSession({
+    projectRoot: 'C:\\tmp\\proj',
+    provider: 'mock',
+  });
+  seedPersistedSession(sessionId, 'C:\\tmp\\proj');
+  mockState.seedTranscript(sessionId, [
+    { entryId: 'u0', type: 'message', message: { role: 'user', content: 'first prompt' } },
+    {
+      entryId: 'tool_result_user',
+      type: 'message',
+      message: {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: 'tool_1', content: 'ok' }],
+      },
+    },
+    { entryId: 'a0_final', type: 'message', message: { role: 'assistant', content: 'done' } },
+    { entryId: 'u1', type: 'message', message: { role: 'user', content: 'second prompt' } },
+  ]);
+
+  const result = await kodaxHost.fork(sessionId, 0);
+  assert.ok(result);
+  assert.equal(mockState.lastForkSelector(), 'a0_final');
+});
+
 test('fork: factory failure rolls back persisted entry (reviewer HIGH-1)', async () => {
   const { sessionId: src } = kodaxHost.createSession({
     projectRoot: 'C:\\tmp\\proj',

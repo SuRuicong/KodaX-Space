@@ -19,6 +19,9 @@ export interface MockSessionState {
   seed(id: string, gitRoot: string, title?: string): void;
   /** F045: Inject a persisted session carrying a SDK session tag (surface 反推). */
   seedTagged(id: string, gitRoot: string, tag: string | undefined, title?: string): void;
+  seedTranscript(id: string, entries: readonly unknown[]): void;
+  lastForkSelector(): string | undefined;
+  lastRewindSelector(): string | undefined;
   /** Wipe storage + restore default SDK impl. Call from afterEach. */
   reset(): void;
 }
@@ -26,8 +29,16 @@ export interface MockSessionState {
 export function installSessionStoreMock(): MockSessionState {
   const storage = new Map<
     string,
-    { id: string; title: string; gitRoot: string; tag?: string }
+    {
+      id: string;
+      title: string;
+      gitRoot: string;
+      tag?: string;
+      transcriptEntries?: readonly unknown[];
+    }
   >();
+  let lastForkSelectorValue: string | undefined;
+  let lastRewindSelectorValue: string | undefined;
 
   const impl: SessionStoreImpl = {
     listSessions: async (opts) => {
@@ -43,6 +54,7 @@ export function installSessionStoreMock(): MockSessionState {
       }));
     },
     forkSession: async (srcId, opts) => {
+      lastForkSelectorValue = opts?.selector;
       const src = storage.get(srcId);
       if (!src) return null;
       const newId = `s_${randomUUID()}`;
@@ -53,7 +65,8 @@ export function installSessionStoreMock(): MockSessionState {
         data: { title: newData.title, messages: [], gitRoot: newData.gitRoot } as never,
       };
     },
-    rewindSession: async (id) => {
+    rewindSession: async (id, opts) => {
+      lastRewindSelectorValue = opts?.selector;
       const s = storage.get(id);
       if (!s) return null;
       return { title: s.title, messages: [], gitRoot: s.gitRoot } as never;
@@ -73,6 +86,16 @@ export function installSessionStoreMock(): MockSessionState {
         ...(s.tag !== undefined ? { tag: s.tag } : {}),
       } as never;
     },
+    loadFullTranscript: async (id) => {
+      const s = storage.get(id);
+      if (!s) return null;
+      return {
+        title: s.title,
+        messages: [],
+        gitRoot: s.gitRoot,
+        transcriptEntries: s.transcriptEntries ?? [],
+      } as never;
+    },
     watchSessions: () => ({ close: () => undefined }),
   };
 
@@ -84,8 +107,26 @@ export function installSessionStoreMock(): MockSessionState {
     seedTagged(id, gitRoot, tag, title = 'Untitled'): void {
       storage.set(id, { id, title, gitRoot, ...(tag !== undefined ? { tag } : {}) });
     },
+    seedTranscript(id, entries): void {
+      const existing = storage.get(id);
+      storage.set(id, {
+        id,
+        title: existing?.title ?? 'Untitled',
+        gitRoot: existing?.gitRoot ?? '',
+        ...(existing?.tag !== undefined ? { tag: existing.tag } : {}),
+        transcriptEntries: entries,
+      });
+    },
+    lastForkSelector(): string | undefined {
+      return lastForkSelectorValue;
+    },
+    lastRewindSelector(): string | undefined {
+      return lastRewindSelectorValue;
+    },
     reset(): void {
       storage.clear();
+      lastForkSelectorValue = undefined;
+      lastRewindSelectorValue = undefined;
       setSessionStoreImpl(null);
     },
   };

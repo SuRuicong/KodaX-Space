@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {
   entryContentKey,
   isCompactedPlaceholder,
+  isRewindMarker,
   dedupeTranscriptEntries,
 } from '../ipc/transcript-dedup.js';
 
@@ -109,4 +110,21 @@ test('active 缺省(旧 SDK / mock 回退)→ 视作 inactive,按内容折叠,�
     { type: 'message', message: { role: 'assistant', content: 'hello' } },
   ];
   assert.equal(dedupeTranscriptEntries(entries).length, 2, '无重复 → 全保留');
+});
+test('rewind markers are not rendered as compaction notices', () => {
+  const marker = {
+    type: 'compaction',
+    active: false,
+    summary: '[Rewind] Rewound to entry entry_a (truncated 3 entries)',
+    payload: { reason: 'rewind' },
+    message: { role: 'system', content: '[history]\n\n[Rewind] Rewound to entry entry_a' },
+  };
+  assert.equal(isRewindMarker(marker), true);
+  assert.deepEqual(
+    dedupeTranscriptEntries([
+      { type: 'message', active: true, message: { role: 'user', content: 'kept' } },
+      marker,
+    ]).map((e) => ('summary' in e ? e.summary : e.message.content)),
+    ['kept'],
+  );
 });
