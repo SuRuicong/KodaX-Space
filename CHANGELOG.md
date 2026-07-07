@@ -14,8 +14,14 @@ KodaX-Space is the Electron desktop client for the [KodaX SDK](https://github.co
 
 ## [Unreleased]
 
+### Added
+
+- **KodaX 0.7.62 `ask_user` custom input** - Space now supports the SDK's default-on custom input option for select questions. The ask-user modal can render an "Other" answer, collect free text, and return `{ kind: 'customInput', value }` through IPC back to the SDK, including multi-select answers.
+- **Memory Governance Surface (F088)** - Added a Coder-only Memory popout, `memory.*` IPC schema/service, and upgraded `/memory` slash commands over KodaX 0.7.62's `MemoryControlPlane`. Users can review pending memory proposals, approve with preview fingerprints, reject proposals, inspect approved refs, run curator reports, and test deterministic memory packs while Partner KB remains separate.
+
 ### Changed
 
+- **KodaX 0.7.62 SDK catch-up** - Root and desktop workspaces resolve `@kodax-ai/kodax` `0.7.62`. This brings in the SDK memory-governance baseline (FEATURE_228) while Space's dedicated Memory Governance Surface remains tracked separately as F088.
 - **Project license switched to KAI-FCL** - Current and future official KodaX-AI distributions for KodaX Space 0.1.27 and later use the source-available KodaX-AI Fair Core License (`KAI-FCL`) or accompanying customer terms when distributed with that notice. Historical tags, source archives, installers, or other copies already distributed with Apache-2.0 notices remain under Apache-2.0 for those specific copies; dependency license metadata is unchanged.
 
 ## [0.1.28] - 2026-07-06
