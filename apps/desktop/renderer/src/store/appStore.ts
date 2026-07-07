@@ -355,8 +355,8 @@ interface AppState {
    */
   activePopoutKind: string | null;
   /**
-   * KX-I-02 Smart Popout Director — 是否启用"根据 session event 自动展开 plan/diff/tasks
-   * popout"。默认开;用户在 Preferences 里可关。持久化 localStorage。
+   * KX-I-02 Smart Popout Director — 是否启用"根据 session event 自动聚焦右侧任务栏/变更区"。
+   * 默认关;用户在 Preferences 里可开。持久化 localStorage。
    */
   smartPopoutEnabled: boolean;
   /** Composer mascot mode. Default is the original mascot; persisted for quick switching. */
@@ -614,6 +614,8 @@ const LS_KEY_PENDING_AGENT = 'kodax-space.pendingAgentMode';
 const LS_KEY_PENDING_MODEL = 'kodax-space.pendingModel';
 const LS_KEY_MASCOT_MODE = 'kodax-space.mascotMode';
 const LS_KEY_MASCOT_ENABLED = 'kodax-space.mascotEnabled';
+const LS_KEY_SMART_POPOUT = 'kodax-space.smartPopoutEnabled';
+const LS_KEY_NATIVE_COMPLETION_NOTIFICATIONS = 'kodax-space.nativeCompletionNotificationsEnabled';
 const PENDING_MODEL_MAX_LEN = 256;
 const MASCOT_MODE_VALUES = ['legacy', 'sprite', 'off'] as const;
 
@@ -809,6 +811,11 @@ function lsGet(key: string): string | null {
     return null;
   }
 }
+
+export function readOptInBoolean(raw: string | null): boolean {
+  return raw === '1';
+}
+
 function lsSet(key: string, value: string | null): void {
   if (typeof window === 'undefined') return;
   try {
@@ -1079,12 +1086,13 @@ export const useAppStore = create<AppState>((set) => ({
   ),
   // v0.1.9 fix: Shell activePopout 镜像 (临时 UI state,不持久化)
   activePopoutKind: null,
-  // KX-I-02: smart director 默认 on。"0" 表示用户主动关过。
-  smartPopoutEnabled: lsGet('kodax-space.smartPopoutEnabled') !== '0',
+  // KX-I-02: smart director 默认 off。"1" 表示用户主动开过。
+  smartPopoutEnabled: readOptInBoolean(lsGet(LS_KEY_SMART_POPOUT)),
   mascotMode: initialMascotMode,
   mascotEnabled: initialMascotMode !== 'off',
-  nativeCompletionNotificationsEnabled:
-    lsGet('kodax-space.nativeCompletionNotificationsEnabled') !== '0',
+  nativeCompletionNotificationsEnabled: readOptInBoolean(
+    lsGet(LS_KEY_NATIVE_COMPLETION_NOTIFICATIONS),
+  ),
   promotedPopoutsBySession: {},
   projectOrder: readPersistedProjectOrder(),
   archivedProjectsExpanded: lsGet('kodax-space.archivedProjectsExpanded') === '1',
@@ -2115,7 +2123,7 @@ export const useAppStore = create<AppState>((set) => ({
   setActivePopoutKind: (kind) => set({ activePopoutKind: kind }),
 
   setSmartPopoutEnabled: (enabled) => {
-    lsSet('kodax-space.smartPopoutEnabled', enabled ? '1' : '0');
+    lsSet(LS_KEY_SMART_POPOUT, enabled ? '1' : '0');
     set({ smartPopoutEnabled: enabled });
   },
 
@@ -2138,7 +2146,7 @@ export const useAppStore = create<AppState>((set) => ({
   },
 
   setNativeCompletionNotificationsEnabled: (enabled) => {
-    lsSet('kodax-space.nativeCompletionNotificationsEnabled', enabled ? '1' : '0');
+    lsSet(LS_KEY_NATIVE_COMPLETION_NOTIFICATIONS, enabled ? '1' : '0');
     set({ nativeCompletionNotificationsEnabled: enabled });
   },
 

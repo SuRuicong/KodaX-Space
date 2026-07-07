@@ -683,9 +683,9 @@ export const messages = {
     'partner.sources.startSessionFirst': '请先启动 Partner 会话',
     'partner.sources.attachSelected': '附加所选文件',
     'partner.sources.add': '添加资料源',
-    'settings.smartPopout.title': '自动展开 Plan、Diff 和 Tasks 面板',
+    'settings.smartPopout.title': '自动聚焦任务侧栏和变更区',
     'settings.smartPopout.description':
-      '当计划生成、文件被编辑或 worker fan-out 时，Space 会第一次自动打开右侧面板。想完全手动控制时可以关闭。',
+      '当计划生成或文件开始变更时，Space 会自动打开并聚焦右侧任务栏或变更区。想完全手动控制时可以关闭。',
     'settings.notifications.title': '后台会话完成时发送系统通知',
     'settings.notifications.description':
       '只有运行超过一分钟、且完成时应用不在前台的 live session 会触发系统通知。完成提示仍会在 Space 内显示并可关闭。',

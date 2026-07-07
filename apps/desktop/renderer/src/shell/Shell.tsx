@@ -294,6 +294,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
     const sid = s.currentSessionId;
     return sid ? (s.todoListBySession[sid]?.length ?? 0) : 0;
   });
+  const smartPopoutEnabled = useAppStore((s) => s.smartPopoutEnabled);
   const lastAutoPlanRef = useRef<{ sessionId: string | null; hasPlan: boolean } | null>(null);
   useEffect(() => {
     const hasPlan = planLength > 0;
@@ -305,8 +306,8 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
     }
     const sessionChanged = previous.sessionId !== currentSessionIdForPlan;
     const planPresenceChanged = previous.hasPlan !== hasPlan;
-    if (!sessionChanged && !planPresenceChanged) return; // 没切换
-    if (!planPresenceChanged) {
+    if (!sessionChanged && !planPresenceChanged) return;
+    if (!planPresenceChanged || !smartPopoutEnabled) {
       lastAutoPlanRef.current = { sessionId: currentSessionIdForPlan, hasPlan };
       return;
     }
@@ -323,6 +324,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
     openRightSidebarAtDefaultWidth,
     rightSidebarOpen,
     setRightSidebarOpen,
+    smartPopoutEnabled,
   ]);
 
   // F059c: 对话里点 artifact 卡片 → 若右侧栏关着先打开它（RightSidebar 内部再切到 Artifact
