@@ -148,6 +148,7 @@ import {
 import { SPACE_MANUAL_TOPICS, SPACE_PRODUCT_NAME } from './space-manual-topics.js';
 import { workflowPolicyStore, buildWorkflowHostPolicy } from './workflow-policy.js';
 import { workflowController } from './workflow-controller.js';
+import { loadKodaxCompactionConfig } from './user-config.js';
 import { pushToRenderer } from '../ipc/push.js';
 import {
   isTransientChildEvent,
@@ -1444,6 +1445,7 @@ export class RealKodaXSession implements ManagedSession {
     const rejectedEfforts =
       (await loadSdkAgent())?.getCachedRejectedEfforts(this.provider, this.model ?? undefined) ?? [];
     const wireEffort = resolveWireEffort(this.reasoningMode, reasoningProfile, rejectedEfforts);
+    const compaction = await loadKodaxCompactionConfig();
 
     const options: KodaXOptions = {
       provider: this.provider,
@@ -1453,6 +1455,7 @@ export class RealKodaXSession implements ManagedSession {
       // SDK 0.7.42 wired (P0): /model + /thinking 设置在下一 turn 生效
       ...(this.model !== undefined ? { model: this.model } : {}),
       ...(this.thinking !== undefined ? { thinking: this.thinking } : {}),
+      ...(compaction ? { compaction } : {}),
       events,
       ...(extensionRuntimeHandle !== undefined
         ? { extensionRuntime: extensionRuntimeHandle.runtime }

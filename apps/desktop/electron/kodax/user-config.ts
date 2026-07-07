@@ -16,13 +16,21 @@
 
 // 不直接 import Space 的 PermissionMode（含 'auto'，KodaX 不会产生），改用窄子集。
 
-import type { CustomProviderReasoning } from '@kodax-space/space-ipc-schema';
+import { promises as fsp } from 'node:fs';
+import path from 'node:path';
+import type {
+  CustomProviderReasoning,
+  KodaxCompactionSettingsT,
+  KodaxConfigOverviewT,
+} from '@kodax-space/space-ipc-schema';
 import { validateApiKeyEnv } from '../providers/env-guard.js';
 import { validateBaseUrl } from '../providers/url-guard.js';
+import { getKodaxRuntimeDir } from './data-paths.js';
 import { effortToReasoningMode, isSpaceReasoningMode } from './reasoning-effort.js';
 
 type SdkRootModule = typeof import('@kodax-ai/kodax');
 type SdkLoadConfigReturn = ReturnType<SdkRootModule['loadConfig']>;
+type SdkWritableConfig = SdkLoadConfigReturn & Record<string, unknown>;
 type SdkCustomProviderConfig = NonNullable<SdkLoadConfigReturn['customProviders']>[number];
 
 /** KodaX permissionMode 中能映射到 Space 的子集（'plan' / 'accept-edits'；其它 → undefined）。*/
@@ -244,6 +252,41 @@ export async function loadKodaxCustomProviders(): Promise<readonly KodaxConfigCu
   }
 
   return normalizeKodaxConfigCustomProviders(raw.customProviders);
+}
+
+export async function loadKodaxConfigOverview(
+  projectRoot?: string,
+): Promise<KodaxConfigOverviewT> {
+  const configPath = getKodaxConfigPath();
+  const errors: KodaxConfigOverviewT['errors'] = [];
+  const raw = await loadRawConfigForOverview(configPath, errors);
+  return buildKodaxConfigOverview(raw, projectRoot, errors);
+}
+
+export async function updateKodaxCompactionConfig(
+  compaction: KodaxCompactionSettingsT,
+  projectRoot?: string,
+): Promise<KodaxConfigOverviewT> {
+  const raw = (await loadWritableKodaxConfig()) as SdkWritableConfig;
+  const normalized = normalizeCompactionSettings(compaction);
+  const next: SdkWritableConfig = { ...raw };
+  next.compaction = mergeCompactionSettings(raw.compaction, normalized);
+  saveWritableKodaxConfig(next as SdkLoadConfigReturn);
+  return loadKodaxConfigOverview(projectRoot);
+}
+
+export async function loadKodaxCompactionConfig(): Promise<KodaxCompactionSettingsT | undefined> {
+  try {
+    const raw = (await loadWritableKodaxConfig()) as SdkWritableConfig;
+    const normalized = normalizeCompactionSettings(raw.compaction);
+    return Object.keys(normalized).length > 0 ? normalized : undefined;
+  } catch (err) {
+    console.warn(
+      '[kodax-user-config] compaction config ignored:',
+      err instanceof Error ? err.message : err,
+    );
+    return undefined;
+  }
 }
 
 export async function updateKodaxConfigCustomProvider(
@@ -508,6 +551,210 @@ function saveWritableKodaxConfig(config: SdkLoadConfigReturn): void {
   }
   activeImpl.saveConfig(config);
   invalidateUserDefaultsCache();
+}
+
+const MAX_CONFIG_BYTES = 1_048_576;
+const MODELED_COMPACTION_KEYS = new Set(['enabled', 'triggerPercent', 'contextWindow']);
+
+function getKodaxConfigPath(): string {
+  return path.join(getKodaxRuntimeDir(), 'config.json');
+}
+
+async function loadRawConfigForOverview(
+  configPath: string,
+  errors: KodaxConfigOverviewT['errors'],
+): Promise<SdkWritableConfig> {
+  if (activeImpl === DEFAULT_IMPL && sdkModuleCache === null) {
+    try {
+      await loadSdkRootModule();
+    } catch (err) {
+      errors.push({
+        path: configPath,
+        error: `SDK load failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      return {};
+    }
+  }
+  try {
+    return activeImpl.loadConfig() as SdkWritableConfig;
+  } catch (err) {
+    errors.push({
+      path: configPath,
+      error: `loadConfig failed: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    return {};
+  }
+}
+
+async function buildKodaxConfigOverview(
+  raw: SdkWritableConfig,
+  projectRoot: string | undefined,
+  errors: KodaxConfigOverviewT['errors'],
+): Promise<KodaxConfigOverviewT> {
+  const kodaxDir = getKodaxRuntimeDir();
+  const configPath = getKodaxConfigPath();
+  const configExists = await pathIsFile(configPath);
+  const projectSummary = await readProjectConfigSummary(projectRoot, configPath, errors);
+
+  return {
+    configPath,
+    configExists,
+    compaction: normalizeCompactionSettings(raw.compaction),
+    mcp: {
+      globalPath: configPath,
+      ...(projectSummary.projectPath ? { projectPath: projectSummary.projectPath } : {}),
+      globalConfigExists: configExists,
+      ...(projectSummary.projectConfigExists !== undefined
+        ? { projectConfigExists: projectSummary.projectConfigExists }
+        : {}),
+      globalServers: countMcpServers(raw.mcpServers),
+      projectServers: projectSummary.projectServers,
+    },
+    skills: {
+      userSkillsDir: path.join(kodaxDir, 'skills'),
+      ...(projectSummary.projectRoot
+        ? { projectSkillsDir: path.join(projectSummary.projectRoot, '.kodax', 'skills') }
+        : {}),
+    },
+    errors: errors.slice(0, 8),
+  };
+}
+
+function normalizeCompactionSettings(raw: unknown): KodaxCompactionSettingsT {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const record = raw as Record<string, unknown>;
+  const out: KodaxCompactionSettingsT = {};
+  if (typeof record.enabled === 'boolean') out.enabled = record.enabled;
+  if (
+    typeof record.triggerPercent === 'number' &&
+    Number.isInteger(record.triggerPercent) &&
+    record.triggerPercent >= 1 &&
+    record.triggerPercent <= 100
+  ) {
+    out.triggerPercent = record.triggerPercent;
+  }
+  if (
+    typeof record.contextWindow === 'number' &&
+    Number.isInteger(record.contextWindow) &&
+    record.contextWindow >= 1024 &&
+    record.contextWindow <= 10_000_000
+  ) {
+    out.contextWindow = record.contextWindow;
+  }
+  return out;
+}
+
+function mergeCompactionSettings(
+  currentRaw: unknown,
+  modeled: KodaxCompactionSettingsT,
+): Record<string, unknown> | undefined {
+  const out: Record<string, unknown> = {};
+  if (currentRaw && typeof currentRaw === 'object' && !Array.isArray(currentRaw)) {
+    for (const [key, value] of Object.entries(currentRaw as Record<string, unknown>)) {
+      if (!MODELED_COMPACTION_KEYS.has(key)) out[key] = value;
+    }
+  }
+  Object.assign(out, modeled);
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+async function pathIsFile(filePath: string): Promise<boolean> {
+  return fsp
+    .stat(filePath)
+    .then((stat) => stat.isFile())
+    .catch(() => false);
+}
+
+function countMcpServers(raw: unknown): number {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 0;
+  return Math.min(128, Object.keys(raw as Record<string, unknown>).length);
+}
+
+async function readProjectConfigSummary(
+  projectRoot: string | undefined,
+  globalConfigPath: string,
+  errors: KodaxConfigOverviewT['errors'],
+): Promise<{
+  projectRoot?: string;
+  projectPath?: string;
+  projectConfigExists?: boolean;
+  projectServers: number;
+}> {
+  if (!projectRoot || !path.isAbsolute(projectRoot)) return { projectServers: 0 };
+  const normalizedProjectRoot = path.normalize(projectRoot);
+  const projectPath = path.join(normalizedProjectRoot, '.kodax', 'config.json');
+  if (path.resolve(projectPath) === path.resolve(globalConfigPath)) {
+    return { projectRoot: normalizedProjectRoot, projectServers: 0 };
+  }
+
+  let stat;
+  try {
+    stat = await fsp.stat(projectPath);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') {
+      return {
+        projectRoot: normalizedProjectRoot,
+        projectPath,
+        projectConfigExists: false,
+        projectServers: 0,
+      };
+    }
+    errors.push({
+      path: projectPath,
+      error: `stat failed: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    return {
+      projectRoot: normalizedProjectRoot,
+      projectPath,
+      projectConfigExists: false,
+      projectServers: 0,
+    };
+  }
+  if (!stat.isFile()) {
+    return {
+      projectRoot: normalizedProjectRoot,
+      projectPath,
+      projectConfigExists: false,
+      projectServers: 0,
+    };
+  }
+  if (stat.size > MAX_CONFIG_BYTES) {
+    errors.push({ path: projectPath, error: `config file too large (${stat.size} bytes)` });
+    return {
+      projectRoot: normalizedProjectRoot,
+      projectPath,
+      projectConfigExists: true,
+      projectServers: 0,
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await fsp.readFile(projectPath, 'utf8'));
+  } catch (err) {
+    errors.push({
+      path: projectPath,
+      error: `invalid JSON: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    return {
+      projectRoot: normalizedProjectRoot,
+      projectPath,
+      projectConfigExists: true,
+      projectServers: 0,
+    };
+  }
+
+  const projectServers =
+    parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? countMcpServers((parsed as Record<string, unknown>).mcpServers)
+      : 0;
+  return {
+    projectRoot: normalizedProjectRoot,
+    projectPath,
+    projectConfigExists: true,
+    projectServers,
+  };
 }
 
 /**

@@ -136,6 +136,7 @@ export {
 
 export {
   skillDiscoverChannel,
+  skillInstallChannel,
   skillInvokeChannel,
   skillMetaSchema,
   type SkillMeta,
@@ -231,12 +232,17 @@ export { titlebarSetOverlayChannel } from './channels/titlebar.js';
 
 export {
   settingsGetChannel,
+  settingsKodaxConfigGetChannel,
+  settingsKodaxConfigSetCompactionChannel,
   settingsSetDefaultWorkspaceChannel,
   settingsSetLanguageModeChannel,
   settingsSetRuntimeDefaultsChannel,
+  kodaxCompactionSettingsSchema,
   languageModeSchema,
   supportedLocaleSchema,
   resolveEffectiveLocale,
+  type KodaxCompactionSettingsT,
+  type KodaxConfigOverviewT,
   type SpaceSettingsT,
   type SpaceRuntimeDefaultsT,
   type LanguageModeT,

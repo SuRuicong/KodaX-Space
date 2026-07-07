@@ -7,14 +7,17 @@ import {
   invokeChannels,
   INVOKE_CHANNEL_NAMES,
   skillDiscoverChannel,
+  skillInstallChannel,
   skillInvokeChannel,
 } from '../src/index.js';
 
-test('skill.discover + skill.invoke channels are registered', () => {
+test('skill.discover + skill.invoke + skill.install channels are registered', () => {
   assert.ok(invokeChannels['skill.discover']);
   assert.ok(invokeChannels['skill.invoke']);
+  assert.ok(invokeChannels['skill.install']);
   assert.ok(INVOKE_CHANNEL_NAMES.has('skill.discover'));
   assert.ok(INVOKE_CHANNEL_NAMES.has('skill.invoke'));
+  assert.ok(INVOKE_CHANNEL_NAMES.has('skill.install'));
 });
 
 test('skill.discover input requires projectRoot', () => {
@@ -119,6 +122,48 @@ test('skill.invoke output ok-true requires resolvedPrompt; error path: no resolv
   const huge = 'x'.repeat(1_048_577);
   assert.equal(
     skillInvokeChannel.output.safeParse({ ok: true, resolvedPrompt: huge }).success,
+    false,
+  );
+});
+
+test('skill.install input and output shape', () => {
+  assert.equal(
+    skillInstallChannel.input.safeParse({
+      source: 'directory',
+      target: 'user',
+    }).success,
+    true,
+  );
+  assert.equal(
+    skillInstallChannel.input.safeParse({
+      source: 'archive',
+      target: 'project',
+      projectRoot: 'C:\\repo',
+    }).success,
+    true,
+  );
+  assert.equal(
+    skillInstallChannel.input.safeParse({
+      source: 'tarball',
+      target: 'user',
+    }).success,
+    false,
+  );
+  assert.equal(skillInstallChannel.output.safeParse({ cancelled: true }).success, true);
+  assert.equal(
+    skillInstallChannel.output.safeParse({
+      installed: true,
+      name: 'code-review',
+      installDir: 'C:\\Users\\you\\.kodax\\skills\\code-review',
+      targetDir: 'C:\\Users\\you\\.kodax\\skills',
+    }).success,
+    true,
+  );
+  assert.equal(
+    skillInstallChannel.output.safeParse({
+      installed: true,
+      name: 'CodeReview',
+    }).success,
     false,
   );
 });

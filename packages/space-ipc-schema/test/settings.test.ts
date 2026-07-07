@@ -6,6 +6,8 @@ import {
   invokeChannels,
   resolveEffectiveLocale,
   settingsGetChannel,
+  settingsKodaxConfigGetChannel,
+  settingsKodaxConfigSetCompactionChannel,
   settingsSetDefaultWorkspaceChannel,
   settingsSetLanguageModeChannel,
   settingsSetRuntimeDefaultsChannel,
@@ -17,10 +19,47 @@ test('settings channels are registered', () => {
     'settings.setDefaultWorkspace',
     'settings.setLanguageMode',
     'settings.setRuntimeDefaults',
+    'settings.kodaxConfig.get',
+    'settings.kodaxConfig.setCompaction',
   ]) {
     assert.ok(invokeChannels[name as keyof typeof invokeChannels], `${name} should be registered`);
     assert.ok(INVOKE_CHANNEL_NAMES.has(name));
   }
+});
+
+test('KodaX config overview channels accept compaction and storage summaries', () => {
+  const output = {
+    configPath: 'C:\\Users\\you\\.kodax\\config.json',
+    configExists: true,
+    compaction: { enabled: true, triggerPercent: 65, contextWindow: 200_000 },
+    mcp: {
+      globalPath: 'C:\\Users\\you\\.kodax\\config.json',
+      projectPath: 'C:\\repo\\.kodax\\config.json',
+      globalConfigExists: true,
+      projectConfigExists: false,
+      globalServers: 2,
+      projectServers: 0,
+    },
+    skills: {
+      userSkillsDir: 'C:\\Users\\you\\.kodax\\skills',
+      projectSkillsDir: 'C:\\repo\\.kodax\\skills',
+    },
+    errors: [],
+  };
+  assert.equal(settingsKodaxConfigGetChannel.output.safeParse(output).success, true);
+  assert.equal(settingsKodaxConfigSetCompactionChannel.output.safeParse(output).success, true);
+  assert.equal(
+    settingsKodaxConfigSetCompactionChannel.input.safeParse({
+      compaction: { enabled: false, triggerPercent: 60 },
+    }).success,
+    true,
+  );
+  assert.equal(
+    settingsKodaxConfigSetCompactionChannel.input.safeParse({
+      compaction: { triggerPercent: 101 },
+    }).success,
+    false,
+  );
 });
 
 test('settings output includes language preference and effective locale', () => {

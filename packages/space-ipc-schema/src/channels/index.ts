@@ -64,7 +64,7 @@ import {
 } from './permission.js';
 import { askUserRequestChannel, askUserReplyChannel, askUserCancelledChannel } from './ask-user.js';
 import { slashDiscoverChannel, slashExecChannel } from './slash.js';
-import { skillDiscoverChannel, skillInvokeChannel } from './skill.js';
+import { skillDiscoverChannel, skillInstallChannel, skillInvokeChannel } from './skill.js';
 import { agentDiscoverChannel } from './agent.js';
 import {
   mcpDiscoverChannel,
@@ -102,6 +102,8 @@ import {
 import { titlebarSetOverlayChannel } from './titlebar.js';
 import {
   settingsGetChannel,
+  settingsKodaxConfigGetChannel,
+  settingsKodaxConfigSetCompactionChannel,
   settingsSetDefaultWorkspaceChannel,
   settingsSetLanguageModeChannel,
   settingsSetRuntimeDefaultsChannel,
@@ -215,6 +217,7 @@ export const invokeChannels = {
   [slashExecChannel.name]: slashExecChannel,
   [skillDiscoverChannel.name]: skillDiscoverChannel,
   [skillInvokeChannel.name]: skillInvokeChannel,
+  [skillInstallChannel.name]: skillInstallChannel,
   [agentDiscoverChannel.name]: agentDiscoverChannel,
   [mcpDiscoverChannel.name]: mcpDiscoverChannel,
   [mcpServersChannel.name]: mcpServersChannel,
@@ -246,6 +249,8 @@ export const invokeChannels = {
   [settingsSetDefaultWorkspaceChannel.name]: settingsSetDefaultWorkspaceChannel,
   [settingsSetLanguageModeChannel.name]: settingsSetLanguageModeChannel,
   [settingsSetRuntimeDefaultsChannel.name]: settingsSetRuntimeDefaultsChannel,
+  [settingsKodaxConfigGetChannel.name]: settingsKodaxConfigGetChannel,
+  [settingsKodaxConfigSetCompactionChannel.name]: settingsKodaxConfigSetCompactionChannel,
   [licenseGetStatusChannel.name]: licenseGetStatusChannel,
   [licenseImportEntitlementChannel.name]: licenseImportEntitlementChannel,
   [licenseExportRequestChannel.name]: licenseExportRequestChannel,

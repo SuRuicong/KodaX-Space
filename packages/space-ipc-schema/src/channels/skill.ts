@@ -80,5 +80,26 @@ export const skillInvokeChannel = {
   }),
 } as const;
 
+export const skillInstallChannel = {
+  name: 'skill.install',
+  direction: 'invoke',
+  input: z
+    .object({
+      source: z.enum(['directory', 'archive']),
+      target: z.enum(['user', 'project']),
+      projectRoot: z.string().min(1).max(4096).optional(),
+    })
+    .strict(),
+  output: z
+    .object({
+      cancelled: z.boolean().optional(),
+      installed: z.boolean().optional(),
+      name: z.string().regex(/^[a-z0-9][a-z0-9._:-]{0,63}$/).min(1).max(64).optional(),
+      installDir: z.string().min(1).max(4096).optional(),
+      targetDir: z.string().min(1).max(4096).optional(),
+    })
+    .strict(),
+} as const;
+
 export type SkillMeta = z.infer<typeof skillMetaSchema>;
 export type SkillSource = z.infer<typeof skillSourceSchema>;

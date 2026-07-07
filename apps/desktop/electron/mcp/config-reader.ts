@@ -5,10 +5,10 @@
 // - project: <projectRoot>/.kodax/config.json parsed locally
 // - mcpb: ~/.kodax/mcpb/registry.json metadata for installed bundles
 import { promises as fsp } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import type { McpServerMeta } from '@kodax-space/space-ipc-schema';
 import { readRegistry as readMcpbRegistry } from '../mcpb/registry.js';
+import { getKodaxRuntimeDir } from '../kodax/data-paths.js';
 
 type SdkReplModule = typeof import('@kodax-ai/kodax/repl');
 type SdkMcpServersConfig = ReturnType<SdkReplModule['listMcpServers']>;
@@ -78,7 +78,7 @@ export async function discoverMcpServers(opts: DiscoverOptions): Promise<Discove
   }
 
   const errors: Array<{ path: string; error: string }> = [];
-  const globalDir = opts.kodaxGlobalDir ?? path.join(os.homedir(), '.kodax');
+  const globalDir = opts.kodaxGlobalDir ?? getKodaxRuntimeDir();
   const globalPath = path.join(globalDir, 'config.json');
   const projectPath = path.join(opts.projectRoot, '.kodax', 'config.json');
 

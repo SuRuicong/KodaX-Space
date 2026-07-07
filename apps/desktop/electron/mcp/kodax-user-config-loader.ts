@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { getKodaxRuntimeDir } from '../kodax/data-paths.js';
 
 // Loads KodaX MCP config for McpManager and the SDK extension runtime.
 //
@@ -44,7 +44,7 @@ export async function loadKodaxProjectMcpServers(
   if (!path.isAbsolute(projectRoot)) return undefined;
 
   const projectPath = path.join(projectRoot, '.kodax', 'config.json');
-  const globalPath = path.join(os.homedir(), '.kodax', 'config.json');
+  const globalPath = path.join(getKodaxRuntimeDir(), 'config.json');
   if (path.resolve(projectPath) === path.resolve(globalPath)) return undefined;
 
   let text: string;

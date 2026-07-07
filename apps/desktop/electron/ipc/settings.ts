@@ -9,6 +9,10 @@ import { registerChannel } from './register.js';
 import { settingsStore } from '../settings/store.js';
 import { validateProjectRoot } from './validate.js';
 import { resolveEffectiveLocale, type SpaceSettingsT } from '@kodax-space/space-ipc-schema';
+import {
+  loadKodaxConfigOverview,
+  updateKodaxCompactionConfig,
+} from '../kodax/user-config.js';
 
 function getPreferredSystemLanguages(): string[] {
   try {
@@ -59,5 +63,15 @@ export function registerSettingsChannels(): void {
   registerChannel('settings.setRuntimeDefaults', async ({ runtimeDefaults }) => {
     const next = await settingsStore.setRuntimeDefaults(runtimeDefaults);
     return toSettingsOutput(next);
+  });
+
+  registerChannel('settings.kodaxConfig.get', async ({ projectRoot }) => {
+    const safeProjectRoot = projectRoot ? validateProjectRoot(projectRoot) : undefined;
+    return loadKodaxConfigOverview(safeProjectRoot);
+  });
+
+  registerChannel('settings.kodaxConfig.setCompaction', async ({ projectRoot, compaction }) => {
+    const safeProjectRoot = projectRoot ? validateProjectRoot(projectRoot) : undefined;
+    return updateKodaxCompactionConfig(compaction, safeProjectRoot);
   });
 }

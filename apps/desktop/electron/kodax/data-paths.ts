@@ -79,6 +79,19 @@ export function getKodaxDir(): string {
 }
 
 /**
+ * KodaX SDK/runtime data root. This is usually the same as getKodaxDir(), but
+ * if the user explicitly launches Space with KODAX_HOME, the SDK reads config,
+ * sessions, and user skills from that directory. Runtime-owned config surfaces
+ * must follow the SDK home to avoid showing/installing into a different tree.
+ */
+export function getKodaxRuntimeDir(): string {
+  if (process.env.KODAX_TEST_ONBOARDING) return getKodaxDir();
+  const sdkHome = process.env.KODAX_HOME;
+  if (sdkHome && path.isAbsolute(sdkHome)) return path.resolve(sdkHome);
+  return getKodaxDir();
+}
+
+/**
  * `<.kodax>/space/` —— Space 独占（projects.json / settings.json / log / etc.）。
  */
 export function getSpaceDataDir(): string {

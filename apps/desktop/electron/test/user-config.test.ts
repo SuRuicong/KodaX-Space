@@ -12,11 +12,14 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  loadKodaxCompactionConfig,
+  loadKodaxConfigOverview,
   loadKodaxCustomProviders,
   loadKodaxUserDefaults,
   registerKodaxCustomProviders,
   removeKodaxConfigCustomProvider,
   setUserConfigImpl,
+  updateKodaxCompactionConfig,
   updateKodaxConfigCustomProvider,
   type KodaxUserConfigImpl,
 } from '../kodax/user-config.js';
@@ -516,6 +519,62 @@ test('removeKodaxConfigCustomProvider writes back customProviders and clears sel
       model: 'keep-model',
     },
   ]);
+});
+
+test('load/update KodaX compaction config preserves unrelated config fields', async () => {
+  const config: Record<string, unknown> = {
+    provider: 'zhipu-coding',
+    model: 'glm-5.2',
+    compaction: {
+      enabled: true,
+      triggerPercent: 75,
+      contextWindow: 1_000_000,
+      pruningGapRatio: 0.8,
+      customFutureField: 'keep-me',
+    },
+    mcpServers: {
+      filesystem: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem'] },
+    },
+  };
+  const saveCalls: unknown[] = [];
+  mockUserConfig(config, { saveCalls });
+
+  assert.deepEqual(await loadKodaxCompactionConfig(), {
+    enabled: true,
+    triggerPercent: 75,
+    contextWindow: 1_000_000,
+  });
+
+  const overview = await updateKodaxCompactionConfig({
+    enabled: false,
+    triggerPercent: 60,
+  });
+
+  assert.equal(saveCalls.length, 1);
+  assert.equal(config.provider, 'zhipu-coding');
+  assert.equal(config.model, 'glm-5.2');
+  assert.deepEqual(config.compaction, {
+    pruningGapRatio: 0.8,
+    customFutureField: 'keep-me',
+    enabled: false,
+    triggerPercent: 60,
+  });
+  assert.equal(overview.compaction.enabled, false);
+  assert.equal(overview.compaction.triggerPercent, 60);
+  assert.equal(overview.mcp.globalServers, 1);
+});
+
+test('KodaX config overview ignores invalid compaction values', async () => {
+  mockUserConfig({
+    compaction: {
+      enabled: true,
+      triggerPercent: 101,
+      contextWindow: 500,
+    },
+  });
+
+  const overview = await loadKodaxConfigOverview();
+  assert.deepEqual(overview.compaction, { enabled: true });
 });
 
 // NOTE: reasoning is a Space-form-MODELED field (the form pre-fills it from the record and

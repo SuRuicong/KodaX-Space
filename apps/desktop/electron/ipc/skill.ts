@@ -2,11 +2,14 @@
 //
 // 启动 main 时 main.ts 调 registerSkillChannels()，注册 skill.discover + skill.invoke。
 
+import { BrowserWindow, dialog, type OpenDialogOptions } from 'electron';
 import { skillMetaSchema } from '@kodax-space/space-ipc-schema';
 import { registerChannel } from './register.js';
+import { validateProjectRoot } from './validate.js';
 import { kodaxHost } from '../kodax/host.js';
 import { getSkillRegistry, invalidateSkillCache, toSkillMeta } from '../skill/registry.js';
 import { createSkillDynamicContextExecutor } from '../skill/dynamic-context-executor.js';
+import { installSkillFromPath } from '../skill/install.js';
 
 /**
  * 安全 env：**完全不转发** process.env 给 SDK VariableResolver。
@@ -59,6 +62,40 @@ export function registerSkillChannels(): void {
       })
       .slice(0, 256); // schema caps the array at 256
     return { skills };
+  });
+
+  registerChannel('skill.install', async (input) => {
+    const projectRoot = input.projectRoot ? validateProjectRoot(input.projectRoot) : undefined;
+    if (input.target === 'project' && !projectRoot) {
+      throw new Error('project skill install requires projectRoot');
+    }
+
+    const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const dialogOptions: OpenDialogOptions =
+      input.source === 'directory'
+        ? {
+            title: 'Install KodaX skill folder',
+            properties: ['openDirectory'],
+          }
+        : {
+            title: 'Install KodaX skill archive',
+            filters: [{ name: 'KodaX skill archive (.zip)', extensions: ['zip'] }],
+            properties: ['openFile'],
+          };
+    const dlg = parent
+      ? await dialog.showOpenDialog(parent, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions);
+    if (dlg.canceled || dlg.filePaths.length === 0) {
+      return { cancelled: true };
+    }
+
+    const installed = await installSkillFromPath(input.source, dlg.filePaths[0], {
+      target: input.target,
+      ...(projectRoot ? { projectRoot } : {}),
+    });
+    if (input.target === 'user') invalidateSkillCache();
+    else invalidateSkillCache(projectRoot);
+    return installed;
   });
 
   // skill.invoke
