@@ -4,10 +4,10 @@
 // ~/.kodax/agents/*.md and <project>/.kodax/agents/*.md without admission and
 // without writing the SDK registry.
 //
-// Space wire 思路对齐 skill.discover：renderer 拿到 metadata 列表 → 渲染为 picker /
-// AGENTS.md popout 的子标签；不在 main 端直接做"激活"。Runtime activation needs
-// a separate integration because SDK 0.7.62 keeps markdown agents in a
-// process-global registry rather than a project-scoped registry.
+// Space uses this channel for picker / AGENTS.md popout previews. Runtime
+// activation is intentionally separate: RealKodaXSession calls SDK 0.7.63
+// `loadMarkdownAgentScope` per run and passes the resulting project-scoped
+// resolver through KodaXOptions.context.agentScope.
 
 import { z } from 'zod';
 

@@ -4,8 +4,7 @@
 // 点击一个 agent → 把 `@agent-name ` 插入 textarea 当前光标位置。
 //
 // 数据: 每次打开弹层时调一次 agent.discover IPC (no cache; 频次低,~每次打开一次)。
-// 主流程不依赖 agent picker; 没有 agent 也能正常 send,只是发送给 KodaX 时不会激活
-// markdown agent (走默认的 coding agent)。
+// picker 只负责插入显式 @agent 引用；发送时 RealKodaXSession 会按当前项目加载 scoped agents。
 
 import { useEffect, useRef, useState } from 'react';
 import { Bot } from 'lucide-react';

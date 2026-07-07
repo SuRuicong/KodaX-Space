@@ -3,8 +3,8 @@
 // Exposes a read-only listing to the renderer: scan ~/.kodax/agents/*.md and
 // <projectRoot>/.kodax/agents/*.md, then return metadata + parse failures.
 // This path does not call admission and does not write the SDK registry.
-// Runtime activation must be wired separately; SDK 0.7.62 keeps markdown
-// agents in a process-global registry, so project scoping needs care.
+// Runtime activation is handled per run by RealKodaXSession via the SDK 0.7.63
+// scoped loader (`loadMarkdownAgentScope`) so projects do not leak agents.
 //
 // CJS/ESM trap：@kodax-ai/kodax/coding 的 subpath exports 只声明 "import" 条件（ESM）。
 // Space main 输出 CJS，静态 require 会撞 ERR_PACKAGE_PATH_NOT_EXPORTED。

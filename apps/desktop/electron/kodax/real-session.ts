@@ -19,6 +19,7 @@
 // **静态 import 改 dynamic**：SDK subpath exports 只有 "import" 条件，CJS main require 会撞
 // ERR_PACKAGE_PATH_NOT_EXPORTED。下面用 lazy load + cache，type-only 用 type import 不产生 runtime require。
 type SdkCodingModule = typeof import('@kodax-ai/kodax/coding');
+type SdkMarkdownAgentScopeHandle = Awaited<ReturnType<SdkCodingModule['loadMarkdownAgentScope']>>;
 let sdkCodingCache: SdkCodingModule | null = null;
 async function loadSdkCoding(): Promise<SdkCodingModule> {
   if (sdkCodingCache === null) {
@@ -1453,144 +1454,184 @@ export class RealKodaXSession implements ManagedSession {
     // OUTSIDE the run's try/catch, so a rejection would hang the turn with no
     // session_error. Licensed → trace on (chip lights up); unlicensed → engine off.
     const repoIntelCtx = await repoIntelContextFields();
-
-    const context: NonNullable<KodaXOptions['context']> = {
-      // gitRoot 用 projectRoot——Space 不再单独求 git root，KodaX 自己会处理边界
-      gitRoot: this.projectRoot,
-      executionCwd: this.projectRoot,
-      planModeBlockCheck,
-      ...repoIntelCtx,
-      ...(partnerAgentProfile ? { agentProfile: partnerAgentProfile } : {}),
-      ...(partnerAgentProfile ? { toolVisibilityPolicy: partnerToolVisibilityPolicy } : {}),
-      ...(partnerRuntimeContextOverlay ? { promptOverlay: partnerRuntimeContextOverlay } : {}),
-      // skillsPrompt 仅在非空时挂——避免在 SDK 视角注入空字符串字段。
-      ...(skillsPrompt ? { skillsPrompt } : {}),
-      // OC-31 v0.1.9 — 用户粘贴 / 拖拽的图片走这条路径。SDK
-      // buildPromptMessageContent(prompt, inputArtifacts) 会自动把每张图拼成
-      // multimodal content block ({type:'image', path, mediaType})。空数组就不传
-      // —— 让 SDK 走纯文本 fast path，不额外做 type checking 开销。
-      ...(inputArtifacts ? { inputArtifacts } : {}),
-    };
-
-    // C4/C5/C1: 解析 Space 的 5 档 reasoning 到 provider 真实档位。绝不发 provider 本地硬拒的
-    // 档位（kimi-code/minimax 的 'none'/'minimal' 会 throw），"Deep" 触及真实天花板（GLM-5.2 'max'），
-    // 并排除本进程 wire 层已拒过的档位（onReasoningEffortRejected → getCachedRejectedEfforts）。
-    let reasoningProfile: ReasoningProfileLike | undefined;
+    let markdownAgentScopeHandle: SdkMarkdownAgentScopeHandle | undefined;
     try {
-      reasoningProfile = (
-        sdk.resolveProvider(this.provider) as {
-          getReasoningProfile?: (model?: string) => ReasoningProfileLike | undefined;
-        }
-      )?.getReasoningProfile?.(this.model ?? undefined);
-    } catch {
-      reasoningProfile = undefined; // custom_* / 未识别 provider → 走 legacy 静态映射
-    }
-    const rejectedEfforts =
-      (await loadSdkAgent())?.getCachedRejectedEfforts(this.provider, this.model ?? undefined) ?? [];
-    const wireEffort = resolveWireEffort(this.reasoningMode, reasoningProfile, rejectedEfforts);
-    const compaction = await loadKodaxCompactionConfig();
-
-    const options: KodaXOptions = {
-      provider: this.provider,
-      effort: wireEffort,
-      // KodaX agent 形态：AMA / AMAW / SA。显式传以便用户切换生效。
-      agentMode: this.agentMode,
-      // SDK 0.7.42 wired (P0): /model + /thinking 设置在下一 turn 生效
-      ...(this.model !== undefined ? { model: this.model } : {}),
-      ...(this.thinking !== undefined ? { thinking: this.thinking } : {}),
-      ...(compaction ? { compaction } : {}),
-      events,
-      ...(extensionRuntimeHandle !== undefined
-        ? { extensionRuntime: extensionRuntimeHandle.runtime }
-        : {}),
-      abortSignal: signal,
-      // scope: 'user' 让 SDK FileSessionStorage 把 session 当成用户对话面板的
-      // first-class session 落盘。storage 是 SDK 当前要求的字段——不传则
-      // saveSessionSnapshot 静默 no-op，jsonl 不落盘 (用户对话历史丢失)。
-      //
-      // F045: tag = surface 值（'code' | 'partner'），SDK 持久化进 SessionData.tag
-      // → listSessions summary.tag 回带 → session-store mapper 反推回 surface。
-      // 这是 Coder / Partner 会话列表彼此独立的持久化依据（KodaX SDK 0.7.49）。
-      session: {
-        id: sid,
-        scope: 'user',
-        tag: this.surface,
-        storage: sessionStorage as KodaXSessionStorage | undefined,
-      },
-      context,
-      guardrails,
-      // FEATURE_221 (SDK 0.7.58): 全白标自知识手册。让内建 kodax_manual tool 在用户问
-      // "怎么粘图/怎么配 provider/有什么工具"时只返回 Space 形态的答案。
-      // baseTopics: [] —— 完全替换,不 seed 任何 KodaX base 条目。此前只设 productName+topics
-      // 时,Space 没覆盖的 base 条目(doctor / agents / sdk / tools / mcp / repo-intelligence /
-      // custom-providers)仍会向模型吐 ~/.kodax/config.json 手改、`kodax doctor` CLI 这类
-      // 对 GUI 产品无意义、且泄漏 KodaX 名的内容。全白标后 Space 自己的 topics 是唯一来源
-      // (SPACE_MANUAL_TOPICS 已含 tools / mcp / repo-intelligence / custom-providers 增量条目)。
-      // CLI-only 的 doctor / agents / sdk 主题不再存在(GUI 产品不需要)。SDK 4KB body cap 内。
-      selfManual: {
-        productName: SPACE_PRODUCT_NAME,
-        baseTopics: [],
-        topics: SPACE_MANUAL_TOPICS,
-      },
-      // KodaX 0.7.58 removed host-side natural-language workflow auto-start. Space passes only
-      // runtime caps plus the durable run dir for AMAW run_workflow. Host policy shape (incl.
-      // "tokenBudget 0 = unlimited", KodaX 0.7.59) is single-sourced in buildWorkflowHostPolicy.
-      workflowHostPolicy: buildWorkflowHostPolicy(workflowPolicy),
-      workflowRunsBaseDir: workflowController.getRunBaseDir(),
-      workflow: { maxConcurrency: workflowPolicy.maxConcurrency },
-    };
-
-    try {
-      // runManagedTask（不是 runKodaX）：这是 agentMode-aware 分派器——
-      // agentMode='sa' 走直路，'ama'/'amaw' 走 Scout/Worker 链 + Sidecar Verifier。
-      // runKodaX 是 SA-only 入口、静默忽略 options.agentMode；直接调它会让 agent mode
-      // 选择器空接（每个 turn 都跑 SA、无 verifier → "只报计划就停" 没人拦截）。
-      // 见 task-engine.ts dispatchManagedTask / runner-driven.ts(verifier 挂载点)。
-      // F058: bind artifact attribution context for this run so the
-      // create_artifact tool handler (global registration) knows which
-      // session/surface to attribute to (ALS — concurrency-safe across sessions).
-      await withSessionRunContext(
-        { sessionId: sid, surface: this.surface, projectRoot: this.projectRoot },
-        () => runWithSessionQueueScope(sid, () => sdk.runManagedTask(options, prompt)),
-      );
-      // SA 路径（agentMode='sa'）错误时 onError 触发但 Promise **resolve**（success:false），
-      // 不 throw——外层 catch 不会跑。所以这里 await 之后补发暂存的错误。
-      // AMA 路径错误时会 throw，控制流跳到 catch，这一行不会执行（两条路径互斥）。
-      if (pendingTerminalError !== null && !signal.aborted) {
-        await emitTerminalError(pendingTerminalError);
-      }
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        // 用户取消：必须用 this.emit 而非 emitLive——此刻 signal.aborted=true，emitLive 的
-        // isStopped() 会把"cancelled"通知吞掉。但 disposed 时 channel 已关，无意义且应跳过。
-        // 同时置 terminalEmitted，与 emitTerminalError 共享同一 latch，杜绝任何重发。
-        if (!this.disposed && !terminalEmitted) {
-          terminalEmitted = true;
-          flushStreamDeltas(true);
-          emitRawLive(
-            {
-              kind: 'session_error',
-              sessionId: sid,
-              error: 'cancelled',
-              category: 'cancelled',
-              retriable: true,
-            },
-            true,
+      try {
+        markdownAgentScopeHandle = await sdk.loadMarkdownAgentScope({
+          cwd: this.projectRoot,
+          id: `space:${this.projectRoot}`,
+        });
+        for (const failed of markdownAgentScopeHandle.failed) {
+          console.warn(
+            `[real-session ${sid}] markdown agent failed to load: ${failed.path}: ${failed.reason}`,
           );
         }
-      } else if (!signal.aborted) {
-        // AMA 路径：SDK catch 已先调过 onError(暂存 err)，这里 throw 上来。统一走
-        // emitTerminalError 收口（内部 latch 去重 + wrapSdkError 富文案 + retry 倒计时）。
-        await emitTerminalError(err);
-      } else if (pendingTerminalError !== null && !terminalEmitted) {
-        // 竞态：SDK error 与用户 cancel 几乎同时发生（signal 在 throw 前已 aborted）。
-        // 终止事件不再发（host 端在 s.cancel() 前已推过 cancelled，UI 已停），但不能让
-        // SDK error 彻底无声蒸发——落一条 main 日志便于排查（review HIGH-2）。
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[real-session ${sid}] sdk error suppressed by concurrent cancel: ${msg}`);
+        for (const warning of markdownAgentScopeHandle.warnings) {
+          console.warn(
+            `[real-session ${sid}] markdown agent warning: ${warning.path}: ${warning.reason}`,
+          );
+        }
+      } catch (err) {
+        console.warn(
+          `[real-session ${sid}] markdown agent scope load failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+
+      const context: NonNullable<KodaXOptions['context']> = {
+        // gitRoot 用 projectRoot——Space 不再单独求 git root，KodaX 自己会处理边界
+        gitRoot: this.projectRoot,
+        executionCwd: this.projectRoot,
+        planModeBlockCheck,
+        ...repoIntelCtx,
+        ...(markdownAgentScopeHandle !== undefined
+          ? { agentScope: markdownAgentScopeHandle.scope }
+          : {}),
+        ...(partnerAgentProfile ? { agentProfile: partnerAgentProfile } : {}),
+        ...(partnerAgentProfile ? { toolVisibilityPolicy: partnerToolVisibilityPolicy } : {}),
+        ...(partnerRuntimeContextOverlay ? { promptOverlay: partnerRuntimeContextOverlay } : {}),
+        // skillsPrompt 仅在非空时挂——避免在 SDK 视角注入空字符串字段。
+        ...(skillsPrompt ? { skillsPrompt } : {}),
+        // OC-31 v0.1.9 — 用户粘贴 / 拖拽的图片走这条路径。SDK
+        // buildPromptMessageContent(prompt, inputArtifacts) 会自动把每张图拼成
+        // multimodal content block ({type:'image', path, mediaType})。空数组就不传
+        // —— 让 SDK 走纯文本 fast path，不额外做 type checking 开销。
+        ...(inputArtifacts ? { inputArtifacts } : {}),
+      };
+
+      // C4/C5/C1: 解析 Space 的 5 档 reasoning 到 provider 真实档位。绝不发 provider 本地硬拒的
+      // 档位（kimi-code/minimax 的 'none'/'minimal' 会 throw），"Deep" 触及真实天花板（GLM-5.2 'max'），
+      // 并排除本进程 wire 层已拒过的档位（onReasoningEffortRejected → getCachedRejectedEfforts）。
+      let reasoningProfile: ReasoningProfileLike | undefined;
+      try {
+        reasoningProfile = (
+          sdk.resolveProvider(this.provider) as {
+            getReasoningProfile?: (model?: string) => ReasoningProfileLike | undefined;
+          }
+        )?.getReasoningProfile?.(this.model ?? undefined);
+      } catch {
+        reasoningProfile = undefined; // custom_* / 未识别 provider → 走 legacy 静态映射
+      }
+      const rejectedEfforts =
+        (await loadSdkAgent())?.getCachedRejectedEfforts(this.provider, this.model ?? undefined) ??
+        [];
+      const wireEffort = resolveWireEffort(this.reasoningMode, reasoningProfile, rejectedEfforts);
+      const compaction = await loadKodaxCompactionConfig();
+
+      const options: KodaXOptions = {
+        provider: this.provider,
+        effort: wireEffort,
+        // KodaX agent 形态：AMA / AMAW / SA。显式传以便用户切换生效。
+        agentMode: this.agentMode,
+        // SDK 0.7.42 wired (P0): /model + /thinking 设置在下一 turn 生效
+        ...(this.model !== undefined ? { model: this.model } : {}),
+        ...(this.thinking !== undefined ? { thinking: this.thinking } : {}),
+        ...(compaction ? { compaction } : {}),
+        events,
+        ...(extensionRuntimeHandle !== undefined
+          ? { extensionRuntime: extensionRuntimeHandle.runtime }
+          : {}),
+        abortSignal: signal,
+        // scope: 'user' 让 SDK FileSessionStorage 把 session 当成用户对话面板的
+        // first-class session 落盘。storage 是 SDK 当前要求的字段——不传则
+        // saveSessionSnapshot 静默 no-op，jsonl 不落盘 (用户对话历史丢失)。
+        //
+        // F045: tag = surface 值（'code' | 'partner'），SDK 持久化进 SessionData.tag
+        // → listSessions summary.tag 回带 → session-store mapper 反推回 surface。
+        // 这是 Coder / Partner 会话列表彼此独立的持久化依据（KodaX SDK 0.7.49）。
+        session: {
+          id: sid,
+          scope: 'user',
+          tag: this.surface,
+          storage: sessionStorage as KodaXSessionStorage | undefined,
+        },
+        context,
+        guardrails,
+        // FEATURE_221 (SDK 0.7.58): 全白标自知识手册。让内建 kodax_manual tool 在用户问
+        // "怎么粘图/怎么配 provider/有什么工具"时只返回 Space 形态的答案。
+        // baseTopics: [] —— 完全替换,不 seed 任何 KodaX base 条目。此前只设 productName+topics
+        // 时,Space 没覆盖的 base 条目(doctor / agents / sdk / tools / mcp / repo-intelligence /
+        // custom-providers)仍会向模型吐 ~/.kodax/config.json 手改、`kodax doctor` CLI 这类
+        // 对 GUI 产品无意义、且泄漏 KodaX 名的内容。全白标后 Space 自己的 topics 是唯一来源
+        // (SPACE_MANUAL_TOPICS 已含 tools / mcp / repo-intelligence / custom-providers 增量条目)。
+        // CLI-only 的 doctor / agents / sdk 主题不再存在(GUI 产品不需要)。SDK 4KB body cap 内。
+        selfManual: {
+          productName: SPACE_PRODUCT_NAME,
+          baseTopics: [],
+          topics: SPACE_MANUAL_TOPICS,
+        },
+        // KodaX 0.7.58 removed host-side natural-language workflow auto-start. Space passes only
+        // runtime caps plus the durable run dir for AMAW run_workflow. Host policy shape (incl.
+        // "tokenBudget 0 = unlimited", KodaX 0.7.59) is single-sourced in buildWorkflowHostPolicy.
+        workflowHostPolicy: buildWorkflowHostPolicy(workflowPolicy),
+        workflowRunsBaseDir: workflowController.getRunBaseDir(),
+        workflow: { maxConcurrency: workflowPolicy.maxConcurrency },
+      };
+
+      try {
+        // runManagedTask（不是 runKodaX）：这是 agentMode-aware 分派器——
+        // agentMode='sa' 走直路，'ama'/'amaw' 走 Scout/Worker 链 + Sidecar Verifier。
+        // runKodaX 是 SA-only 入口、静默忽略 options.agentMode；直接调它会让 agent mode
+        // 选择器空接（每个 turn 都跑 SA、无 verifier → "只报计划就停" 没人拦截）。
+        // 见 task-engine.ts dispatchManagedTask / runner-driven.ts(verifier 挂载点)。
+        // F058: bind artifact attribution context for this run so the
+        // create_artifact tool handler (global registration) knows which
+        // session/surface to attribute to (ALS — concurrency-safe across sessions).
+        await withSessionRunContext(
+          { sessionId: sid, surface: this.surface, projectRoot: this.projectRoot },
+          () => runWithSessionQueueScope(sid, () => sdk.runManagedTask(options, prompt)),
+        );
+        // SA 路径（agentMode='sa'）错误时 onError 触发但 Promise **resolve**（success:false），
+        // 不 throw——外层 catch 不会跑。所以这里 await 之后补发暂存的错误。
+        // AMA 路径错误时会 throw，控制流跳到 catch，这一行不会执行（两条路径互斥）。
+        if (pendingTerminalError !== null && !signal.aborted) {
+          await emitTerminalError(pendingTerminalError);
+        }
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          // 用户取消：必须用 this.emit 而非 emitLive——此刻 signal.aborted=true，emitLive 的
+          // isStopped() 会把"cancelled"通知吞掉。但 disposed 时 channel 已关，无意义且应跳过。
+          // 同时置 terminalEmitted，与 emitTerminalError 共享同一 latch，杜绝任何重发。
+          if (!this.disposed && !terminalEmitted) {
+            terminalEmitted = true;
+            flushStreamDeltas(true);
+            emitRawLive(
+              {
+                kind: 'session_error',
+                sessionId: sid,
+                error: 'cancelled',
+                category: 'cancelled',
+                retriable: true,
+              },
+              true,
+            );
+          }
+        } else if (!signal.aborted) {
+          // AMA 路径：SDK catch 已先调过 onError(暂存 err)，这里 throw 上来。统一走
+          // emitTerminalError 收口（内部 latch 去重 + wrapSdkError 富文案 + retry 倒计时）。
+          await emitTerminalError(err);
+        } else if (pendingTerminalError !== null && !terminalEmitted) {
+          // 竞态：SDK error 与用户 cancel 几乎同时发生（signal 在 throw 前已 aborted）。
+          // 终止事件不再发（host 端在 s.cancel() 前已推过 cancelled，UI 已停），但不能让
+          // SDK error 彻底无声蒸发——落一条 main 日志便于排查（review HIGH-2）。
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn(`[real-session ${sid}] sdk error suppressed by concurrent cancel: ${msg}`);
+        }
       }
     } finally {
       flushStreamDeltas();
+      if (markdownAgentScopeHandle !== undefined) {
+        try {
+          await markdownAgentScopeHandle.dispose();
+        } catch (err) {
+          console.warn(
+            `[real-session ${sid}] markdown agent scope dispose failed: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+      }
     }
   }
 }
