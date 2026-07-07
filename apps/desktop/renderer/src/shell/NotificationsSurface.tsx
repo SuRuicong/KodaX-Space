@@ -15,6 +15,7 @@ import { X } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
 import { useAppStore } from '../store/appStore.js';
 import type { Notification } from '../store/appStore.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 
 // 双主题色: 暗模式延续原 zinc-900 衬底家族,亮模式用深色文字 + 浅暖/冷衬底保证对比度。
 // 选择 deep-700/800 文字色 + light-100/70 衬底是为了 WCAG AA (4.5:1) 以上对比。
@@ -35,6 +36,7 @@ interface NotificationRowProps {
 }
 
 function NotificationRow({ notification, onDismiss }: NotificationRowProps): JSX.Element {
+  const { t } = useI18n();
   return (
     <div
       data-testid="notification-row"
@@ -50,8 +52,8 @@ function NotificationRow({ notification, onDismiss }: NotificationRowProps): JSX
         data-testid="notification-dismiss"
         onClick={() => onDismiss(notification.id)}
         className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-hover-bg hover:text-fg-primary"
-        title="Dismiss"
-        aria-label="Dismiss notification"
+        title={t('notification.dismiss')}
+        aria-label={t('notification.dismissAria')}
       >
         <X className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
       </button>
@@ -60,6 +62,7 @@ function NotificationRow({ notification, onDismiss }: NotificationRowProps): JSX
 }
 
 export function NotificationsSurface(): JSX.Element | null {
+  const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const notifications = useAppStore((s) => s.notifications);
   const dismissNotification = useAppStore((s) => s.dismissNotification);
@@ -96,7 +99,7 @@ export function NotificationsSurface(): JSX.Element | null {
       ref={rootRef}
       className="px-3 space-y-1"
       role="region"
-      aria-label="System notifications"
+      aria-label={t('notification.systemAria')}
       data-testid="notifications-surface"
     >
       {visible.map((n) => (

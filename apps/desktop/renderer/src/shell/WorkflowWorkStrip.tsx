@@ -2,14 +2,16 @@ import { Loader2, PauseCircle } from 'lucide-react';
 import type { WorkflowRunT } from '@kodax-space/space-ipc-schema';
 import { useSessionWorkflowRuns } from '../features/workflow/WorkflowPanel.js';
 import { workflowPhaseLabel } from '../features/workflow/workflowPhaseDisplay.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 
 export function WorkflowWorkStrip(): JSX.Element | null {
+  const { t } = useI18n();
   const runs = useSessionWorkflowRuns();
   const run = runs.find((r) => r.status === 'running' || r.status === 'paused');
   if (!run) return null;
 
   const name = run.displayName ?? run.workflowName;
-  const phase = workflowPhaseLabel(run);
+  const phase = workflowPhaseLabel(run, t);
   const plannedTotal = Math.max(
     run.progress.plannedItems ?? 0,
     run.progress.spawnedAgents,
@@ -17,18 +19,30 @@ export function WorkflowWorkStrip(): JSX.Element | null {
   );
   const active =
     run.progress.activeAgents > 0
-      ? `${run.progress.activeAgents}/${plannedTotal || run.progress.activeAgents} active`
+      ? t('workflowWork.active', {
+          active: run.progress.activeAgents,
+          total: plannedTotal || run.progress.activeAgents,
+        })
       : run.progress.spawnedAgents === 0
-        ? 'waiting for agents'
+        ? t('workflowWork.waitingAgents')
         : undefined;
   const finished =
-    plannedTotal > 0 ? `${run.progress.finishedAgents}/${plannedTotal} done` : undefined;
-  const failed = run.progress.failedAgents > 0 ? `${run.progress.failedAgents} failed` : undefined;
+    plannedTotal > 0
+      ? t('workflowWork.done', { done: run.progress.finishedAgents, total: plannedTotal })
+      : undefined;
+  const failed =
+    run.progress.failedAgents > 0
+      ? t('workflowWork.failed', { count: run.progress.failedAgents })
+      : undefined;
   const stopped =
-    run.progress.stoppedAgents > 0 ? `${run.progress.stoppedAgents} stopped` : undefined;
+    run.progress.stoppedAgents > 0
+      ? t('workflowWork.stopped', { count: run.progress.stoppedAgents })
+      : undefined;
   const tokens = workflowTokenLabel(run);
   const elapsed = workflowElapsedLabel(run.elapsedMs);
-  const message = run.latestMessage ?? (run.status === 'paused' ? 'paused' : 'running');
+  const message =
+    run.latestMessage ??
+    (run.status === 'paused' ? t('workflowWork.paused') : t('workflowWork.running'));
   const parts = compact([name, phase, active, finished, failed, stopped, tokens, elapsed, message]);
   const Icon = run.status === 'paused' ? PauseCircle : Loader2;
 
@@ -36,7 +50,7 @@ export function WorkflowWorkStrip(): JSX.Element | null {
     <div
       className="px-3 text-[11px] font-mono text-fg-muted flex items-center gap-1.5 select-none"
       role="status"
-      aria-label="workflow live status"
+      aria-label={t('workflowWork.aria')}
       data-testid="workflow-live-strip"
       title={parts.join(' - ')}
     >
@@ -45,7 +59,7 @@ export function WorkflowWorkStrip(): JSX.Element | null {
         strokeWidth={2}
         aria-hidden
       />
-      <span className="text-warn">Workflow</span>
+      <span className="text-warn">{t('taskDock.metric.workflow')}</span>
       <span className="text-fg-faint">-</span>
       <span className="truncate">{parts.join(' - ')}</span>
     </div>

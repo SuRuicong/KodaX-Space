@@ -9,6 +9,7 @@ import { useAppStore } from '../../store/appStore.js';
 import { MonacoDiffViewer } from '../../features/code/MonacoDiffViewer.js';
 import { revealPath } from '../../lib/openPath.js';
 import { pushToast } from '../../store/toastStore.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 // F044 (v0.1.10): diff 数据来源标记。
 //   - tool-call: AI write/edit 那一瞬的 before/after (现有 cache 路径,实时 session)
@@ -17,6 +18,7 @@ import { pushToast } from '../../store/toastStore.js';
 type DiffSource = 'tool-call' | 'git-tracked' | 'git-untracked';
 
 export function DiffPanel(): JSX.Element {
+  const { t } = useI18n();
   const projectRoot = useAppStore((s) => s.currentProjectPath);
   const lastDiffPath = useAppStore((s) => s.lastDiffPath);
   const clearLastDiffPath = useAppStore((s) => s.clearLastDiffPath);
@@ -78,7 +80,7 @@ export function DiffPanel(): JSX.Element {
       if ('error' in gitSettled) {
         const fallbackError = 'error' in cacheSettled ? cacheSettled.error : gitSettled.error;
         const msg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-        setErr(`Failed to load diff: ${msg}`);
+        setErr(t('popout.diff.loadFailed', { message: msg }));
         return;
       }
 
@@ -95,22 +97,24 @@ export function DiffPanel(): JSX.Element {
       if (gitR.ok) {
         switch (gitR.data.reason) {
           case 'is-binary':
-            setErr('Binary file — inline diff not available');
+            setErr(t('popout.diff.binary'));
             break;
           case 'file-too-large':
-            setErr('File too large for inline diff (> 1 MB)');
+            setErr(t('popout.diff.tooLarge'));
             break;
           case 'not-a-git-repo':
-            setErr('Not a git repository — no working-tree diff to show');
+            setErr(t('popout.diff.notGitRepo'));
             break;
           case 'no-such-file':
-            setErr('File not found in working tree');
+            setErr(t('popout.diff.notFound'));
             break;
           default:
-            setErr('No diff available');
+            setErr(t('popout.diff.none'));
         }
       } else {
-        setErr(`${gitR.error?.code ?? 'ERR_UNKNOWN'}: ${gitR.error?.message ?? 'unknown'}`);
+        setErr(
+          `${gitR.error?.code ?? 'ERR_UNKNOWN'}: ${gitR.error?.message ?? t('common.unknownError')}`,
+        );
       }
     };
     void fetchDiff();
@@ -122,7 +126,7 @@ export function DiffPanel(): JSX.Element {
   if (!path) {
     return (
       <div className="h-full flex items-center justify-center text-fg-faint text-xs p-4 text-center">
-        No diff selected. Run a write/edit tool to populate.
+        {t('popout.diff.noSelection')}
       </div>
     );
   }
@@ -134,7 +138,7 @@ export function DiffPanel(): JSX.Element {
       <div className="h-full flex flex-col">
         <div className="px-3 py-1 border-b border-border-default text-xs text-fg-muted font-mono flex-shrink-0 flex items-center gap-2">
           <span className="px-1.5 py-0.5 rounded text-[11px] font-medium flex-shrink-0 bg-surface-3 text-fg-muted">
-            Loading
+            {t('popout.diff.loading')}
           </span>
           <span className="truncate flex-1" title={path}>
             {path}
@@ -142,7 +146,7 @@ export function DiffPanel(): JSX.Element {
         </div>
         <div className="p-3 text-xs text-fg-muted flex items-center gap-2">
           <span className="activity-spinner-comet" aria-hidden />
-          <span>loading diff data...</span>
+          <span>{t('popout.diff.loadingData')}</span>
         </div>
       </div>
     );
@@ -151,17 +155,19 @@ export function DiffPanel(): JSX.Element {
   const sourcePill = (() => {
     switch (diff.source) {
       case 'tool-call':
-        return { text: 'Tool call', cls: 'bg-warn/15 text-warn' };
+        return { text: t('popout.diff.toolCall'), cls: 'bg-warn/15 text-warn' };
       case 'git-tracked':
-        return { text: 'Working tree', cls: 'bg-info/15 text-info' };
+        return { text: t('popout.diff.workingTree'), cls: 'bg-info/15 text-info' };
       case 'git-untracked':
-        return { text: 'Untracked', cls: 'bg-ok/15 text-ok' };
+        return { text: t('popout.diff.untracked'), cls: 'bg-ok/15 text-ok' };
     }
   })();
   return (
     <div className="h-full flex flex-col">
       <div className="px-3 py-1 border-b border-border-default text-xs text-fg-muted font-mono flex-shrink-0 flex items-center gap-2">
-        <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium flex-shrink-0 ${sourcePill.cls}`}>
+        <span
+          className={`px-1.5 py-0.5 rounded text-[11px] font-medium flex-shrink-0 ${sourcePill.cls}`}
+        >
           {sourcePill.text}
         </span>
         <span className="truncate flex-1" title={path}>
@@ -173,11 +179,11 @@ export function DiffPanel(): JSX.Element {
           onClick={() => {
             void navigator.clipboard
               .writeText(path)
-              .then(() => pushToast('已复制路径', 'success'))
-              .catch(() => pushToast('复制失败', 'error'));
+              .then(() => pushToast(t('popout.diff.pathCopied'), 'success'))
+              .catch(() => pushToast(t('popout.diff.copyFailed'), 'error'));
           }}
-          title="复制路径"
-          aria-label="复制文件路径"
+          title={t('popout.diff.copyPath')}
+          aria-label={t('popout.diff.copyFilePath')}
           className="flex-shrink-0 w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
         >
           <Copy className="w-3.5 h-3.5" strokeWidth={1.75} />
@@ -185,8 +191,8 @@ export function DiffPanel(): JSX.Element {
         <button
           type="button"
           onClick={() => void revealPath(path, projectRoot)}
-          title="在文件管理器中显示"
-          aria-label="在文件管理器中显示"
+          title={t('popout.diff.reveal')}
+          aria-label={t('popout.diff.reveal')}
           className="flex-shrink-0 w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
         >
           <FolderOpen className="w-3.5 h-3.5" strokeWidth={1.75} />

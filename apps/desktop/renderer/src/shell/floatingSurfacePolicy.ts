@@ -45,8 +45,44 @@ export type FloatingPopoutKind =
   | 'plan'
   | 'agents'
   | 'mcp'
+  | 'memory'
   | 'artifact'
   | 'workflow';
+
+const FLOATING_POPOUT_KINDS: readonly FloatingPopoutKind[] = [
+  'preview',
+  'diff',
+  'terminal',
+  'tasks',
+  'plan',
+  'agents',
+  'mcp',
+  'memory',
+  'artifact',
+  'workflow',
+];
+
+export function isFloatingPopoutKind(value: unknown): value is FloatingPopoutKind {
+  return typeof value === 'string' && (FLOATING_POPOUT_KINDS as readonly string[]).includes(value);
+}
+
+export function floatingSurfaceForBlockingModal(
+  id: string,
+  label: string,
+  dismiss: FloatingSurfaceDescriptor['dismiss'] = 'decision_required',
+): FloatingSurfaceDescriptor {
+  return {
+    id,
+    kind: 'blocking_modal',
+    owner: 'approval',
+    placement: 'center',
+    modality: 'modal',
+    canAutoOpen: false,
+    dismiss,
+    focus: 'trap_and_restore',
+    label,
+  };
+}
 
 export function floatingSurfaceForPopout(kind: FloatingPopoutKind): FloatingSurfaceDescriptor {
   switch (kind) {
@@ -91,6 +127,7 @@ export function floatingSurfaceForPopout(kind: FloatingPopoutKind): FloatingSurf
     case 'workflow':
     case 'agents':
     case 'mcp':
+    case 'memory':
       return {
         id: `${kind}-dock-sheet`,
         kind: 'dock_sheet',
@@ -115,6 +152,18 @@ export function floatingSurfaceForPopout(kind: FloatingPopoutKind): FloatingSurf
         label: 'Preview',
       };
   }
+
+  return {
+    id: 'unknown-popout-dock-sheet',
+    kind: 'dock_sheet',
+    owner: 'task_dock',
+    placement: 'right_docked',
+    modality: 'none',
+    canAutoOpen: false,
+    dismiss: 'explicit_close',
+    focus: 'move_to_surface',
+    label: 'Activity',
+  };
 }
 
 function titleCase(value: string): string {

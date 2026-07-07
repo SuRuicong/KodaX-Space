@@ -1951,8 +1951,9 @@ export const useAppStore = create<AppState>((set) => ({
           }
         }
       }
-      const currentBudget =
-        (next.workBudgetBySession ?? state.workBudgetBySession)[event.sessionId];
+      const currentBudget = (next.workBudgetBySession ?? state.workBudgetBySession)[
+        event.sessionId
+      ];
       const liveBudget = applyLiveBudgetFallback(currentBudget, event);
       if (liveBudget && liveBudget !== currentBudget) {
         next.workBudgetBySession = {

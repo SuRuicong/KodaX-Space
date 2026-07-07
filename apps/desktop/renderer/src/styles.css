@@ -411,10 +411,42 @@ html.q-minimal .content-copy-button {
 .platform-darwin .titlebar-brand {
   padding-left: 70px;
 }
-/* Windows: OS titleBarOverlay (close/min/max) 占右上 ~138px；给 titlebar 右侧留位，
-   否则 ThemeToggle 等右对齐控件会被压在 OS 按钮下面看不见。 */
+/* Windows: renderer 自绘 close/min/max，保留 VS Code 风格 hover/press 反馈。 */
 .platform-win32 .app-titlebar {
-  padding-right: 144px;
+  padding-right: 0;
+}
+.window-controls {
+  display: flex;
+  align-self: stretch;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+.window-control-button {
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  width: 46px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  color: rgb(var(--fg-secondary));
+  transition:
+    background-color 120ms var(--ease),
+    color 120ms var(--ease);
+}
+.window-control-button:hover {
+  color: rgb(var(--fg-primary));
+  background: rgb(var(--hover-bg));
+}
+.window-control-button:active {
+  background: rgb(var(--surface-3));
+}
+.window-control-button--close:hover {
+  color: #fff;
+  background: #e81123;
+}
+.window-control-button--close:active {
+  color: #fff;
+  background: #c42b1c;
 }
 
 /* ============================================================

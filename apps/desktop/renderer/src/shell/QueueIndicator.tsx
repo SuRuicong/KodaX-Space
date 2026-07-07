@@ -9,6 +9,8 @@ import { Hourglass } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
 import { Caret } from '../components/Caret.js';
 import type { QueuedMessageT, MessageModeT } from '@kodax-space/space-ipc-schema';
+import { useI18n } from '../i18n/I18nProvider.js';
+import type { MessageKey } from '../i18n/messages.js';
 
 const PRIORITY_COLOR: Record<QueuedMessageT['priority'], string> = {
   user: 'text-warn',
@@ -26,14 +28,15 @@ const QUEUE_MODE_LABEL: Record<NonNullable<QueuedMessageT['queueMode']>, string>
 
 // Filter UI: 'all' / 'prompt' / 'task-notification' / 'system-reminder'
 type FilterMode = 'all' | MessageModeT;
-const FILTER_LABEL: Record<FilterMode, string> = {
-  all: 'All',
-  prompt: 'Prompts',
-  'task-notification': 'Tasks',
-  'system-reminder': 'System',
+const FILTER_LABEL_KEY: Record<FilterMode, MessageKey> = {
+  all: 'queue.filter.all',
+  prompt: 'queue.filter.prompt',
+  'task-notification': 'queue.filter.task',
+  'system-reminder': 'queue.filter.system',
 };
 
 export function QueueIndicator(): JSX.Element | null {
+  const { t } = useI18n();
   const snapshot = useAppStore((s) => s.queueSnapshot);
   const total = useAppStore((s) => s.queueTotalSize);
   const [open, setOpen] = useState(false);
@@ -57,11 +60,11 @@ export function QueueIndicator(): JSX.Element | null {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="text-[11px] font-mono flex items-center gap-1 text-fg-secondary hover:text-fg-primary"
-        title={`KodaX message queue: ${total} item${total !== 1 ? 's' : ''}`}
-        aria-label="View message queue"
+        title={t('queue.tooltip', { count: total })}
+        aria-label={t('queue.viewAria')}
       >
         <Hourglass className="w-3 h-3" strokeWidth={2} aria-hidden />
-        <span>Queue {total}</span>
+        <span>{t('queue.button', { count: total })}</span>
         <Caret open={false} className="text-fg-muted" />
       </button>
 
@@ -71,8 +74,8 @@ export function QueueIndicator(): JSX.Element | null {
           onMouseLeave={() => setOpen(false)}
         >
           <div className="text-fg-muted text-[11px] uppercase tracking-wider mb-2 flex justify-between">
-            <span>KodaX Message Queue</span>
-            <span>{total} total</span>
+            <span>{t('queue.title')}</span>
+            <span>{t('queue.total', { count: total })}</span>
           </div>
           {/* Mode filter tabs: 只显示当前有内容的 mode + 'all' */}
           <div className="flex gap-1 mb-2 flex-wrap">
@@ -92,7 +95,8 @@ export function QueueIndicator(): JSX.Element | null {
                       : 'text-fg-muted hover:text-fg-primary hover:bg-hover-bg'
                   }`}
                 >
-                  {FILTER_LABEL[m]} {count > 0 && <span className="text-fg-muted">{count}</span>}
+                  {t(FILTER_LABEL_KEY[m])}{' '}
+                  {count > 0 && <span className="text-fg-muted">{count}</span>}
                 </button>
               );
             })}
@@ -100,8 +104,8 @@ export function QueueIndicator(): JSX.Element | null {
           {filtered.length === 0 ? (
             <div className="text-fg-muted italic">
               {filter === 'all'
-                ? 'Items in subagent queues; switch filter to view.'
-                : `No ${FILTER_LABEL[filter]} messages.`}
+                ? t('queue.emptyAll')
+                : t('queue.emptyFilter', { filter: t(FILTER_LABEL_KEY[filter]) })}
             </div>
           ) : (
             <ul className="space-y-2">
@@ -125,7 +129,7 @@ export function QueueIndicator(): JSX.Element | null {
                         </span>
                       </>
                     )}
-                    <span className="text-fg-faint ml-auto">{formatTime(m.enqueuedAt)}</span>
+                    <span className="text-fg-faint ml-auto">{formatTime(m.enqueuedAt, t)}</span>
                   </div>
                   <div className="mt-1 text-fg-secondary break-words" title={m.content}>
                     {m.content.length > 200 ? m.content.slice(0, 200) + '…' : m.content}
@@ -135,8 +139,7 @@ export function QueueIndicator(): JSX.Element | null {
             </ul>
           )}
           <div className="mt-3 border-t border-border-default pt-2 text-[11px] text-fg-muted leading-relaxed">
-            Read-only view. user-priority drains before background. Subagent task-notifications wait
-            until parent agent peeks.
+            {t('queue.readOnlyNote')}
           </div>
         </div>
       )}
@@ -144,9 +147,12 @@ export function QueueIndicator(): JSX.Element | null {
   );
 }
 
-function formatTime(ts: number): string {
+function formatTime(
+  ts: number,
+  t: (key: MessageKey, vars?: Record<string, string | number>) => string,
+): string {
   const diff = Date.now() - ts;
-  if (diff < 1000) return 'now';
+  if (diff < 1000) return t('right.now');
   if (diff < 60_000) return `${Math.floor(diff / 1000)}s`;
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h`;

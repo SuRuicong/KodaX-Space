@@ -31,7 +31,13 @@ import {
 } from 'lucide-react';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
 import { clampSidebarWidthPx, useAppStore } from '../store/appStore.js';
-import { openFileSmart, isPreviewablePath, revealPath } from '../lib/openPath.js';
+import {
+  openFileSmart,
+  isPreviewablePath,
+  revealPath,
+  toProjectRelative,
+  isAbsolutePathOutsideProject,
+} from '../lib/openPath.js';
 import { Caret } from '../components/Caret.js';
 import { ArtifactsView } from '../features/artifact/ArtifactsView.js';
 import { useArtifacts, useArtifactCreated } from '../features/artifact/useArtifacts.js';
@@ -48,9 +54,11 @@ import {
   type SidebarTodoStatus,
 } from './sidebarPlanView.js';
 import { useI18n } from '../i18n/I18nProvider.js';
+import type { MessageKey } from '../i18n/messages.js';
 import { requestShellPopout } from './popoutControl.js';
 import type { PopoutKind } from './CommandToolbar.js';
 import {
+  isTaskDockSectionId,
   TASK_DOCK_FOCUS_EVENT,
   type TaskDockFocusState,
   type TaskDockFocusRequest,
@@ -60,6 +68,8 @@ import { buildAgentStatuses, type AgentStatusViewModel } from './agentStatusProj
 import { buildTaskDockRunView } from './taskDockProjection.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
+const SECTION_OPEN_STORAGE_KEY = 'kodax-space.rightSidebar.sectionOpen';
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
 interface RightSidebarProps {
   /** Dynamic sidebar width in px. */
@@ -98,7 +108,7 @@ export function RightSidebar({
   useEffect(() => {
     const onFocus = (event: Event): void => {
       const section = (event as CustomEvent<TaskDockFocusRequest>).detail?.section;
-      if (!section) return;
+      if (!isTaskDockSectionId(section)) return;
       setTab(section === 'artifacts' ? 'artifact' : 'overview');
       setFocusRequest((current) => ({ section, nonce: current.nonce + 1 }));
     };
@@ -292,6 +302,39 @@ interface SectionProps {
   children: React.ReactNode;
 }
 
+function readSectionOpenState(): Partial<Record<TaskDockSectionId, boolean>> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(SECTION_OPEN_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return {};
+    const next: Partial<Record<TaskDockSectionId, boolean>> = {};
+    for (const key of Object.keys(parsed)) {
+      const value = (parsed as Record<string, unknown>)[key];
+      if (typeof value === 'boolean') next[key as TaskDockSectionId] = value;
+    }
+    return next;
+  } catch {
+    return {};
+  }
+}
+
+function readSectionOpen(sectionId: TaskDockSectionId | undefined, defaultOpen: boolean): boolean {
+  if (!sectionId) return defaultOpen;
+  return readSectionOpenState()[sectionId] ?? defaultOpen;
+}
+
+function writeSectionOpen(sectionId: TaskDockSectionId | undefined, open: boolean): void {
+  if (!sectionId || typeof window === 'undefined') return;
+  try {
+    const next = { ...readSectionOpenState(), [sectionId]: open };
+    window.localStorage.setItem(SECTION_OPEN_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // Ignore private-mode/storage failures; the in-memory state still updates.
+  }
+}
+
 function Section({
   title,
   sectionId,
@@ -301,11 +344,21 @@ function Section({
   children,
 }: SectionProps): JSX.Element {
   const { t } = useI18n();
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpenState] = useState(() => readSectionOpen(sectionId, defaultOpen));
   const ref = useRef<HTMLElement | null>(null);
   // Toggle behavior: if this popout is already active, the button closes it.
   const activePopoutKind = useAppStore((s) => s.activePopoutKind);
   const isThisPopoutActive = popoutKind !== undefined && activePopoutKind === popoutKind;
+  const setOpen = useCallback(
+    (next: boolean | ((previous: boolean) => boolean)) => {
+      setOpenState((previous) => {
+        const value = typeof next === 'function' ? next(previous) : next;
+        writeSectionOpen(sectionId, value);
+        return value;
+      });
+    },
+    [sectionId],
+  );
 
   useEffect(() => {
     if (!sectionId || focusRequest?.section !== sectionId) return;
@@ -314,7 +367,7 @@ function Section({
       ref.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
     return () => cancelAnimationFrame(frame);
-  }, [focusRequest?.nonce, focusRequest?.section, sectionId]);
+  }, [focusRequest?.nonce, focusRequest?.section, sectionId, setOpen]);
 
   return (
     <section
@@ -406,6 +459,7 @@ function Section({
 // ---- Plan section ----
 
 function RunSection({ focusRequest }: { readonly focusRequest: TaskDockFocusState }): JSX.Element {
+  const { t } = useI18n();
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const pendingSend = useAppStore((s) =>
@@ -446,10 +500,11 @@ function RunSection({ focusRequest }: { readonly focusRequest: TaskDockFocusStat
     budget,
     hasPermissionRequest,
     hasAskUserRequest,
+    t,
   });
 
   return (
-    <Section title="Run" sectionId="run" focusRequest={focusRequest}>
+    <Section title={t('right.run')} sectionId="run" focusRequest={focusRequest}>
       <div
         className={`rounded-lg border px-2.5 py-2 ${runCardClass(view.severity)}`}
         data-testid="task-dock-run-summary"
@@ -471,7 +526,7 @@ function RunSection({ focusRequest }: { readonly focusRequest: TaskDockFocusStat
           <div className="mt-2 flex flex-wrap gap-1">
             {view.metrics.map((metric) => (
               <span
-                key={metric.label}
+                key={metric.key}
                 className="rounded border border-border-default bg-surface-2 px-1.5 py-0.5 text-[11px] text-fg-secondary"
               >
                 <span className="text-fg-faint">{metric.label}</span>{' '}
@@ -543,7 +598,7 @@ function PlanSection({
     >
       {plan.running?.activeForm && (
         <div className="text-xs text-fg-muted mb-2 truncate" title={plan.running.activeForm}>
-          Now: {plan.running.activeForm}
+          {t('right.now')}: {plan.running.activeForm}
         </div>
       )}
       <ul className="space-y-1 text-xs">
@@ -561,13 +616,14 @@ function planRowKey(row: SidebarPlanRow): string {
 }
 
 function PlanRow({ row }: { row: SidebarPlanRow }): JSX.Element {
+  const { t } = useI18n();
   if (row.kind === 'done-summary') {
     return (
       <li className="flex items-center gap-2 px-1.5 py-0.5 text-[11px] font-mono text-fg-faint">
         <span className="w-3 text-center text-ok" aria-hidden>
           <Check className="inline h-2.5 w-2.5" strokeWidth={3} />
         </span>
-        <span>{row.count} done</span>
+        <span>{t('right.doneCount', { count: row.count })}</span>
       </li>
     );
   }
@@ -578,7 +634,7 @@ function PlanRow({ row }: { row: SidebarPlanRow }): JSX.Element {
         <span className="w-3 text-center" aria-hidden>
           +
         </span>
-        <span>{row.count} more</span>
+        <span>{t('right.moreCount', { count: row.count })}</span>
       </li>
     );
   }
@@ -593,7 +649,7 @@ function PlanRow({ row }: { row: SidebarPlanRow }): JSX.Element {
       <span
         className="flex-shrink-0 mt-0.5"
         title={item.status}
-        aria-label={`status: ${item.status}`}
+        aria-label={t('right.statusAria', { status: item.status })}
       >
         <PlanStatusIcon status={item.status} />
       </span>
@@ -677,6 +733,7 @@ function AgentSection({
 }: {
   readonly focusRequest: TaskDockFocusState;
 }): JSX.Element | null {
+  const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const status = useAppStore((s) =>
     currentSessionId ? s.managedTaskStatusBySession[currentSessionId] : undefined,
@@ -700,12 +757,17 @@ function AgentSection({
 
   const fanoutLabel =
     status?.childFanoutCount !== undefined && status.childFanoutCount > 0
-      ? `${status.childFanoutCount} active${status.childFanoutClass ? ` / ${status.childFanoutClass}` : ''}`
+      ? status.childFanoutClass
+        ? t('right.agentFanoutWithClass', {
+            count: status.childFanoutCount,
+            className: status.childFanoutClass,
+          })
+        : t('right.agentFanout', { count: status.childFanoutCount })
       : null;
 
   return (
     <Section
-      title={`Agents (${agents.length})`}
+      title={t('right.agentsCount', { count: agents.length })}
       sectionId="agents"
       focusRequest={focusRequest}
       defaultOpen={false}
@@ -714,9 +776,9 @@ function AgentSection({
       {budget && (
         <div className="mb-2 text-[11px]">
           <div className="text-fg-secondary font-mono">
-            budget {budget.used}/{budget.cap}
+            {t('right.budget')} {budget.used}/{budget.cap}
             {status?.budgetApprovalRequired && (
-              <span className="ml-2 text-warn">/ approval needed</span>
+              <span className="ml-2 text-warn">/ {t('right.approvalNeeded')}</span>
             )}
           </div>
           <div className="h-1 bg-surface-3 rounded overflow-hidden mt-0.5">
@@ -729,23 +791,23 @@ function AgentSection({
       )}
       {agents.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-1">
-          {runningCount > 0 && <AgentMetric label="Running" value={runningCount} />}
-          {waitingCount > 0 && <AgentMetric label="Waiting" value={waitingCount} />}
-          {completedCount > 0 && <AgentMetric label="Done" value={completedCount} />}
-          {fanoutLabel && <AgentMetric label="Fan-out" value={fanoutLabel} />}
+          {runningCount > 0 && <AgentMetric label={t('right.running')} value={runningCount} />}
+          {waitingCount > 0 && <AgentMetric label={t('right.waiting')} value={waitingCount} />}
+          {completedCount > 0 && <AgentMetric label={t('right.done')} value={completedCount} />}
+          {fanoutLabel && <AgentMetric label={t('right.fanout')} value={fanoutLabel} />}
         </div>
       )}
       {agents.length === 0 ? (
         status?.idleWaiting ? (
           <div className="text-xs text-fg-muted">
-            waiting / {status.idleWaitingPendingCount ?? 0} pending
+            {t('right.waitingPending', { count: status.idleWaitingPendingCount ?? 0 })}
           </div>
         ) : fanoutLabel ? (
           <div className="text-xs text-fg-muted">{fanoutLabel}</div>
         ) : status?.budgetApprovalRequired ? (
-          <div className="text-xs text-warn">budget approval needed</div>
+          <div className="text-xs text-warn">{t('right.budgetApprovalNeeded')}</div>
         ) : (
-          <div className="text-xs text-fg-muted">No delegated agents yet.</div>
+          <div className="text-xs text-fg-muted">{t('right.noDelegatedAgents')}</div>
         )
       ) : (
         <AgentInlineList agents={agents} />
@@ -792,6 +854,7 @@ function AgentStatusCard({
   readonly agent: AgentStatusViewModel;
   readonly compact?: boolean;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <li
       className={`rounded-lg border px-2 py-1.5 ${agentCardClass(agent.state)}`}
@@ -808,7 +871,7 @@ function AgentStatusCard({
               {agent.title}
             </span>
             <span className="flex-shrink-0 rounded bg-surface-3 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-fg-muted">
-              {agentStateLabel(agent.state)}
+              {agentStateLabel(agent.state, t)}
             </span>
           </div>
           <div className="mt-0.5 flex min-w-0 flex-wrap gap-x-1.5 gap-y-0.5 text-[11px] text-fg-muted">
@@ -826,8 +889,12 @@ function AgentStatusCard({
             </div>
           )}
           <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-fg-faint">
-            {agent.evidenceCount !== undefined && <span>{agent.evidenceCount} notes</span>}
-            {agent.traceCount !== undefined && <span>{agent.traceCount} trace events</span>}
+            {agent.evidenceCount !== undefined && (
+              <span>{t('right.notesCount', { count: agent.evidenceCount })}</span>
+            )}
+            {agent.traceCount !== undefined && (
+              <span>{t('right.traceEventsCount', { count: agent.traceCount })}</span>
+            )}
           </div>
         </div>
       </div>
@@ -865,18 +932,18 @@ function agentDotClass(state: AgentStatusViewModel['state']): string {
   }
 }
 
-function agentStateLabel(state: AgentStatusViewModel['state']): string {
+function agentStateLabel(state: AgentStatusViewModel['state'], t: Translate): string {
   switch (state) {
     case 'active':
-      return 'Running';
+      return t('right.running');
     case 'waiting':
-      return 'Waiting';
+      return t('right.waiting');
     case 'completed':
-      return 'Done';
+      return t('right.done');
     case 'error':
-      return 'Issue';
+      return t('right.issue');
     case 'idle':
-      return 'Idle';
+      return t('right.idle');
   }
 }
 
@@ -1014,7 +1081,7 @@ function ChangesSection({
         focusRequest={focusRequest}
         defaultOpen={false}
       >
-        <div className="text-xs text-fg-muted">Open a project to review workspace changes.</div>
+        <div className="text-xs text-fg-muted">{t('right.openProjectForChanges')}</div>
       </Section>
     );
   }
@@ -1022,7 +1089,7 @@ function ChangesSection({
   if (!snapshot) {
     return (
       <Section title={t('right.changes')} sectionId="changes" focusRequest={focusRequest}>
-        <div className="text-xs text-fg-muted">Loading workspace changes...</div>
+        <div className="text-xs text-fg-muted">{t('right.loadingChanges')}</div>
       </Section>
     );
   }
@@ -1035,7 +1102,7 @@ function ChangesSection({
         focusRequest={focusRequest}
         defaultOpen={false}
       >
-        <div className="text-xs text-fg-muted">This project is not a git repository.</div>
+        <div className="text-xs text-fg-muted">{t('right.notGitRepo')}</div>
       </Section>
     );
   }
@@ -1047,10 +1114,12 @@ function ChangesSection({
       focusRequest={focusRequest}
     >
       {snapshot.branch && (
-        <div className="text-[11px] text-fg-muted mb-1.5 font-mono">on {snapshot.branch}</div>
+        <div className="text-[11px] text-fg-muted mb-1.5 font-mono">
+          {t('right.onBranch', { branch: snapshot.branch })}
+        </div>
       )}
       {snapshot.files.length === 0 ? (
-        <div className="text-xs text-fg-muted">working tree clean</div>
+        <div className="text-xs text-fg-muted">{t('right.workingTreeClean')}</div>
       ) : (
         <ul className="text-xs font-mono space-y-0.5">
           <ChangeTreeView
@@ -1060,7 +1129,9 @@ function ChangesSection({
             onToggle={toggleDir}
             onPick={pickFile}
           />
-          {snapshot.truncated && <li className="text-fg-muted px-1">+ more (truncated at 200)</li>}
+          {snapshot.truncated && (
+            <li className="text-fg-muted px-1">{t('right.moreTruncated', { count: 200 })}</li>
+          )}
         </ul>
       )}
     </Section>
@@ -1219,17 +1290,33 @@ function StatusBadge({
   status: GitChange['status'];
   staged: boolean;
 }): JSX.Element {
+  const { t } = useI18n();
   // Color: staged = ok, worktree-only = warning, untracked = muted; letter is git status.
   const color = status === 'U' ? 'text-fg-muted' : staged ? 'text-ok' : 'text-warn';
   return (
     <span
       className={`flex-shrink-0 w-4 text-[11px] font-bold text-center ${color}`}
-      title={`${status === 'U' ? 'Untracked' : status === 'M' ? 'Modified' : status === 'A' ? 'Added' : status === 'D' ? 'Deleted' : 'Renamed'}${staged ? ' (staged)' : ''}`}
+      title={`${changeStatusLabel(status, t)}${staged ? ` (${t('right.status.staged')})` : ''}`}
       aria-hidden
     >
       {status}
     </span>
   );
+}
+
+function changeStatusLabel(status: GitChange['status'], t: Translate): string {
+  switch (status) {
+    case 'U':
+      return t('right.status.untracked');
+    case 'M':
+      return t('right.status.modified');
+    case 'A':
+      return t('right.status.added');
+    case 'D':
+      return t('right.status.deleted');
+    case 'R':
+      return t('right.status.renamed');
+  }
 }
 
 function ArtifactsSummarySection({
@@ -1245,9 +1332,10 @@ function ArtifactsSummarySection({
   readonly artifactError: unknown;
   readonly onOpenArtifact: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <Section
-      title="Artifacts"
+      title={t('right.artifacts')}
       sectionId="artifacts"
       focusRequest={focusRequest}
       defaultOpen={false}
@@ -1256,19 +1344,19 @@ function ArtifactsSummarySection({
         <div className="space-y-2 text-xs text-fg-secondary">
           <div>
             {artifactError
-              ? 'Artifact loading needs attention.'
-              : `${artifactCount} artifact${artifactCount === 1 ? '' : 's'} available.`}
+              ? t('right.artifactLoadingNeedsAttention')
+              : t('right.artifactsAvailable', { count: artifactCount })}
           </div>
           <button
             type="button"
             onClick={onOpenArtifact}
             className="rounded-md border border-border-default px-2 py-1 text-[12px] text-fg-secondary hover:bg-hover-bg hover:text-fg-primary"
           >
-            Open Artifact workspace
+            {t('right.openArtifactWorkspace')}
           </button>
         </div>
       ) : (
-        <div className="text-xs text-fg-muted">Generated artifacts will appear here.</div>
+        <div className="text-xs text-fg-muted">{t('right.generatedArtifactsEmpty')}</div>
       )}
     </Section>
   );
@@ -1286,7 +1374,12 @@ function SourcesSection({
   const projectName = projectPath ? projectPath.split(/[\\/]/).filter(Boolean).pop() : null;
 
   return (
-    <Section title="Sources" sectionId="sources" focusRequest={focusRequest} defaultOpen={false}>
+    <Section
+      title={t('right.sources')}
+      sectionId="sources"
+      focusRequest={focusRequest}
+      defaultOpen={false}
+    >
       {projectPath ? (
         <div className="text-xs text-fg-secondary space-y-1">
           <div className="text-[11px] uppercase tracking-wider text-fg-muted">
@@ -1306,7 +1399,7 @@ function SourcesSection({
           <button
             type="button"
             onClick={() => void revealPath(projectPath)}
-            title="Reveal in file manager"
+            title={t('right.revealInFileManager')}
             className="group/wf w-full text-left flex items-start gap-1 text-fg-muted text-[11px] font-mono break-all hover:text-fg-secondary"
           >
             <span className="break-all">{projectPath}</span>
@@ -1318,7 +1411,7 @@ function SourcesSection({
           </button>
         </div>
       ) : (
-        <div className="text-xs text-fg-muted">No project open.</div>
+        <div className="text-xs text-fg-muted">{t('right.noProjectOpen')}</div>
       )}
     </Section>
   );
@@ -1333,13 +1426,68 @@ function ContextSection({
 }): JSX.Element {
   const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
+  const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const events = useAppStore((s) =>
     currentSessionId ? (s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS) : EMPTY_EVENTS,
   );
 
   const refs = useMemo(() => collectContextRefs(events), [events]);
+  const contextFilesJson = JSON.stringify(refs.files);
+  const [visibleFiles, setVisibleFiles] = useState<readonly string[]>([]);
 
-  if (refs.tools.length === 0 && refs.files.length === 0) {
+  useEffect(() => {
+    let cancelled = false;
+    const bridge = window.kodaxSpace;
+    const contextFiles = JSON.parse(contextFilesJson) as string[];
+    if (!currentProjectPath || contextFiles.length === 0) {
+      setVisibleFiles([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (!bridge) {
+      setVisibleFiles(contextFiles);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setVisibleFiles([]);
+    void Promise.all(
+      contextFiles.map(async (filePath) => {
+        const rawPath = filePath.trim();
+        if (
+          rawPath.length === 0 ||
+          rawPath.length > 4096 ||
+          isAbsolutePathOutsideProject(rawPath, currentProjectPath)
+        ) {
+          return null;
+        }
+        const relPath = toProjectRelative(rawPath, currentProjectPath);
+        if (relPath.length === 0) return null;
+        try {
+          const result = await bridge.invoke('files.stat', {
+            projectRoot: currentProjectPath,
+            path: relPath,
+          });
+          if (!result.ok || !result.data.exists) return null;
+          return filePath;
+        } catch {
+          return null;
+        }
+      }),
+    ).then((files) => {
+      if (!cancelled) {
+        setVisibleFiles(files.filter((filePath): filePath is string => filePath !== null));
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentProjectPath, contextFilesJson]);
+
+  if (refs.tools.length === 0 && visibleFiles.length === 0) {
     return (
       <Section
         title={t('right.context')}
@@ -1347,9 +1495,7 @@ function ContextSection({
         focusRequest={focusRequest}
         defaultOpen={false}
       >
-        <div className="text-xs text-fg-muted leading-relaxed">
-          Track tools and referenced files used in this task.
-        </div>
+        <div className="text-xs text-fg-muted leading-relaxed">{t('right.contextEmpty')}</div>
       </Section>
     );
   }
@@ -1363,7 +1509,9 @@ function ContextSection({
     >
       {refs.tools.length > 0 && (
         <div className="mb-3">
-          <div className="text-[11px] uppercase tracking-wider text-fg-muted mb-1">Tools used</div>
+          <div className="text-[11px] uppercase tracking-wider text-fg-muted mb-1">
+            {t('right.toolsUsed')}
+          </div>
           <div className="flex flex-wrap gap-1">
             {refs.tools.map((t) => (
               <span
@@ -1378,13 +1526,13 @@ function ContextSection({
           </div>
         </div>
       )}
-      {refs.files.length > 0 && (
+      {visibleFiles.length > 0 && (
         <div>
           <div className="text-[11px] uppercase tracking-wider text-fg-muted mb-1">
-            Files referenced
+            {t('right.filesReferenced')}
           </div>
           <ul className="space-y-0.5 text-xs font-mono">
-            {refs.files.slice(0, 20).map((f) => {
+            {visibleFiles.slice(0, 20).map((f) => {
               const previewable = isPreviewablePath(f);
               return (
                 <li key={f}>
@@ -1392,7 +1540,11 @@ function ContextSection({
                     type="button"
                     onClick={() => void openFileSmart(f)}
                     className="group/ctxfile w-full text-left flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-hover-bg text-fg-secondary hover:text-fg-primary"
-                    title={previewable ? `Preview ${f}` : `Reveal ${f}`}
+                    title={
+                      previewable
+                        ? t('right.previewFile', { path: f })
+                        : t('right.revealFile', { path: f })
+                    }
                   >
                     <span className="truncate flex-1">{f}</span>
                     {previewable ? (
@@ -1412,8 +1564,10 @@ function ContextSection({
                 </li>
               );
             })}
-            {refs.files.length > 20 && (
-              <li className="text-fg-muted px-1">+{refs.files.length - 20} more</li>
+            {visibleFiles.length > 20 && (
+              <li className="text-fg-muted px-1">
+                {t('right.moreFiles', { count: visibleFiles.length - 20 })}
+              </li>
             )}
           </ul>
         </div>

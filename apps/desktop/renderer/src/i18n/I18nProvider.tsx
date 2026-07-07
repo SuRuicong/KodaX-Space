@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  type JSX,
   type ReactNode,
 } from 'react';
 import {
@@ -23,7 +24,30 @@ interface I18nContextValue {
   readonly t: (key: MessageKey, vars?: Record<string, string | number>) => string;
 }
 
+type I18nSettingsResult =
+  | {
+      readonly ok: true;
+      readonly data: {
+        readonly languageMode: LanguageModeT;
+        readonly effectiveLocale: SupportedLocaleT;
+      };
+    }
+  | { readonly ok: false };
+
+interface I18nBridge {
+  invoke(channel: 'settings.get', payload: Record<string, never>): Promise<I18nSettingsResult>;
+  invoke(
+    channel: 'settings.setLanguageMode',
+    payload: { readonly languageMode: LanguageModeT },
+  ): Promise<I18nSettingsResult>;
+}
+
 const I18nContext = createContext<I18nContextValue | null>(null);
+
+function getI18nBridge(): I18nBridge | undefined {
+  if (typeof window === 'undefined') return undefined;
+  return (window as Window & { readonly kodaxSpace?: I18nBridge }).kodaxSpace;
+}
 
 function readCachedLanguageMode(): LanguageModeT {
   try {
@@ -51,6 +75,12 @@ function interpolate(message: string, vars?: Record<string, string | number>): s
   });
 }
 
+export function translateMessage(key: MessageKey, vars?: Record<string, string | number>): string {
+  const mode = readCachedLanguageMode();
+  const locale = resolveEffectiveLocale(mode, navigator.languages ?? []);
+  return interpolate(messages[locale][key], vars);
+}
+
 export function I18nProvider({ children }: { readonly children: ReactNode }): JSX.Element {
   const initialMode = readCachedLanguageMode();
   const [languageMode, setLanguageModeState] = useState<LanguageModeT>(initialMode);
@@ -59,7 +89,7 @@ export function I18nProvider({ children }: { readonly children: ReactNode }): JS
   );
 
   useEffect(() => {
-    const bridge = window.kodaxSpace;
+    const bridge = getI18nBridge();
     if (!bridge) return;
     void bridge
       .invoke('settings.get', {})
@@ -73,7 +103,7 @@ export function I18nProvider({ children }: { readonly children: ReactNode }): JS
   }, []);
 
   const setLanguageMode = useCallback(async (mode: LanguageModeT): Promise<boolean> => {
-    const bridge = window.kodaxSpace;
+    const bridge = getI18nBridge();
     if (!bridge) return false;
     try {
       const result = await bridge.invoke('settings.setLanguageMode', { languageMode: mode });

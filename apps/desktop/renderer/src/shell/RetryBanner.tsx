@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from 'react';
 import { RotateCw, Timer, X } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
+import { useI18n } from '../i18n/I18nProvider.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 
@@ -78,6 +79,7 @@ interface BannerDismissButtonProps {
 }
 
 function BannerDismissButton({ tone, onDismiss }: BannerDismissButtonProps): JSX.Element {
+  const { t } = useI18n();
   const toneClass =
     tone === 'warning'
       ? 'text-warn/80 hover:bg-warn/20 hover:text-warn'
@@ -96,8 +98,8 @@ function BannerDismissButton({ tone, onDismiss }: BannerDismissButtonProps): JSX
         'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-current',
         toneClass,
       ].join(' ')}
-      title="Dismiss"
-      aria-label="Dismiss retry notice"
+      title={t('retry.dismiss')}
+      aria-label={t('retry.dismissAria')}
     >
       <X className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
     </button>
@@ -105,6 +107,7 @@ function BannerDismissButton({ tone, onDismiss }: BannerDismissButtonProps): JSX
 }
 
 export function RetryBanner(): JSX.Element | null {
+  const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const events = useAppStore((s) =>
     currentSessionId ? (s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS) : EMPTY_EVENTS,
@@ -173,7 +176,8 @@ export function RetryBanner(): JSX.Element | null {
   if (banner.kind === 'retry') {
     const remainMs = banner.retryAt !== undefined ? Math.max(0, banner.retryAt - Date.now()) : 0;
     const remainSec = (remainMs / 1000).toFixed(remainMs < 10_000 ? 1 : 0);
-    const reasonLabel = banner.reason === 'rate-limit' ? 'Rate-limited' : 'Provider overloaded';
+    const reasonLabel =
+      banner.reason === 'rate-limit' ? t('retry.rateLimited') : t('retry.providerOverloaded');
     return (
       <div
         ref={bannerRootRef}
@@ -187,10 +191,11 @@ export function RetryBanner(): JSX.Element | null {
         <Timer className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} aria-hidden />
         <span>
           {reasonLabel}
-          {banner.provider ? ` by ${banner.provider}` : ''} · retrying in {remainSec}s
+          {banner.provider ? t('retry.byProvider', { provider: banner.provider }) : ''} ·{' '}
+          {t('retry.retryingIn', { seconds: remainSec })}
         </span>
         <span className="text-warn/80 dark:text-warn/60 ml-auto">
-          attempt {banner.attempt}/{banner.maxAttempts}
+          {t('retry.attempt', { attempt: banner.attempt, max: banner.maxAttempts })}
         </span>
         <BannerDismissButton tone="warning" onDismiss={dismissActiveBanner} />
       </div>
@@ -210,9 +215,9 @@ export function RetryBanner(): JSX.Element | null {
       aria-live="polite"
     >
       <RotateCw className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2} aria-hidden />
-      <span>Provider recovery: {banner.recoveryAction}</span>
+      <span>{t('retry.recovery', { action: banner.recoveryAction ?? '' })}</span>
       <span className="text-run/80 dark:text-run/60 ml-auto">
-        attempt {banner.attempt}/{banner.maxAttempts}
+        {t('retry.attempt', { attempt: banner.attempt, max: banner.maxAttempts })}
       </span>
       <BannerDismissButton tone="run" onDismiss={dismissActiveBanner} />
     </div>

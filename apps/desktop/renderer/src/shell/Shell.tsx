@@ -28,10 +28,14 @@ import {
   ArrowRight,
   Check,
   ChevronDown,
+  Copy,
   Info,
+  Minus,
   PanelLeft,
   PanelRight,
   PawPrint,
+  Square,
+  X,
 } from 'lucide-react';
 import type {
   LanguageModeT,
@@ -71,6 +75,7 @@ import { SettingsModal } from '../features/settings/SettingsModal.js';
 import { useI18n } from '../i18n/I18nProvider.js';
 import { isPopoutKind, SHELL_POPOUT_EVENT, type ShellPopoutRequest } from './popoutControl.js';
 import {
+  isTaskDockSectionId,
   TASK_DOCK_FOCUS_EVENT,
   type TaskDockFocusRequest,
   type TaskDockFocusState,
@@ -94,6 +99,19 @@ const CODER_MIN_CENTER_PX = 520;
 
 function getViewportWidth(): number {
   return typeof window !== 'undefined' && window.innerWidth ? window.innerWidth : 1440;
+}
+
+function getRendererPlatformClass(): string {
+  const bridgePlatform = typeof window !== 'undefined' ? window.kodaxSpace?.platform : undefined;
+  if (bridgePlatform === 'darwin') return 'platform-darwin';
+  if (bridgePlatform === 'win32') return 'platform-win32';
+  if (bridgePlatform === 'linux') return 'platform-linux';
+
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+  if (/Mac OS X/i.test(ua)) return 'platform-darwin';
+  if (/Windows/i.test(ua)) return 'platform-win32';
+  if (/Linux/i.test(ua)) return 'platform-linux';
+  return 'platform-other';
 }
 
 function rightSidebarOpenWidth(
@@ -163,6 +181,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatusT | null>(null);
+  const popoutBoundsRef = useRef<HTMLDivElement | null>(null);
   const [taskDockFocusRequest, setTaskDockFocusRequest] = useState<TaskDockFocusState>({
     section: null,
     nonce: 0,
@@ -243,8 +262,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
       preliminaryRightWidth,
       viewportWidth,
     ) < CODER_MIN_CENTER_PX;
-  const rightSidebarVisibleBeforeLeft =
-    preferredRightSidebarVisible && !responsiveHideRightSidebar;
+  const rightSidebarVisibleBeforeLeft = preferredRightSidebarVisible && !responsiveHideRightSidebar;
   const responsiveHideLeftSidebar =
     currentSurface === 'code' &&
     preferredLeftSidebarVisible &&
@@ -275,7 +293,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
   useEffect(() => {
     const onTaskDockFocus = (event: Event): void => {
       const section = (event as CustomEvent<TaskDockFocusRequest>).detail?.section;
-      if (section) {
+      if (isTaskDockSectionId(section)) {
         setTaskDockFocusRequest((current) => ({ section, nonce: current.nonce + 1 }));
       }
       if (fullscreenRead) setFullscreenRead(false);
@@ -378,11 +396,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
   // 给 body 加 platform class，让 styles.css 里 .platform-darwin 的 traffic-lights
   // 让位规则生效。navigator.userAgent 在 Electron renderer 中 reliable。
   useEffect(() => {
-    const ua = navigator.userAgent;
-    let cls = 'platform-other';
-    if (/Mac OS X/i.test(ua)) cls = 'platform-darwin';
-    else if (/Windows/i.test(ua)) cls = 'platform-win32';
-    else if (/Linux/i.test(ua)) cls = 'platform-linux';
+    const cls = getRendererPlatformClass();
     document.body.classList.add(cls);
     return () => document.body.classList.remove(cls);
   }, []);
@@ -398,9 +412,17 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
   // 双向同步: 其它组件 (RightSidebar Section ⤢) setActivePopoutKind(null) → 关 popout。
   // 守门: 仅当 store 跟本地 state 不一致时切,避免上面那个 effect 写 store 后立刻被读回触发再 set。
   useEffect(() => {
-    if (activePopoutKindFromStore !== activePopout) {
-      setActivePopoutRaw(activePopoutKindFromStore as PopoutKind | null);
+    if (activePopoutKindFromStore === activePopout) return;
+    if (activePopoutKindFromStore === null) {
+      setActivePopoutRaw(null);
+      return;
     }
+    if (isPopoutKind(activePopoutKindFromStore)) {
+      setActivePopoutRaw(activePopoutKindFromStore);
+      return;
+    }
+    console.warn('[kodax-space] ignored invalid active popout kind', activePopoutKindFromStore);
+    setActivePopoutKindInStore(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePopoutKindFromStore]);
 
@@ -485,9 +507,13 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
     rightSidebarVisibleBeforeLeft &&
     coderCenterWidthPx(leftSidebarVisible, leftWidth, true, rightWidth, viewportWidth) >=
       CODER_MIN_CENTER_PX;
+  const platformClass = getRendererPlatformClass();
+  const isWindows = platformClass === 'platform-win32';
 
   return (
-    <div className="h-screen flex flex-col bg-surface text-fg-primary overflow-hidden relative isolate">
+    <div
+      className={`h-screen flex flex-col bg-surface text-fg-primary overflow-hidden relative isolate ${platformClass}`}
+    >
       {/* F060: 背景极光层（玻璃 chrome 通过 backdrop-filter 透出它）。minimal 档不渲染。
           铺在最底层 z-0；下面的 titlebar / body 用 relative z-10 浮在其上。 */}
       <GlassAurora />
@@ -514,13 +540,13 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
           onOpenSettings={() => setSettingsOpen(true)}
         />
         <div className="flex-1" />
-        <div className="flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           <button
             type="button"
             onClick={() => setDiagnosticsOpen((v) => !v)}
             className="app-no-drag inline-flex h-7 items-center gap-1.5 rounded-md border border-border-default bg-surface-2 px-2 text-[11px] font-mono text-fg-muted hover:bg-hover-bg hover:text-fg-primary"
-            title="Runtime diagnostics"
-            aria-label="Runtime diagnostics"
+            title={t('shell.runtimeDiagnostics')}
+            aria-label={t('shell.runtimeDiagnostics')}
           >
             <Info className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
             <span>v{version?.spaceVersion ?? '?.?.?'}</span>
@@ -545,6 +571,7 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
           <VisualQualityToggle />
           <ThemeToggle />
         </div>
+        {isWindows && <WindowsWindowControls />}
         {diagnosticsOpen && (
           <RuntimeDiagnostics
             version={version}
@@ -607,9 +634,9 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
                     type="button"
                     onClick={() => setFullscreenRead(false)}
                     className="ml-1 text-[11px] px-2 py-0.5 rounded border border-border-default text-fg-muted hover:text-fg-primary"
-                    title="Exit focus mode (Ctrl+\\)"
+                    title={t('shell.exitFocusModeTitle')}
                   >
-                    ↗ Focus
+                    ↗ {t('shell.exitFocusMode')}
                   </button>
                 )}
                 {/* 右侧栏切换按钮 */}
@@ -620,12 +647,16 @@ export function Shell({ version = null }: ShellProps): JSX.Element {
                 />
               </div>
 
-              <div className="relative flex flex-1 min-h-0 flex-col">
+              <div ref={popoutBoundsRef} className="relative flex flex-1 min-h-0 flex-col">
                 <PinnedTaskSummary />
                 <ConversationStreamV2 />
 
                 {activePopout !== null && (
-                  <PopoutOverlay kind={activePopout} onClose={() => setActivePopout(null)} />
+                  <PopoutOverlay
+                    kind={activePopout}
+                    boundsRef={popoutBoundsRef}
+                    onClose={() => setActivePopout(null)}
+                  />
                 )}
               </div>
 
@@ -744,10 +775,8 @@ function AppTopMenu({
   const { languageMode, setLanguageMode, t } = useI18n();
   const theme = useAppStore((s) => s.theme);
   const visualQuality = useAppStore((s) => s.visualQuality);
-  const mascotMode = useAppStore((s) => s.mascotMode);
   const setTheme = useAppStore((s) => s.setTheme);
   const setVisualQuality = useAppStore((s) => s.setVisualQuality);
-  const setMascotMode = useAppStore((s) => s.setMascotMode);
   const [openMenu, setOpenMenu] = useState<AppMenuId | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
   const lastEditableTargetRef = useRef<HTMLElement | null>(null);
@@ -944,29 +973,6 @@ function AppTopMenu({
           checked: focusMode,
           onSelect: onToggleFocusMode,
         },
-        {
-          id: 'mascot-label',
-          label: t('menu.view.mascot'),
-          disabled: true,
-        },
-        {
-          id: 'mascot-legacy',
-          label: t('menu.view.mascotLegacy'),
-          checked: mascotMode === 'legacy',
-          onSelect: () => setMascotMode('legacy'),
-        },
-        {
-          id: 'mascot-sprite',
-          label: t('menu.view.mascotSprite'),
-          checked: mascotMode === 'sprite',
-          onSelect: () => setMascotMode('sprite'),
-        },
-        {
-          id: 'mascot-off',
-          label: t('menu.view.mascotOff'),
-          checked: mascotMode === 'off',
-          onSelect: () => setMascotMode('off'),
-        },
         { id: 'view-separator-2', separator: true },
         {
           id: 'theme-label',
@@ -1116,6 +1122,75 @@ interface TitlebarIconButtonProps {
   readonly children: JSX.Element;
 }
 
+function WindowsWindowControls(): JSX.Element {
+  const { t } = useI18n();
+  const [maximized, setMaximized] = useState(false);
+
+  const refreshState = useCallback(async (): Promise<void> => {
+    if (!window.kodaxSpace) return;
+    const result = await window.kodaxSpace.invoke('window.state', undefined);
+    if (result.ok) setMaximized(result.data.maximized);
+  }, []);
+
+  useEffect(() => {
+    void refreshState();
+    const onStateHint = (): void => void refreshState();
+    window.addEventListener('focus', onStateHint);
+    window.addEventListener('resize', onStateHint);
+    return () => {
+      window.removeEventListener('focus', onStateHint);
+      window.removeEventListener('resize', onStateHint);
+    };
+  }, [refreshState]);
+
+  const runControl = useCallback(
+    async (action: 'minimize' | 'toggleMaximize' | 'close'): Promise<void> => {
+      if (!window.kodaxSpace) return;
+      const result = await window.kodaxSpace.invoke('window.control', { action });
+      if (result.ok) setMaximized(result.data.maximized);
+    },
+    [],
+  );
+
+  const maximizeLabel = maximized ? t('windowControls.restore') : t('windowControls.maximize');
+
+  return (
+    <div className="window-controls app-no-drag" aria-label={t('windowControls.group')}>
+      <button
+        type="button"
+        className="window-control-button"
+        onClick={() => void runControl('minimize')}
+        title={t('windowControls.minimize')}
+        aria-label={t('windowControls.minimize')}
+      >
+        <Minus className="h-4 w-4" strokeWidth={1.8} aria-hidden />
+      </button>
+      <button
+        type="button"
+        className="window-control-button"
+        onClick={() => void runControl('toggleMaximize')}
+        title={maximizeLabel}
+        aria-label={maximizeLabel}
+      >
+        {maximized ? (
+          <Copy className="h-3.5 w-3.5" strokeWidth={1.7} aria-hidden />
+        ) : (
+          <Square className="h-3.5 w-3.5" strokeWidth={1.7} aria-hidden />
+        )}
+      </button>
+      <button
+        type="button"
+        className="window-control-button window-control-button--close"
+        onClick={() => void runControl('close')}
+        title={t('windowControls.close')}
+        aria-label={t('windowControls.close')}
+      >
+        <X className="h-4 w-4" strokeWidth={1.8} aria-hidden />
+      </button>
+    </div>
+  );
+}
+
 function TitlebarIconButton({
   label,
   active = false,
@@ -1242,6 +1317,7 @@ function RuntimeDiagnostics({
   licenseStatus,
   onClose,
 }: RuntimeDiagnosticsProps): JSX.Element {
+  const { t } = useI18n();
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return;
@@ -1256,7 +1332,7 @@ function RuntimeDiagnostics({
     <div className="app-no-drag absolute right-3 top-8 z-50 w-[min(420px,calc(100vw-24px))] rounded-lg border border-border-default bg-surface/95 p-3 text-xs text-fg-secondary shadow-2xl backdrop-blur-xl">
       <div className="mb-2 flex items-start justify-between gap-3">
         <div>
-          <div className="text-[11px] uppercase text-fg-faint">Runtime</div>
+          <div className="text-[11px] uppercase text-fg-faint">{t('shell.runtime')}</div>
           <div className="mt-0.5 font-mono text-fg-primary">
             Space v{version?.spaceVersion ?? '?.?.?'} / KodaX SDK{' '}
             {version?.kodaxSdkVersion ?? 'unknown'}
@@ -1266,25 +1342,25 @@ function RuntimeDiagnostics({
           type="button"
           onClick={onClose}
           className="rounded-md px-1.5 py-0.5 text-[11px] text-fg-muted hover:bg-hover-bg hover:text-fg-primary"
-          aria-label="Close diagnostics"
-          title="Close"
+          aria-label={t('shell.closeDiagnostics')}
+          title={t('common.close')}
         >
           Esc
         </button>
       </div>
 
       <div className="mb-2 grid grid-cols-[96px_1fr] gap-x-2 gap-y-1 font-mono text-[11px]">
-        <span className="text-fg-faint">license</span>
-        <span>{licenseStatus ? licenseDiagnosticsText(licenseStatus) : 'loading'}</span>
-        <span className="text-fg-faint">contract</span>
-        <span>{version?.capabilityContract ?? 'loading'}</span>
-        <span className="text-fg-faint">dependency</span>
+        <span className="text-fg-faint">{t('shell.license')}</span>
+        <span>{licenseStatus ? licenseDiagnosticsText(licenseStatus) : t('shell.loading')}</span>
+        <span className="text-fg-faint">{t('shell.contract')}</span>
+        <span>{version?.capabilityContract ?? t('shell.loading')}</span>
+        <span className="text-fg-faint">{t('shell.dependency')}</span>
         <span>{version?.kodaxDependencySpec ?? 'unknown'}</span>
-        <span className="text-fg-faint">platform</span>
+        <span className="text-fg-faint">{t('shell.platform')}</span>
         <span>
           {version
             ? `${version.platform} / electron ${version.electronVersion} / chromium ${version.chromeVersion}`
-            : 'loading'}
+            : t('shell.loading')}
         </span>
       </div>
 
@@ -1311,7 +1387,7 @@ function RuntimeDiagnostics({
         ))}
         {!version && (
           <div className="rounded-md border border-border-default bg-surface-2 px-2 py-2 text-fg-muted">
-            Loading diagnostics...
+            {t('shell.loadingDiagnostics')}
           </div>
         )}
       </div>
@@ -1325,8 +1401,10 @@ function RuntimeDiagnostics({
  * - open 时图标 text-fg-primary；close 时 text-fg-muted（让用户一眼看出当前状态）
  */
 function SidebarToggleButton({ side, open, onClick }: SidebarToggleButtonProps): JSX.Element {
+  const { t } = useI18n();
   const Icon = side === 'left' ? PanelLeft : PanelRight;
-  const label = `${open ? 'Hide' : 'Show'} ${side} sidebar`;
+  const sideLabel = t(side === 'left' ? 'shell.side.left' : 'shell.side.right');
+  const label = t(open ? 'shell.hideSidebar' : 'shell.showSidebar', { side: sideLabel });
   return (
     <button
       type="button"

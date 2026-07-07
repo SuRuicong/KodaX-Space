@@ -15,14 +15,18 @@
 //   - reason 字段已在 main 端限到 512 字；这里多套一层 truncate 防止极端长 string 撑爆 modal
 //   - typed-confirm 比较用 trim() 后大小写敏感等值——避免 "Confirm" / " CONFIRM " 通过
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   PermissionDecision,
   PermissionRequestPayload,
   PermissionRisk,
 } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
+import { FloatingSurfaceHost } from '../../shell/FloatingSurfaceHost.js';
+import { floatingSurfaceForBlockingModal } from '../../shell/floatingSurfacePolicy.js';
 import { selectPermissionBatch } from './permissionBatching.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
+import type { MessageKey } from '../../i18n/messages.js';
 
 // Risk badge 颜色. Dark 模式: 深色实底 + 淡色文字 (经典 badge 风);
 // Light 模式: 淡色实底 + 深色文字 — 视觉等价倒置, 在白底卡片上仍清晰.
@@ -50,7 +54,22 @@ const RISK_STYLE: Record<PermissionRisk, { badge: string; border: string; label:
   },
 };
 
+const RISK_LABEL_KEY: Record<PermissionRisk, MessageKey> = {
+  low: 'permission.risk.low',
+  medium: 'permission.risk.medium',
+  high: 'permission.risk.high',
+  danger: 'permission.risk.danger',
+};
+
 const DANGER_CONFIRM_PHRASE = 'CONFIRM';
+const PERMISSION_SURFACE = floatingSurfaceForBlockingModal(
+  'permission-modal',
+  'Tool permission request',
+);
+const PERMISSION_BATCH_SURFACE = floatingSurfaceForBlockingModal(
+  'permission-batch-modal',
+  'Batch tool permission request',
+);
 
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;
@@ -58,12 +77,9 @@ function truncate(s: string, max: number): string {
 }
 
 export function PermissionModal(): JSX.Element | null {
+  const { t } = useI18n();
   const queue = useAppStore((s) => s.permissionQueue);
   const dequeue = useAppStore((s) => s.dequeuePermission);
-  // FEATURE_032 fix: AskUserModal 渲染在 PermissionModal 之后（DOM 顺序晚 → z-stack 上层），
-  // 当 askUserQueue 也非空时用户看到的是 AskUserModal——本 modal 应当 yield Esc / Enter
-  // 给上层 modal 处理，避免一次 Esc 同时 dequeue 两个 modal head。
-  const askUserActive = useAppStore((s) => s.askUserQueue.length > 0);
   // KX-I-05: queue 头部"同 session + 非 danger"连续 ≥ 2 条时合并成 batch 视图。
   const selection = useMemo(() => selectPermissionBatch(queue), [queue]);
   const head = selection.mode === 'single' ? selection.head : selection.items[0]!;
@@ -84,14 +100,16 @@ export function PermissionModal(): JSX.Element | null {
     try {
       return truncate(JSON.stringify(head.toolCall.input, null, 2), 2000);
     } catch {
-      return '[unserializable input]';
+      return t('permission.unserializableInput');
     }
-  }, [head]);
+  }, [head, t]);
 
   // 提前算这些 derived state，answer/keydown 都要用
   const style = head ? RISK_STYLE[head.risk] : null;
   const isDanger = head?.risk === 'danger';
   const dangerConfirmed = !isDanger || confirmText.trim() === DANGER_CONFIRM_PHRASE;
+  const dangerInputRef = useRef<HTMLInputElement | null>(null);
+  const allowOnceButtonRef = useRef<HTMLButtonElement | null>(null);
 
   // review M3-code：用 useCallback 锁住 answer 的依赖关系，避免 keydown handler
   // 闭包陈旧的风险（queue shift 时仍调用陈旧 head 的 answer）
@@ -129,58 +147,42 @@ export function PermissionModal(): JSX.Element | null {
     [head, busy, dangerConfirmed, dequeue],
   );
 
-  // Escape = deny；Enter = allow_once（仅非危险时）
-  // 当 AskUserModal 同时可见时让出键盘——避免一次 Esc 同时 dequeue 双 modal head
-  // KX-I-05 LOW 修：batch 模式下让 PermissionBatchView 独占键盘，否则 Esc 会同时 fire
-  // 这里的 single answer(head, 'deny') + 那边的 answerAll('deny') 导致 head 双 IPC。
-  useEffect(() => {
-    if (!head || askUserActive || selection.mode === 'batch') return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        void answer('deny');
-      } else if (e.key === 'Enter' && head.risk !== 'danger' && !busy) {
-        void answer('allow_once');
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [head, busy, answer, askUserActive, selection.mode]);
-
   if (!head || !style) return null;
 
   // KX-I-05 batch view 分支：N 个连续同 session 非 danger 请求一次决策
   if (selection.mode === 'batch') {
-    return (
-      <PermissionBatchView
-        items={selection.items}
-        askUserActive={askUserActive}
-        dequeue={dequeue}
-      />
-    );
+    return <PermissionBatchView items={selection.items} dequeue={dequeue} />;
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    <FloatingSurfaceHost
+      surface={PERMISSION_SURFACE}
       role="dialog"
-      aria-modal="true"
-      aria-labelledby="permission-modal-title"
+      ariaLabelledBy="permission-modal-title"
+      onEscapeKey={() => {
+        void answer('deny');
+      }}
+      onEnterKey={() => {
+        if (head.risk !== 'danger' && !busy) void answer('allow_once');
+      }}
+      initialFocusRef={isDanger ? dangerInputRef : allowOnceButtonRef}
+      contentClassName="absolute inset-0 flex items-center justify-center pointer-events-none"
     >
       <div
-        className={`glass lift ix-zone w-[520px] max-w-[95vw] max-h-[90vh] flex flex-col bg-surface-2 border ${style.border} rounded-lg`}
+        className={`glass lift ix-zone pointer-events-auto w-[520px] max-w-[95vw] max-h-[90vh] flex flex-col bg-surface-2 border ${style.border} rounded-lg`}
       >
         <div className="px-5 py-3 border-b border-border-default flex items-center gap-3 flex-shrink-0">
           <span
             className={`px-2 py-0.5 text-[11px] font-mono font-semibold rounded ${style.badge}`}
           >
-            {style.label}
+            {t(RISK_LABEL_KEY[head.risk])}
           </span>
           <h2 id="permission-modal-title" className="text-sm font-semibold text-fg-primary">
-            Tool 调用授权请求
+            {t('permission.title')}
           </h2>
           {queue.length > 1 && (
             <span className="ml-auto text-[11px] font-mono text-fg-muted">
-              +{queue.length - 1} pending
+              {t('permission.pendingCount', { count: queue.length - 1 })}
             </span>
           )}
         </div>
@@ -189,13 +191,17 @@ export function PermissionModal(): JSX.Element | null {
           <div className="text-xs text-fg-muted leading-relaxed">{truncate(head.reason, 256)}</div>
 
           <div className="space-y-1">
-            <div className="text-[11px] font-mono uppercase text-fg-muted">Tool</div>
+            <div className="text-[11px] font-mono uppercase text-fg-muted">
+              {t('permission.tool')}
+            </div>
             <div className="text-sm font-mono text-warn">{head.toolCall.toolName}</div>
           </div>
 
           {inputPreview && (
             <div className="space-y-1">
-              <div className="text-[11px] font-mono uppercase text-fg-muted">Input</div>
+              <div className="text-[11px] font-mono uppercase text-fg-muted">
+                {t('permission.input')}
+              </div>
               <pre className="text-xs font-mono bg-surface border border-border-default rounded p-2 overflow-x-auto max-h-48">
                 {inputPreview}
               </pre>
@@ -205,9 +211,10 @@ export function PermissionModal(): JSX.Element | null {
           {isDanger && (
             <div className="space-y-1 border-t border-danger pt-3">
               <label className="text-[11px] font-mono uppercase text-danger block">
-                Type "{DANGER_CONFIRM_PHRASE}" to enable allow
+                {t('permission.typeConfirm', { phrase: DANGER_CONFIRM_PHRASE })}
               </label>
               <input
+                ref={dangerInputRef}
                 type="text"
                 autoFocus
                 value={confirmText}
@@ -215,9 +222,7 @@ export function PermissionModal(): JSX.Element | null {
                 placeholder={DANGER_CONFIRM_PHRASE}
                 className="w-full bg-surface border border-danger rounded px-2 py-1 text-sm font-mono text-fg-primary outline-none focus:border-danger"
               />
-              <div className="text-[11px] text-danger">
-                检测到危险操作。必须键入确认字符串才能批准。
-              </div>
+              <div className="text-[11px] text-danger">{t('permission.dangerConfirmHint')}</div>
             </div>
           )}
 
@@ -231,7 +236,7 @@ export function PermissionModal(): JSX.Element | null {
             onClick={() => void answer('deny')}
             className="px-3 py-1.5 text-xs rounded dark:bg-surface-3 dark:text-fg-primary dark:hover:bg-hover-bg bg-surface-3 text-fg-secondary hover:bg-hover-bg disabled:opacity-50"
           >
-            Deny (Esc)
+            {t('permission.denyEsc')}
           </button>
           {/* danger 永不出 Always allow——危险命令不能进白名单 */}
           {!isDanger && head.suggestedPattern && (
@@ -239,14 +244,15 @@ export function PermissionModal(): JSX.Element | null {
               type="button"
               disabled={busy}
               onClick={() => void answer('allow_always')}
-              title={`Add ${head.suggestedPattern} to allow-rules and skip prompt next time`}
+              title={t('permission.alwaysAllowTitle', { pattern: head.suggestedPattern })}
               className="px-3 py-1.5 text-xs rounded font-medium border border-ok text-ok hover:bg-ok/15 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Always allow{' '}
+              {t('permission.alwaysAllow')}{' '}
               <code className="font-mono text-xs text-warn">{head.suggestedPattern}</code>
             </button>
           )}
           <button
+            ref={allowOnceButtonRef}
             type="button"
             disabled={busy || !dangerConfirmed}
             onClick={() => void answer('allow_once')}
@@ -256,11 +262,11 @@ export function PermissionModal(): JSX.Element | null {
                 : 'bg-ok/15 text-ok border border-ok/50 hover:bg-ok/25'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
-            {isDanger ? 'Allow (danger)' : 'Allow once (Enter)'}
+            {isDanger ? t('permission.allowDanger') : t('permission.allowOnceEnter')}
           </button>
         </div>
       </div>
-    </div>
+    </FloatingSurfaceHost>
   );
 }
 
@@ -271,15 +277,11 @@ export function PermissionModal(): JSX.Element | null {
 
 interface PermissionBatchViewProps {
   readonly items: readonly PermissionRequestPayload[];
-  readonly askUserActive: boolean;
   readonly dequeue: (reqId: string) => void;
 }
 
-function PermissionBatchView({
-  items,
-  askUserActive,
-  dequeue,
-}: PermissionBatchViewProps): JSX.Element {
+function PermissionBatchView({ items, dequeue }: PermissionBatchViewProps): JSX.Element {
+  const { t } = useI18n();
   // 用 items 里 highest risk 决定外层 badge 颜色
   const maxRisk: PermissionRisk = useMemo(() => {
     const order: PermissionRisk[] = ['low', 'medium', 'high'];
@@ -292,6 +294,7 @@ function PermissionBatchView({
   const style = RISK_STYLE[maxRisk];
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const allowAllButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const answerOne = useCallback(
     async (reqId: string, decision: PermissionDecision): Promise<void> => {
@@ -327,38 +330,31 @@ function PermissionBatchView({
     [busy, items, answerOne],
   );
 
-  // 键盘：Esc=Deny all, Enter=Allow all once
-  useEffect(() => {
-    if (askUserActive) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        void answerAll('deny');
-      } else if (e.key === 'Enter' && !busy) {
-        void answerAll('allow_once');
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [busy, answerAll, askUserActive]);
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    <FloatingSurfaceHost
+      surface={PERMISSION_BATCH_SURFACE}
       role="dialog"
-      aria-modal="true"
-      aria-labelledby="permission-batch-title"
+      ariaLabelledBy="permission-batch-title"
+      onEscapeKey={() => {
+        void answerAll('deny');
+      }}
+      onEnterKey={() => {
+        if (!busy) void answerAll('allow_once');
+      }}
+      initialFocusRef={allowAllButtonRef}
+      contentClassName="absolute inset-0 flex items-center justify-center pointer-events-none"
     >
       <div
-        className={`w-[620px] max-w-[95vw] max-h-[90vh] flex flex-col bg-surface-2 border ${style.border} rounded-lg shadow-xl`}
+        className={`pointer-events-auto w-[620px] max-w-[95vw] max-h-[90vh] flex flex-col bg-surface-2 border ${style.border} rounded-lg shadow-xl`}
       >
         <div className="px-5 py-3 border-b border-border-default flex items-center gap-3 flex-shrink-0">
           <span
             className={`px-2 py-0.5 text-[11px] font-mono font-semibold rounded ${style.badge}`}
           >
-            {style.label}
+            {t(RISK_LABEL_KEY[maxRisk])}
           </span>
           <h2 id="permission-batch-title" className="text-sm font-semibold text-fg-primary">
-            {items.length} tool calls pending — batch decision
+            {t('permission.batchTitle', { count: items.length })}
           </h2>
         </div>
 
@@ -370,9 +366,9 @@ function PermissionBatchView({
             >
               <span
                 className={`px-1.5 py-0.5 text-[9px] font-mono font-semibold rounded ${RISK_STYLE[it.risk].badge}`}
-                title={`Risk: ${it.risk}`}
+                title={t('permission.riskTitle', { risk: t(RISK_LABEL_KEY[it.risk]) })}
               >
-                {RISK_STYLE[it.risk].label}
+                {t(RISK_LABEL_KEY[it.risk])}
               </span>
               <span className="text-xs font-mono text-warn flex-shrink-0">
                 {it.toolCall.toolName}
@@ -386,7 +382,7 @@ function PermissionBatchView({
                 onClick={() => void answerOne(it.reqId, 'deny')}
                 className="px-2 py-0.5 text-xs rounded dark:bg-surface-3 dark:text-fg-primary dark:hover:bg-hover-bg bg-surface-3 text-fg-secondary hover:bg-hover-bg disabled:opacity-50"
               >
-                Deny
+                {t('permission.deny')}
               </button>
               <button
                 type="button"
@@ -394,7 +390,7 @@ function PermissionBatchView({
                 onClick={() => void answerOne(it.reqId, 'allow_once')}
                 className="px-2 py-0.5 text-xs rounded font-medium bg-ok/15 text-ok border border-ok/50 hover:bg-ok/25 disabled:opacity-50"
               >
-                Allow
+                {t('permission.allow')}
               </button>
             </div>
           ))}
@@ -408,18 +404,21 @@ function PermissionBatchView({
             onClick={() => void answerAll('deny')}
             className="px-3 py-1.5 text-xs rounded dark:bg-surface-3 dark:text-fg-primary dark:hover:bg-hover-bg bg-surface-3 text-fg-secondary hover:bg-hover-bg disabled:opacity-50"
           >
-            Deny all ({items.length}) <span className="ml-1 text-fg-muted">Esc</span>
+            {t('permission.denyAll', { count: items.length })}{' '}
+            <span className="ml-1 text-fg-muted">Esc</span>
           </button>
           <button
+            ref={allowAllButtonRef}
             type="button"
             disabled={busy}
             onClick={() => void answerAll('allow_once')}
             className="px-3 py-1.5 text-xs rounded font-medium bg-ok/15 text-ok border border-ok/50 hover:bg-ok/25 disabled:opacity-50"
           >
-            Allow all once ({items.length}) <span className="ml-1 text-ok/70">Enter</span>
+            {t('permission.allowAllOnce', { count: items.length })}{' '}
+            <span className="ml-1 text-ok/70">Enter</span>
           </button>
         </div>
       </div>
-    </div>
+    </FloatingSurfaceHost>
   );
 }

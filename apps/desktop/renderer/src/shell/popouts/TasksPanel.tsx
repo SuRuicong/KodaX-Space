@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Caret } from '../../components/Caret.js';
 import { useAppStore } from '../../store/appStore.js';
-import {
-  buildAgentStatuses,
-  type AgentStatusViewModel,
-} from '../agentStatusProjection.js';
+import { buildAgentStatuses, type AgentStatusViewModel } from '../agentStatusProjection.js';
 import { buildWorkerTree, type WorkerNode } from './worker-tree.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
+import type { MessageKey } from '../../i18n/messages.js';
 
 type ManagedLiveKind = WorkerNode['latestKind'];
 
 export function TasksPanel(): JSX.Element {
+  const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const status = useAppStore((s) =>
     currentSessionId ? s.managedTaskStatusBySession[currentSessionId] : undefined,
@@ -31,7 +31,7 @@ export function TasksPanel(): JSX.Element {
   if (!currentSessionId) {
     return (
       <div className="h-full flex items-center justify-center text-fg-faint text-xs">
-        No active session.
+        {t('tasks.noSession')}
       </div>
     );
   }
@@ -39,11 +39,14 @@ export function TasksPanel(): JSX.Element {
   const runningCount = agents.filter((agent) => agent.state === 'active').length;
   const completedCount = agents.filter((agent) => agent.state === 'completed').length;
   const waitingText = status?.idleWaiting
-    ? `Waiting for ${status.idleWaitingPendingCount ?? 0} pending result${
-        (status.idleWaitingPendingCount ?? 0) === 1 ? '' : 's'
-      }`
+    ? t('tasks.waitingPendingResults', { count: status.idleWaitingPendingCount ?? 0 })
     : status?.childFanoutCount !== undefined && status.childFanoutCount > 0
-      ? `${status.childFanoutCount} active${status.childFanoutClass ? ` / ${status.childFanoutClass}` : ''}`
+      ? status.childFanoutClass
+        ? t('right.agentFanoutWithClass', {
+            count: status.childFanoutCount,
+            className: status.childFanoutClass,
+          })
+        : t('right.agentFanout', { count: status.childFanoutCount })
       : null;
 
   return (
@@ -51,15 +54,19 @@ export function TasksPanel(): JSX.Element {
       <section className="rounded-lg border border-border-default bg-surface-2 p-3">
         <div className="mb-2 flex items-center justify-between gap-3">
           <div>
-            <div className="text-[11px] uppercase tracking-wider text-fg-muted">Agents</div>
+            <div className="text-[11px] uppercase tracking-wider text-fg-muted">
+              {t('tasks.agents')}
+            </div>
             <div className="mt-0.5 text-sm font-medium text-fg-primary">
-              {agents.length > 0 ? `${agents.length} delegated agent${agents.length === 1 ? '' : 's'}` : 'No delegated agents yet'}
+              {agents.length > 0
+                ? t('tasks.delegatedAgentsCount', { count: agents.length })
+                : t('tasks.noDelegatedAgentsYet')}
             </div>
           </div>
           <div className="flex flex-wrap justify-end gap-1">
-            {runningCount > 0 && <Metric label="Running" value={runningCount} />}
-            {completedCount > 0 && <Metric label="Done" value={completedCount} />}
-            {waitingText && <Metric label="State" value={waitingText} />}
+            {runningCount > 0 && <Metric label={t('right.running')} value={runningCount} />}
+            {completedCount > 0 && <Metric label={t('right.done')} value={completedCount} />}
+            {waitingText && <Metric label={t('tasks.state')} value={waitingText} />}
           </div>
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
@@ -71,16 +78,12 @@ export function TasksPanel(): JSX.Element {
       <section>
         {agents.length === 0 ? (
           <div className="rounded-lg border border-border-default bg-surface-2 p-3 text-fg-muted">
-            Agents appear here when a task is delegated, split, or run in parallel.
+            {t('tasks.agentsEmpty')}
           </div>
         ) : (
           <ul className="space-y-2">
             {agents.map((agent) => (
-              <AgentPanelRow
-                key={agent.id}
-                agent={agent}
-                worker={workerById.get(agent.id)}
-              />
+              <AgentPanelRow key={agent.id} agent={agent} worker={workerById.get(agent.id)} />
             ))}
           </ul>
         )}
@@ -101,11 +104,15 @@ function BudgetCard({
     | undefined;
   readonly approvalRequired: boolean;
 }): JSX.Element {
+  const { t } = useI18n();
+
   if (!budget) {
     return (
       <div className="rounded-md border border-border-default bg-surface p-2">
-        <div className="text-[11px] uppercase tracking-wider text-fg-muted">Budget</div>
-        <div className="mt-1 text-fg-faint">No budget data yet.</div>
+        <div className="text-[11px] uppercase tracking-wider text-fg-muted">
+          {t('tasks.budget')}
+        </div>
+        <div className="mt-1 text-fg-faint">{t('tasks.noBudget')}</div>
       </div>
     );
   }
@@ -113,8 +120,12 @@ function BudgetCard({
   return (
     <div className="rounded-md border border-border-default bg-surface p-2">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-[11px] uppercase tracking-wider text-fg-muted">Budget</div>
-        {approvalRequired && <span className="text-[11px] text-warn">approval needed</span>}
+        <div className="text-[11px] uppercase tracking-wider text-fg-muted">
+          {t('tasks.budget')}
+        </div>
+        {approvalRequired && (
+          <span className="text-[11px] text-warn">{t('tasks.approvalNeeded')}</span>
+        )}
       </div>
       <div className="mt-1 font-mono text-fg-secondary">
         {budget.used} / {budget.cap}
@@ -147,18 +158,23 @@ function HarnessCard({
       }
     | undefined;
 }): JSX.Element {
-  const profile = harness?.profile ?? status?.harnessProfile ?? 'Unknown';
+  const { t } = useI18n();
+  const profile = harness?.profile ?? status?.harnessProfile ?? t('tasks.unknown');
   const round = harness?.round ?? status?.currentRound;
 
   return (
     <div className="rounded-md border border-border-default bg-surface p-2">
-      <div className="text-[11px] uppercase tracking-wider text-fg-muted">Harness</div>
+      <div className="text-[11px] uppercase tracking-wider text-fg-muted">{t('tasks.harness')}</div>
       <div className="mt-1 font-mono text-fg-secondary">
         {profile}
-        {round !== undefined && <span className="text-fg-muted"> / round {round}</span>}
+        {round !== undefined && (
+          <span className="text-fg-muted"> / {t('tasks.round', { round })}</span>
+        )}
       </div>
       {status?.upgradeCeiling && status.upgradeCeiling !== profile && (
-        <div className="mt-1 text-[11px] text-fg-muted">ceiling {status.upgradeCeiling}</div>
+        <div className="mt-1 text-[11px] text-fg-muted">
+          {t('tasks.ceiling', { ceiling: status.upgradeCeiling })}
+        </div>
       )}
     </div>
   );
@@ -171,6 +187,7 @@ function AgentPanelRow({
   readonly agent: AgentStatusViewModel;
   readonly worker: WorkerNode | undefined;
 }): JSX.Element {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(agent.state === 'active');
 
   useEffect(() => {
@@ -198,11 +215,12 @@ function AgentPanelRow({
               {agent.title}
             </span>
             <span className="flex-shrink-0 rounded bg-surface-3 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-fg-muted">
-              {agentStateLabel(agent.state)}
+              {t(agentStateLabelKey(agent.state))}
             </span>
           </span>
           <span className="mt-0.5 block truncate text-[11px] text-fg-muted">
-            {[agent.role, agent.responsibility].filter(Boolean).join(' / ') || 'Delegated work'}
+            {[agent.role, agent.responsibility].filter(Boolean).join(' / ') ||
+              t('tasks.delegatedWork')}
           </span>
           {agent.latest && (
             <span className="mt-1 block text-[12px] leading-4 text-fg-secondary">
@@ -215,8 +233,12 @@ function AgentPanelRow({
       {expanded && (
         <div className="border-t border-border-default/60 px-3 py-2">
           <div className="mb-2 flex flex-wrap gap-1 text-[10px] text-fg-faint">
-            {agent.evidenceCount !== undefined && <span>{agent.evidenceCount} notes</span>}
-            {agent.traceCount !== undefined && <span>{agent.traceCount} trace events</span>}
+            {agent.evidenceCount !== undefined && (
+              <span>{t('right.notesCount', { count: agent.evidenceCount })}</span>
+            )}
+            {agent.traceCount !== undefined && (
+              <span>{t('right.traceEventsCount', { count: agent.traceCount })}</span>
+            )}
           </div>
           {worker && worker.events.length > 0 ? (
             <ul className="space-y-1 border-l border-border-default/60 pl-2">
@@ -240,7 +262,7 @@ function AgentPanelRow({
               ))}
             </ul>
           ) : (
-            <div className="text-[11px] text-fg-faint">No trace events yet.</div>
+            <div className="text-[11px] text-fg-faint">{t('tasks.noTraceEvents')}</div>
           )}
         </div>
       )}
@@ -308,17 +330,17 @@ function traceDotClass(kind: ManagedLiveKind): string {
   }
 }
 
-function agentStateLabel(state: AgentStatusViewModel['state']): string {
+function agentStateLabelKey(state: AgentStatusViewModel['state']): MessageKey {
   switch (state) {
     case 'active':
-      return 'Running';
+      return 'right.running';
     case 'waiting':
-      return 'Waiting';
+      return 'right.waiting';
     case 'completed':
-      return 'Done';
+      return 'right.done';
     case 'error':
-      return 'Issue';
+      return 'right.issue';
     case 'idle':
-      return 'Idle';
+      return 'right.idle';
   }
 }

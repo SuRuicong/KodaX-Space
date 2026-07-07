@@ -146,15 +146,11 @@ export function ModeSelector(): JSX.Element {
         });
         if (!r.ok) {
           upsertSession({ ...session, permissionMode: current });
-          pushToast(r.error?.message ?? 'Failed to update current session mode', 'error');
+          pushToast(r.error?.message ?? t('mode.sessionModeUpdateFailed'), 'error');
         } else if (mode === 'auto' && current !== 'auto' && isStreaming) {
           // Keep this as a toast instead of a session_error event; the current run
           // continues under its existing permission flow until the next send.
-          pushToast(
-            'Auto mode guardrail will activate on the NEXT send. Current run continues with non-guardrail permission flow.',
-            'info',
-            6000,
-          );
+          pushToast(t('mode.autoGuardrailNextSend'), 'info', 6000);
         }
       }
       // Persist the global default best-effort WITHOUT holding the busy lock:
@@ -179,7 +175,7 @@ export function ModeSelector(): JSX.Element {
         });
         if (!r.ok) {
           upsertSession({ ...session, autoModeEngine: engine });
-          pushToast(r.error?.message ?? 'Failed to update current auto engine', 'error');
+          pushToast(r.error?.message ?? t('mode.autoEngineUpdateFailed'), 'error');
         }
       }
       // Best-effort global default; do not hold the busy lock on the IPC.
@@ -190,11 +186,13 @@ export function ModeSelector(): JSX.Element {
   }
 
   const baseLabel =
-    current === 'auto' ? `${t('mode.label.auto')} · ${ENGINE_LABELS[engine]}` : t(MODE_LABEL_KEYS[current]);
+    current === 'auto'
+      ? `${t('mode.label.auto')} · ${ENGINE_LABELS[engine]}`
+      : t(MODE_LABEL_KEYS[current]);
   // (next) 仅在真没 active session（welcome screen）时显示——之前判 `!session` 会撞
   // session.list 替换 sessions[] 把 in-flight stub 短暂 stomp 掉的 race，让对话中也
   // 误显示 (next)。currentSessionId 是 true source of truth。
-  const statusLabel = currentSessionId ? baseLabel : `${baseLabel} (next)`;
+  const statusLabel = currentSessionId ? baseLabel : t('mode.nextSuffix', { label: baseLabel });
 
   return (
     <div className="relative">

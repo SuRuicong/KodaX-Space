@@ -14,6 +14,7 @@ import { useAppStore } from '../../store/appStore.js';
 import { FileTree } from './FileTree.js';
 import { MonacoViewer } from './MonacoViewer.js';
 import { MonacoDiffViewer } from './MonacoDiffViewer.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 type ViewMode = 'read' | 'diff';
 
@@ -30,6 +31,7 @@ interface DiffContent {
 }
 
 export function FilePanel(): JSX.Element | null {
+  const { t } = useI18n();
   const projectRoot = useAppStore((s) => s.currentProjectPath);
   const lastDiffPath = useAppStore((s) => s.lastDiffPath);
   const clearLastDiffPath = useAppStore((s) => s.clearLastDiffPath);
@@ -115,7 +117,7 @@ export function FilePanel(): JSX.Element | null {
   if (!projectRoot) {
     return (
       <div className="w-[420px] border-l border-border-default flex items-center justify-center text-fg-faint text-xs">
-        Open a project to browse files.
+        {t('code.openProjectToBrowse')}
       </div>
     );
   }
@@ -123,7 +125,7 @@ export function FilePanel(): JSX.Element | null {
   return (
     <aside className="w-[480px] border-l border-border-default flex flex-col flex-shrink-0 min-h-0">
       <div className="px-3 py-2 border-b border-border-default flex items-center gap-2 text-xs text-fg-muted flex-shrink-0">
-        <span className="font-medium">Files</span>
+        <span className="font-medium">{t('code.files')}</span>
         {selectedPath && (
           <>
             <span className="text-fg-faint">·</span>
@@ -139,7 +141,7 @@ export function FilePanel(): JSX.Element | null {
               }`}
               onClick={() => setViewMode('read')}
             >
-              read
+              {t('code.read')}
             </button>
             <button
               type="button"
@@ -151,7 +153,7 @@ export function FilePanel(): JSX.Element | null {
               onClick={() => setViewMode('diff')}
               disabled={!diffContent && viewMode !== 'diff'}
             >
-              diff
+              {t('code.diff')}
             </button>
           </>
         )}
@@ -172,12 +174,12 @@ export function FilePanel(): JSX.Element | null {
         <div className="flex-1 min-w-0 relative">
           {selectedPath === null && (
             <div className="absolute inset-0 flex items-center justify-center text-fg-faint text-xs">
-              Select a file from the tree.
+              {t('code.selectFile')}
             </div>
           )}
           {selectedPath !== null && busy && (
             <div className="absolute inset-0 flex items-center justify-center text-fg-muted text-xs">
-              loading…
+              {t('code.loading')}
             </div>
           )}
           {selectedPath !== null && err && (
@@ -219,22 +221,24 @@ export function FilePanel(): JSX.Element | null {
 }
 
 function FileTooLargePlaceholder({ size }: { size: number }): JSX.Element {
+  const { t } = useI18n();
   const mb = (size / (1024 * 1024)).toFixed(2);
   return (
     <div className="flex items-center justify-center h-full text-xs text-fg-muted p-4 text-center">
-      File too large ({mb} MB) — viewer cap is 5 MB.
+      {t('code.fileTooLarge', { size: mb })}
       <br />
-      Open it in your system editor instead.
+      {t('code.openSystemEditor')}
     </div>
   );
 }
 
 function BinaryPlaceholder({ path }: { path: string }): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className="flex items-center justify-center h-full text-xs text-fg-muted p-4 text-center">
       <code className="font-mono text-fg-muted">{path}</code>
       <br />
-      appears to be a binary file.
+      {t('code.binaryFile')}
     </div>
   );
 }

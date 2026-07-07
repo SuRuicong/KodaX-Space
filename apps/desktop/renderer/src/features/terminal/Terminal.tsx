@@ -17,6 +17,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { useAppStore } from '../../store/appStore.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 interface Props {
   /** 关闭终端的回调 — popout 顶栏 X 按钮调，用来 unmount 触发 cleanup 流程 */
@@ -26,6 +27,7 @@ interface Props {
 type LifecycleStatus = 'idle' | 'starting' | 'running' | 'exited' | 'error';
 
 export function Terminal({ onClose: _onClose }: Props): JSX.Element {
+  const { t } = useI18n();
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const xtermRef = useRef<XTerm | null>(null);
@@ -106,8 +108,8 @@ export function Terminal({ onClose: _onClose }: Props): JSX.Element {
       }
       if (!r.ok) {
         setStatus('error');
-        setErrorMsg(r.error?.message ?? 'failed to start terminal');
-        xterm.write('\r\n\x1b[31mFailed to start terminal\x1b[0m\r\n');
+        setErrorMsg(r.error?.message ?? t('terminal.startFailed'));
+        xterm.write(`\r\n\x1b[31m${t('terminal.startFailed')}\x1b[0m\r\n`);
         return;
       }
       pendingTerminalId = r.data.terminalId;
@@ -118,9 +120,9 @@ export function Terminal({ onClose: _onClose }: Props): JSX.Element {
       if (cancelled) return;
       setStatus('error');
       // 不把 err.message 原文写进 xterm — 防上游错误 string 泄露内部细节
-      const msg = err instanceof Error ? err.message : 'unknown error';
+      const msg = err instanceof Error ? err.message : t('terminal.unknownError');
       setErrorMsg(msg.length > 200 ? msg.slice(0, 200) : msg);
-      xterm.write('\r\n\x1b[31mFailed to start terminal\x1b[0m\r\n');
+      xterm.write(`\r\n\x1b[31m${t('terminal.startFailed')}\x1b[0m\r\n`);
     });
 
     return () => {
@@ -135,7 +137,7 @@ export function Terminal({ onClose: _onClose }: Props): JSX.Element {
         terminalIdRef.current = null;
       }
     };
-  }, [currentProjectPath]);
+  }, [currentProjectPath, t]);
 
   // Wire xterm input → IPC write (debounced is unnecessary — node-pty handles single chars)
   useEffect(() => {
@@ -223,17 +225,21 @@ export function Terminal({ onClose: _onClose }: Props): JSX.Element {
   return (
     <div className="h-full flex flex-col bg-surface">
       <div className="px-3 py-1 border-b border-border-default/60 flex items-center gap-2 text-xs text-fg-muted flex-shrink-0">
-        <span className="text-fg-muted">Terminal</span>
+        <span className="text-fg-muted">{t('terminal.title')}</span>
         {shellLabel && <span className="text-fg-faint">· {shellLabel}</span>}
         <span className="ml-auto">
-          {status === 'starting' && <span className="text-warn">starting…</span>}
+          {status === 'starting' && (
+            <span className="text-warn">{t('terminal.status.starting')}</span>
+          )}
           {status === 'running' && <span className="text-ok">●</span>}
-          {status === 'exited' && <span className="text-fg-faint">exited</span>}
-          {status === 'error' && <span className="text-danger">error</span>}
+          {status === 'exited' && (
+            <span className="text-fg-faint">{t('terminal.status.exited')}</span>
+          )}
+          {status === 'error' && <span className="text-danger">{t('terminal.status.error')}</span>}
         </span>
       </div>
       {status === 'idle' && !currentProjectPath && (
-        <div className="p-4 text-xs text-fg-muted">Open a project to start a terminal.</div>
+        <div className="p-4 text-xs text-fg-muted">{t('terminal.openProject')}</div>
       )}
       {errorMsg !== null && status === 'error' && (
         <div className="px-3 py-1 text-xs text-danger bg-danger/12 flex-shrink-0">{errorMsg}</div>

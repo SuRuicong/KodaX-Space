@@ -33,6 +33,7 @@ import { useAppStore } from '../../store/appStore.js';
 import { pushToast } from '../../store/toastStore.js';
 import { Caret } from '../../components/Caret.js';
 import { openExternalUrl, revealPath } from '../../lib/openPath.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 const STATUS_COLOR: Record<McpRuntimeStatusT, string> = {
   idle: 'text-fg-muted',
@@ -63,6 +64,7 @@ interface DiagSnapshot {
 }
 
 export function McpPanel(): JSX.Element {
+  const { t } = useI18n();
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const [statusList, setStatusList] = useState<readonly McpServerStatusT[]>([]);
   const [meta, setMeta] = useState<readonly McpServerMeta[]>([]);
@@ -103,7 +105,7 @@ export function McpPanel(): JSX.Element {
           : Promise.resolve(null),
       ]);
       if (!statusR.ok) {
-        setTopErr(`mcp.servers: ${statusR.error?.message ?? 'unknown'}`);
+        setTopErr(t('mcp.serversFailed', { message: statusR.error?.message ?? t('mcp.unknown') }));
         setStatusList([]);
       } else {
         setStatusList(statusR.data.servers);
@@ -148,13 +150,19 @@ export function McpPanel(): JSX.Element {
     try {
       const r = await window.kodaxSpace.invoke('mcpb.install', {});
       if (!r.ok) {
-        pushToast(`Install failed: ${r.error?.message ?? 'unknown'}`, 'error');
+        pushToast(
+          t('mcp.installFailed', { message: r.error?.message ?? t('mcp.unknown') }),
+          'error',
+        );
         return;
       }
       if ('cancelled' in r.data && r.data.cancelled) return;
       if ('extension' in r.data) {
         pushToast(
-          `Installed ${r.data.extension.displayName} v${r.data.extension.version}`,
+          t('mcp.installed', {
+            name: r.data.extension.displayName,
+            version: r.data.extension.version,
+          }),
           'success',
         );
       }
@@ -167,9 +175,9 @@ export function McpPanel(): JSX.Element {
     if (!window.kodaxSpace) return;
     const r = await window.kodaxSpace.invoke('mcpb.uninstall', { extensionId });
     if (r.ok && r.data.ok) {
-      pushToast(`Uninstalled ${name}`, 'info');
+      pushToast(t('mcp.uninstalled', { name }), 'info');
     } else {
-      pushToast(`Uninstall failed`, 'error');
+      pushToast(t('mcp.uninstallFailed'), 'error');
     }
   }
 
@@ -185,7 +193,9 @@ export function McpPanel(): JSX.Element {
             : [...cur, r.data.status],
         );
       } else {
-        setTopErr(`start ${serverId}: ${r.error?.message ?? 'failed'}`);
+        setTopErr(
+          t('mcp.startFailed', { serverId, message: r.error?.message ?? t('common.unknownError') }),
+        );
       }
     } finally {
       setBusyServer(null);
@@ -204,7 +214,9 @@ export function McpPanel(): JSX.Element {
             : [...cur, r.data.status],
         );
       } else {
-        setTopErr(`stop ${serverId}: ${r.error?.message ?? 'failed'}`);
+        setTopErr(
+          t('mcp.stopFailed', { serverId, message: r.error?.message ?? t('common.unknownError') }),
+        );
       }
     } finally {
       setBusyServer(null);
@@ -218,7 +230,7 @@ export function McpPanel(): JSX.Element {
     try {
       const r = await window.kodaxSpace.invoke('mcp.reload', mcpScope);
       if (!r.ok) {
-        setTopErr(`reload failed`);
+        setTopErr(t('mcp.reloadFailed'));
       }
       // 不管成功失败,重新拉一次 — reload 后状态全 reset 了
       await refresh();
@@ -303,7 +315,7 @@ export function McpPanel(): JSX.Element {
     <div className="h-full flex flex-col text-xs">
       <header className="px-3 py-2 border-b border-border-default/60 flex items-center justify-between flex-shrink-0">
         <div className="text-fg-secondary font-medium">
-          MCP servers <span className="text-fg-muted font-normal">({merged.length})</span>
+          {t('mcp.title')} <span className="text-fg-muted font-normal">({merged.length})</span>
         </div>
         <div className="flex items-center gap-1.5">
           <button
@@ -311,37 +323,37 @@ export function McpPanel(): JSX.Element {
             onClick={() => void refresh()}
             disabled={loading}
             className="px-2 py-0.5 text-[11px] rounded text-fg-muted hover:text-fg-primary hover:bg-hover-bg disabled:opacity-50 inline-flex items-center gap-1"
-            title="Refresh status"
+            title={t('mcp.refreshStatus')}
           >
             <RefreshCw
               className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`}
               strokeWidth={2}
               aria-hidden
             />
-            Refresh
+            {t('common.refresh')}
           </button>
           <button
             type="button"
             onClick={() => void reload()}
             disabled={loading}
             className="px-2 py-0.5 text-[11px] rounded bg-warn/15 text-warn hover:bg-warn/25 disabled:opacity-50 inline-flex items-center gap-1"
-            title="Reload config + reconstruct manager (call after editing ~/.kodax/config.json)"
+            title={t('mcp.reloadConfigTitle')}
           >
             <RefreshCw
               className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`}
               strokeWidth={2}
               aria-hidden
             />
-            Reload config
+            {t('mcp.reloadConfig')}
           </button>
           <button
             type="button"
             onClick={() => void installExtension()}
             disabled={installing}
             className="px-2 py-0.5 text-[11px] rounded bg-ok/15 text-ok hover:bg-ok/25 disabled:opacity-50"
-            title="Install a .mcpb / .dxt bundle"
+            title={t('mcp.installExtTitle')}
           >
-            {installing ? '…' : '+ Install ext'}
+            {installing ? t('mcp.installing') : t('mcp.installExt')}
           </button>
         </div>
       </header>
@@ -355,8 +367,9 @@ export function McpPanel(): JSX.Element {
       <div className="flex-1 overflow-auto px-2 py-2 space-y-1.5">
         {merged.length === 0 && !loading && (
           <div className="text-fg-faint text-center py-8 text-xs">
-            No MCP servers configured. Add{' '}
-            <code className="text-fg-muted bg-surface-2 px-1 rounded">mcpServers</code> to{' '}
+            {t('mcp.noServersPrefix')}{' '}
+            <code className="text-fg-muted bg-surface-2 px-1 rounded">mcpServers</code>{' '}
+            {t('mcp.noServersSuffix')}{' '}
             <code className="text-fg-muted bg-surface-2 px-1 rounded">~/.kodax/config.json</code>.
           </div>
         )}
@@ -387,10 +400,14 @@ export function McpPanel(): JSX.Element {
                     {sStatus}
                   </span>
                   {tools > 0 && (
-                    <span className="text-[11px] text-fg-muted font-mono">{tools} tools</span>
+                    <span className="text-[11px] text-fg-muted font-mono">
+                      {t('mcp.toolsCount', { count: tools })}
+                    </span>
                   )}
                   {status === undefined && (
-                    <span className="text-[11px] text-fg-faint italic">not in manager</span>
+                    <span className="text-[11px] text-fg-faint italic">
+                      {t('mcp.notInManager')}
+                    </span>
                   )}
                 </div>
                 {m && m.transport === 'stdio' && (
@@ -407,11 +424,15 @@ export function McpPanel(): JSX.Element {
                     onClick={() => {
                       if (m.url) void openExternalUrl(m.url);
                     }}
-                    title={`在浏览器打开 ${m.url}`}
+                    title={t('mcp.openInBrowser', { url: m.url })}
                     className="mt-1 max-w-full inline-flex items-center gap-1 text-info/80 hover:text-info font-mono text-[11px] underline decoration-info/40 underline-offset-2"
                   >
                     <span className="truncate">{m.url}</span>
-                    <ExternalLink className="w-3 h-3 flex-shrink-0" strokeWidth={1.75} aria-hidden />
+                    <ExternalLink
+                      className="w-3 h-3 flex-shrink-0"
+                      strokeWidth={1.75}
+                      aria-hidden
+                    />
                   </button>
                 )}
                 {status?.lastError && (
@@ -427,7 +448,7 @@ export function McpPanel(): JSX.Element {
                       disabled={isBusy}
                       className="px-2 py-0.5 text-[11px] rounded bg-ok/15 text-ok hover:bg-ok/25 disabled:opacity-50"
                     >
-                      {isBusy ? '…' : 'Start'}
+                      {isBusy ? t('mcp.installing') : t('mcp.start')}
                     </button>
                   )}
                   {status && (status.status === 'ready' || status.status === 'connecting') && (
@@ -437,7 +458,7 @@ export function McpPanel(): JSX.Element {
                       disabled={isBusy}
                       className="px-2 py-0.5 text-[11px] rounded bg-surface-3/60 text-fg-primary hover:bg-hover-bg disabled:opacity-50"
                     >
-                      {isBusy ? '…' : 'Stop'}
+                      {isBusy ? t('mcp.installing') : t('mcp.stop')}
                     </button>
                   )}
                   {status && tools > 0 && (
@@ -446,7 +467,7 @@ export function McpPanel(): JSX.Element {
                       onClick={() => void toggleTools(row.serverId)}
                       className="px-2 py-0.5 text-[11px] rounded text-fg-muted hover:text-fg-primary hover:bg-hover-bg inline-flex items-center gap-1"
                     >
-                      <Caret open={!!toolsState} /> Tools
+                      <Caret open={!!toolsState} /> {t('mcp.tools')}
                     </button>
                   )}
                   {/* F039：Diag 按钮拉 mcp.logs，展示 connect mode / status / lastError / cachedAt。
@@ -456,14 +477,14 @@ export function McpPanel(): JSX.Element {
                     onClick={() => void toggleDiag(row.serverId)}
                     className="px-2 py-0.5 text-[11px] rounded text-fg-muted hover:text-fg-primary hover:bg-hover-bg inline-flex items-center gap-1"
                   >
-                    <Caret open={!!diagState[row.serverId]} /> Diag
+                    <Caret open={!!diagState[row.serverId]} /> {t('mcp.diag')}
                   </button>
                 </div>
               </div>
               {Array.isArray(toolsState) && (
                 <div className="border-t border-border-default px-2 py-1.5 space-y-0.5">
                   {toolsState.length === 0 ? (
-                    <div className="text-fg-muted italic text-[11px]">No tools.</div>
+                    <div className="text-fg-muted italic text-[11px]">{t('mcp.noTools')}</div>
                   ) : (
                     toolsState.map((t) => (
                       <div key={t.id} className="text-[11px]">
@@ -478,24 +499,24 @@ export function McpPanel(): JSX.Element {
               )}
               {toolsState === 'loading' && (
                 <div className="border-t border-border-default px-2 py-1 text-fg-muted italic text-[11px]">
-                  Loading tools…
+                  {t('mcp.loadingTools')}
                 </div>
               )}
               {toolsState === 'error' && (
                 <div className="border-t border-border-default px-2 py-1 text-danger/80 text-[11px]">
-                  Failed to load tools.
+                  {t('mcp.loadToolsFailed')}
                 </div>
               )}
               {/* F039 Diag panel —— mcp.logs IPC 拿到的 diagnostic envelope。
                   字段都是 string，列表式渲染足够。lastError 是关键 debug 信息，单独大段显示。 */}
               {diagState[row.serverId] === 'loading' && (
                 <div className="border-t border-border-default px-2 py-1 text-fg-muted italic text-[11px]">
-                  Loading diagnostics…
+                  {t('mcp.loadingDiagnostics')}
                 </div>
               )}
               {diagState[row.serverId] === 'error' && (
                 <div className="border-t border-border-default px-2 py-1 text-danger/80 text-[11px]">
-                  Failed to load diagnostics.
+                  {t('mcp.loadDiagnosticsFailed')}
                 </div>
               )}
               {typeof diagState[row.serverId] === 'object' &&
@@ -519,7 +540,7 @@ export function McpPanel(): JSX.Element {
                       {diag.lastError && (
                         <div>
                           <div className="text-fg-muted uppercase tracking-wider mt-1">
-                            last error
+                            {t('mcp.lastError')}
                           </div>
                           <pre className="mt-0.5 text-danger/80 whitespace-pre-wrap break-words font-mono">
                             {diag.lastError}
@@ -536,7 +557,7 @@ export function McpPanel(): JSX.Element {
         {extensions.length > 0 && (
           <div className="mt-3">
             <div className="text-[11px] uppercase tracking-wider text-fg-muted mb-1.5">
-              Installed extensions ({extensions.length})
+              {t('mcp.installedExtensions', { count: extensions.length })}
             </div>
             <ul className="space-y-1">
               {extensions.map((ext) => (
@@ -550,16 +571,16 @@ export function McpPanel(): JSX.Element {
                     </span>
                     {ext.toolCount > 0 && (
                       <span className="text-[11px] text-fg-muted font-mono">
-                        {ext.toolCount} tools
+                        {t('mcp.toolsCount', { count: ext.toolCount })}
                       </span>
                     )}
                     <button
                       type="button"
                       onClick={() => void uninstallExtension(ext.extensionId, ext.displayName)}
                       className="px-1.5 py-0.5 text-[11px] rounded text-fg-muted hover:text-danger hover:bg-hover-bg"
-                      title="Uninstall"
+                      title={t('mcp.uninstall')}
                     >
-                      Remove
+                      {t('mcp.remove')}
                     </button>
                   </div>
                   {ext.description && (
@@ -579,7 +600,7 @@ export function McpPanel(): JSX.Element {
         {discoverErrors.length > 0 && (
           <div className="mt-3">
             <div className="text-[11px] uppercase tracking-wider text-warn mb-1.5">
-              Config errors ({discoverErrors.length})
+              {t('mcp.configErrors', { count: discoverErrors.length })}
             </div>
             <ul className="space-y-1">
               {discoverErrors.map((e, idx) => (
@@ -588,11 +609,15 @@ export function McpPanel(): JSX.Element {
                   <button
                     type="button"
                     onClick={() => void revealPath(e.path, currentProjectPath)}
-                    title={`在文件管理器中显示 ${e.path}`}
+                    title={t('mcp.revealConfigErrorPath', { path: e.path })}
                     className="w-full text-left flex items-center gap-1 hover:text-warn"
                   >
                     <span className="truncate flex-1">{e.path}</span>
-                    <FolderOpen className="w-3 h-3 flex-shrink-0 opacity-70" strokeWidth={1.75} aria-hidden />
+                    <FolderOpen
+                      className="w-3 h-3 flex-shrink-0 opacity-70"
+                      strokeWidth={1.75}
+                      aria-hidden
+                    />
                   </button>
                   <div className="text-warn/50 pl-2 truncate" title={e.error}>
                     {e.error}

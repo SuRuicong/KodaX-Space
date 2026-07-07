@@ -11,13 +11,14 @@ import { useEffect, useRef, useState } from 'react';
 import { FileText, Bot } from 'lucide-react';
 import type { AgentsFileMeta, AgentMeta, AgentFailure } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
+import type { MessageKey } from '../../i18n/messages.js';
 
 type Tab = 'context' | 'custom';
 
-const SCOPE_LABELS: Record<AgentsFileMeta['scope'], string> = {
-  global: '~/.kodax',
-  project: 'Project',
-  directory: 'Dir',
+const SCOPE_LABEL_KEYS: Record<Exclude<AgentsFileMeta['scope'], 'global'>, MessageKey> = {
+  project: 'agents.scope.project',
+  directory: 'agents.scope.directory',
 };
 
 const SCOPE_COLORS: Record<AgentsFileMeta['scope'], string> = {
@@ -26,23 +27,27 @@ const SCOPE_COLORS: Record<AgentsFileMeta['scope'], string> = {
   directory: 'text-run',
 };
 
-const AGENT_SOURCE_LABELS: Record<AgentMeta['source'], string> = {
-  'markdown:user': '~/.kodax',
-  'markdown:project': 'Project',
-};
-
 const AGENT_SOURCE_COLORS: Record<AgentMeta['source'], string> = {
   'markdown:user': 'text-warn',
   'markdown:project': 'text-ok',
 };
 
 export function AgentsMdPanel(): JSX.Element {
+  const { t } = useI18n();
   const [tab, setTab] = useState<Tab>('context');
   return (
     <div className="h-full flex flex-col text-xs">
       <div className="px-2 py-1 border-b border-border-default flex gap-1 flex-shrink-0">
-        <TabButton active={tab === 'context'} onClick={() => setTab('context')} label="Context" />
-        <TabButton active={tab === 'custom'} onClick={() => setTab('custom')} label="Custom" />
+        <TabButton
+          active={tab === 'context'}
+          onClick={() => setTab('context')}
+          label={t('agents.context')}
+        />
+        <TabButton
+          active={tab === 'custom'}
+          onClick={() => setTab('custom')}
+          label={t('agents.custom')}
+        />
       </div>
       <div className="flex-1 min-h-0 overflow-hidden">
         {tab === 'context' ? <ContextTab /> : <CustomAgentsTab />}
@@ -50,6 +55,16 @@ export function AgentsMdPanel(): JSX.Element {
     </div>
   );
 }
+
+function scopeLabel(scope: AgentsFileMeta['scope'], t: Translate): string {
+  return scope === 'global' ? '~/.kodax' : t(SCOPE_LABEL_KEYS[scope]);
+}
+
+function agentSourceLabel(source: AgentMeta['source'], t: Translate): string {
+  return source === 'markdown:user' ? '~/.kodax' : t('agents.scope.project');
+}
+
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
 function TabButton({
   active,
@@ -78,6 +93,7 @@ function TabButton({
 // ---- Context tab — 既有 AGENTS.md 展示 ----
 
 function ContextTab(): JSX.Element {
+  const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const [files, setFiles] = useState<readonly AgentsFileMeta[]>([]);
   const [loading, setLoading] = useState(false);
@@ -145,7 +161,7 @@ function ContextTab(): JSX.Element {
   async function commitEdit(): Promise<void> {
     if (!editing || !currentSessionId || !window.kodaxSpace) return;
     if (draft.length > 262_144) {
-      setSaveError('Content exceeds 256KB limit');
+      setSaveError(t('agents.contentLimit'));
       return;
     }
     setSaving(true);
@@ -171,7 +187,7 @@ function ContextTab(): JSX.Element {
   if (!currentSessionId) {
     return (
       <div className="h-full flex items-center justify-center text-fg-faint text-xs">
-        No active session.
+        {t('agents.noActiveSession')}
       </div>
     );
   }
@@ -184,7 +200,7 @@ function ContextTab(): JSX.Element {
           <div className="flex items-center gap-2">
             <span className={SCOPE_COLORS[editing.scope]}>●</span>
             <span className="text-fg-secondary font-medium">
-              Editing {SCOPE_LABELS[editing.scope]} AGENTS.md
+              {t('agents.editing', { scope: scopeLabel(editing.scope, t) })}
             </span>
             {editing.sourcePath && (
               <span
@@ -202,7 +218,7 @@ function ContextTab(): JSX.Element {
               disabled={saving}
               className="px-2 py-0.5 text-[11px] rounded text-fg-muted hover:text-fg-primary hover:bg-hover-bg disabled:opacity-50"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="button"
@@ -213,7 +229,7 @@ function ContextTab(): JSX.Element {
                 'bg-ok/15 text-ok border border-ok/50 hover:bg-ok/25 font-medium',
               ].join(' ')}
             >
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? t('workflow.manager.saving') : t('common.save')}
             </button>
           </div>
         </header>
@@ -229,10 +245,10 @@ function ContextTab(): JSX.Element {
           spellCheck={false}
           autoFocus
           className="flex-1 min-h-0 bg-surface text-fg-primary text-[12px] font-mono px-3 py-2 focus:outline-none resize-none leading-relaxed disabled:opacity-50"
-          placeholder={`# AGENTS.md (${editing.scope})\n\nWrite KodaX context here…`}
+          placeholder={t('agents.placeholder', { scope: scopeLabel(editing.scope, t) })}
         />
         <div className="px-3 py-1 text-[11px] text-fg-muted border-t border-border-default flex justify-between">
-          <span>{draft.length.toLocaleString()} / 256k chars</span>
+          <span>{t('agents.charCount', { count: draft.length.toLocaleString() })}</span>
           <span>{editing.scope === 'global' ? '~/.kodax/AGENTS.md' : '<project>/AGENTS.md'}</span>
         </div>
       </div>
@@ -242,25 +258,29 @@ function ContextTab(): JSX.Element {
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center text-fg-faint text-xs">
-        Loading AGENTS.md…
+        {t('agents.loadingAgentsMd')}
       </div>
     );
   }
 
   if (error !== null) {
-    return <div className="h-full p-4 text-xs text-danger font-mono">Failed: {error}</div>;
+    return (
+      <div className="h-full p-4 text-xs text-danger font-mono">
+        {t('agents.failed', { message: error })}
+      </div>
+    );
   }
 
   if (files.length === 0) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-fg-faint text-xs p-4 gap-2">
         <FileText className="w-7 h-7 text-fg-faint" strokeWidth={1.5} aria-hidden />
-        <div className="text-fg-muted">No AGENTS.md loaded</div>
+        <div className="text-fg-muted">{t('agents.noLoaded')}</div>
         <div className="text-center max-w-[300px]">
-          Add <code className="text-fg-muted bg-surface-2 px-1 rounded">~/.kodax/AGENTS.md</code>{' '}
-          for global context, or{' '}
-          <code className="text-fg-muted bg-surface-2 px-1 rounded">{'<project>/AGENTS.md'}</code>{' '}
-          for project context. KodaX will load them on the next send.
+          {t('agents.noLoadedHelp', {
+            globalPath: '~/.kodax/AGENTS.md',
+            projectPath: '<project>/AGENTS.md',
+          })}
         </div>
         <div className="flex gap-2 mt-2">
           <button
@@ -271,7 +291,7 @@ function ContextTab(): JSX.Element {
               'bg-warn/15 text-warn border border-warn/30 hover:bg-warn/25',
             ].join(' ')}
           >
-            Create global
+            {t('agents.createGlobal')}
           </button>
           <button
             type="button"
@@ -281,7 +301,7 @@ function ContextTab(): JSX.Element {
               'bg-ok/15 text-ok border border-ok/30 hover:bg-ok/25',
             ].join(' ')}
           >
-            Create project
+            {t('agents.createProject')}
           </button>
         </div>
       </div>
@@ -297,7 +317,10 @@ function ContextTab(): JSX.Element {
     <div className="h-full flex flex-col text-xs">
       <header className="px-3 py-2 border-b border-border-default/60 flex items-center justify-between">
         <div className="text-fg-secondary font-medium">
-          AGENTS.md <span className="text-fg-muted font-normal">({files.length} loaded)</span>
+          AGENTS.md{' '}
+          <span className="text-fg-muted font-normal">
+            ({t('agents.loadedCount', { count: files.length })})
+          </span>
         </div>
         <div className="flex items-center gap-1.5">
           {editableScope !== null && (
@@ -305,9 +328,9 @@ function ContextTab(): JSX.Element {
               type="button"
               onClick={() => startEdit(editableScope, active.content, active.path)}
               className="px-2 py-0.5 text-[11px] rounded text-fg-muted hover:text-fg-primary hover:bg-hover-bg"
-              title={`Edit ${SCOPE_LABELS[editableScope]} AGENTS.md`}
+              title={t('agents.editTitle', { scope: scopeLabel(editableScope, t) })}
             >
-              ✎ Edit
+              ✎ {t('agents.edit')}
             </button>
           )}
           {/* Create the OTHER scope if it's not in the loaded list */}
@@ -316,9 +339,9 @@ function ContextTab(): JSX.Element {
               type="button"
               onClick={() => startEdit('global', '# AGENTS.md (global)\n\n')}
               className="px-2 py-0.5 text-[11px] rounded text-warn/80 hover:text-warn hover:bg-warn/30"
-              title="Create global AGENTS.md (~/.kodax/AGENTS.md)"
+              title={t('agents.createGlobal')}
             >
-              + Global
+              {t('agents.globalButton')}
             </button>
           )}
           {!files.some((f) => f.scope === 'project') && (
@@ -326,9 +349,9 @@ function ContextTab(): JSX.Element {
               type="button"
               onClick={() => startEdit('project', '# AGENTS.md (project)\n\n')}
               className="px-2 py-0.5 text-[11px] rounded text-ok/80 hover:text-ok hover:bg-ok/30"
-              title="Create project AGENTS.md"
+              title={t('agents.createProject')}
             >
-              + Project
+              {t('agents.projectButton')}
             </button>
           )}
         </div>
@@ -348,14 +371,14 @@ function ContextTab(): JSX.Element {
               }`}
               title={f.path}
             >
-              <span className={SCOPE_COLORS[f.scope]}>●</span> <span>{SCOPE_LABELS[f.scope]}</span>
+              <span className={SCOPE_COLORS[f.scope]}>●</span> <span>{scopeLabel(f.scope, t)}</span>
             </button>
           ))}
         </div>
       )}
 
       <div className="px-3 py-1.5 text-[11px] text-fg-muted font-mono truncate" title={active.path}>
-        <span className={SCOPE_COLORS[active.scope]}>{SCOPE_LABELS[active.scope]}</span>{' '}
+        <span className={SCOPE_COLORS[active.scope]}>{scopeLabel(active.scope, t)}</span>{' '}
         {active.path}
       </div>
 
@@ -369,6 +392,7 @@ function ContextTab(): JSX.Element {
 // ---- Custom tab — F197 markdown agents ----
 
 function CustomAgentsTab(): JSX.Element {
+  const { t } = useI18n();
   const projectRoot = useAppStore((s) => s.currentProjectPath);
   const [agents, setAgents] = useState<readonly AgentMeta[]>([]);
   const [failed, setFailed] = useState<readonly AgentFailure[]>([]);
@@ -410,7 +434,7 @@ function CustomAgentsTab(): JSX.Element {
   if (!projectRoot) {
     return (
       <div className="h-full flex items-center justify-center text-fg-faint text-xs p-4 text-center">
-        Open a project to scan for custom agents.
+        {t('agents.noProject')}
       </div>
     );
   }
@@ -418,28 +442,29 @@ function CustomAgentsTab(): JSX.Element {
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center text-fg-faint text-xs">
-        Loading agents…
+        {t('agents.loadingAgents')}
       </div>
     );
   }
 
   if (error !== null) {
-    return <div className="h-full p-4 text-xs text-danger font-mono">Failed: {error}</div>;
+    return (
+      <div className="h-full p-4 text-xs text-danger font-mono">
+        {t('agents.failed', { message: error })}
+      </div>
+    );
   }
 
   if (agents.length === 0 && failed.length === 0) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-fg-faint text-xs p-4 gap-2">
         <Bot className="w-7 h-7 text-fg-faint" strokeWidth={1.5} aria-hidden />
-        <div className="text-fg-muted">No custom agents</div>
+        <div className="text-fg-muted">{t('agents.noCustom')}</div>
         <div className="text-center max-w-[320px]">
-          Drop a markdown file into{' '}
-          <code className="text-fg-muted bg-surface-2 px-1 rounded">~/.kodax/agents/</code> for
-          user-level, or{' '}
-          <code className="text-fg-muted bg-surface-2 px-1 rounded">
-            {'<project>/.kodax/agents/'}
-          </code>{' '}
-          for project-level. KodaX will register them on the next session start.
+          {t('agents.noCustomHelp', {
+            userPath: '~/.kodax/agents/',
+            projectPath: '<project>/.kodax/agents/',
+          })}
         </div>
       </div>
     );
@@ -451,7 +476,8 @@ function CustomAgentsTab(): JSX.Element {
     <div className="h-full flex flex-col text-xs">
       <header className="px-3 py-2 border-b border-border-default/60 flex items-center justify-between">
         <div className="text-fg-secondary font-medium">
-          Custom agents <span className="text-fg-muted font-normal">({agents.length})</span>
+          {t('agents.customAgents')}{' '}
+          <span className="text-fg-muted font-normal">({agents.length})</span>
         </div>
       </header>
 
@@ -459,14 +485,14 @@ function CustomAgentsTab(): JSX.Element {
         <div
           className="px-3 py-1.5 text-[11px] text-warn bg-warn/15 border-b border-warn/40 flex-shrink-0"
           role="status"
-          aria-label="agent load failures"
+          aria-label={t('agents.failureAria')}
         >
-          {failed.length} file{failed.length === 1 ? '' : 's'} failed to load.{' '}
+          {t('agents.loadFailures', { count: failed.length })}{' '}
           <span
             className="text-warn"
             title={failed.map((f) => `${f.path}: ${f.reason}`).join('\n')}
           >
-            Hover for details
+            {t('agents.hoverDetails')}
           </span>
         </div>
       )}
@@ -476,7 +502,7 @@ function CustomAgentsTab(): JSX.Element {
         <ul
           className="w-[180px] border-r border-border-default overflow-auto flex-shrink-0"
           role="listbox"
-          aria-label="custom agents"
+          aria-label={t('agents.customAgentsAria')}
         >
           {agents.map((a, idx) => (
             <li key={a.path}>
@@ -496,7 +522,7 @@ function CustomAgentsTab(): JSX.Element {
                   <span className={AGENT_SOURCE_COLORS[a.source]}>●</span> {a.name}
                 </span>
                 <span className="text-[11px] text-fg-muted truncate">
-                  {AGENT_SOURCE_LABELS[a.source]}
+                  {agentSourceLabel(a.source, t)}
                 </span>
               </button>
             </li>
@@ -511,7 +537,7 @@ function CustomAgentsTab(): JSX.Element {
                 <div className="text-xs text-fg-primary font-mono">{active.name}</div>
                 <div className="text-[11px] text-fg-muted font-mono truncate" title={active.path}>
                   <span className={AGENT_SOURCE_COLORS[active.source]}>
-                    {AGENT_SOURCE_LABELS[active.source]}
+                    {agentSourceLabel(active.source, t)}
                   </span>{' '}
                   {active.path}
                 </div>
@@ -521,19 +547,19 @@ function CustomAgentsTab(): JSX.Element {
               </div>
               {active.tools && active.tools.length > 0 && (
                 <div className="text-[11px] text-fg-muted">
-                  <span className="text-fg-muted">Tools: </span>
+                  <span className="text-fg-muted">{t('agents.toolsLabel')} </span>
                   <span className="font-mono">{active.tools.join(', ')}</span>
                 </div>
               )}
               {active.model !== undefined && (
                 <div className="text-[11px] text-fg-muted">
-                  <span className="text-fg-muted">Model: </span>
+                  <span className="text-fg-muted">{t('agents.modelLabel')} </span>
                   <span className="font-mono">{active.model}</span>
                 </div>
               )}
             </div>
           ) : (
-            <div className="text-fg-faint text-xs py-4">Select an agent.</div>
+            <div className="text-fg-faint text-xs py-4">{t('agents.selectAgent')}</div>
           )}
         </div>
       </div>

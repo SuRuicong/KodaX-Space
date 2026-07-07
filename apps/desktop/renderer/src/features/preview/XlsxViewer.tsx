@@ -7,6 +7,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { base64ToBytes } from './binaryUtils.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
+import type { MessageKey } from '../../i18n/messages.js';
 
 interface Props {
   readonly base64: string;
@@ -19,7 +21,9 @@ interface SheetView {
 
 const MAX_CELLS = 50_000; // 防巨表炸渲染（≈ 200 cols × 250 rows）
 
-function parseWorkbook(bytes: Uint8Array): readonly SheetView[] {
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
+
+function parseWorkbook(bytes: Uint8Array, t: Translate): readonly SheetView[] {
   const wb = XLSX.read(bytes, { type: 'array' });
   const sheets: SheetView[] = [];
   for (const name of wb.SheetNames) {
@@ -33,7 +37,7 @@ function parseWorkbook(bytes: Uint8Array): readonly SheetView[] {
       const stringified = row.map((cell) => (cell == null ? '' : String(cell)));
       cellCount += stringified.length;
       if (cellCount > MAX_CELLS) {
-        rows.push([`… truncated at ${MAX_CELLS.toLocaleString()} cells …`]);
+        rows.push([t('preview.truncatedCells', { count: MAX_CELLS.toLocaleString() })]);
         break;
       }
       rows.push(stringified);
@@ -44,6 +48,7 @@ function parseWorkbook(bytes: Uint8Array): readonly SheetView[] {
 }
 
 export function XlsxViewer({ base64 }: Props): JSX.Element {
+  const { t } = useI18n();
   const [sheets, setSheets] = useState<readonly SheetView[]>([]);
   const [activeSheet, setActiveSheet] = useState(0);
   const [err, setErr] = useState<string | null>(null);
@@ -61,7 +66,7 @@ export function XlsxViewer({ base64 }: Props): JSX.Element {
 
   useEffect(() => {
     if (bytes === null) {
-      setErr('Failed to decode spreadsheet data');
+      setErr(t('preview.failedDecodeSpreadsheet'));
       setBusy(false);
       return;
     }
@@ -76,24 +81,27 @@ export function XlsxViewer({ base64 }: Props): JSX.Element {
     queueMicrotask(() => {
       if (cancelled) return;
       try {
-        const parsed = parseWorkbook(bytes);
+        const parsed = parseWorkbook(bytes, t);
         setSheets(parsed);
       } catch {
-        setErr('Failed to parse spreadsheet');
+        setErr(t('preview.failedParseSpreadsheet'));
       }
       setBusy(false);
     });
     return () => {
       cancelled = true;
     };
-  }, [bytes]);
+  }, [bytes, t]);
 
   if (err !== null) return <div className="p-3 text-xs text-danger">{err}</div>;
-  if (busy) return <div className="p-3 text-xs text-fg-muted">Parsing spreadsheet…</div>;
-  if (sheets.length === 0) return <div className="p-3 text-xs text-fg-muted">Empty workbook.</div>;
+  if (busy)
+    return <div className="p-3 text-xs text-fg-muted">{t('preview.parsingSpreadsheet')}</div>;
+  if (sheets.length === 0)
+    return <div className="p-3 text-xs text-fg-muted">{t('preview.emptyWorkbook')}</div>;
 
   const current = sheets[activeSheet];
-  if (current === undefined) return <div className="p-3 text-xs text-fg-muted">No sheet.</div>;
+  if (current === undefined)
+    return <div className="p-3 text-xs text-fg-muted">{t('preview.noSheet')}</div>;
 
   return (
     <div className="h-full flex flex-col">

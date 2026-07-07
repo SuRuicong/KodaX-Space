@@ -8,77 +8,77 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { formatKey, getPlatform } from '../lib/shortcut-format.js';
+import { useI18n } from '../i18n/I18nProvider.js';
+import type { MessageKey } from '../i18n/messages.js';
 
 interface ShortcutGroup {
-  readonly title: string;
-  readonly items: ReadonlyArray<{ keys: readonly string[]; label: string }>;
+  readonly titleKey: MessageKey;
+  readonly items: ReadonlyArray<{ keys: readonly string[]; labelKey: MessageKey }>;
 }
 
 const GROUPS: readonly ShortcutGroup[] = [
   {
-    title: 'Input',
+    titleKey: 'help.group.input',
     items: [
-      { keys: ['Enter'], label: 'Send message' },
-      { keys: ['Shift', 'Enter'], label: 'Insert newline' },
-      { keys: ['↑'], label: 'Previous prompt (history)' },
-      { keys: ['↓'], label: 'Next prompt / restore draft' },
-      { keys: ['/'], label: 'Open slash command picker' },
+      { keys: ['Enter'], labelKey: 'help.sendMessage' },
+      { keys: ['Shift', 'Enter'], labelKey: 'help.insertNewline' },
+      { keys: ['↑'], labelKey: 'help.previousPrompt' },
+      { keys: ['↓'], labelKey: 'help.nextPrompt' },
+      { keys: ['/'], labelKey: 'help.openSlashPicker' },
     ],
   },
   {
-    title: 'Modes',
+    titleKey: 'help.group.modes',
     items: [
-      { keys: ['Shift', 'Tab'], label: 'Cycle permission mode (Plan / Edits / Auto)' },
-      { keys: ['Ctrl', 'M'], label: 'Open permission mode picker' },
-      { keys: ['Ctrl', 'Shift', 'E'], label: 'Cycle reasoning depth' },
-      { keys: ['Alt', 'M'], label: 'Toggle agent mode (AMA / AMAW / SA)' },
+      { keys: ['Shift', 'Tab'], labelKey: 'help.cyclePermissionMode' },
+      { keys: ['Ctrl', 'M'], labelKey: 'help.openPermissionModePicker' },
+      { keys: ['Ctrl', 'Shift', 'E'], labelKey: 'help.cycleReasoningDepth' },
+      { keys: ['Alt', 'M'], labelKey: 'help.toggleAgentMode' },
     ],
   },
   {
-    title: 'Session',
+    titleKey: 'help.group.session',
     items: [
-      { keys: ['Esc'], label: 'Cancel / close overlay' },
-      { keys: ['/clear'], label: 'Clear current conversation view' },
-      { keys: ['/new'], label: 'Start a new session' },
-      { keys: ['/fork'], label: 'Fork from session menu (right-click a session)' },
+      { keys: ['Esc'], labelKey: 'help.cancelCloseOverlay' },
+      { keys: ['/clear'], labelKey: 'help.clearCurrentConversation' },
+      { keys: ['/new'], labelKey: 'help.startNewSession' },
+      { keys: ['/fork'], labelKey: 'help.forkFromSessionMenu' },
     ],
   },
   {
-    title: 'UI',
+    titleKey: 'help.group.ui',
     items: [
-      { keys: ['Mod', 'K'], label: 'Quick Ask (temporary question)' },
-      {
-        keys: ['Mod', 'Shift', 'P'],
-        label: 'Command palette (actions / sessions / files / slash)',
-      },
-      { keys: ['Ctrl', 'Shift', 'T'], label: 'Cycle theme (Dark / Light / System)' },
-      { keys: ['Mod', 'F'], label: 'Find in transcript (↑/↓ to nav)' },
-      { keys: ['Ctrl', '\\'], label: 'Toggle focus mode (hide sidebars)' },
-      { keys: ['?'], label: 'Toggle this help overlay' },
+      { keys: ['Mod', 'K'], labelKey: 'help.quickAsk' },
+      { keys: ['Mod', 'Shift', 'P'], labelKey: 'help.commandPalette' },
+      { keys: ['Ctrl', 'Shift', 'T'], labelKey: 'help.cycleTheme' },
+      { keys: ['Mod', 'F'], labelKey: 'help.findTranscript' },
+      { keys: ['Ctrl', '\\'], labelKey: 'help.toggleFocusMode' },
+      { keys: ['?'], labelKey: 'help.toggleHelp' },
     ],
   },
   {
-    title: 'Slash commands (also via /)',
+    titleKey: 'help.group.slashCommands',
     items: [
-      { keys: ['/help'], label: 'List all commands' },
-      { keys: ['/mode'], label: 'Set permission mode' },
-      { keys: ['/agent-mode'], label: 'Set agent mode (ama / sa)' },
-      { keys: ['/provider'], label: 'Switch provider' },
-      { keys: ['/model'], label: 'Switch model for next turn' },
-      { keys: ['/reasoning'], label: 'Set reasoning depth' },
-      { keys: ['/thinking'], label: 'Toggle thinking output' },
-      { keys: ['/copy'], label: 'Copy last assistant message' },
-      { keys: ['/cost'], label: 'Show token usage' },
-      { keys: ['/tree'], label: 'Show session lineage' },
-      { keys: ['/history'], label: 'Show user message history' },
-      { keys: ['/compact'], label: 'Compact context now' },
-      { keys: ['/clear'], label: 'Clear conversation' },
+      { keys: ['/help'], labelKey: 'help.listCommands' },
+      { keys: ['/mode'], labelKey: 'help.setPermissionMode' },
+      { keys: ['/agent-mode'], labelKey: 'help.setAgentMode' },
+      { keys: ['/provider'], labelKey: 'help.switchProvider' },
+      { keys: ['/model'], labelKey: 'help.switchModel' },
+      { keys: ['/reasoning'], labelKey: 'help.setReasoningDepth' },
+      { keys: ['/thinking'], labelKey: 'help.toggleThinking' },
+      { keys: ['/copy'], labelKey: 'help.copyLastAssistant' },
+      { keys: ['/cost'], labelKey: 'help.showTokenUsage' },
+      { keys: ['/tree'], labelKey: 'help.showLineage' },
+      { keys: ['/history'], labelKey: 'help.showHistory' },
+      { keys: ['/compact'], labelKey: 'help.compactContext' },
+      { keys: ['/clear'], labelKey: 'help.clearConversation' },
     ],
   },
 ];
 
 /** Global `?` shortcut toggles the overlay. Returns the overlay node (or null when closed). */
 export function HelpOverlayController(): JSX.Element | null {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -119,28 +119,28 @@ export function HelpOverlayController(): JSX.Element | null {
         onClick={(e) => e.stopPropagation()}
       >
         <header className="px-4 py-3 border-b border-border-default flex items-center justify-between sticky top-0 bg-surface">
-          <h2 className="text-sm font-semibold text-fg-primary">
-            Keyboard shortcuts &amp; commands
-          </h2>
+          <h2 className="text-sm font-semibold text-fg-primary">{t('help.title')}</h2>
           <button
             type="button"
             onClick={() => setOpen(false)}
             className="text-fg-muted hover:text-fg-primary text-xs px-2 py-0.5"
-            aria-label="Close help"
+            aria-label={t('help.close')}
           >
             Esc
           </button>
         </header>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 p-4">
           {GROUPS.map((g) => (
-            <section key={g.title}>
-              <h3 className="text-[11px] uppercase tracking-wider text-fg-muted mb-2">{g.title}</h3>
+            <section key={g.titleKey}>
+              <h3 className="text-[11px] uppercase tracking-wider text-fg-muted mb-2">
+                {t(g.titleKey)}
+              </h3>
               <ul className="space-y-1.5 text-xs">
                 {g.items.map((it) => (
                   // GROUPS 是 module-level const，label 字符串足够稳定唯一作 key —
                   // 比 array index 更经得起未来 GROUPS 重排时的 React 重用 (review LOW)
-                  <li key={it.label} className="flex items-center justify-between gap-2">
-                    <span className="text-fg-secondary truncate">{it.label}</span>
+                  <li key={it.labelKey} className="flex items-center justify-between gap-2">
+                    <span className="text-fg-secondary truncate">{t(it.labelKey)}</span>
                     <span className="flex items-center gap-1 flex-shrink-0">
                       {it.keys.map((k) => (
                         <kbd

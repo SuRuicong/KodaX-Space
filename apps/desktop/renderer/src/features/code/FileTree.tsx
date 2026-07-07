@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react';
 import type { FileNodeT } from '@kodax-space/space-ipc-schema';
 import { Caret } from '../../components/Caret.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 interface FileTreeProps {
   projectRoot: string;
@@ -19,6 +20,7 @@ interface FileTreeProps {
 }
 
 export function FileTree({ projectRoot, selectedPath, onSelect }: FileTreeProps): JSX.Element {
+  const { t } = useI18n();
   const [rootNodes, setRootNodes] = useState<readonly FileNodeT[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -39,7 +41,7 @@ export function FileTree({ projectRoot, selectedPath, onSelect }: FileTreeProps)
 
     const bridge = window.kodaxSpace;
     if (!bridge) {
-      setErr('IPC bridge unavailable');
+      setErr(t('code.ipcUnavailable'));
       setLoading(false);
       return;
     }
@@ -61,7 +63,7 @@ export function FileTree({ projectRoot, selectedPath, onSelect }: FileTreeProps)
     return () => {
       cancelled = true;
     };
-  }, [projectRoot]);
+  }, [projectRoot, t]);
 
   async function toggleDir(path: string): Promise<void> {
     const next = new Set(expanded);
@@ -88,19 +90,19 @@ export function FileTree({ projectRoot, selectedPath, onSelect }: FileTreeProps)
   }
 
   if (loading) {
-    return <div className="text-xs text-fg-muted p-3">loading tree…</div>;
+    return <div className="text-xs text-fg-muted p-3">{t('code.loadingTree')}</div>;
   }
   if (err) {
     return <div className="text-xs text-danger p-3 font-mono">{err}</div>;
   }
   if (rootNodes.length === 0) {
-    return <div className="text-xs text-fg-faint p-3">empty project</div>;
+    return <div className="text-xs text-fg-faint p-3">{t('code.emptyProject')}</div>;
   }
   return (
     <div className="text-[12px] font-mono select-none">
       {truncated && (
         <div className="text-[11px] text-warn px-2 py-1 border-b border-border-default">
-          tree truncated (&gt;5000 nodes)
+          {t('code.treeTruncated')}
         </div>
       )}
       <FileTreeLevel

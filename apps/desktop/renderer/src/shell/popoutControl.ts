@@ -14,6 +14,7 @@ const POPOUT_KINDS: readonly PopoutKind[] = [
   'plan',
   'agents',
   'mcp',
+  'memory',
   'artifact',
   'workflow',
 ];

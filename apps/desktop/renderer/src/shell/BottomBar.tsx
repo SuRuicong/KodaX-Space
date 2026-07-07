@@ -39,14 +39,18 @@ import { NotificationsSurface } from './NotificationsSurface.js';
 import { pushToast } from '../store/toastStore.js';
 import { sessionMatchesScope } from '../lib/sessionScope.js';
 import { shouldActivateSessionForCurrentScope } from '../lib/sessionActivation.js';
+import { compactPathForDisplay } from '../lib/fileReferences.js';
 import { KodaXDogMascot } from '../components/KodaXDogMascot.js';
 import { KodaXDogSpriteMascot } from '../components/KodaXDogSpriteMascot.js';
+import { useI18n } from '../i18n/I18nProvider.js';
+import type { MessageKey } from '../i18n/messages.js';
 
 const SLASH_ARGS_MAX = 20;
 
 const EMPTY_INPUT_HISTORY: readonly string[] = [];
 
 type QueueMode = 'interrupt' | 'after-turn';
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
 interface ComposerInvokeOptions<T> {
   readonly timeoutMs?: number | null;
@@ -66,10 +70,8 @@ const COMPOSER_INVOKE_TIMEOUT_MS: Partial<Record<InvokeChannelName, number>> = {
   'mcp.discover': 45_000,
 };
 
-function queuedToastText(queueMode: QueueMode | undefined): string {
-  return queueMode === 'after-turn'
-    ? 'Queued - will run after the current turn'
-    : 'Queued - will join at the next safe point';
+function queuedToastText(queueMode: QueueMode | undefined, t: Translate): string {
+  return queueMode === 'after-turn' ? t('bottom.queuedAfterTurn') : t('bottom.queuedNextSafePoint');
 }
 
 function composerInvokeFailure<T>(
@@ -330,20 +332,25 @@ function shouldTryNativeClipboardImageFallback(data: DataTransfer): boolean {
   return types.length === 0;
 }
 
-function removeFirstReference(text: string, reference: string): string {
-  const idx = text.indexOf(reference);
-  if (idx < 0) return text;
-  const before = text.slice(0, idx).replace(/[ \t]+$/g, '');
-  const after = text.slice(idx + reference.length).replace(/^[ \t]+/g, '');
-  if (before.length === 0) return after;
-  if (after.length === 0) return before;
-  return `${before} ${after}`;
-}
-
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function pendingFileReferencePrompt(
+  promptText: string,
+  fileRefs: readonly PendingFileRef[],
+): string {
+  return fileRefs
+    .map((file) => file.reference)
+    .filter((reference) => !promptText.includes(reference))
+    .join(' ');
+}
+
+function combinePromptAndFileReferences(promptText: string, fileReferencePrompt: string): string {
+  if (promptText && fileReferencePrompt) return `${promptText}\n\n${fileReferencePrompt}`;
+  return promptText || fileReferencePrompt;
 }
 
 function blobToBase64(blob: Blob): Promise<string> {
@@ -490,6 +497,7 @@ function maybePrewarmRepoIntel(value: string, projectRoot: string | null): void 
 }
 
 export function BottomBar(): JSX.Element {
+  const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   // New sessions are tagged with the active surface.
@@ -684,7 +692,7 @@ export function BottomBar(): JSX.Element {
     }
     if (!window.kodaxSpace) return null;
     if (!currentProjectPath) {
-      setErr('Open a folder first - Ctrl+O.');
+      setErr(t('bottom.openFolderFirstShortcut'));
       return null;
     }
     const { provider, runtimeOverrides, model } = resolveSessionCreateInputs({
@@ -740,7 +748,7 @@ export function BottomBar(): JSX.Element {
       setPendingProviderId(null);
       if (source === 'late') {
         setErr(null);
-        pushToast('Session finished creating in the background', 'info');
+        pushToast(t('bottom.sessionCreatedInBackground'), 'info');
       }
       void window.kodaxSpace
         ?.invoke('session.list', {
@@ -783,17 +791,20 @@ export function BottomBar(): JSX.Element {
     const accepted: File[] = [];
     for (const b of blobs) {
       if (!/^image\/(png|jpeg|webp)$/.test(b.type)) {
-        setImageErr(`Unsupported image type: ${b.type || 'unknown'}. PNG / JPEG / WEBP only.`);
+        setImageErr(t('bottom.unsupportedImageType', { type: b.type || t('common.unknownError') }));
         continue;
       }
       if (b.size > MAX_PASTE_BYTES) {
         setImageErr(
-          `Image too large: ${formatBytes(b.size)}. Max ${formatBytes(MAX_PASTE_BYTES)}.`,
+          t('bottom.imageTooLarge', {
+            size: formatBytes(b.size),
+            max: formatBytes(MAX_PASTE_BYTES),
+          }),
         );
         continue;
       }
       if (pendingImages.length + accepted.length >= MAX_PENDING_IMAGES) {
-        setImageErr(`Max ${MAX_PENDING_IMAGES} images per send.`);
+        setImageErr(t('bottom.maxImages', { max: MAX_PENDING_IMAGES }));
         break;
       }
       accepted.push(b);
@@ -826,8 +837,8 @@ export function BottomBar(): JSX.Element {
             b.name && b.name !== 'image.png'
               ? b.name
               : source === 'drag-drop'
-                ? 'Dropped image'
-                : 'Pasted image',
+                ? t('bottom.droppedImage')
+                : t('bottom.pastedImage'),
         });
       } catch (e) {
         setImageErr(e instanceof Error ? e.message : String(e));
@@ -841,7 +852,7 @@ export function BottomBar(): JSX.Element {
   async function attachNativeClipboardImage(): Promise<void> {
     if (!window.kodaxSpace) return;
     if (pendingImages.length >= MAX_PENDING_IMAGES) {
-      setImageErr(`Max ${MAX_PENDING_IMAGES} images per send.`);
+      setImageErr(t('bottom.maxImages', { max: MAX_PENDING_IMAGES }));
       return;
     }
 
@@ -867,7 +878,7 @@ export function BottomBar(): JSX.Element {
           source: 'clipboard',
           bytes: image.bytes,
           dataUrl: `data:${image.mediaType};base64,${image.base64}`,
-          label: 'Pasted image',
+          label: t('bottom.pastedImage'),
         },
       ];
     });
@@ -877,30 +888,14 @@ export function BottomBar(): JSX.Element {
     setPendingImages((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  function insertReferencesAtCaret(references: readonly string[]): void {
-    if (references.length === 0) return;
-    const body = references.join(' ');
-    const ta = textareaRef.current;
-    const value = ta?.value ?? prompt;
-    const start = ta?.selectionStart ?? value.length;
-    const end = ta?.selectionEnd ?? start;
-    const needsLeadingSpace = start > 0 && !/\s$/.test(value.slice(0, start));
-    const needsTrailingSpace = end === value.length || !/^\s/.test(value.slice(end));
-    insertAtCaret(`${needsLeadingSpace ? ' ' : ''}${body}${needsTrailingSpace ? ' ' : ''}`);
-  }
-
   function removePendingFileRef(idx: number): void {
-    setPendingFileRefs((prev) => {
-      const target = prev[idx];
-      if (target) setPrompt((p) => removeFirstReference(p, target.reference));
-      return prev.filter((_, i) => i !== idx);
-    });
+    setPendingFileRefs((prev) => prev.filter((_, i) => i !== idx));
   }
 
   async function attachDroppedFiles(files: readonly File[]): Promise<void> {
     if (files.length === 0) return;
     if (!currentProjectPath) {
-      setErr('Open a folder first - Ctrl+O.');
+      setErr(t('bottom.openFolderFirstShortcut'));
       return;
     }
 
@@ -911,10 +906,13 @@ export function BottomBar(): JSX.Element {
     const acceptedRefs = referenceFiles.slice(0, room);
     if (acceptedRefs.length < referenceFiles.length) {
       setImageErr(
-        `Added ${acceptedRefs.length} files. Max ${MAX_PENDING_FILE_REFS} file references per draft.`,
+        t('bottom.addedFilesWithLimit', {
+          count: acceptedRefs.length,
+          max: MAX_PENDING_FILE_REFS,
+        }),
       );
     } else if (room <= 0 && referenceFiles.length > 0) {
-      setImageErr(`Max ${MAX_PENDING_FILE_REFS} file references per draft.`);
+      setImageErr(t('bottom.maxFileRefs', { max: MAX_PENDING_FILE_REFS }));
     }
 
     const refs: PendingFileRef[] = [];
@@ -937,12 +935,9 @@ export function BottomBar(): JSX.Element {
 
     if (refs.length > 0) {
       setPendingFileRefs((prev) => [...prev, ...refs]);
-      insertReferencesAtCaret(refs.map((ref) => ref.reference));
     }
     if (unresolved > 0) {
-      setImageErr(
-        `${unresolved} dropped file path${unresolved === 1 ? '' : 's'} could not be resolved.`,
-      );
+      setImageErr(t('bottom.unresolvedDroppedFiles', { count: unresolved }));
     }
 
     if (imageFiles.length > 0) {
@@ -998,7 +993,7 @@ export function BottomBar(): JSX.Element {
     // 没有 events 的本地 slash 会把下一条真 query 的回答吃走(错位 bug)。workflow 走 appendWorkflowNotice,不受影响。
     const appendUserMessage = appendLocalNotice;
     if (!window.kodaxSpace) {
-      setErr('IPC unavailable');
+      setErr(t('bottom.ipcUnavailable'));
       appendUserMessage(sessionId, '[slash] IPC unavailable');
       return;
     }
@@ -1023,11 +1018,11 @@ export function BottomBar(): JSX.Element {
         if (optimisticWorkflow) {
           appendWorkflowNotice(
             sessionId,
-            `[workflow] IPC failed: ${result.error?.message ?? 'unknown error'}`,
+            `[workflow] IPC failed: ${result.error?.message ?? t('common.unknownError')}`,
           );
         }
         setErr(
-          `${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`,
+          `${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? t('common.unknownError')}`,
         );
         return;
       }
@@ -1099,15 +1094,17 @@ export function BottomBar(): JSX.Element {
         }
       }
       if (lastText.length === 0) {
-        pushToast('No assistant message to copy', 'warning');
+        pushToast(t('bottom.noAssistantMessageToCopy'), 'warning');
         return;
       }
       try {
         await navigator.clipboard.writeText(lastText);
-        pushToast(`Copied ${lastText.length} chars to clipboard`, 'success');
+        pushToast(t('bottom.copiedChars', { count: lastText.length }), 'success');
       } catch (err) {
         pushToast(
-          `Clipboard write failed: ${err instanceof Error ? err.message : String(err)}`,
+          t('bottom.clipboardWriteFailed', {
+            message: err instanceof Error ? err.message : String(err),
+          }),
           'error',
         );
       }
@@ -1271,11 +1268,11 @@ export function BottomBar(): JSX.Element {
       if (currentSurface === 'partner') {
         appendUserMessage(
           sessionId,
-          'Use /memory from the Coder surface. Partner memory opens through the AGENTS.md popout.',
+          'Use /memory from the Coder surface. Partner KB remains separate.',
         );
         return;
       }
-      useAppStore.getState().requestPopout('agents');
+      useAppStore.getState().requestPopout('memory');
       return;
     }
 
@@ -1410,7 +1407,7 @@ export function BottomBar(): JSX.Element {
     }
 
     if (action === 'exit-app') {
-      pushToast('Closing KodaX Space', 'info', 1200);
+      pushToast(t('bottom.closing'), 'info', 1200);
       window.close();
       return;
     }
@@ -1688,14 +1685,14 @@ export function BottomBar(): JSX.Element {
           '[rewind] entry-id/label selection is not exposed in Space yet; rewinding one turn.',
         );
       }
-      const onlyOneTurn = userMsgs.length === 1;
       const requestedIdx = args[0] && /^\d+$/.test(args[0]) ? Number(args[0]) : undefined;
+      if (requestedIdx === undefined && userMsgs.length < 2) {
+        appendUserMessage(sessionId, '[rewind] no earlier turn to rewind to');
+        return;
+      }
       const rewindPastTurnIdx = Math.max(
         0,
-        Math.min(
-          requestedIdx ?? (onlyOneTurn ? 0 : userMsgs.length - 2),
-          Math.max(0, userMsgs.length - 1),
-        ),
+        Math.min(requestedIdx ?? userMsgs.length - 2, Math.max(0, userMsgs.length - 1)),
       );
       const r = await invokeComposerIpc(
         'session.rewind',
@@ -1710,8 +1707,11 @@ export function BottomBar(): JSX.Element {
         appendUserMessage(sessionId, `[rewind] rejected: ${r.data.reason ?? 'unknown'}`);
         return;
       }
-      if (onlyOneTurn && requestedIdx === undefined) state.resetSessionMessages(sessionId);
-      else state.rewindSessionBuffers(sessionId, rewindPastTurnIdx);
+      if (r.data.diskRewound === false) {
+        appendUserMessage(sessionId, '[rewind] rejected: disk history was not rewound');
+        return;
+      }
+      state.rewindSessionBuffers(sessionId, rewindPastTurnIdx);
       appendUserMessage(sessionId, `[rewind] rewound to turn ${rewindPastTurnIdx}`);
       return;
     }
@@ -1765,12 +1765,14 @@ export function BottomBar(): JSX.Element {
       args,
     });
     if (!result.ok) {
-      setErr(`${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`);
+      setErr(
+        `${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? t('common.unknownError')}`,
+      );
       return;
     }
     const { ok, resolvedPrompt, error } = result.data;
     if (!ok || resolvedPrompt === undefined) {
-      setErr(error ?? `skill /${name} failed`);
+      setErr(error ?? t('bottom.skillFailed', { name }));
       return;
     }
     const skillEcho = skillSlashEchoText(name, args);
@@ -1794,7 +1796,7 @@ export function BottomBar(): JSX.Element {
       if (queuedLocalId) removeQueuedUserMessage(sessionId, queuedLocalId);
       else rollbackLastUserMessage(sessionId, skillEcho);
       setErr(
-        `${sendResult.error?.code ?? 'ERR_UNKNOWN'}: ${sendResult.error?.message ?? 'unknown error'}`,
+        `${sendResult.error?.code ?? 'ERR_UNKNOWN'}: ${sendResult.error?.message ?? t('common.unknownError')}`,
       );
     } else if (sendResult.data.queued) {
       const acceptedQueueMode = sendResult.data.queueMode ?? queueMode;
@@ -1810,7 +1812,7 @@ export function BottomBar(): JSX.Element {
           markQueuedUserMessageAccepted(sessionId, convertedLocalId, sendResult.data.queueId);
         }
       }
-      pushToast(queuedToastText(acceptedQueueMode), 'info');
+      pushToast(queuedToastText(acceptedQueueMode, t), 'info');
     } else if (queuedLocalId) {
       promoteQueuedUserMessage(sessionId, queuedLocalId);
     }
@@ -1819,16 +1821,12 @@ export function BottomBar(): JSX.Element {
   async function handleSend(queueMode: QueueMode = 'interrupt'): Promise<void> {
     if (!window.kodaxSpace) return;
     if (busy) return;
+    const promptAtSend = prompt;
     const trimmed = prompt.trim();
-    const fileRefPrompt = pendingFileRefs.map((file) => file.reference).join(' ');
+    const fileRefPrompt = pendingFileReferencePrompt(trimmed, pendingFileRefs);
+    const textAndFilePrompt = combinePromptAndFileReferences(trimmed, fileRefPrompt);
     const effectivePrompt =
-      trimmed !== ''
-        ? trimmed
-        : fileRefPrompt !== ''
-          ? fileRefPrompt
-          : pendingImages.length > 0
-            ? '(image)'
-            : '';
+      textAndFilePrompt !== '' ? textAndFilePrompt : pendingImages.length > 0 ? '(image)' : '';
     if (effectivePrompt === '') return;
     if (trimmed.startsWith('/')) {
       const head = trimmed.slice(1);
@@ -1923,11 +1921,11 @@ export function BottomBar(): JSX.Element {
         if (queuedLocalId) removeQueuedUserMessage(sid, queuedLocalId);
         else rollbackLastUserMessage(sid, promptForAI);
         if (!late) {
-          setPrompt(promptForAI);
-          draftRef.current = promptForAI;
+          setPrompt(promptAtSend);
+          draftRef.current = promptAtSend;
         } else {
-          setPrompt((current) => (current.length === 0 ? promptForAI : current));
-          if (draftRef.current.length === 0) draftRef.current = promptForAI;
+          setPrompt((current) => (current.length === 0 ? promptAtSend : current));
+          if (draftRef.current.length === 0) draftRef.current = promptAtSend;
         }
         if (imagesAtSend.length > 0) {
           setPendingImages((prev) => (prev.length === 0 ? imagesAtSend : prev));
@@ -1936,14 +1934,14 @@ export function BottomBar(): JSX.Element {
           setPendingFileRefs((prev) => (prev.length === 0 ? fileRefsAtSend : prev));
         }
         setErr(
-          `${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? 'unknown error'}`,
+          `${result.error?.code ?? 'ERR_UNKNOWN'}: ${result.error?.message ?? t('common.unknownError')}`,
         );
       };
 
       const acceptSendResult = (data: ChannelOutput<'session.send'>, late: boolean): void => {
         if (late) {
           setErr(null);
-          pushToast('Send was accepted in the background', 'info');
+          pushToast(t('bottom.sendAcceptedInBackground'), 'info');
         }
         if (data.queued) {
           // The turn is already running; main accepted the prompt into the requested
@@ -1961,7 +1959,7 @@ export function BottomBar(): JSX.Element {
               markQueuedUserMessageAccepted(sid, convertedLocalId, data.queueId);
             }
           }
-          pushToast(queuedToastText(acceptedQueueMode), 'info');
+          pushToast(queuedToastText(acceptedQueueMode, t), 'info');
         } else if (queuedLocalId) {
           promoteQueuedUserMessage(sid, queuedLocalId);
         }
@@ -2034,7 +2032,8 @@ export function BottomBar(): JSX.Element {
     // toast 只有 "Stop signal sent"/"Cancel failed"，看不出说的是哪个 session，容易被
     // 误当成"当前 session 出错了"。带上 session 标题消歧义。
     const sessionTitle =
-      useAppStore.getState().sessions.find((s) => s.sessionId === sid)?.title ?? 'this session';
+      useAppStore.getState().sessions.find((s) => s.sessionId === sid)?.title ??
+      t('bottom.thisSession');
     appendEvent({
       kind: 'session_error',
       sessionId: sid,
@@ -2042,21 +2041,27 @@ export function BottomBar(): JSX.Element {
       category: 'cancelled',
       retriable: true,
     });
-    pushToast(`Stop signal sent - ${sessionTitle}`, 'info', 2000);
+    pushToast(t('bottom.stopSignalSent', { session: sessionTitle }), 'info', 2000);
 
     void window.kodaxSpace
       .invoke('session.cancel', { sessionId: sid })
       .then((r) => {
         if (!r.ok) {
           pushToast(
-            `Cancel failed (${sessionTitle}): ${r.error?.message ?? 'unknown error'}`,
+            t('bottom.cancelFailed', {
+              session: sessionTitle,
+              message: r.error?.message ?? t('common.unknownError'),
+            }),
             'error',
           );
         }
       })
       .catch((err: unknown) => {
         pushToast(
-          `Cancel failed (${sessionTitle}): ${err instanceof Error ? err.message : 'unknown error'}`,
+          t('bottom.cancelFailed', {
+            session: sessionTitle,
+            message: err instanceof Error ? err.message : t('common.unknownError'),
+          }),
           'error',
         );
       });
@@ -2127,12 +2132,12 @@ export function BottomBar(): JSX.Element {
     !!currentProjectPath &&
     (prompt.trim().length > 0 || pendingImages.length > 0 || pendingFileRefs.length > 0);
   const sendButtonTitle = canSend
-    ? 'Send / interrupt (Enter)'
+    ? t('bottom.sendTitle.ready')
     : !currentProjectPath
-      ? 'Open a folder first'
+      ? t('bottom.openFolderFirst')
       : busy
-        ? 'Command is running'
-        : 'Type a message first';
+        ? t('bottom.sendTitle.busy')
+        : t('bottom.sendTitle.empty');
 
   return (
     <div
@@ -2197,8 +2202,8 @@ export function BottomBar(): JSX.Element {
                         type="button"
                         onClick={() => removePendingImage(idx)}
                         className="ml-0.5 w-4 h-4 rounded-full text-fg-muted hover:bg-hover-bg hover:text-fg-primary flex items-center justify-center leading-none"
-                        aria-label={`Remove ${img.label}`}
-                        title="Remove"
+                        aria-label={t('bottom.removeAttachment', { name: img.label })}
+                        title={t('bottom.remove')}
                       >
                         <X className="w-3 h-3" />
                       </button>
@@ -2210,26 +2215,32 @@ export function BottomBar(): JSX.Element {
                 <div className="flex flex-wrap gap-1.5">
                   {pendingFileRefs.map((file, idx) => {
                     const Icon = file.kind === 'directory' ? Folder : FileText;
+                    const detail =
+                      file.scope === 'project'
+                        ? file.reference
+                        : compactPathForDisplay(file.path, 54);
                     return (
                       <div
                         key={`${file.path}:${idx}`}
-                        className="group inline-flex min-w-0 items-center gap-1.5 bg-surface-3 border border-border-default rounded-md px-1.5 py-1 text-xs text-fg-secondary"
-                        title={`${file.path} - ${file.reference}`}
+                        className="group inline-flex min-w-0 max-w-full items-center gap-1.5 bg-surface-3 border border-border-default rounded-md px-1.5 py-1 text-xs text-fg-secondary"
+                        title={`${file.path}${file.bytes !== undefined ? ` - ${formatBytes(file.bytes)}` : ''}`}
                       >
                         <Icon className="w-3.5 h-3.5 text-fg-muted flex-shrink-0" />
-                        <span className="max-w-[130px] truncate">{file.name}</span>
-                        <code className="max-w-[180px] truncate text-[11px] text-fg-muted">
-                          {file.reference}
-                        </code>
+                        <span className="min-w-0 max-w-[220px]">
+                          <span className="block truncate font-medium text-fg-secondary">
+                            {file.name}
+                          </span>
+                          <span className="block truncate text-[11px] text-fg-muted">{detail}</span>
+                        </span>
                         {file.bytes !== undefined && (
-                          <span className="text-fg-muted">{formatBytes(file.bytes)}</span>
+                          <span className="shrink-0 text-fg-muted">{formatBytes(file.bytes)}</span>
                         )}
                         <button
                           type="button"
                           onClick={() => removePendingFileRef(idx)}
                           className="ml-0.5 w-4 h-4 rounded-full text-fg-muted hover:bg-hover-bg hover:text-fg-primary flex items-center justify-center leading-none"
-                          aria-label={`Remove ${file.name}`}
-                          title="Remove"
+                          aria-label={t('bottom.removeAttachment', { name: file.name })}
+                          title={t('bottom.remove')}
                         >
                           <X className="w-3 h-3" />
                         </button>
@@ -2299,10 +2310,10 @@ export function BottomBar(): JSX.Element {
               rows={2}
               placeholder={
                 !currentProjectPath
-                  ? 'Open a folder first - Ctrl+O'
+                  ? t('bottom.placeholder.openFolder')
                   : currentSessionId
-                    ? 'Describe a task or ask a question - Type / for commands'
-                    : 'Describe a task or ask a question - session will be created on send'
+                    ? t('bottom.placeholder.withSession')
+                    : t('bottom.placeholder.newSession')
               }
               className={`w-full bg-transparent text-sm text-fg-primary placeholder-fg-muted resize-none focus:outline-none px-0.5 py-1 pr-28 ${
                 busy ? 'opacity-70 cursor-wait' : ''
@@ -2357,8 +2368,8 @@ export function BottomBar(): JSX.Element {
                 type="button"
                 onClick={() => setAttachOpen((v) => !v)}
                 className="w-6 h-6 rounded-md text-fg-muted hover:bg-hover-bg hover:text-fg-primary flex items-center justify-center"
-                title="Attach / Commands"
-                aria-label="Open attach menu"
+                title={t('bottom.attachCommands')}
+                aria-label={t('bottom.openAttachMenu')}
               >
                 <Plus className="w-4 h-4" />
               </button>
@@ -2379,8 +2390,8 @@ export function BottomBar(): JSX.Element {
                 type="button"
                 onClick={() => void handleCancel()}
                 className="ml-1 w-8 h-8 rounded-lg bg-danger hover:brightness-110 text-white flex items-center justify-center shadow-sm transition-[filter]"
-                title="Stop (Esc)"
-                aria-label="Stop generation"
+                title={t('bottom.stopTitle')}
+                aria-label={t('bottom.stopGeneration')}
               >
                 <span aria-hidden className="block w-2.5 h-2.5 bg-white rounded-[2px]" />
               </button>
@@ -2394,7 +2405,7 @@ export function BottomBar(): JSX.Element {
                   canSend ? 'btn-accent' : 'bg-surface-3 text-fg-muted',
                 ].join(' ')}
                 title={sendButtonTitle}
-                aria-label="Send message"
+                aria-label={t('bottom.sendMessage')}
               >
                 <ArrowUp className="w-4 h-4" strokeWidth={2.25} />
               </button>

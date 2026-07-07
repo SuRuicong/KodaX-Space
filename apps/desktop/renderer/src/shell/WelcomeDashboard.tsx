@@ -20,6 +20,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ProjectGitStatsDaily } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 
 type Range = 'all' | '30d' | '7d';
 type View = 'overview' | 'models' | 'project';
@@ -428,6 +429,7 @@ function Heatmap({
 }: {
   cols: ReadonlyArray<ReadonlyArray<HeatmapCell | null>>;
 }): JSX.Element {
+  const { t } = useI18n();
   // 每列对应的月份：取列中第一个非空 cell 的月份；用于决定哪些列显示月标签
   const monthLabels: ({ month: string; key: number } | null)[] = cols.map((col, ci) => {
     const firstCell = col.find((c): c is HeatmapCell => c !== null);
@@ -472,7 +474,7 @@ function Heatmap({
                 <div
                   key={cell.date}
                   className={`aspect-square rounded-sm transition-all hover:ring-1 hover:ring-border-strong hover:scale-110 cursor-default ${LEVEL_BG[cell.level]}`}
-                  title={`${cell.date} · ${cell.count} message${cell.count === 1 ? '' : 's'}`}
+                  title={t('welcome.messageCount', { date: cell.date, count: cell.count })}
                 />
               ),
             )}
@@ -482,13 +484,13 @@ function Heatmap({
 
       {/* 图例 — 靠右贴 heatmap 右缘 */}
       <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-fg-muted font-mono justify-end">
-        <span>Less</span>
+        <span>{t('welcome.less')}</span>
         <div className={`w-3 h-3 rounded-sm ${LEVEL_BG[0]}`} aria-hidden />
         <div className={`w-3 h-3 rounded-sm ${LEVEL_BG[1]}`} aria-hidden />
         <div className={`w-3 h-3 rounded-sm ${LEVEL_BG[2]}`} aria-hidden />
         <div className={`w-3 h-3 rounded-sm ${LEVEL_BG[3]}`} aria-hidden />
         <div className={`w-3 h-3 rounded-sm ${LEVEL_BG[4]}`} aria-hidden />
-        <span>More</span>
+        <span>{t('welcome.more')}</span>
       </div>
     </div>
   );
@@ -510,13 +512,14 @@ function FavoriteModelCell({
   modelLabel: string | null;
   sessions: number;
 }): JSX.Element {
+  const { t } = useI18n();
   // 单 grid cell（col-span-1 = 父宽 1/4 ≈ 160px）;
   // 主名用 text-sm 字号 + break-words 允许多行 wrap，不再 truncate 切名字；
   // 副名 dim 一档 + 多行（provider · sessions 计数）。
   return (
     <div className="min-w-0">
       <div className="text-[11px] text-fg-muted uppercase tracking-wider mb-0.5">
-        Favorite model
+        {t('welcome.favoriteModel')}
       </div>
       <div className="flex items-start gap-1.5 min-w-0">
         <span className="w-1.5 h-1.5 rounded-full bg-thinking flex-shrink-0 mt-1.5" aria-hidden />
@@ -536,14 +539,14 @@ function FavoriteModelCell({
               </div>
               {sessions > 0 && (
                 <div className="text-[11px] text-fg-muted mt-0.5">
-                  {sessions} session{sessions === 1 ? '' : 's'}
+                  {t('welcome.sessionsCount', { count: sessions })}
                 </div>
               )}
             </>
           ) : (
             sessions > 0 && (
               <div className="text-[11px] text-fg-muted mt-0.5">
-                {sessions} session{sessions === 1 ? '' : 's'}
+                {t('welcome.sessionsCount', { count: sessions })}
               </div>
             )
           )}
@@ -568,10 +571,11 @@ function ModelsView({
   breakdown: readonly ModelsBreakdownItem[];
   providers: ReadonlyArray<{ id: string; displayName: string }>;
 }): JSX.Element {
+  const { t } = useI18n();
   if (breakdown.length === 0) {
     return (
       <div className="text-xs text-fg-muted italic py-8 text-center">
-        No model usage yet — start a session to see your model breakdown.
+        {t('welcome.noModelUsage')}
       </div>
     );
   }
@@ -579,10 +583,10 @@ function ModelsView({
   return (
     <div className="flex flex-col gap-2">
       <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 text-[11px] text-fg-muted uppercase tracking-wider pb-1 border-b border-border-default">
-        <span>Model</span>
-        <span className="text-right">Sessions</span>
-        <span className="text-right">Messages</span>
-        <span className="text-right">Tokens</span>
+        <span>{t('welcome.model')}</span>
+        <span className="text-right">{t('welcome.sessions')}</span>
+        <span className="text-right">{t('welcome.messages')}</span>
+        <span className="text-right">{t('welcome.tokens')}</span>
       </div>
       {breakdown.map((b) => {
         // 真 model alias 时显示 "model · provider"；只有 provider id 时退回 displayName
@@ -625,23 +629,25 @@ function ProjectView({
   loading: boolean;
   projectRoot: string | null;
 }): JSX.Element {
+  const { t } = useI18n();
   if (!projectRoot) {
     return (
       <div className="text-xs text-fg-muted italic py-8 text-center">
-        Open a project to see git activity.
+        {t('welcome.openProjectGit')}
       </div>
     );
   }
   if (loading && gitStats === null) {
     return (
-      <div className="text-xs text-fg-muted italic py-8 text-center">Reading git history…</div>
+      <div className="text-xs text-fg-muted italic py-8 text-center">
+        {t('welcome.readingGitHistory')}
+      </div>
     );
   }
   if (!gitStats || !gitStats.isGitRepo) {
     return (
       <div className="text-xs text-fg-muted italic py-8 text-center">
-        Not a git repository — open a project that has{' '}
-        <code className="text-fg-muted bg-surface-2 px-1 rounded">.git/</code>.
+        {t('welcome.notGitRepo', { gitDir: '.git/' })}
       </div>
     );
   }
@@ -665,19 +671,22 @@ function ProjectView({
     <div className="flex flex-col gap-4">
       {/* Branch + key stats */}
       <div className="grid grid-cols-3 gap-x-6 gap-y-4">
-        <StatCell label="Branch" value={gitStats.currentBranch ?? '—'} truncate />
-        <StatCell label="Commits" value={formatNum(gitStats.commits)} />
-        <StatCell label="Contributors" value={String(gitStats.contributors)} />
-        <StatCell label="Files changed" value={formatNum(gitStats.filesChanged)} />
-        <StatCell label="Lines added" value={`+${formatNum(gitStats.linesAdded)}`} />
-        <StatCell label="Lines deleted" value={`−${formatNum(gitStats.linesDeleted)}`} />
+        <StatCell label={t('welcome.branch')} value={gitStats.currentBranch ?? '?'} truncate />
+        <StatCell label={t('welcome.commits')} value={formatNum(gitStats.commits)} />
+        <StatCell label={t('welcome.contributors')} value={String(gitStats.contributors)} />
+        <StatCell label={t('welcome.filesChanged')} value={formatNum(gitStats.filesChanged)} />
+        <StatCell label={t('welcome.linesAdded')} value={`+${formatNum(gitStats.linesAdded)}`} />
+        <StatCell
+          label={t('welcome.linesDeleted')}
+          value={`?${formatNum(gitStats.linesDeleted)}`}
+        />
       </div>
 
       {/* 每日 commits 柱状图 (最近 30 天) */}
       {gitStats.commits > 0 && (
         <div>
           <div className="text-[11px] text-fg-muted uppercase tracking-wider mb-1.5">
-            Commits per day · last 30 days
+            {t('welcome.commitsPerDay')}
           </div>
           <div className="flex items-end gap-0.5 h-16">
             {bars.map((b) => {
@@ -686,7 +695,7 @@ function ProjectView({
                 <div
                   key={b.date}
                   className="flex-1 bg-surface-3/60 rounded-sm relative overflow-hidden"
-                  title={`${b.date} · ${b.count} commit${b.count === 1 ? '' : 's'}`}
+                  title={t('welcome.commitCount', { date: b.date, count: b.count })}
                 >
                   <div
                     className="absolute bottom-0 left-0 right-0 bg-ok"
@@ -701,7 +710,7 @@ function ProjectView({
 
       {gitStats.commits === 0 && (
         <div className="text-xs text-fg-muted italic py-4 text-center">
-          No commits in this time range.
+          {t('welcome.noCommits')}
         </div>
       )}
     </div>

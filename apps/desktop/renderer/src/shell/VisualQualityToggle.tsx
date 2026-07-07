@@ -23,6 +23,8 @@ import {
   VISUAL_QUALITY_OPTIONS,
   type VisualQuality,
 } from '../lib/visualQuality.js';
+import { useI18n } from '../i18n/I18nProvider.js';
+import type { MessageKey } from '../i18n/messages.js';
 
 // 三档玻璃强度梯度：无玻璃 → 单滴 → 多滴。
 const LEVEL_ICON: Record<VisualQuality, LucideIcon> = {
@@ -31,7 +33,20 @@ const LEVEL_ICON: Record<VisualQuality, LucideIcon> = {
   full: Droplets,
 };
 
+const LABEL_KEY: Record<VisualQuality, MessageKey> = {
+  minimal: 'visualQuality.minimal',
+  balanced: 'visualQuality.balanced',
+  full: 'visualQuality.full',
+};
+
+const HINT_KEY: Record<VisualQuality, MessageKey> = {
+  minimal: 'visualQuality.minimalHint',
+  balanced: 'visualQuality.balancedHint',
+  full: 'visualQuality.fullHint',
+};
+
 export function VisualQualityToggle(): JSX.Element {
+  const { t } = useI18n();
   const quality = useAppStore((s) => s.visualQuality);
   const setVisualQuality = useAppStore((s) => s.setVisualQuality);
   const [open, setOpen] = useState(false);
@@ -58,7 +73,9 @@ export function VisualQualityToggle(): JSX.Element {
     };
   }, []);
 
-  const current = VISUAL_QUALITY_OPTIONS.find((o) => o.key === quality) ?? VISUAL_QUALITY_OPTIONS[1];
+  const current =
+    VISUAL_QUALITY_OPTIONS.find((o) => o.key === quality) ?? VISUAL_QUALITY_OPTIONS[1];
+  const currentLabel = t(LABEL_KEY[current.key]);
 
   return (
     <div className="relative" ref={ref}>
@@ -66,18 +83,21 @@ export function VisualQualityToggle(): JSX.Element {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="ix-pop text-xs text-fg-muted hover:text-fg-primary px-1.5 py-0.5 rounded hover:bg-hover-bg flex items-center gap-1"
-        title={`视觉质量：${current.label}`}
-        aria-label={`Visual quality ${current.label}`}
+        title={t('visualQuality.title', { quality: currentLabel })}
+        aria-label={t('visualQuality.aria', { quality: currentLabel })}
       >
         <Droplet className="w-4 h-4" strokeWidth={1.75} aria-hidden />
       </button>
 
       {open && (
         <div className="absolute right-0 top-full mt-1 w-60 bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 text-xs z-50 lift">
-          <div className="px-3 py-1 text-fg-muted text-[11px] uppercase tracking-wider">视觉质量</div>
+          <div className="px-3 py-1 text-fg-muted text-[11px] uppercase tracking-wider">
+            {t('menu.view.visualQuality')}
+          </div>
           {VISUAL_QUALITY_OPTIONS.map((o) => {
             const selected = o.key === quality;
             const LevelIcon = LEVEL_ICON[o.key];
+            const label = t(LABEL_KEY[o.key]);
             return (
               <button
                 key={o.key}
@@ -92,8 +112,8 @@ export function VisualQualityToggle(): JSX.Element {
               >
                 <LevelIcon className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={1.75} aria-hidden />
                 <span className="flex-1">
-                  <span className="block">{o.label}</span>
-                  <span className="block text-[10.5px] text-fg-muted">{o.hint}</span>
+                  <span className="block">{label}</span>
+                  <span className="block text-[10.5px] text-fg-muted">{t(HINT_KEY[o.key])}</span>
                 </span>
                 {selected && (
                   <span className="text-ok mt-0.5" aria-hidden>

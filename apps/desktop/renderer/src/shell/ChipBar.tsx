@@ -35,6 +35,7 @@ export function ChipBar(): JSX.Element | null {
 
 /** Local chip — 当前 Local execution + ⚙ 改默认 workspace。 */
 function LocalChip(): JSX.Element {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -54,15 +55,15 @@ function LocalChip(): JSX.Element {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-2 border border-border-default hover:bg-hover-bg"
-        title="Execution location"
+        title={t('chip.executionLocation')}
       >
         <MapPin className="w-3 h-3 text-fg-muted" strokeWidth={2} aria-hidden />
-        <span>Local</span>
+        <span>{t('chip.local')}</span>
       </button>
       {open && (
         <div className="absolute left-0 bottom-full mb-1 w-48 bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 z-50">
           <div className="px-3 py-1.5 hover:bg-hover-bg flex items-center gap-2 text-xs text-fg-primary">
-            <span>Local</span>
+            <span>{t('chip.local')}</span>
             <Check className="w-3.5 h-3.5 text-ok ml-auto" strokeWidth={2.5} aria-hidden />
             <button
               type="button"
@@ -72,8 +73,8 @@ function LocalChip(): JSX.Element {
                 setOpen(false);
               }}
               className="text-fg-muted hover:text-fg-primary ml-1 inline-flex items-center"
-              title="Settings — change default workspace"
-              aria-label="Open settings"
+              title={t('chip.changeWorkspace')}
+              aria-label={t('chip.openSettings')}
             >
               <Settings className="w-3.5 h-3.5" strokeWidth={1.75} />
             </button>
@@ -95,6 +96,7 @@ function ProjectChip({
   projectName: string;
   projectPath: string;
 }): JSX.Element {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const projects = useAppStore((s) => s.projects);
   const setCurrentProject = useAppStore((s) => s.setCurrentProject);
@@ -148,9 +150,11 @@ function ProjectChip({
       </button>
       {open && (
         <div className="absolute left-0 bottom-full mb-1 w-56 bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 z-50">
-          <div className="px-3 py-1 text-fg-muted text-[11px] uppercase tracking-wider">Recent</div>
+          <div className="px-3 py-1 text-fg-muted text-[11px] uppercase tracking-wider">
+            {t('chip.recent')}
+          </div>
           {projects.length === 0 ? (
-            <div className="px-3 py-1 text-[11px] text-fg-muted">No recent projects yet.</div>
+            <div className="px-3 py-1 text-[11px] text-fg-muted">{t('chip.noRecentProjects')}</div>
           ) : (
             projects.slice(0, 8).map((p) => {
               const isCurrent = p.path === projectPath;
@@ -178,7 +182,7 @@ function ProjectChip({
             onClick={() => void openDialog()}
             className="w-full text-left px-3 py-1 hover:bg-hover-bg text-xs text-fg-primary"
           >
-            Open folder…
+            {t('chip.openFolder')}
           </button>
         </div>
       )}
@@ -188,10 +192,11 @@ function ProjectChip({
 
 /** Branch chip — alpha.1 占位；v0.1.x 接 git。 */
 function BranchChip(): JSX.Element {
+  const { t } = useI18n();
   return (
     <span
       className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-2 border border-border-default"
-      title="Branch detection — v0.1.x (git branches dropdown)"
+      title={t('chip.branchDetection')}
     >
       <GitBranch className="w-3 h-3 text-fg-muted" strokeWidth={2} aria-hidden />
       <span className="truncate max-w-[120px]">main</span>
@@ -238,6 +243,7 @@ const REPOINTEL_MODE_LABEL: Record<string, string> = {
  * BottomBar),此处只负责展示。
  */
 function RepointelChip({ projectPath }: { readonly projectPath: string }): JSX.Element | null {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<RepointelStatusOutput | null>(null);
   const [statusErr, setStatusErr] = useState<string | null>(null);
@@ -281,12 +287,12 @@ function RepointelChip({ projectPath }: { readonly projectPath: string }): JSX.E
       .then((result) => {
         if (cancelled) return;
         if (result.ok) setStatus(result.data);
-        else setStatusErr(result.error?.message ?? 'status failed');
+        else setStatusErr(result.error?.message ?? t('chip.repointel.statusFailed'));
       });
     return () => {
       cancelled = true;
     };
-  }, [projectPath]);
+  }, [projectPath, t]);
 
   if (!currentSessionId) return null;
 
@@ -319,6 +325,13 @@ function RepointelChip({ projectPath }: { readonly projectPath: string }): JSX.E
         : mode === 'light' || mode === 'oss'
           ? 'bg-ok'
           : 'bg-warn';
+  const titleStatus = active
+    ? latest?.status
+      ? t('chip.repointel.status', { status: latest.status })
+      : t('chip.repointel.active')
+    : readyMode
+      ? t('chip.repointel.ready')
+      : '';
 
   return (
     <div className="relative" ref={ref}>
@@ -326,9 +339,7 @@ function RepointelChip({ projectPath }: { readonly projectPath: string }): JSX.E
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-2 border border-border-default hover:bg-hover-bg"
-        title={`Repo-intelligence: ${modeLabel}${
-          active ? (latest?.status ? ` · ${latest.status}` : ' · active') : readyMode ? ' · ready' : ''
-        }`}
+        title={t('chip.repointel.title', { mode: modeLabel, status: titleStatus })}
       >
         <span aria-hidden className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
         <span className="font-mono">Repointel</span>
@@ -339,14 +350,22 @@ function RepointelChip({ projectPath }: { readonly projectPath: string }): JSX.E
         <div className="absolute right-0 bottom-full mb-1 w-72 bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 z-50">
           <div className="px-3 py-1 text-fg-muted text-[11px] uppercase tracking-wider flex justify-between">
             <span>Repointel · {modeLabel}</span>
-            <span className="text-fg-faint normal-case tracking-normal">latest 3 traces</span>
+            <span className="text-fg-faint normal-case tracking-normal">
+              {t('chip.repointel.latestTraces')}
+            </span>
           </div>
           <div className="border-t border-border-default/60 px-3 py-1.5 text-[11px] text-fg-muted">
             {status ? (
               <div className="space-y-0.5">
                 <div className="font-mono">
-                  git: {status.gitRoot ? 'detected' : 'not detected'} / warm:{' '}
-                  {status.warmSupported ? 'supported' : 'unsupported'}
+                  {t('chip.repointel.gitStatus', {
+                    git: status.gitRoot
+                      ? t('chip.repointel.gitDetected')
+                      : t('chip.repointel.gitNotDetected'),
+                    warm: status.warmSupported
+                      ? t('chip.repointel.warmSupported')
+                      : t('chip.repointel.warmUnsupported'),
+                  })}
                 </div>
                 <div className="truncate" title={status.warmReason}>
                   {status.warmReason}
@@ -355,12 +374,12 @@ function RepointelChip({ projectPath }: { readonly projectPath: string }): JSX.E
             ) : statusErr ? (
               <span className="text-danger">{statusErr}</span>
             ) : (
-              <span>Loading status...</span>
+              <span>{t('chip.repointel.loadingStatus')}</span>
             )}
           </div>
           {latestTraces.length === 0 ? (
             <div className="px-3 py-1.5 text-[11px] text-fg-muted italic">
-              No traces yet — repo-intel runs on first send.
+              {t('chip.repointel.noTraces')}
             </div>
           ) : (
             latestTraces.map((t, i) => (
@@ -435,7 +454,9 @@ function RepointelLockedChip(): JSX.Element {
           <div className="text-[11px] text-fg-primary font-medium">
             {t('repointel.locked.title')}
           </div>
-          <div className="text-[11px] text-fg-muted leading-relaxed">{t('repointel.locked.body')}</div>
+          <div className="text-[11px] text-fg-muted leading-relaxed">
+            {t('repointel.locked.body')}
+          </div>
           <button
             type="button"
             onClick={() => {

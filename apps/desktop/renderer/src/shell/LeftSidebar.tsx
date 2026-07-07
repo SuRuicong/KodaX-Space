@@ -5,9 +5,7 @@
 //   │ [Coder][Partner]  ← surface tab (F045: Partner 可点，SurfaceTabs 组件)
 //   │
 //   │ + New session
-//   │ ⏰ Scheduled  (灰，v0.1.x)
-//   │ 💼 Customize  (灰，v0.1.x)
-//   │ ▾ More
+//   │ ▾ More features  Coming soon  (未来功能默认折叠)
 //   │
 //   │ Recents ────────────────
 //   │   · 项目分析
@@ -19,7 +17,7 @@
 // 接 surface store）；LeftSidebar 是两 surface 共用的全局导航（项目 / session / surface tab）。
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Clock, Briefcase, ChevronDown, Settings, Pin, type LucideIcon } from 'lucide-react';
+import { Plus, ChevronDown, Settings, Pin } from 'lucide-react';
 import { SurfaceTabs } from './SurfaceTabs.js';
 import { useAppStore } from '../store/appStore.js';
 import { useSurfaceStore } from '../store/surface.js';
@@ -131,9 +129,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): JSX.Element {
           {t('sidebar.newSession')}
         </button>
         <WorkflowNavPanel />
-        <DisabledMenuItem Icon={Clock} label={t('sidebar.scheduled')} hint="v0.1.x" />
-        <DisabledMenuItem Icon={Briefcase} label={t('sidebar.customize')} hint="v0.1.x" />
-        <DisabledMenuItem Icon={ChevronDown} label={t('sidebar.more')} hint="" />
+        <FutureFeaturesDisclosure />
       </div>
 
       {/* F017 Running peers — 其他 KodaX 进程（CLI / 别的 Space 窗口）当前活动的 session。
@@ -249,38 +245,25 @@ function ProjectTree({
 
   // 项目排序优先级:
   //   1. v0.1.9 Step 7: 用户拖排过 (projectOrder 非空) → 按 projectOrder 排,新项目追加到尾
-  //   2. 旧默认: lastUsedAt 倒序 + currentProject 排首 (用户没拖过时保留原体验)
+  //   2. 旧默认: lastUsedAt 倒序
   // F043: archived 项目从主列表剔出,单独"Archived (N)"分组展示。
   const ordered = useMemo(() => {
-    const curCanon = currentProjectPath ? canonProjectRootBrowser(currentProjectPath) : null;
     const active = projects.filter((p) => p.archived !== true);
 
     if (projectOrder.length > 0) {
       // 用户已拖排过: 按 projectOrder 索引排,不在里面的追加(按 lastUsedAt 内部排)。
-      // review MEDIUM-1: 即便拖过,**当前打开的项目**仍然 pin 到最顶 — 用户切到老项目时
-      // 视觉焦点不应跳到中段。这跟 Codex/IDE workspace switch 体感一致。
       const orderIdx = new Map<string, number>();
       projectOrder.forEach((p, i) => orderIdx.set(p, i));
-      const sorted = [...active].sort((a, b) => {
+      return [...active].sort((a, b) => {
         const aIdx = orderIdx.get(canonProjectRootBrowser(a.path)) ?? Infinity;
         const bIdx = orderIdx.get(canonProjectRootBrowser(b.path)) ?? Infinity;
         if (aIdx !== bIdx) return aIdx - bIdx;
         return b.lastUsedAt - a.lastUsedAt;
       });
-      if (!curCanon) return sorted;
-      const curIdx = sorted.findIndex((p) => canonProjectRootBrowser(p.path) === curCanon);
-      if (curIdx <= 0) return sorted;
-      const current = sorted[curIdx]!;
-      return [current, ...sorted.slice(0, curIdx), ...sorted.slice(curIdx + 1)];
     }
 
-    const sorted = [...active].sort((a, b) => b.lastUsedAt - a.lastUsedAt);
-    if (!curCanon) return sorted;
-    const curIdx = sorted.findIndex((p) => canonProjectRootBrowser(p.path) === curCanon);
-    if (curIdx <= 0) return sorted;
-    const current = sorted[curIdx]!;
-    return [current, ...sorted.slice(0, curIdx), ...sorted.slice(curIdx + 1)];
-  }, [projects, projectOrder, currentProjectPath]);
+    return [...active].sort((a, b) => b.lastUsedAt - a.lastUsedAt);
+  }, [projects, projectOrder]);
 
   const archived = useMemo(
     () => projects.filter((p) => p.archived === true).sort((a, b) => b.lastUsedAt - a.lastUsedAt),
@@ -411,7 +394,7 @@ function ProjectTree({
             type="button"
             onClick={() => toggleProjectExpanded(proj.path, defaultExpanded)}
             className="text-fg-muted flex-shrink-0"
-            aria-label={isExpanded ? 'Collapse project' : 'Expand project'}
+            aria-label={isExpanded ? t('sidebar.collapseProject') : t('sidebar.expandProject')}
           >
             <Caret open={isExpanded} />
           </button>
@@ -446,8 +429,8 @@ function ProjectTree({
           {runningCount > 0 && !isRenaming && (
             <span
               className="text-run text-[11px] flex-shrink-0 font-mono inline-flex items-center gap-1"
-              aria-label={`${runningCount} running`}
-              title={`${runningCount} session${runningCount === 1 ? '' : 's'} running`}
+              aria-label={t('sidebar.runningCountAria', { count: runningCount })}
+              title={t('sidebar.runningCountTitle', { count: runningCount })}
             >
               <span className="sidebar-status-spinner sidebar-status-spinner--mini" aria-hidden />
               {runningCount}
@@ -480,7 +463,7 @@ function ProjectTree({
                   setProjCtxMenu({ project: proj, x: rect.right, y: rect.bottom });
                 }}
                 className="text-fg-muted hover:text-fg-primary px-1 leading-none"
-                aria-label={`${proj.name} actions`}
+                aria-label={t('sidebar.projectActions', { name: proj.name })}
                 title={t('sidebar.moreActions')}
               >
                 ⋯
@@ -1125,23 +1108,35 @@ function RecentsHeader(): JSX.Element {
   );
 }
 
-function DisabledMenuItem({
-  Icon,
-  label,
-  hint,
-}: {
-  Icon: LucideIcon;
-  label: string;
-  hint: string;
-}): JSX.Element {
+function FutureFeaturesDisclosure(): JSX.Element {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const futureLabels = [t('sidebar.scheduled'), t('sidebar.customize'), t('sidebar.more')].join(
+    ' · ',
+  );
+
   return (
-    <div
-      className="w-full text-xs px-2 py-1.5 rounded text-fg-muted cursor-not-allowed flex items-center gap-2"
-      title={hint ? `${label} — ${hint}` : label}
-    >
-      <Icon className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={1.75} aria-hidden />
-      <span>{label}</span>
-      {hint && <span className="ml-auto text-[9px] text-fg-muted">{hint}</span>}
+    <div className="w-full">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="w-full min-w-0 rounded px-2 py-1.5 text-left text-xs text-fg-muted hover:bg-hover-bg hover:text-fg-primary flex items-center gap-2"
+        title={`${t('sidebar.moreFeatures')} — ${t('sidebar.comingSoon')}`}
+      >
+        <ChevronDown
+          className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${open ? '' : '-rotate-90'}`}
+          strokeWidth={1.75}
+          aria-hidden
+        />
+        <span className="min-w-0 truncate">{t('sidebar.moreFeatures')}</span>
+        <span className="ml-auto shrink-0 rounded border border-border-default px-1.5 py-0.5 text-[9px] leading-none text-fg-muted">
+          {t('sidebar.comingSoon')}
+        </span>
+      </button>
+      {open && (
+        <div className="px-7 pb-1.5 pt-0.5 text-[11px] leading-5 text-fg-muted">{futureLabels}</div>
+      )}
     </div>
   );
 }

@@ -6,12 +6,14 @@
 
 import { FileOutput, PanelRightClose } from 'lucide-react';
 import { ArtifactsView } from '../artifact/ArtifactsView';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 interface ArtifactPanelProps {
   readonly onClose?: () => void;
 }
 
 export function ArtifactPanel({ onClose }: ArtifactPanelProps): JSX.Element {
+  const { t } = useI18n();
   return (
     <aside
       className="w-64 flex-shrink-0 border-l border-border-default flex flex-col bg-surface overflow-hidden"
@@ -19,14 +21,16 @@ export function ArtifactPanel({ onClose }: ArtifactPanelProps): JSX.Element {
     >
       <div className="px-3 h-9 flex items-center gap-2 border-b border-border-default flex-shrink-0">
         <FileOutput className="w-3.5 h-3.5 text-fg-muted" strokeWidth={1.75} aria-hidden />
-        <span className="text-[11px] uppercase tracking-wider text-fg-muted">Artifact</span>
+        <span className="text-[11px] uppercase tracking-wider text-fg-muted">
+          {t('partner.artifact.label')}
+        </span>
         {onClose && (
           <button
             type="button"
             onClick={onClose}
             className="ml-auto h-6 w-6 inline-flex items-center justify-center rounded text-fg-muted hover:bg-hover-bg hover:text-fg-primary"
-            title="Hide artifact panel"
-            aria-label="Hide artifact panel"
+            title={t('partner.hideArtifactPanel')}
+            aria-label={t('partner.hideArtifactPanel')}
             data-testid="partner-artifact-panel-close"
           >
             <PanelRightClose className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden />

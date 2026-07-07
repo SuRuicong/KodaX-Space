@@ -12,6 +12,7 @@ import { useArtifacts, useArtifactContent } from './useArtifacts';
 import { useTranscriptArtifacts } from './useTranscriptArtifacts';
 import { toArtifactContent, type ArtifactVersionPayload } from './toArtifactContent';
 import { TEXT_COPY_KINDS } from './artifactKind';
+import { useI18n } from '../../i18n/I18nProvider';
 import type { ArtifactRefT } from '@kodax-space/space-ipc-schema';
 import {
   FOCUS_ARTIFACT_EVENT,
@@ -21,22 +22,24 @@ import {
 } from './transientArtifact';
 
 export function ArtifactsEmptyState(): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className="h-full flex flex-col items-center justify-center gap-2 p-6 text-center">
       <FileOutput className="w-6 h-6 text-fg-muted" strokeWidth={1.5} aria-hidden />
-      <div className="text-[12px] text-fg-secondary font-medium">产出会显示在这里</div>
+      <div className="text-[12px] text-fg-secondary font-medium">{t('artifact.emptyTitle')}</div>
       <div className="text-[11px] text-fg-muted leading-relaxed max-w-[200px]">
-        报告 / 图表 / 文档 / 代码等产物可预览。
+        {t('artifact.emptyDescription')}
       </div>
     </div>
   );
 }
 
 export function ArtifactsErrorState({ error }: { error: string }): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className="h-full flex flex-col items-center justify-center gap-2 p-6 text-center">
       <FileOutput className="w-6 h-6 text-danger" strokeWidth={1.5} aria-hidden />
-      <div className="text-[12px] text-fg-primary font-medium">Artifact load failed</div>
+      <div className="text-[12px] text-fg-primary font-medium">{t('artifact.loadFailed')}</div>
       <div
         className="text-[11px] text-fg-muted leading-relaxed max-w-[240px] break-words"
         title={error}
@@ -57,11 +60,15 @@ function ArtifactViewer({
   projectRoot: string | null;
   payloadOverrides?: ReadonlyMap<number, ArtifactVersionPayload>;
 }): JSX.Element {
+  const { t } = useI18n();
   const [version, setVersion] = useState<number | undefined>(undefined); // undefined = current
   const effectiveVersion = version ?? artifact.currentVersion;
   const isTransient = payloadOverrides !== undefined;
   const payloadOverride = payloadOverrides?.get(effectiveVersion);
-  const { payload: loadedPayload, loading } = useArtifactContent(isTransient ? null : artifact.id, version);
+  const { payload: loadedPayload, loading } = useArtifactContent(
+    isTransient ? null : artifact.id,
+    version,
+  );
   const payload = payloadOverride ?? loadedPayload;
   const [copied, setCopied] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
@@ -69,9 +76,7 @@ function ArtifactViewer({
 
   const content = useMemo(
     () =>
-      payload
-        ? toArtifactContent(artifact.kind, payload, projectRoot, artifact.permissions)
-        : null,
+      payload ? toArtifactContent(artifact.kind, payload, projectRoot, artifact.permissions) : null,
     [payload, artifact.kind, artifact.permissions, projectRoot],
   );
 
@@ -85,7 +90,7 @@ function ArtifactViewer({
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      setActionMsg('复制失败');
+      setActionMsg(t('artifact.copyFailed'));
       setTimeout(() => setActionMsg(null), 2000);
     }
   }
@@ -93,16 +98,19 @@ function ArtifactViewer({
   async function onSave(): Promise<void> {
     const bridge = window.kodaxSpace;
     if (!bridge) return;
-    const r = await bridge.invoke('artifact.export', { id: artifact.id, version: effectiveVersion });
+    const r = await bridge.invoke('artifact.export', {
+      id: artifact.id,
+      version: effectiveVersion,
+    });
     if (!r.ok) {
       // IPC-level failure (e.g. fs.writeFile threw: permission denied / disk full)
-      setActionMsg('保存失败');
+      setActionMsg(t('artifact.saveFailed'));
       setTimeout(() => setActionMsg(null), 2500);
     } else if (r.data.ok) {
-      setActionMsg('已保存');
+      setActionMsg(t('artifact.saved'));
       setTimeout(() => setActionMsg(null), 1500);
     } else if (!r.data.canceled) {
-      setActionMsg(r.data.error ?? '保存失败');
+      setActionMsg(r.data.error ?? t('artifact.saveFailed'));
       setTimeout(() => setActionMsg(null), 2500);
     } // canceled → no message
   }
@@ -111,7 +119,7 @@ function ArtifactViewer({
   // artifact's id; the agent reuses it in create_artifact to add a new version.
   // (Agent-driven → verified with a real LLM session; the prefill itself is local.)
   function onIterate(): void {
-    const text = `修改 artifact「${artifact.title}」（artifactId: ${artifact.id}）——基于当前内容改，用 create_artifact 复用该 id 产出新版本。改动要求：`;
+    const text = t('artifact.iteratePrompt', { title: artifact.title, id: artifact.id });
     window.dispatchEvent(new CustomEvent('kodax-space.compose-prefill', { detail: { text } }));
     setActivePopoutKind(null); // 若在全屏 popout，关掉让用户看到输入框（侧栏/Partner 下无害）
   }
@@ -128,11 +136,11 @@ function ArtifactViewer({
         title: artifact.title,
       });
       if (!r.ok) {
-        setActionMsg('打开窗口失败');
+        setActionMsg(t('artifact.openWindowFailed'));
         setTimeout(() => setActionMsg(null), 2500);
       }
     } catch {
-      setActionMsg('打开窗口失败');
+      setActionMsg(t('artifact.openWindowFailed'));
       setTimeout(() => setActionMsg(null), 2500);
     }
   }
@@ -141,79 +149,85 @@ function ArtifactViewer({
     <div className="flex-1 min-h-0 flex flex-col">
       {/* toolbar 恒显示：再改一版对任何 artifact 都可用 */}
       <div className="px-3 py-1.5 border-b border-border-default flex items-center gap-2 flex-shrink-0">
-          {artifact.versions.length > 1 && (
-            <>
-              <span className="text-[10px] text-fg-muted">版本</span>
-              <select
-                className="text-[11px] bg-surface-raised border border-border-default rounded px-1 py-0.5 text-fg-secondary"
-                value={effectiveVersion}
-                onChange={(e) => setVersion(Number(e.target.value))}
-              >
-                {artifact.versions
-                  .slice()
-                  .sort((a, b) => b.v - a.v)
-                  .map((v) => (
-                    <option key={v.v} value={v.v}>
-                      v{v.v}
-                      {v.v === artifact.currentVersion ? ' (最新)' : ''}
-                    </option>
-                  ))}
-              </select>
-            </>
-          )}
-          {actionMsg && <span className="text-[10px] text-fg-muted truncate">{actionMsg}</span>}
-          <div className="ml-auto flex items-center gap-0.5">
+        {artifact.versions.length > 1 && (
+          <>
+            <span className="text-[10px] text-fg-muted">{t('artifact.version')}</span>
+            <select
+              className="text-[11px] bg-surface-raised border border-border-default rounded px-1 py-0.5 text-fg-secondary"
+              value={effectiveVersion}
+              onChange={(e) => setVersion(Number(e.target.value))}
+            >
+              {artifact.versions
+                .slice()
+                .sort((a, b) => b.v - a.v)
+                .map((v) => (
+                  <option key={v.v} value={v.v}>
+                    v{v.v}
+                    {v.v === artifact.currentVersion ? t('artifact.latestSuffix') : ''}
+                  </option>
+                ))}
+            </select>
+          </>
+        )}
+        {actionMsg && <span className="text-[10px] text-fg-muted truncate">{actionMsg}</span>}
+        <div className="ml-auto flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={onIterate}
+            title={t('artifact.iterateTitle')}
+            aria-label={t('artifact.iterate')}
+            className="w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
+          >
+            <RefreshCw className="w-3.5 h-3.5" strokeWidth={1.75} />
+          </button>
+          {canCopy && (
             <button
               type="button"
-              onClick={onIterate}
-              title="再改一版（让 agent 基于当前内容产新版本）"
-              aria-label="再改一版"
+              onClick={() => void onCopy()}
+              title={t('artifact.copyContent')}
+              aria-label={t('artifact.copyContent')}
               className="w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
             >
-              <RefreshCw className="w-3.5 h-3.5" strokeWidth={1.75} />
+              {copied ? (
+                <Check className="w-3.5 h-3.5 text-ok" strokeWidth={2} />
+              ) : (
+                <Copy className="w-3.5 h-3.5" strokeWidth={1.75} />
+              )}
             </button>
-            {canCopy && (
-              <button
-                type="button"
-                onClick={() => void onCopy()}
-                title="复制内容"
-                aria-label="复制内容"
-                className="w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
-              >
-                {copied ? <Check className="w-3.5 h-3.5 text-ok" strokeWidth={2} /> : <Copy className="w-3.5 h-3.5" strokeWidth={1.75} />}
-              </button>
-            )}
-            {canSave && (
-              <button
-                type="button"
-                onClick={() => void onSave()}
-                title="另存为…"
-                aria-label="另存为"
-                className="w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
-              >
-                <Download className="w-3.5 h-3.5" strokeWidth={1.75} />
-              </button>
-            )}
-            {!isTransient && (
-              <button
-                type="button"
-                onClick={() => void onOpenWindow()}
-                title="单独打开（独立最大化窗口）"
-                aria-label="单独打开"
-                className="w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
-              >
-                <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.75} />
-              </button>
-            )}
-          </div>
+          )}
+          {canSave && (
+            <button
+              type="button"
+              onClick={() => void onSave()}
+              title={t('artifact.saveAs')}
+              aria-label={t('artifact.saveAsAria')}
+              className="w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
+            >
+              <Download className="w-3.5 h-3.5" strokeWidth={1.75} />
+            </button>
+          )}
+          {!isTransient && (
+            <button
+              type="button"
+              onClick={() => void onOpenWindow()}
+              title={t('artifact.openStandaloneTitle')}
+              aria-label={t('artifact.openStandalone')}
+              className="w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
+            >
+              <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.75} />
+            </button>
+          )}
         </div>
+      </div>
       {loading && !content ? (
-        <div className="flex-1 flex items-center justify-center text-[11px] text-fg-muted">加载中…</div>
+        <div className="flex-1 flex items-center justify-center text-[11px] text-fg-muted">
+          {t('artifact.loading')}
+        </div>
       ) : content ? (
         <ArtifactView {...content} />
       ) : (
         <div className="flex-1 flex items-center justify-center p-4 text-[11px] text-fg-muted text-center">
-          此产物暂无法预览。
+          {t('artifact.cannotPreview')}
         </div>
       )}
     </div>
@@ -293,6 +307,7 @@ export function ArtifactsView({
   focusedId?: string | null;
   focusedSnapshot?: TransientArtifactSnapshot | null;
 } = {}): JSX.Element {
+  const { t } = useI18n();
   const sessionId = useAppStore((s) => s.currentSessionId);
   const projectRoot = useAppStore((s) => {
     const cur = s.currentSessionId;
@@ -301,8 +316,9 @@ export function ArtifactsView({
   const { artifacts, loading, error } = useArtifacts(sessionId);
   const transcriptArtifacts = useTranscriptArtifacts(sessionId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [transientSnapshot, setTransientSnapshot] =
-    useState<TransientArtifactSnapshot | null>(null);
+  const [transientSnapshot, setTransientSnapshot] = useState<TransientArtifactSnapshot | null>(
+    null,
+  );
 
   // Reset selection when switching sessions (this view isn't remounted on switch).
   useEffect(() => {
@@ -336,9 +352,7 @@ export function ArtifactsView({
       const existing = byId.get(transientSnapshot.id);
       byId.set(
         transientSnapshot.id,
-        existing
-          ? mergeTransientArtifactSnapshots(existing, transientSnapshot)
-          : transientSnapshot,
+        existing ? mergeTransientArtifactSnapshots(existing, transientSnapshot) : transientSnapshot,
       );
     }
     return [...byId.values()];
@@ -356,7 +370,9 @@ export function ArtifactsView({
 
   // Default selection = most recently updated store artifact, or recovered transcript artifact.
   const selectedFromStore =
-    selectedId !== null ? (artifacts.find((a) => a.id === selectedId) ?? null) : artifacts[0] ?? null;
+    selectedId !== null
+      ? (artifacts.find((a) => a.id === selectedId) ?? null)
+      : (artifacts[0] ?? null);
   const selectedTransientSnapshot =
     selectedFromStore === null
       ? selectedId !== null
@@ -376,7 +392,9 @@ export function ArtifactsView({
   if (artifacts.length === 0 && !selected) {
     if (!loading && error) return <ArtifactsErrorState error={error} />;
     return loading ? (
-      <div className="h-full flex items-center justify-center text-[11px] text-fg-muted">加载中…</div>
+      <div className="h-full flex items-center justify-center text-[11px] text-fg-muted">
+        {t('artifact.loading')}
+      </div>
     ) : (
       <ArtifactsEmptyState />
     );
@@ -389,7 +407,7 @@ export function ArtifactsView({
           className="px-3 py-1.5 border-b border-border-default text-[11px] text-danger flex-shrink-0 truncate"
           title={error}
         >
-          Artifact refresh failed
+          {t('artifact.refreshFailed')}
         </div>
       )}
       {artifactChoices.length > 1 && (

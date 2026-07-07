@@ -16,18 +16,35 @@ import { useEffect, useRef, useState } from 'react';
 import { ScrollText } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
 import { useZoomStore, ZOOM_STEP } from '../store/zoomStore.js';
+import { useI18n } from '../i18n/I18nProvider.js';
+import type { MessageKey } from '../i18n/messages.js';
 
 const VIEW_OPTIONS = [
-  { key: 'normal' as const, label: 'Normal' },
-  { key: 'thinking' as const, label: 'Thinking' },
-  { key: 'verbose' as const, label: 'Verbose' },
-  { key: 'summary' as const, label: 'Summary' },
+  { key: 'normal' as const, labelKey: 'transcript.view.normal' as MessageKey },
+  { key: 'thinking' as const, labelKey: 'transcript.view.thinking' as MessageKey },
+  { key: 'verbose' as const, labelKey: 'transcript.view.verbose' as MessageKey },
+  { key: 'summary' as const, labelKey: 'transcript.view.summary' as MessageKey },
 ];
 
 const FONT_OPTIONS = [
-  { key: 'sm' as const, label: 'Aa', cls: 'text-[11px]' },
-  { key: 'base' as const, label: 'Aa', cls: 'text-xs' },
-  { key: 'lg' as const, label: 'Aa', cls: 'text-sm' },
+  {
+    key: 'sm' as const,
+    label: 'Aa',
+    cls: 'text-[11px]',
+    titleKey: 'transcript.font.small' as MessageKey,
+  },
+  {
+    key: 'base' as const,
+    label: 'Aa',
+    cls: 'text-xs',
+    titleKey: 'transcript.font.medium' as MessageKey,
+  },
+  {
+    key: 'lg' as const,
+    label: 'Aa',
+    cls: 'text-sm',
+    titleKey: 'transcript.font.large' as MessageKey,
+  },
 ];
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -37,6 +54,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 export function TranscriptViewMenu(): JSX.Element {
+  const { t } = useI18n();
   const view = useAppStore((s) => s.transcriptView);
   const setView = useAppStore((s) => s.setTranscriptView);
   const fontSize = useAppStore((s) => s.transcriptFontSize);
@@ -83,15 +101,15 @@ export function TranscriptViewMenu(): JSX.Element {
             ? 'bg-surface-3 text-fg-primary'
             : 'text-fg-secondary hover:text-fg-primary hover:bg-hover-bg'
         }`}
-        title="Transcript view (Ctrl+Shift+O)"
-        aria-label="Transcript view"
+        title={t('transcript.titleWithShortcut')}
+        aria-label={t('transcript.title')}
       >
         <ScrollText className="w-4 h-4" strokeWidth={1.75} aria-hidden />
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 w-56 bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 text-xs z-50">
           <div className="px-3 py-1 flex justify-between items-center text-fg-muted text-[11px] uppercase tracking-wider">
-            <span>Transcript view</span>
+            <span>{t('transcript.title')}</span>
             <span className="font-mono text-fg-muted flex items-center gap-1">
               <kbd className="px-1 border border-border-strong rounded">⇧</kbd>
               <kbd className="px-1 border border-border-strong rounded">Ctrl</kbd>
@@ -110,7 +128,7 @@ export function TranscriptViewMenu(): JSX.Element {
                 view === o.key ? 'text-fg-primary' : 'text-fg-secondary'
               }`}
             >
-              <span className="flex-1">{o.label}</span>
+              <span className="flex-1">{t(o.labelKey)}</span>
               {view === o.key && (
                 <span className="text-ok" aria-hidden>
                   ✓
@@ -120,7 +138,7 @@ export function TranscriptViewMenu(): JSX.Element {
           ))}
           {/* 字号选择 */}
           <div className="border-t border-border-default mt-1 pt-1 px-3 py-1 flex items-center gap-2">
-            {FONT_OPTIONS.map((f, idx) => (
+            {FONT_OPTIONS.map((f) => (
               <button
                 key={f.key}
                 type="button"
@@ -130,7 +148,7 @@ export function TranscriptViewMenu(): JSX.Element {
                     ? 'border-ok text-fg-primary'
                     : 'border-border-strong text-fg-muted hover:text-fg-primary'
                 }`}
-                title={`Font ${['Small', 'Medium', 'Large'][idx]}`}
+                title={t('transcript.fontTitle', { size: t(f.titleKey) })}
               >
                 <span className={f.cls}>{f.label}</span>
               </button>
@@ -140,14 +158,14 @@ export function TranscriptViewMenu(): JSX.Element {
               与 Ctrl+滚轮 / Ctrl+± / Ctrl+0 同源（zoomStore）。注意：这跟上面只缩放
               transcript 的字号 [Aa] 是两回事——这里是整个 app 缩放。 */}
           <div className="border-t border-border-default mt-1 pt-1.5 px-3 py-1.5 flex items-center justify-between gap-2">
-            <span className="text-fg-muted">Zoom</span>
+            <span className="text-fg-muted">{t('transcript.zoom')}</span>
             <div className="flex items-center gap-0.5">
               <button
                 type="button"
                 onClick={() => stepZoom(-ZOOM_STEP)}
                 className="w-6 h-6 rounded border border-border-strong text-fg-secondary hover:bg-hover-bg hover:text-fg-primary flex items-center justify-center text-sm leading-none"
-                title="缩小 (Ctrl+-)"
-                aria-label="Zoom out"
+                title={t('transcript.zoomOutTitle')}
+                aria-label={t('transcript.zoomOut')}
               >
                 −
               </button>
@@ -155,8 +173,8 @@ export function TranscriptViewMenu(): JSX.Element {
                 type="button"
                 onClick={resetZoom}
                 className="min-w-[3.25rem] px-1 py-0.5 rounded text-fg-primary hover:bg-hover-bg tabular-nums text-center"
-                title="复位 100% (Ctrl+0)"
-                aria-label="Reset zoom to 100%"
+                title={t('transcript.zoomResetTitle')}
+                aria-label={t('transcript.zoomReset')}
               >
                 {Math.round(zoomFactor * 100)}%
               </button>
@@ -164,8 +182,8 @@ export function TranscriptViewMenu(): JSX.Element {
                 type="button"
                 onClick={() => stepZoom(ZOOM_STEP)}
                 className="w-6 h-6 rounded border border-border-strong text-fg-secondary hover:bg-hover-bg hover:text-fg-primary flex items-center justify-center text-sm leading-none"
-                title="放大 (Ctrl+=)"
-                aria-label="Zoom in"
+                title={t('transcript.zoomInTitle')}
+                aria-label={t('transcript.zoomIn')}
               >
                 +
               </button>

@@ -17,6 +17,7 @@
 import { useMemo } from 'react';
 import type { SessionMeta as SessionMetaT } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 interface SessionLineagePanelProps {
   /** 入口 session — 通常是 SessionMenu 上下文里那条。从它向上找 root，再向下展开整树。*/
@@ -94,6 +95,7 @@ export function SessionLineagePanel({
   anchorSessionId,
   onPickSession,
 }: SessionLineagePanelProps): JSX.Element {
+  const { t } = useI18n();
   const sessions = useAppStore((s) => s.sessions);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
 
@@ -104,27 +106,22 @@ export function SessionLineagePanel({
 
   // 单 session 树（没人 fork、也不是 fork 出来的）→ 没什么可看
   if (flatTree.length <= 1) {
-    return (
-      <div className="px-3 py-2 text-xs text-fg-muted italic">
-        No fork lineage yet. Use <span className="font-mono text-fg-secondary">Fork</span> in the
-        session menu to branch the conversation.
-      </div>
-    );
+    return <div className="px-3 py-2 text-xs text-fg-muted italic">{t('lineage.noLineage')}</div>;
   }
 
   return (
     <div className="py-1 max-h-72 overflow-y-auto">
       <div className="px-3 py-1 text-[11px] uppercase tracking-wider text-fg-muted flex items-center justify-between">
-        <span>Lineage · {flatTree.length} session(s)</span>
+        <span>{t('lineage.header', { count: flatTree.length })}</span>
         <span className="font-mono normal-case tracking-normal dark:text-fg-faint text-fg-muted">
-          ⑂ fork
+          ⑂ {t('lineage.fork')}
         </span>
       </div>
       {flatTree.map((node) => {
         const s = node.session;
         const isCurrent = s.sessionId === currentSessionId;
         const isAnchor = s.sessionId === anchorSessionId;
-        const title = s.title ?? 'Untitled session';
+        const title = s.title ?? t('breadcrumb.untitledSession');
         return (
           <button
             key={s.sessionId}
@@ -136,7 +133,11 @@ export function SessionLineagePanel({
               'hover:bg-hover-bg',
               isCurrent ? 'bg-info/15 text-info cursor-default' : 'text-fg-secondary',
             ].join(' ')}
-            title={isCurrent ? `${s.sessionId} (current)` : `Switch to ${s.sessionId}`}
+            title={
+              isCurrent
+                ? t('lineage.currentTitle', { sessionId: s.sessionId })
+                : t('lineage.switchTitle', { sessionId: s.sessionId })
+            }
           >
             <span
               className="font-mono dark:text-fg-faint text-fg-muted flex-shrink-0"
@@ -148,11 +149,13 @@ export function SessionLineagePanel({
             <span className="truncate flex-1">{title}</span>
             {s.forkPointTurnIdx !== undefined && (
               <span className="text-[9px] text-fg-muted font-mono flex-shrink-0">
-                @turn {s.forkPointTurnIdx}
+                {t('lineage.turn', { turn: s.forkPointTurnIdx })}
               </span>
             )}
             {isAnchor && !isCurrent && (
-              <span className="text-[9px] dark:text-fg-faint text-fg-muted">anchor</span>
+              <span className="text-[9px] dark:text-fg-faint text-fg-muted">
+                {t('lineage.anchor')}
+              </span>
             )}
           </button>
         );

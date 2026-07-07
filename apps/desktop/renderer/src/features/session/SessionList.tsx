@@ -14,12 +14,15 @@ import { sessionMatchesScope } from '../../lib/sessionScope.js';
 import { shouldActivateSessionForCurrentScope } from '../../lib/sessionActivation.js';
 import { invokeWithTimeout } from '../../lib/ipcInvokeWithTimeout.js';
 import type { SessionMeta } from '@kodax-space/space-ipc-schema';
+import { useI18n } from '../../i18n/I18nProvider.js';
+import type { MessageKey } from '../../i18n/messages.js';
 
 // 'mock' 永远保留——FEATURE_003 Mock adapter 的入口，未配 key 时也能跑通整个流程。
 // 真 provider 列表从 store 拉（FEATURE_004 已注入）。
 const MOCK_PROVIDER = 'mock';
 
 export function SessionList(): JSX.Element {
+  const { t } = useI18n();
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const currentSurface = useSurfaceStore((s) => s.currentSurface);
   const sessions = useAppStore((s) => s.sessions);
@@ -43,7 +46,12 @@ export function SessionList(): JSX.Element {
     const configured = providers.filter((p) => p.configured);
     const unconfigured = providers.filter((p) => !p.configured);
     return [
-      { id: MOCK_PROVIDER, displayName: 'Mock (no key needed)', configured: true, isCustom: false },
+      {
+        id: MOCK_PROVIDER,
+        displayName: t('session.mockProvider'),
+        configured: true,
+        isCustom: false,
+      },
       ...configured.map((p) => ({
         id: p.id,
         displayName: p.displayName,
@@ -52,12 +60,12 @@ export function SessionList(): JSX.Element {
       })),
       ...unconfigured.map((p) => ({
         id: p.id,
-        displayName: `${p.displayName} (not configured)`,
+        displayName: t('session.providerNotConfigured', { name: p.displayName }),
         configured: false,
         isCustom: p.isCustom,
       })),
     ];
-  }, [providers]);
+  }, [providers, t]);
 
   const [provider, setProvider] = useState<string>(MOCK_PROVIDER);
 
@@ -225,14 +233,16 @@ export function SessionList(): JSX.Element {
   return (
     <div className="flex flex-col gap-2 p-3 flex-1 min-h-0">
       <div className="flex items-center justify-between">
-        <h2 className="text-xs uppercase tracking-wider text-fg-muted font-semibold">Sessions</h2>
+        <h2 className="text-xs uppercase tracking-wider text-fg-muted font-semibold">
+          {t('session.sessions')}
+        </h2>
         <div className="flex items-center gap-1">
           <select
             value={provider}
             onChange={(e) => setProvider(e.target.value)}
             className="text-xs bg-surface-3 border border-border-strong text-fg-secondary rounded px-1 py-0.5 max-w-[160px]"
             disabled={!currentProjectPath}
-            title="Provider for new sessions"
+            title={t('session.providerTitle')}
           >
             {providerOptions.map((p) => (
               <option key={p.id} value={p.id} disabled={!p.configured && p.id !== MOCK_PROVIDER}>
@@ -245,7 +255,7 @@ export function SessionList(): JSX.Element {
             onClick={() => void handleCreate()}
             disabled={!currentProjectPath || creating}
             className="text-xs px-2 py-1 rounded bg-ok/80 hover:bg-ok disabled:opacity-40 disabled:cursor-not-allowed text-white"
-            title={currentProjectPath ? 'Create new session' : 'Pick a project first'}
+            title={currentProjectPath ? t('session.createTitle') : t('session.pickProjectFirst')}
           >
             +
           </button>
@@ -254,14 +264,10 @@ export function SessionList(): JSX.Element {
 
       <div className="flex flex-col gap-1 overflow-y-auto flex-1 min-h-0">
         {!currentProjectPath && (
-          <div className="text-xs text-fg-faint italic px-1">
-            Pick a project above to see its sessions.
-          </div>
+          <div className="text-xs text-fg-faint italic px-1">{t('session.pickProjectAbove')}</div>
         )}
         {currentProjectPath && visibleSessions.length === 0 && (
-          <div className="text-xs text-fg-faint italic px-1">
-            No sessions yet. Click + to create one.
-          </div>
+          <div className="text-xs text-fg-faint italic px-1">{t('session.noneYet')}</div>
         )}
         {visibleSessions.map((s) => {
           const isActive = s.sessionId === currentSessionId;
@@ -302,11 +308,11 @@ export function SessionList(): JSX.Element {
                     }}
                     maxLength={256}
                     className="flex-1 min-w-0 bg-surface border border-border-strong rounded px-1.5 py-0.5 text-sm font-medium text-fg-primary"
-                    aria-label="New session title"
+                    aria-label={t('session.newTitleAria')}
                   />
                 ) : (
                   <span className="flex-1 truncate font-medium">
-                    {s.title ?? 'Untitled session'}
+                    {s.title ?? t('breadcrumb.untitledSession')}
                   </span>
                 )}
                 <span className="opacity-0 group-hover:opacity-100 flex gap-1 text-xs">
@@ -314,7 +320,7 @@ export function SessionList(): JSX.Element {
                     type="button"
                     onClick={(e) => startRename(e, s.sessionId, s.title)}
                     className="text-fg-muted hover:text-fg-primary px-1"
-                    aria-label="Rename session"
+                    aria-label={t('session.renameAria')}
                   >
                     ✎
                   </button>
@@ -322,7 +328,7 @@ export function SessionList(): JSX.Element {
                     type="button"
                     onClick={(e) => void handleDelete(e, s.sessionId)}
                     className="text-fg-muted hover:text-danger px-1"
-                    aria-label="Delete session"
+                    aria-label={t('session.deleteAria')}
                   >
                     ×
                   </button>
@@ -333,7 +339,7 @@ export function SessionList(): JSX.Element {
                 <span>·</span>
                 <span>{s.reasoningMode}</span>
                 <span>·</span>
-                <span>{formatRelativeTime(s.lastActivityAt)}</span>
+                <span>{formatRelativeTime(s.lastActivityAt, t)}</span>
               </div>
             </div>
           );
@@ -363,10 +369,12 @@ async function refreshSessions(
   }
 }
 
-function formatRelativeTime(timestamp: number): string {
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
+
+function formatRelativeTime(timestamp: number, t: Translate): string {
   const diff = Date.now() - timestamp;
-  if (diff < 60_000) return 'just now';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return `${Math.floor(diff / 86_400_000)}d ago`;
+  if (diff < 60_000) return t('session.justNow');
+  if (diff < 3_600_000) return t('session.minutesAgo', { count: Math.floor(diff / 60_000) });
+  if (diff < 86_400_000) return t('session.hoursAgo', { count: Math.floor(diff / 3_600_000) });
+  return t('session.daysAgo', { count: Math.floor(diff / 86_400_000) });
 }

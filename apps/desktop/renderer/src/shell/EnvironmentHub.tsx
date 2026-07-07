@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
 import { requestTaskDockFocus } from './taskDockControl.js';
+import { useI18n } from '../i18n/I18nProvider.js';
+import type { MessageKey } from '../i18n/messages.js';
 
 interface GitStatusSnapshot {
   readonly isGitRepo: boolean;
@@ -37,6 +39,7 @@ const EMPTY_GIT_STATUS: GitStatusSnapshot = {
 };
 
 export function EnvironmentHub(): JSX.Element {
+  const { t } = useI18n();
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const sessions = useAppStore((s) => s.sessions);
@@ -46,7 +49,10 @@ export function EnvironmentHub(): JSX.Element {
   const ref = useRef<HTMLDivElement | null>(null);
 
   const currentSession = sessions.find((session) => session.sessionId === currentSessionId);
-  const projectLabel = useMemo(() => projectName(currentProjectPath), [currentProjectPath]);
+  const projectLabel = useMemo(
+    () => (currentProjectPath ? projectName(currentProjectPath) : t('environment.noProject')),
+    [currentProjectPath, t],
+  );
   const dirtyCount = gitStatus.modifiedCount + gitStatus.stagedCount + gitStatus.untrackedCount;
 
   const refreshGitStatus = useCallback((): void => {
@@ -119,7 +125,7 @@ export function EnvironmentHub(): JSX.Element {
     setMenu(null);
   };
 
-  const branchLabel = gitStatus.isGitRepo ? (gitStatus.branch ?? 'HEAD') : 'No git';
+  const branchLabel = gitStatus.isGitRepo ? (gitStatus.branch ?? 'HEAD') : t('environment.noGit');
 
   return (
     <div ref={ref} className="relative flex-shrink-0" data-testid="environment-hub-root">
@@ -134,8 +140,8 @@ export function EnvironmentHub(): JSX.Element {
             ? 'border-border-strong bg-surface-3 text-fg-primary'
             : 'border-border-default bg-surface-2 text-fg-secondary hover:bg-hover-bg hover:text-fg-primary'
         }`}
-        title="Environment information"
-        aria-label="Environment information"
+        title={t('environment.info')}
+        aria-label={t('environment.info')}
         aria-haspopup="true"
         aria-expanded={open}
         data-testid="environment-hub-button"
@@ -150,12 +156,12 @@ export function EnvironmentHub(): JSX.Element {
           className="absolute right-0 top-full z-[65] mt-2 max-h-[min(560px,calc(100vh-84px))] w-[min(380px,calc(100vw-28px))] overflow-y-auto overscroll-contain rounded-xl border border-border-default bg-surface-4 p-2 text-[13px] text-fg-secondary shadow-2xl"
           data-testid="environment-hub-popover"
           role="group"
-          aria-label="Environment information"
+          aria-label={t('environment.info')}
           data-surface-kind="anchored_menu"
         >
           <div className="mb-1 flex items-center justify-between px-2 py-1">
             <div>
-              <div className="text-[11px] text-fg-faint">Environment</div>
+              <div className="text-[11px] text-fg-faint">{t('environment.title')}</div>
               <div
                 className="max-w-[260px] truncate font-medium text-fg-primary"
                 title={currentProjectPath ?? undefined}
@@ -166,8 +172,8 @@ export function EnvironmentHub(): JSX.Element {
             <button
               type="button"
               className="inline-flex h-7 w-7 items-center justify-center rounded-md text-fg-muted hover:bg-hover-bg hover:text-fg-primary"
-              title="Add source"
-              aria-label="Add source"
+              title={t('environment.addSource')}
+              aria-label={t('environment.addSource')}
               onClick={() => setMenu((value) => (value === 'sources' ? null : 'sources'))}
             >
               <Plus className="h-4 w-4" strokeWidth={1.8} aria-hidden />
@@ -176,16 +182,16 @@ export function EnvironmentHub(): JSX.Element {
 
           <HubRow
             icon={<GitCompare className="h-4 w-4" strokeWidth={1.8} aria-hidden />}
-            label="Changes"
-            value={changesLabel(gitStatus, dirtyCount)}
+            label={t('environment.changes')}
+            value={changesLabel(gitStatus, dirtyCount, t)}
             tone={dirtyCount > 0 ? 'accent' : 'muted'}
             testId="environment-hub-changes-row"
             onClick={() => focusDock('changes')}
           />
           <HubRow
             icon={<Laptop className="h-4 w-4" strokeWidth={1.8} aria-hidden />}
-            label="Local"
-            value="This device"
+            label={t('environment.local')}
+            value={t('environment.thisDevice')}
             active={menu === 'location'}
             testId="environment-hub-location-row"
             onClick={() => setMenu((value) => (value === 'location' ? null : 'location'))}
@@ -195,7 +201,11 @@ export function EnvironmentHub(): JSX.Element {
           <HubRow
             icon={<GitBranch className="h-4 w-4" strokeWidth={1.8} aria-hidden />}
             label={branchLabel}
-            value={dirtyCount > 0 ? `${dirtyCount} dirty` : 'clean'}
+            value={
+              dirtyCount > 0
+                ? t('environment.dirtyCount', { count: dirtyCount })
+                : t('environment.clean')
+            }
             active={menu === 'branch'}
             testId="environment-hub-branch-row"
             onClick={() => setMenu((value) => (value === 'branch' ? null : 'branch'))}
@@ -212,8 +222,8 @@ export function EnvironmentHub(): JSX.Element {
 
           <HubRow
             icon={<GitCommit className="h-4 w-4" strokeWidth={1.8} aria-hidden />}
-            label="Commit or push"
-            value={commitLabel(gitStatus, dirtyCount)}
+            label={t('environment.commitOrPush')}
+            value={commitLabel(gitStatus, dirtyCount, t)}
             tone={gitStatus.ahead ? 'accent' : 'muted'}
             testId="environment-hub-commit-row"
             onClick={() => focusDock('changes')}
@@ -223,8 +233,8 @@ export function EnvironmentHub(): JSX.Element {
 
           <HubRow
             icon={<Globe className="h-4 w-4" strokeWidth={1.8} aria-hidden />}
-            label="Sources"
-            value={sourcesLabel(currentProjectPath, currentSessionId)}
+            label={t('environment.sources')}
+            value={sourcesLabel(currentProjectPath, currentSessionId, t)}
             active={menu === 'sources'}
             testId="environment-hub-sources-row"
             onClick={() => setMenu((value) => (value === 'sources' ? null : 'sources'))}
@@ -284,18 +294,27 @@ function HubRow({
 }
 
 function LocationMenu(): JSX.Element {
+  const { t } = useI18n();
   return (
     <div
       className="mb-1 ml-7 rounded-lg border border-border-default bg-surface-3 py-1"
       data-testid="environment-hub-location-menu"
     >
-      <MenuLine checked label="Work locally" detail="Current machine" />
       <MenuLine
-        label="Move to worktree"
-        detail="Available after worktree handoff support"
+        checked
+        label={t('environment.workLocally')}
+        detail={t('environment.currentMachine')}
+      />
+      <MenuLine
+        label={t('environment.moveToWorktree')}
+        detail={t('environment.worktreeHandoffUnavailable')}
         disabled
       />
-      <MenuLine label="Send to cloud" detail="Cloud handoff is not configured" disabled />
+      <MenuLine
+        label={t('environment.sendToCloud')}
+        detail={t('environment.cloudHandoffNotConfigured')}
+        disabled
+      />
     </div>
   );
 }
@@ -313,6 +332,7 @@ function BranchMenu({
   readonly behind?: number;
   readonly isGitRepo: boolean;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <div
       className="mb-1 ml-7 rounded-lg border border-border-default bg-surface-3 py-1"
@@ -321,18 +341,22 @@ function BranchMenu({
       <MenuLine
         checked={isGitRepo}
         label={branch}
-        detail={dirtyCount > 0 ? `${dirtyCount} uncommitted files` : 'Working tree clean'}
+        detail={
+          dirtyCount > 0
+            ? t('environment.uncommittedFiles', { count: dirtyCount })
+            : t('environment.workingTreeClean')
+        }
       />
       {(ahead || behind) && (
         <MenuLine
-          label="Remote status"
-          detail={`${ahead ?? 0} ahead / ${behind ?? 0} behind`}
+          label={t('environment.remoteStatus')}
+          detail={t('environment.aheadBehind', { ahead: ahead ?? 0, behind: behind ?? 0 })}
           disabled
         />
       )}
       <MenuLine
-        label="Create and check out new branch"
-        detail="Coming with branch write actions"
+        label={t('environment.createBranch')}
+        detail={t('environment.branchActionsComing')}
         disabled
       />
     </div>
@@ -348,6 +372,7 @@ function SourcesMenu({
   readonly sessionLabel: string | null;
   readonly onOpenSources: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <div
       className="mb-1 ml-7 rounded-lg border border-border-default bg-surface-3 py-1"
@@ -355,13 +380,13 @@ function SourcesMenu({
     >
       <MenuLine
         checked={currentProjectPath !== null}
-        label="Workspace folder"
-        detail={currentProjectPath ?? 'No project open'}
+        label={t('environment.workspaceFolder')}
+        detail={currentProjectPath ?? t('environment.noProjectOpen')}
       />
       <MenuLine
         checked={sessionLabel !== null}
-        label="Session context"
-        detail={sessionLabel ?? 'No active session'}
+        label={t('environment.sessionContext')}
+        detail={sessionLabel ?? t('environment.noActiveSession')}
       />
       <button
         type="button"
@@ -369,7 +394,7 @@ function SourcesMenu({
         className="mt-1 flex w-full items-center gap-2 border-t border-border-default px-2.5 py-1.5 text-left text-[12px] text-fg-secondary hover:bg-hover-bg hover:text-fg-primary"
       >
         <FileText className="h-3.5 w-3.5 text-fg-muted" strokeWidth={1.8} aria-hidden />
-        <span>Open sources in Task Dock</span>
+        <span>{t('environment.openSourcesTaskDock')}</span>
       </button>
     </div>
   );
@@ -412,27 +437,32 @@ function projectName(path: string | null): string {
   return parts[parts.length - 1] ?? path;
 }
 
-function sourcesLabel(projectPath: string | null, sessionId: string | null): string {
-  if (projectPath && sessionId) return 'workspace + session';
-  if (projectPath) return 'workspace';
-  if (sessionId) return 'session';
-  return 'none';
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
+
+function sourcesLabel(projectPath: string | null, sessionId: string | null, t: Translate): string {
+  if (projectPath && sessionId) return t('environment.sources.workspaceSession');
+  if (projectPath) return t('environment.sources.workspace');
+  if (sessionId) return t('environment.sources.session');
+  return t('environment.sources.none');
 }
 
-function changesLabel(status: GitStatusSnapshot, dirtyCount: number): string {
-  if (!status.isGitRepo) return 'not git';
-  if (dirtyCount === 0) return 'clean';
+function changesLabel(status: GitStatusSnapshot, dirtyCount: number, t: Translate): string {
+  if (!status.isGitRepo) return t('environment.changes.notGit');
+  if (dirtyCount === 0) return t('environment.clean');
   const parts = [
-    status.modifiedCount > 0 ? `${status.modifiedCount} mod` : null,
-    status.stagedCount > 0 ? `${status.stagedCount} staged` : null,
-    status.untrackedCount > 0 ? `${status.untrackedCount} new` : null,
+    status.modifiedCount > 0 ? t('environment.changes.mod', { count: status.modifiedCount }) : null,
+    status.stagedCount > 0 ? t('environment.changes.staged', { count: status.stagedCount }) : null,
+    status.untrackedCount > 0
+      ? t('environment.changes.new', { count: status.untrackedCount })
+      : null,
   ].filter(Boolean);
   return parts.join(' / ');
 }
 
-function commitLabel(status: GitStatusSnapshot, dirtyCount: number): string {
-  if (!status.isGitRepo) return 'disabled';
-  if (status.ahead && status.ahead > 0) return `${status.ahead} ahead`;
-  if (dirtyCount > 0) return 'ready';
-  return 'clean';
+function commitLabel(status: GitStatusSnapshot, dirtyCount: number, t: Translate): string {
+  if (!status.isGitRepo) return t('environment.commit.disabled');
+  if (status.ahead && status.ahead > 0)
+    return t('environment.commit.ahead', { count: status.ahead });
+  if (dirtyCount > 0) return t('environment.commit.ready');
+  return t('environment.clean');
 }

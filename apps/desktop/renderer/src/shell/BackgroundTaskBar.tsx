@@ -16,6 +16,7 @@
 import { Loader2, Check, Circle, AlertTriangle, type LucideIcon } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
 import type { SessionEvent } from '@kodax-space/space-ipc-schema';
+import { useI18n } from '../i18n/I18nProvider.js';
 
 type ManagedLiveEvent = NonNullable<
   Extract<SessionEvent, { kind: 'managed_task_status' }>['status']['events']
@@ -62,6 +63,7 @@ const KIND_COLOR: Record<ManagedLiveEvent['kind'], string> = {
 };
 
 export function BackgroundTaskBar(): JSX.Element | null {
+  const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const status = useAppStore((s) =>
     currentSessionId ? s.managedTaskStatusBySession[currentSessionId] : undefined,
@@ -78,7 +80,7 @@ export function BackgroundTaskBar(): JSX.Element | null {
     <div
       className="px-3 py-1 flex items-center gap-1.5 flex-wrap text-[11px] font-mono"
       role="status"
-      aria-label="Background subagent tasks"
+      aria-label={t('backgroundTasks.aria')}
     >
       {shown.map((w) => {
         const Icon = KIND_ICON[w.latestKind];
@@ -99,7 +101,7 @@ export function BackgroundTaskBar(): JSX.Element | null {
       })}
       {overflow > 0 && (
         <span className="px-1.5 py-0.5 rounded border border-border-strong text-fg-muted">
-          +{overflow} more
+          {t('backgroundTasks.more', { count: overflow })}
         </span>
       )}
     </div>

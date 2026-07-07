@@ -4,6 +4,7 @@ import type { SessionEvent, SessionMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../../store/appStore.js';
 import { resolveSessionCreateInputs } from '../../shell/createSession.js';
 import { Markdown } from '../session/messages/Markdown.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 type AskState =
   | { kind: 'idle' }
@@ -32,6 +33,7 @@ interface QuickAskPopoverProps {
 }
 
 export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.Element | null {
+  const { t } = useI18n();
   const [prompt, setPrompt] = useState('');
   const [state, setState] = useState<AskState>({ kind: 'idle' });
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -92,7 +94,7 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
     const trimmed = prompt.trim();
     if (!trimmed || !window.kodaxSpace) return;
     if (!currentProjectPath) {
-      setState({ kind: 'error', message: 'Open a project first to use Quick Ask.' });
+      setState({ kind: 'error', message: t('quickAsk.openProjectFirst') });
       return;
     }
 
@@ -128,7 +130,10 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
       surface: 'code',
     });
     if (!createResult.ok) {
-      setActiveState({ kind: 'error', message: createResult.error?.message ?? 'create failed' });
+      setActiveState({
+        kind: 'error',
+        message: createResult.error?.message ?? t('quickAsk.createFailed'),
+      });
       return;
     }
 
@@ -152,7 +157,7 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
       autoModeEngine: createResult.data.autoModeEngine,
       agentMode: createResult.data.agentMode,
       surface: 'code',
-      title: 'Quick Ask',
+      title: t('quickAsk.title'),
       createdAt: createResult.data.createdAt,
       lastActivityAt: createResult.data.createdAt,
     };
@@ -177,7 +182,7 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
       setActiveState({
         kind: 'error',
         sessionId,
-        message: sendResult.error?.message ?? 'send failed',
+        message: sendResult.error?.message ?? t('quickAsk.sendFailed'),
       });
       return;
     }
@@ -219,7 +224,7 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
         kind: 'done',
         sessionId,
         prompt: trimmed,
-        reply: reply || '(timed out)',
+        reply: reply || t('quickAsk.timedOut'),
         session,
         events: capturedEvents.slice(),
       });
@@ -230,7 +235,7 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
 
   function continueInCoder(): void {
     if (state.kind !== 'done') return;
-    const title = state.prompt.replace(/\s+/g, ' ').slice(0, 80) || 'Quick Ask';
+    const title = state.prompt.replace(/\s+/g, ' ').slice(0, 80) || t('quickAsk.title');
     upsertSession({ ...state.session, title, lastActivityAt: Date.now() });
     setCurrentSession(state.sessionId);
     onClose();
@@ -264,15 +269,15 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
         <div className="px-4 py-3 border-b border-border-default flex items-center gap-2 flex-shrink-0">
           <Zap className="w-4 h-4 text-accent-ink flex-shrink-0" strokeWidth={2} aria-hidden />
           <h2 id="quick-ask-title" className="text-sm font-semibold text-fg-primary">
-            Quick Ask
+            {t('quickAsk.title')}
           </h2>
-          <span className="text-[11px] text-fg-muted font-mono">plan mode / temporary</span>
+          <span className="text-[11px] text-fg-muted font-mono">{t('quickAsk.subtitle')}</span>
           <button
             type="button"
             onClick={() => void closeAndCleanup()}
             className="ml-auto text-[11px] text-fg-muted hover:text-fg-secondary"
-            aria-label="Close Quick Ask"
-            title="Esc to close"
+            aria-label={t('quickAsk.closeAria')}
+            title={t('quickAsk.closeTitle')}
           >
             Esc
           </button>
@@ -288,8 +293,8 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
             rows={2}
             placeholder={
               currentProjectPath
-                ? 'Ask anything about this project (no file edits)'
-                : 'Open a project first to use Quick Ask'
+                ? t('quickAsk.placeholder.ready')
+                : t('quickAsk.placeholder.noProject')
             }
             className="w-full resize-none bg-transparent text-fg-primary placeholder-fg-muted text-sm focus:outline-none disabled:opacity-50"
           />
@@ -298,7 +303,9 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
             <div className="mt-3 pt-3 border-t border-border-default">
               <Markdown content={state.reply} />
               {state.kind === 'streaming' && (
-                <span className="text-[11px] text-fg-muted font-mono">streaming...</span>
+                <span className="text-[11px] text-fg-muted font-mono">
+                  {t('quickAsk.streaming')}
+                </span>
               )}
             </div>
           )}
@@ -311,20 +318,20 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
 
           {state.kind === 'creating-session' && (
             <div className="mt-3 pt-3 border-t border-border-default text-[11px] text-fg-muted font-mono">
-              creating session...
+              {t('quickAsk.creatingSession')}
             </div>
           )}
         </div>
 
         <div className="px-4 py-2 border-t border-border-default flex items-center justify-between gap-2 text-[11px] text-fg-muted font-mono flex-shrink-0">
-          <span>Enter to send / Shift+Enter newline / Esc close</span>
+          <span>{t('quickAsk.footerHint')}</span>
           {state.kind === 'done' && (
             <button
               type="button"
               onClick={continueInCoder}
               className="ml-auto px-2 py-0.5 rounded bg-info/15 text-info border border-info/50 hover:bg-info/25"
             >
-              Continue in Coder
+              {t('quickAsk.continueInCoder')}
             </button>
           )}
           <button
@@ -333,7 +340,7 @@ export function QuickAskPopover({ open, onClose }: QuickAskPopoverProps): JSX.El
             onClick={() => void handleSend()}
             className="px-2 py-0.5 rounded bg-ok/15 text-ok border border-ok/50 hover:bg-ok/25 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isAsking ? 'Asking...' : 'Ask'}
+            {isAsking ? t('quickAsk.asking') : t('quickAsk.ask')}
           </button>
         </div>
       </div>

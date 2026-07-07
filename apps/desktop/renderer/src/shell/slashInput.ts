@@ -51,7 +51,7 @@ const STATIC_ARG_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   goal: ['status', 'pause', 'resume', 'complete', 'blocked', 'clear', 'help', '--tokens'],
   learn: ['pending', 'ledger', 'diff', 'approve', 'reject', 'help'],
   mcp: ['status', 'refresh'],
-  memory: ['pending', 'list', 'rebuild', 'open', 'help'],
+  memory: ['inbox', 'pending', 'list', 'show', 'approve', 'reject', 'curate', 'open', 'help'],
   mode: ['plan', 'accept-edits', 'auto'],
   paste: ['list', 'show', 'help'],
   reasoning: ['off', 'auto', 'quick', 'balanced', 'deep'],
@@ -66,7 +66,9 @@ const STATIC_ARG_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   'verifier-log': ['on', 'off'],
 };
 
-const NESTED_STATIC_ARG_OPTIONS: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = {
+const NESTED_STATIC_ARG_OPTIONS: Readonly<
+  Record<string, Readonly<Record<string, readonly string[]>>>
+> = {
   extensions: {
     sdk: ['load'],
   },

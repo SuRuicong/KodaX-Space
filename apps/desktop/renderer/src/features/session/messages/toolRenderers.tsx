@@ -20,6 +20,7 @@ import {
   parseBashOutputCompression,
   stripBashOutputRecoveryHint,
 } from './bashOutputCompression.js';
+import { useI18n } from '../../../i18n/I18nProvider.js';
 
 /** 工具：从 input record 里抽 string 字段（其它类型当成不存在）。 */
 function pickString(o: Record<string, unknown> | undefined, key: string): string | null {
@@ -39,13 +40,15 @@ function BashCompressedResult({
   readonly rawOutputPath?: string;
   readonly filters: readonly string[];
 }): JSX.Element {
+  const { t } = useI18n();
   const visibleResult = stripBashOutputRecoveryHint(result);
-  const label = filters.length > 0 ? filters.join(', ') : 'compressed';
+  const label = filters.length > 0 ? filters.join(', ') : t('tool.compressed');
   return (
     <section className="space-y-1.5">
       <div className="flex items-center justify-between gap-2">
         <div className="text-[11px] text-fg-muted uppercase">
-          result <span className="normal-case text-info/80">compressed</span>
+          {t('tool.result')}{' '}
+          <span className="normal-case text-info/80">{t('tool.compressed')}</span>
           <span className="normal-case text-fg-muted"> / {label}</span>
         </div>
         {rawOutputPath && (
@@ -56,7 +59,7 @@ function BashCompressedResult({
             className="inline-flex items-center gap-1 text-[11px] text-info/80 hover:text-info min-w-0"
           >
             <FileOutput className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={1.75} aria-hidden />
-            <span className="truncate">Raw output</span>
+            <span className="truncate">{t('tool.rawOutput')}</span>
           </button>
         )}
       </div>
@@ -119,6 +122,7 @@ interface MultiEditListProps {
 }
 
 function MultiEditList({ path, edits }: MultiEditListProps): JSX.Element {
+  const { t } = useI18n();
   // cap 同屏 Monaco 实例 — 全展开 = N × DiffEditor × ~3MB JS + N × worker
   const MAX_VISIBLE = 5;
   const [showAllEdits, setShowAllEdits] = useState(false);
@@ -127,7 +131,7 @@ function MultiEditList({ path, edits }: MultiEditListProps): JSX.Element {
   return (
     <section className="space-y-1.5">
       <div className="text-[11px] text-fg-muted uppercase">
-        multi_edit · {edits.length} edit{edits.length === 1 ? '' : 's'}
+        {t('tool.multiEditCount', { count: edits.length })}
       </div>
       {visible.map((e, i) => {
         const item = e as Record<string, unknown> | undefined;
@@ -139,7 +143,7 @@ function MultiEditList({ path, edits }: MultiEditListProps): JSX.Element {
               key={i}
               className="text-[11px] text-fg-muted italic px-2 py-1 border border-dashed border-border-strong/40 rounded"
             >
-              Edit #{i + 1}: missing old_string / new_string fields
+              {t('tool.editMissingFields', { index: i + 1 })}
             </div>
           );
         }
@@ -153,7 +157,7 @@ function MultiEditList({ path, edits }: MultiEditListProps): JSX.Element {
           onClick={() => setShowAllEdits(true)}
           className="text-[11px] text-info/80 hover:text-info px-2 py-0.5"
         >
-          + {overflow} more edit{overflow === 1 ? '' : 's'}
+          {t('tool.moreEdits', { count: overflow })}
         </button>
       )}
     </section>
@@ -186,6 +190,7 @@ function ArtifactToolCard({
   title: string;
   kind: string;
 }): JSX.Element {
+  const { t } = useI18n();
   const projectRoot = useAppStore((s) => {
     const cur = s.currentSessionId;
     return cur ? (s.sessions.find((x) => x.sessionId === cur)?.projectRoot ?? null) : null;
@@ -210,12 +215,16 @@ function ArtifactToolCard({
 
   return (
     <div className="flex items-center gap-2 rounded border border-border-default bg-surface-2/40 px-2.5 py-2">
-      <FileOutput className="w-4 h-4 text-accent-ink flex-shrink-0" strokeWidth={1.75} aria-hidden />
+      <FileOutput
+        className="w-4 h-4 text-accent-ink flex-shrink-0"
+        strokeWidth={1.75}
+        aria-hidden
+      />
       <button
         type="button"
         onClick={focusInPanel}
         className="flex-1 min-w-0 text-left"
-        title="在右侧 Artifact 面板查看"
+        title={t('tool.viewArtifactPanel')}
       >
         <div className="text-[12px] font-medium text-fg-primary truncate font-sans">{title}</div>
         <div className="text-[10px] text-fg-muted uppercase tracking-wide">
@@ -226,8 +235,8 @@ function ArtifactToolCard({
       <button
         type="button"
         onClick={openWindow}
-        title="单独打开（独立窗口）"
-        aria-label="单独打开 artifact"
+        title={t('tool.openStandaloneArtifact')}
+        aria-label={t('artifact.openStandalone')}
         className="w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3 flex-shrink-0"
       >
         <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.75} />
@@ -259,5 +268,12 @@ registerToolResultRenderer('create_artifact', ({ result, input }) => {
   const version = Number(m[2]);
   const title = pickString(input, 'title') ?? 'Artifact';
   const kind = pickString(input, 'kind') ?? '';
-  return <ArtifactToolCard id={id} version={Number.isFinite(version) ? version : undefined} title={title} kind={kind} />;
+  return (
+    <ArtifactToolCard
+      id={id}
+      version={Number.isFinite(version) ? version : undefined}
+      title={title}
+      kind={kind}
+    />
+  );
 });

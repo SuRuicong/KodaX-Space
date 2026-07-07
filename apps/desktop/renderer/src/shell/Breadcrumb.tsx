@@ -6,8 +6,10 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/appStore.js';
 import { SessionMenu } from './SessionMenu.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 
 export function Breadcrumb(): JSX.Element {
+  const { t } = useI18n();
   const projectPath = useAppStore((s) => s.currentProjectPath);
   const sessions = useAppStore((s) => s.sessions);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
@@ -42,13 +44,14 @@ export function Breadcrumb(): JSX.Element {
           onClick={() => void pickProject()}
           className="px-1.5 py-0.5 rounded hover:bg-hover-bg text-fg-muted"
         >
-          Open folder…
+          {t('breadcrumb.openFolder')}
         </button>
       )}
       <span className="text-fg-muted">/</span>
       <div className="relative flex items-center min-w-0">
         <span className="px-1.5 py-0.5 truncate text-fg-muted" title={session?.sessionId}>
-          {session?.title ?? (session ? 'Untitled session' : 'New session')}
+          {session?.title ??
+            (session ? t('breadcrumb.untitledSession') : t('breadcrumb.newSession'))}
         </span>
         {session && (
           <>
@@ -56,7 +59,7 @@ export function Breadcrumb(): JSX.Element {
               type="button"
               onClick={() => setMenuOpen((v) => !v)}
               className="px-1 py-0.5 text-fg-muted hover:text-fg-secondary text-xs"
-              aria-label="Session options"
+              aria-label={t('breadcrumb.sessionOptions')}
             >
               ▾
             </button>

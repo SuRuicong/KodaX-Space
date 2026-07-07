@@ -15,8 +15,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Download } from 'lucide-react';
 import type { UpdaterStateT } from '@kodax-space/space-ipc-schema';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 export function UpdateBanner(): JSX.Element | null {
+  const { t } = useI18n();
   const [state, setState] = useState<UpdaterStateT>({ state: 'idle' });
   const [dismissed, setDismissed] = useState(false);
   // v0.1.4 review LOW-4: renderer 侧也加一道 disable，跟 main 端 installing flag 一起防双击。
@@ -52,7 +54,7 @@ export function UpdateBanner(): JSX.Element | null {
   if (state.state === 'error') {
     return (
       <BannerShell tone="error" onDismiss={() => setDismissed(true)}>
-        <span>Update check failed</span>
+        <span>{t('update.checkFailed')}</span>
         <span className="text-fg-muted">— {state.message}</span>
       </BannerShell>
     );
@@ -61,10 +63,8 @@ export function UpdateBanner(): JSX.Element | null {
   if (state.state === 'available') {
     return (
       <BannerShell tone="info" onDismiss={() => setDismissed(true)}>
-        <span>
-          KodaX Space <span className="font-mono">v{state.version}</span> available
-        </span>
-        <span className="text-fg-muted">— downloading…</span>
+        <span>{t('update.available', { version: state.version })}</span>
+        <span className="text-fg-muted">— {t('update.downloading')}</span>
       </BannerShell>
     );
   }
@@ -73,9 +73,7 @@ export function UpdateBanner(): JSX.Element | null {
     const pct = Math.round(state.percent);
     return (
       <BannerShell tone="info" onDismiss={() => setDismissed(true)}>
-        <span>
-          Downloading <span className="font-mono">v{state.version}</span>
-        </span>
+        <span>{t('update.downloadingVersion', { version: state.version })}</span>
         <span className="text-fg-muted font-mono">{pct}%</span>
       </BannerShell>
     );
@@ -84,16 +82,14 @@ export function UpdateBanner(): JSX.Element | null {
   // ready — call to action
   return (
     <BannerShell tone="success" onDismiss={() => setDismissed(true)}>
-      <span>
-        Update <span className="font-mono">v{state.version}</span> ready
-      </span>
+      <span>{t('update.ready', { version: state.version })}</span>
       <button
         type="button"
         onClick={install}
         disabled={installing}
         className="ml-2 px-2 py-0.5 text-xs rounded bg-ok/90 text-white hover:bg-ok border border-ok disabled:opacity-60 disabled:cursor-not-allowed"
       >
-        {installing ? 'Installing…' : 'Restart & install'}
+        {installing ? t('update.installing') : t('update.restartInstall')}
       </button>
     </BannerShell>
   );
@@ -112,6 +108,7 @@ const TONE_CLASS: Record<BannerShellProps['tone'], string> = {
 };
 
 function BannerShell(props: BannerShellProps): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
       <div
@@ -124,7 +121,7 @@ function BannerShell(props: BannerShellProps): JSX.Element {
           type="button"
           onClick={props.onDismiss}
           className="ml-1 dark:text-fg-muted dark:hover:text-white text-fg-muted hover:text-fg-primary px-0.5 leading-none"
-          aria-label="Dismiss"
+          aria-label={t('common.dismiss')}
         >
           ×
         </button>

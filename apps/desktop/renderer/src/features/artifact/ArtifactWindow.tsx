@@ -13,6 +13,7 @@ import { ArtifactView } from './ArtifactView';
 import { useArtifactRead } from './useArtifacts';
 import { toArtifactContent } from './toArtifactContent';
 import { TEXT_COPY_KINDS } from './artifactKind';
+import { useI18n } from '../../i18n/I18nProvider';
 
 export interface ArtifactHashParams {
   readonly id: string;
@@ -65,11 +66,14 @@ export function parseArtifactHash(hash: string): ArtifactHashParams | null {
 
 function Centered({ children }: { children: React.ReactNode }): JSX.Element {
   return (
-    <div className="flex-1 flex items-center justify-center text-[12px] text-fg-muted">{children}</div>
+    <div className="flex-1 flex items-center justify-center text-[12px] text-fg-muted">
+      {children}
+    </div>
   );
 }
 
 export function ArtifactWindow({ params }: { params: ArtifactHashParams }): JSX.Element {
+  const { t } = useI18n();
   const [version, setVersion] = useState<number | undefined>(params.version);
   const { ref, payload, loading, error } = useArtifactRead(params.id, version);
   const [copied, setCopied] = useState(false);
@@ -102,7 +106,7 @@ export function ArtifactWindow({ params }: { params: ArtifactHashParams }): JSX.
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      setActionMsg('复制失败');
+      setActionMsg(t('artifact.copyFailed'));
     }
   }
 
@@ -112,14 +116,19 @@ export function ArtifactWindow({ params }: { params: ArtifactHashParams }): JSX.
     setActionMsg(null);
     const r = await bridge.invoke(
       'artifact.export',
-      effectiveVersion !== undefined ? { id: params.id, version: effectiveVersion } : { id: params.id },
+      effectiveVersion !== undefined
+        ? { id: params.id, version: effectiveVersion }
+        : { id: params.id },
     );
     if (!r.ok) {
-      setActionMsg('保存失败');
+      setActionMsg(t('artifact.saveFailed'));
       return;
     }
-    if (r.data.ok) setActionMsg(r.data.path ? `已保存：${r.data.path}` : '已保存');
-    else if (!r.data.canceled) setActionMsg(r.data.error ?? '保存失败');
+    if (r.data.ok)
+      setActionMsg(
+        r.data.path ? t('artifact.savedPath', { path: r.data.path }) : t('artifact.saved'),
+      );
+    else if (!r.data.canceled) setActionMsg(r.data.error ?? t('artifact.saveFailed'));
     else return; // user cancelled — leave the toolbar quiet
     setTimeout(() => setActionMsg(null), 2500);
   }
@@ -127,7 +136,11 @@ export function ArtifactWindow({ params }: { params: ArtifactHashParams }): JSX.
   return (
     <div className="h-screen w-screen flex flex-col bg-surface text-fg-primary">
       <header className="flex items-center gap-2 px-4 h-11 border-b border-border-default flex-shrink-0">
-        <FileOutput className="w-4 h-4 text-fg-muted flex-shrink-0" strokeWidth={1.75} aria-hidden />
+        <FileOutput
+          className="w-4 h-4 text-fg-muted flex-shrink-0"
+          strokeWidth={1.75}
+          aria-hidden
+        />
         <span className="font-medium truncate" title={displayTitle}>
           {displayTitle}
         </span>
@@ -136,7 +149,7 @@ export function ArtifactWindow({ params }: { params: ArtifactHashParams }): JSX.
             className="text-[11px] bg-surface-raised border border-border-default rounded px-1.5 py-1 text-fg-secondary ml-1"
             value={effectiveVersion ?? ''}
             onChange={(e) => setVersion(Number(e.target.value))}
-            aria-label="版本"
+            aria-label={t('artifact.version')}
           >
             {ref.versions
               .slice()
@@ -144,19 +157,21 @@ export function ArtifactWindow({ params }: { params: ArtifactHashParams }): JSX.
               .map((vm) => (
                 <option key={vm.v} value={vm.v}>
                   v{vm.v}
-                  {vm.v === ref.currentVersion ? ' (最新)' : ''}
+                  {vm.v === ref.currentVersion ? t('artifact.latestSuffix') : ''}
                 </option>
               ))}
           </select>
         )}
-        {actionMsg && <span className="text-[11px] text-fg-muted truncate max-w-[40%]">{actionMsg}</span>}
+        {actionMsg && (
+          <span className="text-[11px] text-fg-muted truncate max-w-[40%]">{actionMsg}</span>
+        )}
         <div className="ml-auto flex items-center gap-0.5">
           {canCopy && (
             <button
               type="button"
               onClick={() => void onCopy()}
-              title="复制内容"
-              aria-label="复制内容"
+              title={t('artifact.copyContent')}
+              aria-label={t('artifact.copyContent')}
               className="w-7 h-7 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
             >
               {copied ? (
@@ -170,8 +185,8 @@ export function ArtifactWindow({ params }: { params: ArtifactHashParams }): JSX.
             <button
               type="button"
               onClick={() => void onSave()}
-              title="另存为…"
-              aria-label="另存为"
+              title={t('artifact.saveAs')}
+              aria-label={t('artifact.saveAsAria')}
               className="w-7 h-7 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
             >
               <Download className="w-4 h-4" strokeWidth={1.75} />
@@ -181,13 +196,13 @@ export function ArtifactWindow({ params }: { params: ArtifactHashParams }): JSX.
       </header>
       <div className="flex-1 min-h-0 flex flex-col">
         {loading && !content ? (
-          <Centered>加载中…</Centered>
+          <Centered>{t('artifact.loading')}</Centered>
         ) : error ? (
           <Centered>{error}</Centered>
         ) : content ? (
           <ArtifactView {...content} />
         ) : (
-          <Centered>此产物暂无法预览。</Centered>
+          <Centered>{t('artifact.cannotPreview')}</Centered>
         )}
       </div>
     </div>

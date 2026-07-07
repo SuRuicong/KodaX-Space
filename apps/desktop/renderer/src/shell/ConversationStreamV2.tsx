@@ -21,7 +21,7 @@ import {
   type TouchEvent as ReactTouchEvent,
   type WheelEvent as ReactWheelEvent,
 } from 'react';
-import type { SessionEvent } from '@kodax-space/space-ipc-schema';
+import type { SessionEvent, SessionMeta } from '@kodax-space/space-ipc-schema';
 import {
   useAppStore,
   type LocalNoticeMessage,
@@ -71,6 +71,11 @@ import { Caret } from '../components/Caret.js';
 import { Reveal } from '../components/Reveal.js';
 import { Collapse } from '../components/Collapse.js';
 import { ChevronDown, FileOutput, Maximize2 } from 'lucide-react';
+import { shouldActivateSessionForCurrentScope } from '../lib/sessionActivation.js';
+import { useSurfaceStore } from '../store/surface.js';
+import { requestConfirm } from '../store/confirmStore.js';
+import { pushToast } from '../store/toastStore.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 // 聚合后的 view-only message kind —— 两层折叠对齐 Claude Desktop "Ran 6 commands ⌄":
 //
 //   ▸ Ran 6 commands · 12s              ← 外层 cluster (此处折叠 = 默认)
@@ -254,7 +259,14 @@ function groupTools(
             out.push({ kind: 'thinking', id: `${m.id}_thinking`, thinking: m.thinking! });
           }
           // 复用现有 assistant_text view-kind —— AssistantBubble 已经会渲染 markdown + footer
-          out.push({ kind: 'assistant_text', id: `${m.id}_text`, text: m.text, sentAt: m.sentAt });
+          out.push({
+            kind: 'assistant_text',
+            id: `${m.id}_text`,
+            text: m.text,
+            sentAt: m.sentAt,
+            ...(m.turnIndex !== undefined ? { turnIndex: m.turnIndex } : {}),
+            ...(m.completed !== undefined ? { completed: m.completed } : {}),
+          });
           pendingCluster.push({
             id: m.id,
             title: summarizeTools(tools),
@@ -320,6 +332,7 @@ function groupTools(
 }
 
 export function ConversationStreamV2(): JSX.Element {
+  const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const events = useAppStore((s) =>
     currentSessionId ? (s.eventsBySession[currentSessionId] ?? EMPTY_EVENTS) : EMPTY_EVENTS,
@@ -671,6 +684,8 @@ export function ConversationStreamV2(): JSX.Element {
       if (!isDocumentActiveForAutoFollow()) return;
       scheduleAutoFollow(scroller);
     });
+    // Composer growth shrinks the scroller without changing message content height.
+    ro.observe(scroller);
     ro.observe(content);
     return () => {
       ro.disconnect();
@@ -723,6 +738,99 @@ export function ConversationStreamV2(): JSX.Element {
     });
   }
 
+  async function forkFromTurn(turnIndex: number): Promise<void> {
+    if (!currentSessionId || !window.kodaxSpace) return;
+    const state = useAppStore.getState();
+    const session = state.sessions.find((s) => s.sessionId === currentSessionId);
+    if (!session) return;
+    const userMsgs = state.userMessagesBySession[currentSessionId] ?? [];
+    const forkPointTurnIdx = Math.max(0, Math.min(turnIndex, Math.max(0, userMsgs.length - 1)));
+    const r = await window.kodaxSpace.invoke('session.fork', {
+      sessionId: currentSessionId,
+      forkPointTurnIdx,
+    });
+    if (!r.ok) {
+      pushToast(
+        t('menu.session.forkFailed', {
+          message: r.error?.message ?? t('common.unknownError'),
+        }),
+        'error',
+      );
+      return;
+    }
+
+    const childTitle =
+      session.title !== undefined
+        ? `${session.title.replace(/( \(fork\))+$/, '')} (fork)`
+        : t('menu.session.forkedTitle');
+    const childSession: SessionMeta = {
+      sessionId: r.data.newSessionId,
+      projectRoot: session.projectRoot,
+      provider: session.provider,
+      reasoningMode: session.reasoningMode,
+      permissionMode: session.permissionMode,
+      autoModeEngine: session.autoModeEngine,
+      agentMode: session.agentMode,
+      surface: session.surface,
+      title: childTitle,
+      createdAt: r.data.createdAt,
+      lastActivityAt: r.data.createdAt,
+      parentSessionId: currentSessionId,
+      forkPointTurnIdx,
+    };
+    state.upsertSession(childSession);
+    state.forkSessionBuffers(currentSessionId, r.data.newSessionId, forkPointTurnIdx);
+    const latest = useAppStore.getState();
+    const latestSurface = useSurfaceStore.getState().currentSurface;
+    if (
+      shouldActivateSessionForCurrentScope(childSession, {
+        currentProjectPath: latest.currentProjectPath,
+        currentSurface: latestSurface,
+      })
+    ) {
+      latest.setCurrentSession(r.data.newSessionId);
+    }
+  }
+
+  async function rewindToTurn(turnIndex: number): Promise<void> {
+    if (!currentSessionId || !window.kodaxSpace) return;
+    const state = useAppStore.getState();
+    const userMsgs = state.userMessagesBySession[currentSessionId] ?? [];
+    if (turnIndex < 0 || turnIndex >= userMsgs.length - 1) return;
+
+    const confirmed = await requestConfirm({
+      title: t('menu.session.rewindToTurnTitle'),
+      message: t('menu.session.rewindToTurnMessage', { turn: String(turnIndex + 1) }),
+      confirmLabel: t('menu.session.rewindToTurnConfirm'),
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    const r = await window.kodaxSpace.invoke('session.rewind', {
+      sessionId: currentSessionId,
+      rewindPastTurnIdx: turnIndex,
+    });
+    if (!r.ok) {
+      pushToast(
+        t('menu.session.rewindFailed', {
+          message: r.error?.message ?? t('common.unknownError'),
+        }),
+        'error',
+      );
+      return;
+    }
+    if (!r.data.ok || r.data.diskRewound === false) {
+      pushToast(
+        t('menu.session.rewindRejected', {
+          message: r.data.reason ?? 'disk history was not rewound',
+        }),
+        'error',
+      );
+      return;
+    }
+    state.rewindSessionBuffers(currentSessionId, turnIndex);
+  }
+
   if (!currentSessionId) {
     return <WelcomeDashboard />;
   }
@@ -756,7 +864,7 @@ export function ConversationStreamV2(): JSX.Element {
                 // 比 "Send a prompt to start" 更准确,也免去用户盯着空白屏幕等几百毫秒
                 <HistoryRestoreSkeleton />
               ) : (
-                <div className="text-fg-faint italic text-sm">Send a prompt below to start.</div>
+                <div className="text-fg-faint italic text-sm">{t('conversation.emptyPrompt')}</div>
               ))}
             {displayMessages.map((m, i) => {
               const isMatch = matchSet.has(m.id);
@@ -787,7 +895,20 @@ export function ConversationStreamV2(): JSX.Element {
                   markerTone = 'queued';
                   break;
                 case 'assistant_text':
-                  inner = <AssistantBubble text={m.text} thinking={m.thinking} sentAt={m.sentAt} />;
+                  inner = (
+                    <AssistantBubble
+                      text={m.text}
+                      thinking={m.thinking}
+                      sentAt={m.sentAt}
+                      turnIndex={m.turnIndex}
+                      completed={m.completed}
+                      canRewind={
+                        m.turnIndex !== undefined ? m.turnIndex < userMessages.length - 1 : false
+                      }
+                      onForkTurn={(idx) => void forkFromTurn(idx)}
+                      onRewindTurn={(idx) => void rewindToTurn(idx)}
+                    />
+                  );
                   markerTone = 'assistant';
                   break;
                 case 'system_notice':
@@ -856,7 +977,7 @@ export function ConversationStreamV2(): JSX.Element {
                 closeSearch();
               }
             }}
-            placeholder="Find in transcript…"
+            placeholder={t('conversation.searchPlaceholder')}
             className="bg-transparent text-xs outline-none w-44 text-fg-primary placeholder:text-fg-muted"
           />
           <span className="text-[11px] text-fg-muted font-mono w-12 text-right select-none">
@@ -871,8 +992,8 @@ export function ConversationStreamV2(): JSX.Element {
             onClick={prevMatch}
             disabled={matchIds.length === 0}
             className="text-fg-muted hover:text-fg-primary px-1 disabled:opacity-30"
-            title="Previous match (Shift+Enter)"
-            aria-label="Previous match"
+            title={t('conversation.previousMatchTitle')}
+            aria-label={t('conversation.previousMatch')}
           >
             ↑
           </button>
@@ -881,8 +1002,8 @@ export function ConversationStreamV2(): JSX.Element {
             onClick={nextMatch}
             disabled={matchIds.length === 0}
             className="text-fg-muted hover:text-fg-primary px-1 disabled:opacity-30"
-            title="Next match (Enter)"
-            aria-label="Next match"
+            title={t('conversation.nextMatchTitle')}
+            aria-label={t('conversation.nextMatch')}
           >
             ↓
           </button>
@@ -890,8 +1011,8 @@ export function ConversationStreamV2(): JSX.Element {
             type="button"
             onClick={closeSearch}
             className="text-fg-muted hover:text-fg-primary px-1"
-            title="Close (Esc)"
-            aria-label="Close search"
+            title={t('conversation.closeSearchTitle')}
+            aria-label={t('conversation.closeSearch')}
           >
             ✕
           </button>
@@ -908,8 +1029,8 @@ export function ConversationStreamV2(): JSX.Element {
           <button
             type="button"
             onClick={jumpToBottom}
-            aria-label="Jump to bottom"
-            title="Jump to bottom"
+            aria-label={t('conversation.jumpToBottom')}
+            title={t('conversation.jumpToBottom')}
             className="ix-pop w-8 h-8 rounded-full flex items-center justify-center bg-surface-4 border border-border-default lift text-fg-secondary hover:text-fg-primary hover:outline hover:outline-2 hover:outline-offset-2 hover:outline-border-strong"
           >
             <ChevronDown className="w-4 h-4" strokeWidth={2.5} aria-hidden />
@@ -921,6 +1042,7 @@ export function ConversationStreamV2(): JSX.Element {
 }
 
 function ArtifactInlineCallout({ artifact }: { artifact: ArtifactMessage }): JSX.Element {
+  const { t } = useI18n();
   const projectRoot = useAppStore((s) => {
     const cur = s.currentSessionId;
     return cur ? (s.sessions.find((x) => x.sessionId === cur)?.projectRoot ?? null) : null;
@@ -967,7 +1089,7 @@ function ArtifactInlineCallout({ artifact }: { artifact: ArtifactMessage }): JSX
         onClick={focusInPanel}
         disabled={!canOpen}
         className="flex min-w-0 flex-1 items-center gap-2 rounded px-1.5 py-1 text-left disabled:cursor-default"
-        title={canOpen ? 'View artifact' : 'Creating artifact'}
+        title={canOpen ? t('conversation.viewArtifact') : t('conversation.creatingArtifact')}
       >
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-accent/30 bg-accent/10 text-accent-ink">
           {canOpen ? (
@@ -978,9 +1100,11 @@ function ArtifactInlineCallout({ artifact }: { artifact: ArtifactMessage }): JSX
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-[10px] font-medium uppercase tracking-wide text-fg-muted">
-            {canOpen ? 'Artifact created' : 'Creating artifact'}
+            {canOpen ? t('conversation.artifactCreated') : t('conversation.creatingArtifact')}
           </span>
-          <span className="block truncate text-sm font-medium text-fg-primary">{artifact.title}</span>
+          <span className="block truncate text-sm font-medium text-fg-primary">
+            {artifact.title}
+          </span>
           <span className="block truncate text-[11px] text-fg-muted">
             <span className="uppercase tracking-wide">{meta}</span>
             {artifact.summary ? <span> / {artifact.summary}</span> : null}
@@ -988,7 +1112,7 @@ function ArtifactInlineCallout({ artifact }: { artifact: ArtifactMessage }): JSX
         </span>
         {canOpen && (
           <span className="shrink-0 pr-1 text-[11px] font-medium text-accent-ink opacity-85 group-hover/artifact:opacity-100">
-            Open
+            {t('conversation.open')}
           </span>
         )}
       </button>
@@ -996,8 +1120,8 @@ function ArtifactInlineCallout({ artifact }: { artifact: ArtifactMessage }): JSX
         <button
           type="button"
           onClick={openWindow}
-          title="Open artifact in a separate window"
-          aria-label="Open artifact in a separate window"
+          title={t('conversation.openArtifactWindow')}
+          aria-label={t('conversation.openArtifactWindow')}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-fg-muted hover:bg-surface-3 hover:text-fg-primary"
         >
           <Maximize2 className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
@@ -1188,8 +1312,9 @@ function ToolCluster({ cluster, expanded, onToggle }: ToolClusterProps): JSX.Ele
 // 一组 user/assistant 气泡 shimmer,让用户知道"正在加载"而不是"空白会话"。
 // 用 animate-pulse + 几条灰度 bar 模拟消息形态,无额外 CSS keyframe。
 function HistoryRestoreSkeleton(): JSX.Element {
+  const { t } = useI18n();
   return (
-    <div className="space-y-4 animate-pulse" aria-label="Loading conversation history">
+    <div className="space-y-4 animate-pulse" aria-label={t('conversation.loadingHistory')}>
       {/* user 气泡 (右对齐) */}
       <div className="flex justify-end">
         <div className="bg-surface-3/60 rounded-lg px-3 py-2 max-w-[60%]">
@@ -1212,7 +1337,9 @@ function HistoryRestoreSkeleton(): JSX.Element {
         <div className="h-3 w-5/6 bg-surface-3/60 rounded" />
         <div className="h-3 w-2/3 bg-surface-3/60 rounded" />
       </div>
-      <div className="pt-2 text-[11px] text-fg-faint italic">Loading conversation…</div>
+      <div className="pt-2 text-[11px] text-fg-faint italic">
+        {t('conversation.loadingConversation')}
+      </div>
     </div>
   );
 }

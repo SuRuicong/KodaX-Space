@@ -2,14 +2,16 @@
 // 单文件聚合：每个组件 < 80 行，共享 ConversationMessage 类型，拆分反而提高复杂度。
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check } from 'lucide-react';
+import { Check, Copy, FileText, GitFork, Undo2 } from 'lucide-react';
 import type { ConversationMessage } from '../composeMessages.js';
 import { Markdown } from './Markdown.js';
 import { Caret } from '../../../components/Caret.js';
 import { Collapse } from '../../../components/Collapse.js';
 import { EASE_EXPO, usePrefersReducedMotion } from '../../../lib/motion.js';
 import { openFileSmart, looksLikeFilePath } from '../../../lib/openPath.js';
+import { parseFileReferences, type ParsedFileReference } from '../../../lib/fileReferences.js';
 import { useI18n } from '../../../i18n/I18nProvider.js';
+import type { MessageKey } from '../../../i18n/messages.js';
 // OC-21: side-effect import 让内置 tool renderers (write/edit/multi_edit) 注册到 registry
 import './toolRenderers.js';
 import { getToolInputRenderer, getToolResultRenderer } from './toolRegistry.js';
@@ -102,7 +104,22 @@ function collapseLargeText(text: string): CollapseResult {
 // 替代之前的 "✓ complete" 横条——视觉更轻，对每个 user/assistant message 都挂一个
 // 尾巴：[复制 icon] + "Xd ago"。hover bubble 时显示，非 hover 时 dim 或隐藏避免视觉
 // 噪音。Claude Desktop 同款风格。
-function MessageFooter({ text, sentAt }: { text: string; sentAt?: number }): JSX.Element {
+interface TurnFooterActions {
+  readonly onFork?: () => void;
+  readonly onRewind?: () => void;
+  readonly rewindDisabled?: boolean;
+}
+
+function MessageFooter({
+  text,
+  sentAt,
+  turnActions,
+}: {
+  text: string;
+  sentAt?: number;
+  turnActions?: TurnFooterActions;
+}): JSX.Element {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
   async function copyToClipboard(): Promise<void> {
@@ -115,7 +132,7 @@ function MessageFooter({ text, sentAt }: { text: string; sentAt?: number }): JSX
     }
   }
 
-  const timeStr = sentAt !== undefined ? formatRelativeTime(sentAt) : null;
+  const timeStr = sentAt !== undefined ? formatRelativeTime(sentAt, t) : null;
 
   // 时间 + copy 图标都常驻显示 (dim)；hover copy 按钮时图标右边淡入 "copy" 文字
   // (group/copy 限制 hover 作用域到本按钮，避免 message bubble 整体 hover 时一直显示)。
@@ -126,38 +143,50 @@ function MessageFooter({ text, sentAt }: { text: string; sentAt?: number }): JSX
         type="button"
         onClick={() => void copyToClipboard()}
         className="group/copy flex items-center gap-1 text-fg-muted hover:text-fg-primary transition-colors"
-        title="Copy message"
-        aria-label="Copy message"
+        title={t('message.copyMessage')}
+        aria-label={t('message.copyMessage')}
       >
         {copied ? (
           <span className="copy-pulse text-ok inline-flex items-center gap-1">
-            <Check className="w-3 h-3" strokeWidth={2.5} aria-hidden /> copied
+            <Check className="w-3 h-3" strokeWidth={2.5} aria-hidden /> {t('message.copied')}
           </span>
         ) : (
           <>
-            {/* Lucide-style copy icon — 之前用的 Unicode ⎘ (U+2398) 在多数字体里
-                几乎看不见 (用户反馈"不显眼")，换成内联 SVG 在所有字体下都清晰。
-                stroke=currentColor 让浅/深主题都跟随 text color。 */}
-            <svg
-              aria-hidden
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect width="14" height="14" x="8" y="8" rx="2" />
-              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-            </svg>
+            {/* Lucide icon keeps copy visible across fonts and follows currentColor. */}
+            <Copy className="w-3 h-3" strokeWidth={2} aria-hidden />
             <span className="opacity-0 max-w-0 overflow-hidden group-hover/copy:opacity-100 group-hover/copy:max-w-[40px] transition-all duration-150">
-              copy
+              {t('message.copy')}
             </span>
           </>
         )}
       </button>
+      {turnActions && (
+        <>
+          <button
+            type="button"
+            onClick={turnActions.onFork}
+            className="inline-flex items-center text-fg-muted hover:text-fg-primary transition-colors"
+            title={t('message.forkFromHere')}
+            aria-label={t('message.forkFromHere')}
+          >
+            <GitFork className="w-3 h-3" strokeWidth={2} aria-hidden />
+          </button>
+          <button
+            type="button"
+            onClick={turnActions.rewindDisabled ? undefined : turnActions.onRewind}
+            disabled={turnActions.rewindDisabled}
+            className="inline-flex items-center text-fg-muted hover:text-fg-primary transition-colors disabled:opacity-35 disabled:hover:text-fg-muted disabled:cursor-not-allowed"
+            title={
+              turnActions.rewindDisabled ? t('message.alreadyAtTurn') : t('message.rewindToHere')
+            }
+            aria-label={
+              turnActions.rewindDisabled ? t('message.alreadyAtTurn') : t('message.rewindToHere')
+            }
+          >
+            <Undo2 className="w-3 h-3" strokeWidth={2} aria-hidden />
+          </button>
+        </>
+      )}
       {timeStr && (
         <span className="text-fg-muted" title={new Date(sentAt!).toLocaleString()}>
           {timeStr}
@@ -171,24 +200,70 @@ function MessageFooter({ text, sentAt }: { text: string; sentAt?: number }): JSX
  * 相对时间格式：~now / 5m ago / 2h ago / 3d ago / 2w ago / 4mo ago / 1y ago
  * 跟 Claude Desktop 同款"短英文"风格，避免本地化里中英混杂。
  */
-function formatRelativeTime(ts: number): string {
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
+
+function formatRelativeTime(ts: number, t: Translate): string {
   const diff = Date.now() - ts;
-  if (diff < 0) return 'just now';
+  if (diff < 0) return t('message.justNow');
   const s = Math.floor(diff / 1000);
-  if (s < 30) return 'just now';
-  if (s < 60) return `${s}s ago`;
+  if (s < 30) return t('message.justNow');
+  if (s < 60) return t('message.secondsAgo', { count: s });
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
+  if (m < 60) return t('message.minutesAgo', { count: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
+  if (h < 24) return t('message.hoursAgo', { count: h });
   const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d ago`;
+  if (d < 7) return t('message.daysAgo', { count: d });
   const w = Math.floor(d / 7);
-  if (w < 5) return `${w}w ago`;
+  if (w < 5) return t('message.weeksAgo', { count: w });
   const mo = Math.floor(d / 30);
-  if (mo < 12) return `${mo}mo ago`;
+  if (mo < 12) return t('message.monthsAgo', { count: mo });
   const y = Math.floor(d / 365);
-  return `${y}y ago`;
+  return t('message.yearsAgo', { count: y });
+}
+
+function FileReferenceLink({ file }: { file: ParsedFileReference }): JSX.Element {
+  const { t } = useI18n();
+  return (
+    <button
+      type="button"
+      onClick={() => void openFileSmart(file.path)}
+      className={[
+        'mx-0.5 my-0.5 inline-flex max-w-full items-center gap-1.5 align-middle',
+        'rounded-md border border-info/35 bg-info/10 px-2 py-1 text-left text-info',
+        'hover:bg-info/15 hover:border-info/55 transition-colors',
+      ].join(' ')}
+      title={file.path}
+      aria-label={t('message.openFile', { label: file.label })}
+    >
+      <FileText className="h-3.5 w-3.5 shrink-0 text-info/75" strokeWidth={1.8} aria-hidden />
+      <span className="min-w-0 max-w-[360px]">
+        <span className="block truncate text-[12px] font-medium leading-4">{file.label}</span>
+        <span className="block truncate text-[10px] leading-3 text-info/70">{file.detail}</span>
+      </span>
+    </button>
+  );
+}
+
+function UserMessageContent({ content }: { content: string }): JSX.Element {
+  const platform =
+    typeof window === 'undefined' ? 'win32' : (window.kodaxSpace?.platform ?? 'win32');
+  const parts = useMemo(() => parseFileReferences(content, platform), [content, platform]);
+  const hasFileReference = parts.some((part) => part.kind === 'file');
+
+  if (!hasFileReference) return <>{content}</>;
+
+  return (
+    <>
+      {parts.map((part, idx) =>
+        part.kind === 'file' ? (
+          <FileReferenceLink key={`${part.href}:${idx}`} file={part} />
+        ) : part.text.length > 0 ? (
+          <span key={`text:${idx}`}>{part.text}</span>
+        ) : null,
+      )}
+    </>
+  );
 }
 
 // ---- User Bubble ----
@@ -201,11 +276,11 @@ export function UserBubble({ content, sentAt }: { content: string; sentAt?: numb
     <div className="group flex flex-col items-start" data-testid="user-message-bubble">
       <div
         className={[
-          'inline-block max-w-[80%] rounded-2xl px-3 py-1.5 text-[13px] whitespace-pre-wrap border',
+          'inline-block min-w-0 max-w-[min(80%,100%)] overflow-hidden rounded-2xl px-3 py-1.5 text-[13px] whitespace-pre-wrap break-words [overflow-wrap:anywhere] border',
           'bg-info/15 border-info/40 text-info',
         ].join(' ')}
       >
-        {content}
+        <UserMessageContent content={content} />
       </div>
       <MessageFooter text={content} sentAt={sentAt} />
     </div>
@@ -218,7 +293,9 @@ export function LocalNoticeBubble({
   variant,
 }: Extract<ConversationMessage, { kind: 'local_notice' }>): JSX.Element {
   const { t } = useI18n();
-  const label = t(variant === 'echo' ? 'session.localNoticeSlashLabel' : 'session.localNoticeOutputLabel');
+  const label = t(
+    variant === 'echo' ? 'session.localNoticeSlashLabel' : 'session.localNoticeOutputLabel',
+  );
   return (
     <div className="group flex flex-col items-start" data-testid="local-notice-bubble">
       <div
@@ -256,7 +333,7 @@ export function QueuedUserBubble({
     <div className="group flex flex-col items-start" data-testid="queued-user-message-bubble">
       <div
         className={[
-          'inline-block max-w-[80%] rounded-2xl px-3 py-2 text-[13px] whitespace-pre-wrap border border-dashed',
+          'inline-block min-w-0 max-w-[min(80%,100%)] overflow-hidden rounded-2xl px-3 py-2 text-[13px] whitespace-pre-wrap break-words [overflow-wrap:anywhere] border border-dashed',
           'bg-warn/10 border-warn/45 text-fg-secondary',
         ].join(' ')}
       >
@@ -264,7 +341,9 @@ export function QueuedUserBubble({
           <span className="uppercase tracking-[0.12em]">{label}</span>
           <span className="text-fg-muted normal-case">{detail}</span>
         </div>
-        <div>{content}</div>
+        <div className="min-w-0">
+          <UserMessageContent content={content} />
+        </div>
       </div>
       <MessageFooter text={content} sentAt={sentAt} />
     </div>
@@ -275,12 +354,30 @@ export function AssistantBubble({
   text,
   thinking,
   sentAt,
+  turnIndex,
+  completed,
+  canRewind,
+  onForkTurn,
+  onRewindTurn,
 }: {
   text: string;
   thinking?: string;
   sentAt?: number;
+  turnIndex?: number;
+  completed?: boolean;
+  canRewind?: boolean;
+  onForkTurn?: (turnIndex: number) => void;
+  onRewindTurn?: (turnIndex: number) => void;
 }): JSX.Element {
   const [showThinking, setShowThinking] = useState(false);
+  const turnActions =
+    completed === true && turnIndex !== undefined
+      ? {
+          ...(onForkTurn ? { onFork: () => onForkTurn(turnIndex) } : {}),
+          ...(onRewindTurn ? { onRewind: () => onRewindTurn(turnIndex) } : {}),
+          rewindDisabled: canRewind === false,
+        }
+      : undefined;
   // 「对话即文档」—— assistant 不包 bubble，直接 markdown 进入文档流。
   // thinking 改成一行折叠摘要 (▸ Thinking (~N tokens))，跟外层 ToolCluster header 视觉一致。
   return (
@@ -319,7 +416,7 @@ export function AssistantBubble({
           <span className="dark:text-fg-faint text-fg-muted italic">…</span>
         )}
       </div>
-      {text.length > 0 && <MessageFooter text={text} sentAt={sentAt} />}
+      {text.length > 0 && <MessageFooter text={text} sentAt={sentAt} turnActions={turnActions} />}
     </div>
   );
 }
@@ -366,6 +463,7 @@ export function ToolCallCard({
   progress,
   status,
 }: Extract<ConversationMessage, { kind: 'tool_call' }>): JSX.Element {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(() =>
     FILE_MUTATION_TOOLS_DEFAULT_EXPANDED.has(toolName),
   );
@@ -430,7 +528,7 @@ export function ToolCallCard({
               <button
                 type="button"
                 onClick={() => void openFileSmart(pathArg)}
-                title={`打开 ${pathArg}`}
+                title={t('markdown.openInlinePath', { path: pathArg })}
                 className="min-w-0 flex-1 text-left truncate text-info/80 hover:text-info underline decoration-info/40 underline-offset-2 cursor-pointer"
               >
                 {pathArg}
@@ -450,7 +548,9 @@ export function ToolCallCard({
 
           {progress !== undefined && (
             <section>
-              <div className="text-[11px] text-fg-muted uppercase mb-0.5">progress</div>
+              <div className="text-[11px] text-fg-muted uppercase mb-0.5">
+                {t('message.progress')}
+              </div>
               <div className="text-xs text-info">{progress}</div>
             </section>
           )}
@@ -471,6 +571,7 @@ export function ToolCallCard({
 }
 
 function StatusBadge({ status }: { status: 'running' | 'done' }): JSX.Element {
+  const { t } = useI18n();
   if (status === 'running') {
     return (
       <span
@@ -480,7 +581,7 @@ function StatusBadge({ status }: { status: 'running' | 'done' }): JSX.Element {
           'text-warn bg-warn/12 border-warn/30',
         ].join(' ')}
       >
-        running
+        {t('message.status.running')}
       </span>
     );
   }
@@ -491,7 +592,7 @@ function StatusBadge({ status }: { status: 'running' | 'done' }): JSX.Element {
         'text-ok bg-ok/12 border-ok/30',
       ].join(' ')}
     >
-      done
+      {t('message.status.done')}
     </span>
   );
 }
@@ -533,12 +634,12 @@ function summarizeInput(input?: Record<string, unknown>): string {
 const ACTION_BUTTONS: Partial<
   Record<
     NonNullable<Extract<ConversationMessage, { kind: 'system_notice' }>['action']>,
-    { label: string; event: string }
+    { labelKey: MessageKey; event: string }
   >
 > = {
-  retry: { label: 'Retry', event: 'kodax-space.focus-textarea' },
+  retry: { labelKey: 'message.action.retry', event: 'kodax-space.focus-textarea' },
   open_provider_settings: {
-    label: 'Provider settings',
+    labelKey: 'message.action.providerSettings',
     event: 'kodax-space.open-provider-settings',
   },
 };
@@ -627,9 +728,11 @@ export function SystemNotice({
           disabled={countdownActive}
           onClick={() => window.dispatchEvent(new CustomEvent(actionDef.event))}
           className="px-1.5 py-0.5 rounded border border-current/30 hover:bg-current/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-          title={countdownActive ? `Wait ${secondsLeft}s before retry` : undefined}
+          title={
+            countdownActive ? t('message.retryWaitTitle', { seconds: secondsLeft }) : undefined
+          }
         >
-          {countdownActive ? `Retry in ${secondsLeft}s` : actionDef.label}
+          {countdownActive ? t('message.retryIn', { seconds: secondsLeft }) : t(actionDef.labelKey)}
         </button>
       )}
     </div>
@@ -660,6 +763,7 @@ interface ToolEditInputViewProps {
  * 不再要改本文件。
  */
 function ToolEditInputView({ toolName, input }: ToolEditInputViewProps): JSX.Element | null {
+  const { t } = useI18n();
   // collapse 状态搬到这里 — 让 fallback 也享有 Show full / Collapse UX
   const [showFullInput, setShowFullInput] = useState(false);
   const inputPretty = useMemo<string | null>(() => {
@@ -683,14 +787,16 @@ function ToolEditInputView({ toolName, input }: ToolEditInputViewProps): JSX.Ele
   return (
     <section>
       <div className="text-[11px] text-fg-muted uppercase mb-0.5 flex justify-between items-center">
-        <span>input</span>
+        <span>{t('message.input')}</span>
         {inputCollapse.collapsed && (
           <button
             type="button"
             onClick={() => setShowFullInput((v) => !v)}
             className="text-[11px] text-info/80 hover:text-info normal-case"
           >
-            {showFullInput ? 'Collapse' : `Show full (${inputCollapse.totalLines} lines)`}
+            {showFullInput
+              ? t('message.collapse')
+              : t('message.showFull', { lines: inputCollapse.totalLines })}
           </button>
         )}
       </div>
@@ -723,6 +829,7 @@ function ToolResultView({
   showFullResult,
   setShowFullResult,
 }: ToolResultViewProps): JSX.Element | null {
+  const { t } = useI18n();
   const renderer = getToolResultRenderer(toolName);
   if (renderer !== null) {
     const rendered = renderer({ toolName, result, input });
@@ -733,14 +840,16 @@ function ToolResultView({
   return (
     <section>
       <div className="text-[11px] text-fg-muted uppercase mb-0.5 flex justify-between items-center">
-        <span>result</span>
+        <span>{t('message.result')}</span>
         {resultCollapse.collapsed && (
           <button
             type="button"
             onClick={() => setShowFullResult((v) => !v)}
             className="text-[11px] text-info/80 hover:text-info normal-case"
           >
-            {showFullResult ? 'Collapse' : `Show full (${resultCollapse.totalLines} lines)`}
+            {showFullResult
+              ? t('message.collapse')
+              : t('message.showFull', { lines: resultCollapse.totalLines })}
           </button>
         )}
       </div>

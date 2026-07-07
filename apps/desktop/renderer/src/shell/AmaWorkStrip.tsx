@@ -18,6 +18,7 @@
 import { Sparkles } from 'lucide-react';
 import { useAppStore } from '../store/appStore.js';
 import { requestShellPopout } from './popoutControl.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 
 // SDK KodaXHarnessProfile 已知字面量的人类可读标签；未知/自定义 profile 原样透传兜底
 // （managedTaskStatusSchema.harnessProfile 是自由字符串，SDK 允许 consumer 扩展）。
@@ -33,6 +34,7 @@ function harnessProfileLabel(profile: string): string {
 }
 
 export function AmaWorkStrip(): JSX.Element | null {
+  const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const sessions = useAppStore((s) => s.sessions);
   const status = useAppStore((s) =>
@@ -52,32 +54,34 @@ export function AmaWorkStrip(): JSX.Element | null {
   }
   if (status.currentRound !== undefined) {
     const round = status.maxRounds
-      ? `round ${status.currentRound}/${status.maxRounds}`
-      : `round ${status.currentRound}`;
+      ? t('amaWork.roundOf', { round: status.currentRound, max: status.maxRounds })
+      : t('amaWork.round', { round: status.currentRound });
     parts.push(round);
   }
   if (status.childFanoutCount !== undefined && status.childFanoutCount > 0) {
     const label = status.childFanoutClass
       ? `${status.childFanoutCount} ${status.childFanoutClass}`
-      : `${status.childFanoutCount} active`;
+      : t('amaWork.active', { count: status.childFanoutCount });
     parts.push(label);
   }
   if (status.idleWaiting) {
-    parts.push(`idle (${status.idleWaitingPendingCount ?? 0} pending)`);
+    parts.push(t('amaWork.idlePending', { count: status.idleWaitingPendingCount ?? 0 }));
   }
 
   if (parts.length === 0 && !status.budgetApprovalRequired) return null;
 
   const modeLabel = session.agentMode.toUpperCase();
-  const tooltip = [modeLabel, ...parts, ...(status.budgetApprovalRequired ? ['budget approval needed'] : [])].join(
-    ' · ',
-  );
+  const tooltip = [
+    modeLabel,
+    ...parts,
+    ...(status.budgetApprovalRequired ? [t('amaWork.budgetApprovalNeeded')] : []),
+  ].join(' · ');
 
   return (
     <div
       className="px-3 text-[11px] font-mono text-fg-muted flex items-center gap-1.5 select-none"
       role="status"
-      aria-label="agent work status"
+      aria-label={t('amaWork.aria')}
       title={tooltip}
     >
       <Sparkles className="w-3 h-3 text-thinking flex-shrink-0" strokeWidth={2} aria-hidden />
@@ -93,9 +97,9 @@ export function AmaWorkStrip(): JSX.Element | null {
           type="button"
           onClick={() => requestShellPopout('tasks')}
           className="text-warn hover:underline flex-shrink-0"
-          title="Budget approval needed — open Tasks"
+          title={t('amaWork.budgetApprovalOpen')}
         >
-          budget approval ⚠
+          {t('amaWork.budgetApprovalShort')} ⚠
         </button>
       )}
     </div>

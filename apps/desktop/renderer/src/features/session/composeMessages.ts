@@ -48,6 +48,8 @@ export type ConversationMessage =
       text: string;
       /** 累积的 thinking_delta 拼接（如果有）。*/
       thinking?: string;
+      turnIndex?: number;
+      completed?: boolean;
       /**
        * 该轮对话的近似时间戳——继承自触发本轮的 user message sentAt。
        * 用于 message footer 显示 "6d ago" 之类相对时间。assistant 实际完成时间没存
@@ -202,7 +204,7 @@ export function composeMessages({
     const segmentEnd = findSegmentEnd(events, cursor);
     const segment = events.slice(cursor, segmentEnd);
     cursor = segmentEnd;
-    composeAssistantSegment(segment, result, userMsg.sentAt);
+    composeAssistantSegment(segment, result, userMsg.sentAt, local.order);
   }
   if (cursor < events.length) {
     composeAssistantSegment(events.slice(cursor), result);
@@ -272,14 +274,19 @@ function composeAssistantSegment(
   segment: readonly SessionEvent[],
   out: ConversationMessage[],
   parentSentAt?: number,
+  turnIndex?: number,
 ): void {
   let currentText: {
     kind: 'assistant_text';
     id: string;
     text: string;
     thinking?: string;
+    turnIndex?: number;
+    completed?: boolean;
     sentAt?: number;
   } | null = null;
+  let lastTextBubble: Extract<ConversationMessage, { kind: 'assistant_text' }> | null = null;
+  let segmentHadError = false;
   // tool_call 卡片按 toolId 查找——同一个 toolId 的 start/progress/result 合并到一张卡
   const toolCardsByToolId = new Map<string, Extract<ConversationMessage, { kind: 'tool_call' }>>();
 
@@ -288,11 +295,15 @@ function composeAssistantSegment(
   let textBubbleCounter = 0;
   let noticeCounter = 0;
 
-  function flushTextBubble(): void {
+  function flushTextBubble(): Extract<ConversationMessage, { kind: 'assistant_text' }> | null {
     if (currentText) {
+      const flushed = currentText;
       out.push(currentText);
+      lastTextBubble = flushed;
       currentText = null;
+      return flushed;
     }
+    return null;
   }
 
   for (const evt of segment) {
@@ -303,6 +314,7 @@ function composeAssistantSegment(
             kind: 'assistant_text',
             id: `${segmentTag}_text${textBubbleCounter++}`,
             text: '',
+            ...(turnIndex !== undefined ? { turnIndex } : {}),
             sentAt: parentSentAt,
           };
         }
@@ -315,6 +327,7 @@ function composeAssistantSegment(
             kind: 'assistant_text',
             id: `${segmentTag}_text${textBubbleCounter++}`,
             text: '',
+            ...(turnIndex !== undefined ? { turnIndex } : {}),
             sentAt: parentSentAt,
           };
         }
@@ -323,6 +336,7 @@ function composeAssistantSegment(
       }
       case 'tool_start': {
         flushTextBubble();
+        lastTextBubble = null;
         const card: Extract<ConversationMessage, { kind: 'tool_call' }> = {
           kind: 'tool_call',
           id: `${segmentTag}_tool_${evt.toolId}`,
@@ -364,7 +378,10 @@ function composeAssistantSegment(
       case 'session_complete': {
         // v0.1.x: 不再 push '✓ complete' 横条；assistant bubble footer 显示 "Xd ago"
         // + copy 按钮替代，视觉更轻。consume 但不 emit。
-        flushTextBubble();
+        const completedText = flushTextBubble() ?? lastTextBubble;
+        if (!segmentHadError && completedText && completedText.text.length > 0) {
+          completedText.completed = true;
+        }
         break;
       }
       case 'sidecar_message': {
@@ -433,6 +450,7 @@ function composeAssistantSegment(
       }
       case 'session_error': {
         flushTextBubble();
+        segmentHadError = true;
         out.push({
           kind: 'system_notice',
           id: `${segmentTag}_err${noticeCounter++}`,
@@ -449,10 +467,12 @@ function composeAssistantSegment(
       }
       case 'mid_turn_user_prompt': {
         flushTextBubble();
+        lastTextBubble = null;
         break;
       }
       case 'queued_user_prompt_started': {
         flushTextBubble();
+        lastTextBubble = null;
         break;
       }
     }

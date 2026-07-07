@@ -1,4 +1,5 @@
 import type { WorkflowRunT } from '@kodax-space/space-ipc-schema';
+import type { MessageKey } from '../../i18n/messages.js';
 
 const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
 
@@ -8,13 +9,20 @@ export function workflowPhaseCounter(run: WorkflowRunT): string | undefined {
   return `${phase.index}/${phase.total}`;
 }
 
-export function workflowPhaseLabel(run: WorkflowRunT): string | undefined {
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
+
+export function workflowPhaseLabel(run: WorkflowRunT, t?: Translate): string | undefined {
   const phase = deriveWorkflowPhase(run);
   if (!phase) return undefined;
   if (phase.total && phase.index) {
     return phase.title
-      ? `phase ${phase.index}/${phase.total}: ${phase.title}`
-      : `phase ${phase.index}/${phase.total}`;
+      ? (t?.('workflow.phaseLabelWithTitle', {
+          index: phase.index,
+          total: phase.total,
+          title: phase.title,
+        }) ?? `phase ${phase.index}/${phase.total}: ${phase.title}`)
+      : (t?.('workflow.phaseLabel', { index: phase.index, total: phase.total }) ??
+          `phase ${phase.index}/${phase.total}`);
   }
   return phase.title;
 }

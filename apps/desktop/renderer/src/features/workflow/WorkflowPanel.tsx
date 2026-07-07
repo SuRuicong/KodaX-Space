@@ -47,6 +47,8 @@ import { requestConfirm } from '../../store/confirmStore.js';
 import { buildItemTree, type WorkflowTreeNode } from './buildItemTree.js';
 import { WorkflowRunGraph } from './WorkflowRunGraph.js';
 import { WorkflowLauncher } from './WorkflowLauncher.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
+import type { MessageKey } from '../../i18n/messages.js';
 import { workflowPhaseCounter } from './workflowPhaseDisplay.js';
 
 // ---- run / item 状态 → 图标 + 颜色 ----
@@ -88,6 +90,7 @@ const RESULT_LOAD_TIMEOUT_MS = 3000;
 
 const EMPTY_RUNS: readonly WorkflowRunT[] = [];
 const EMPTY_ACTIVITY: readonly WorkflowActivityPayload[] = [];
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
 /**
  * fire-and-forget 控制调用：吞掉 IPC 拒绝（启动期无 handler / 通道未放行）避免 unhandled rejection；
@@ -113,7 +116,7 @@ function fmtTokens(n: number): string {
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
-function workflowAgentProgressLabel(run: WorkflowRunT): string {
+function workflowAgentProgressLabel(run: WorkflowRunT, t: Translate): string {
   const total = Math.max(
     run.progress.plannedItems ?? 0,
     run.progress.spawnedAgents,
@@ -122,10 +125,18 @@ function workflowAgentProgressLabel(run: WorkflowRunT): string {
       run.progress.failedAgents +
       run.progress.stoppedAgents,
   );
-  const parts = [`${run.progress.finishedAgents}/${total || run.progress.spawnedAgents} done`];
-  if (run.progress.activeAgents > 0) parts.push(`${run.progress.activeAgents} active`);
-  if (run.progress.failedAgents > 0) parts.push(`${run.progress.failedAgents} failed`);
-  if (run.progress.stoppedAgents > 0) parts.push(`${run.progress.stoppedAgents} stopped`);
+  const parts = [
+    t('workflow.agentDone', {
+      done: run.progress.finishedAgents,
+      total: total || run.progress.spawnedAgents,
+    }),
+  ];
+  if (run.progress.activeAgents > 0)
+    parts.push(t('workflow.agentActive', { count: run.progress.activeAgents }));
+  if (run.progress.failedAgents > 0)
+    parts.push(t('workflow.agentFailed', { count: run.progress.failedAgents }));
+  if (run.progress.stoppedAgents > 0)
+    parts.push(t('workflow.agentStopped', { count: run.progress.stoppedAgents }));
   return parts.join(' · ');
 }
 
@@ -166,8 +177,9 @@ export function WorkflowPanel({
   defaultDetailsOpen,
   defaultResultOpen,
 }: WorkflowPanelProps): JSX.Element {
+  const { t } = useI18n();
   if (runs.length === 0) {
-    return <div className="text-xs text-fg-muted px-1 py-2">无工作流运行。</div>;
+    return <div className="text-xs text-fg-muted px-1 py-2">{t('workflow.noRuns')}</div>;
   }
   const visibleRuns = variant === 'compact' ? runs.slice(0, 3) : runs;
   const overflow = runs.length - visibleRuns.length;
@@ -185,7 +197,7 @@ export function WorkflowPanel({
       ))}
       {overflow > 0 && (
         <div className="text-[11px] text-fg-faint px-1 font-mono">
-          +{overflow} more in full panel
+          {t('workflow.moreInFullPanel', { count: overflow })}
         </div>
       )}
     </div>
@@ -222,21 +234,22 @@ function WorkflowControls({
   hasPhaseCounter: boolean;
   onRename: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const runId = run.runId;
   const active = run.status === 'running' || run.status === 'paused';
   // #1 fix: window.confirm 在 Electron sandbox=true 下会夺走 webContents 键盘焦点且拿不回来
   // ——改用应用内 requestConfirm。
   async function handleDelete(): Promise<void> {
     const confirmed = await requestConfirm({
-      message: `删除工作流 run「${run.displayName ?? run.workflowName}」？`,
+      message: t('workflow.deleteRunConfirm', { name: run.displayName ?? run.workflowName }),
       danger: true,
-      confirmLabel: '删除',
+      confirmLabel: t('workflow.delete'),
     });
     if (!confirmed) return;
     const res = await window.kodaxSpace?.invoke('workflow.delete', { runId });
     const env = res as { ok?: boolean; data?: { ok?: boolean } } | undefined;
     if (!res || env?.ok === false || env?.data?.ok === false) {
-      pushToast('删除失败', 'warning');
+      pushToast(t('workflow.deleteFailed'), 'warning');
       return;
     }
     // 删除无 push 事件、seed 只增不删——必须显式从 store 移除，否则面板里删不掉。
@@ -248,9 +261,12 @@ function WorkflowControls({
     >
       {run.status === 'running' && (
         <CtlBtn
-          label="暂停"
+          label={t('workflow.pause')}
           onClick={() =>
-            fireControl(window.kodaxSpace?.invoke('workflow.pause', { runId }), '暂停失败')
+            fireControl(
+              window.kodaxSpace?.invoke('workflow.pause', { runId }),
+              t('workflow.pauseFailed'),
+            )
           }
         >
           <Pause size={12} />
@@ -258,9 +274,12 @@ function WorkflowControls({
       )}
       {run.status === 'paused' && (
         <CtlBtn
-          label="恢复"
+          label={t('workflow.resume')}
           onClick={() =>
-            fireControl(window.kodaxSpace?.invoke('workflow.resume', { runId }), '恢复失败')
+            fireControl(
+              window.kodaxSpace?.invoke('workflow.resume', { runId }),
+              t('workflow.resumeFailed'),
+            )
           }
         >
           <Play size={12} />
@@ -268,22 +287,25 @@ function WorkflowControls({
       )}
       {active && (
         <CtlBtn
-          label="停止"
+          label={t('workflow.stop')}
           danger
           onClick={() =>
-            fireControl(window.kodaxSpace?.invoke('workflow.stop', { runId }), '停止失败')
+            fireControl(
+              window.kodaxSpace?.invoke('workflow.stop', { runId }),
+              t('workflow.stopFailed'),
+            )
           }
         >
           <Square size={12} />
         </CtlBtn>
       )}
       {variant === 'full' && (
-        <CtlBtn label="重命名" onClick={onRename}>
+        <CtlBtn label={t('workflow.rename')} onClick={onRename}>
           <Pencil size={11} />
         </CtlBtn>
       )}
       {variant === 'full' && isTerminal && (
-        <CtlBtn label="删除" danger onClick={() => void handleDelete()}>
+        <CtlBtn label={t('workflow.delete')} danger onClick={() => void handleDelete()}>
           <Trash2 size={11} />
         </CtlBtn>
       )}
@@ -330,6 +352,7 @@ function WorkflowRunCard({
   defaultDetailsOpen: boolean | undefined;
   defaultResultOpen: boolean | undefined;
 }): JSX.Element {
+  const { t } = useI18n();
   const RunIcon = RUN_ICON[run.status];
   const tree = useMemo(() => buildItemTree(run.items), [run.items]);
   const isTerminal = TERMINAL.has(run.status);
@@ -356,7 +379,7 @@ function WorkflowRunCard({
     if (next && next !== name) {
       fireControl(
         window.kodaxSpace?.invoke('workflow.rename', { runId: run.runId, displayName: next }),
-        '重命名失败',
+        t('workflow.renameFailed'),
       );
     }
   }
@@ -382,7 +405,7 @@ function WorkflowRunCard({
                 else if (e.key === 'Escape') setRenaming(false);
               }}
               className="flex-1 min-w-0 text-[12px] bg-surface-3 border border-border-default rounded px-1 py-0.5 text-fg-primary"
-              aria-label="重命名工作流"
+              aria-label={t('workflow.renameAria')}
             />
           ) : (
             <span className="text-[12px] font-medium text-fg-primary truncate" title={name}>
@@ -410,12 +433,12 @@ function WorkflowRunCard({
       <div
         className={`${hideHeader ? '' : 'mt-1'} flex items-center gap-2 text-[10px] font-mono text-fg-muted`}
       >
-        <span className="inline-flex items-center gap-1" title="agents：完成/已生成（活跃）">
+        <span className="inline-flex items-center gap-1" title={t('workflow.agentsMetricTitle')}>
           <Bot size={10} aria-hidden />
-          {workflowAgentProgressLabel(run)}
+          {workflowAgentProgressLabel(run, t)}
         </span>
         {run.tokens && (
-          <span className="inline-flex items-center gap-1" title="token：本次运行累计消耗">
+          <span className="inline-flex items-center gap-1" title={t('workflow.tokenMetricTitle')}>
             <Coins size={10} aria-hidden />
             {fmtTokens(run.tokens.spent)}
           </span>
@@ -483,6 +506,7 @@ function WorkflowSummaryView({
   summary: string;
   variant: 'compact' | 'full';
 }): JSX.Element {
+  const { t } = useI18n();
   const long = summary.length > 700 || summary.split('\n').length > 8;
   const [open, setOpen] = useState(!long && variant === 'full');
   if (!long) {
@@ -499,7 +523,7 @@ function WorkflowSummaryView({
         data-testid="workflow-summary-toggle"
       >
         {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-        Summary
+        {t('workflow.summary')}
       </button>
       <pre
         className={`text-[11px] text-fg-secondary whitespace-pre-wrap break-words ${
@@ -522,6 +546,7 @@ function WorkflowResultView({
   fallback?: string;
   defaultOpen?: boolean;
 }): JSX.Element {
+  const { t } = useI18n();
   const [open, setOpen] = useState(defaultOpen);
   const [result, setResult] = useState<string | null>(fallback ?? null);
   const [loading, setLoading] = useState(false);
@@ -576,7 +601,7 @@ function WorkflowResultView({
       {open && (
         <div className="mt-1">
           {loading && !result ? (
-            <div className="text-[10px] text-fg-faint">加载中...</div>
+            <div className="text-[10px] text-fg-faint">{t('workflow.loadingResult')}</div>
           ) : result ? (
             <div className="relative">
               <pre
@@ -591,20 +616,18 @@ function WorkflowResultView({
                   if (copyDisabled || !result) return;
                   void navigator.clipboard
                     ?.writeText(result)
-                    .then(() => pushToast('已复制结果', 'success'));
+                    .then(() => pushToast(t('workflow.resultCopied'), 'success'));
                 }}
                 disabled={copyDisabled}
-                title={loading ? '完整结果加载中' : '复制'}
-                aria-label={
-                  loading ? '完整结果加载中，暂不能复制' : '复制结果'
-                }
+                title={loading ? t('workflow.resultLoadingTitle') : t('workflow.copy')}
+                aria-label={loading ? t('workflow.resultLoadingAria') : t('workflow.copyResult')}
                 className="absolute top-1 right-1 w-5 h-5 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-fg-muted"
               >
                 <Copy size={11} />
               </button>
             </div>
           ) : (
-            <div className="text-[10px] text-fg-faint">无结果内容。</div>
+            <div className="text-[10px] text-fg-faint">{t('workflow.noResult')}</div>
           )}
         </div>
       )}
@@ -620,23 +643,25 @@ const ACTIVITY_ICON: Record<WorkflowActivityPayload['kind'], string> = {
 };
 const ACTIVITY_WINDOW = 6;
 
-function workflowActivityLabel(activity: WorkflowActivityPayload): string {
-  if (activity.kind === 'end') return '完成';
+function workflowActivityLabel(activity: WorkflowActivityPayload, t: Translate): string {
+  if (activity.kind === 'end') return t('workflow.activityDone');
   if (activity.kind === 'digest') {
-    if (activity.summary) return `摘要: ${activity.summary}`;
+    if (activity.summary)
+      return t('workflow.activitySummaryWithText', { summary: activity.summary });
     if (activity.verification) {
       const reason = activity.verification.reasons[0];
       return activity.verification.ok
-        ? '验证通过'
-        : `验证未通过${reason ? `: ${reason}` : ''}`;
+        ? t('workflow.activityVerified')
+        : t('workflow.activityVerificationFailed', { reason: reason ? `: ${reason}` : '' });
     }
-    return '摘要';
+    return t('workflow.activitySummary');
   }
   return activity.toolName ?? activity.kind;
 }
 
 /** 子 agent 活动条：显示最近几条 discrete 活动（工具调用/结果/封口），按子 agent 标注。 */
 function WorkflowActivityStrip({ runId }: { runId: string }): JSX.Element | null {
+  const { t } = useI18n();
   const activity = useAppStore(useShallow((s) => s.workflowActivityByRun[runId] ?? EMPTY_ACTIVITY));
   if (activity.length === 0) return null;
   // 用 bucket 内绝对位置作 key——滑动窗口下保持稳定（不随 slice 起点漂移）。
@@ -655,7 +680,7 @@ function WorkflowActivityStrip({ runId }: { runId: string }): JSX.Element | null
               {a.childAgentName}
             </span>
           )}
-          <span className="truncate">{workflowActivityLabel(a)}</span>
+          <span className="truncate">{workflowActivityLabel(a, t)}</span>
         </div>
       ))}
     </div>
@@ -663,6 +688,7 @@ function WorkflowActivityStrip({ runId }: { runId: string }): JSX.Element | null
 }
 
 function WorkflowItemRow({ node, depth }: { node: WorkflowTreeNode; depth: number }): JSX.Element {
+  const { t } = useI18n();
   const { item, children } = node;
   const Icon = ITEM_ICON[item.status];
   const indentPx = Math.min(depth, MAX_INDENT_DEPTH) * 12;
@@ -680,7 +706,7 @@ function WorkflowItemRow({ node, depth }: { node: WorkflowTreeNode; depth: numbe
             onClick={() => setChildrenOpen((value) => !value)}
             className="flex-shrink-0 text-fg-faint hover:text-fg-primary"
             aria-expanded={childrenOpen}
-            aria-label={`Toggle ${item.title || item.id}`}
+            aria-label={t('workflow.toggleItem', { name: item.title || item.id })}
             data-testid="workflow-item-toggle"
           >
             {childrenOpen ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
@@ -732,18 +758,19 @@ function DigestLine({
   summary?: string;
   indentPx: number;
 }): JSX.Element | null {
+  const { t } = useI18n();
   const pad = { paddingLeft: `${indentPx + 16}px` };
   switch (status) {
     case 'pending':
       return (
         <div className="text-[10px] text-fg-faint italic" style={pad}>
-          生成摘要中…
+          {t('workflow.digestPending')}
         </div>
       );
     case 'unavailable':
       return (
         <div className="text-[10px] text-fg-faint italic" style={pad}>
-          摘要不可用，见原始结果
+          {t('workflow.digestUnavailable')}
         </div>
       );
     case 'notice':
@@ -783,6 +810,7 @@ function CollapsibleDigest({
   style: React.CSSProperties;
   prefix?: string;
 }): JSX.Element {
+  const { t } = useI18n();
   const long = text.length > 520 || text.split('\n').length > 5;
   const [open, setOpen] = useState(false);
   if (!long) {
@@ -797,7 +825,7 @@ function CollapsibleDigest({
   return (
     <div style={style}>
       <div
-        className={`${className} ${open ? 'max-h-48 overflow-auto' : 'max-h-16 overflow-hidden'}`}
+        className={`${className} ${open ? t('workflow.collapseDigest') : t('workflow.expandDigest')}`}
         title={text}
       >
         {prefix}

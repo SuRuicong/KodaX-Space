@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Bot } from 'lucide-react';
 import type { AgentMeta } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 
 const SOURCE_DOT_COLOR: Record<AgentMeta['source'], string> = {
   'markdown:user': 'text-warn',
@@ -23,6 +24,7 @@ interface Props {
 }
 
 export function AgentPicker({ insertAtCaret }: Props): JSX.Element | null {
+  const { t } = useI18n();
   const projectRoot = useAppStore((s) => s.currentProjectPath);
   const [open, setOpen] = useState(false);
   const [agents, setAgents] = useState<readonly AgentMeta[]>([]);
@@ -73,26 +75,22 @@ export function AgentPicker({ insertAtCaret }: Props): JSX.Element | null {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="w-6 h-6 rounded-md text-fg-muted hover:text-fg-secondary hover:bg-hover-bg flex items-center justify-center"
-        title="Insert @agent reference (markdown agents)"
-        aria-label="Pick an agent"
+        title={t('agentPicker.insertTitle')}
+        aria-label={t('agentPicker.pickAria')}
       >
         <Bot className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden />
-        <span className="sr-only">Agent</span>
+        <span className="sr-only">{t('agentPicker.agent')}</span>
       </button>
 
       {open && (
         <div className="absolute left-0 bottom-full mb-2 w-64 max-h-72 overflow-auto bg-surface-4 border border-border-default rounded-lg shadow-xl p-2 text-xs z-50">
           <div className="text-fg-muted text-[11px] uppercase tracking-wider mb-1.5 px-1">
-            Insert @agent reference
+            {t('agentPicker.insertReference')}
           </div>
           {loading ? (
-            <div className="text-fg-muted italic px-1 py-2">Discovering…</div>
+            <div className="text-fg-muted italic px-1 py-2">{t('agentPicker.discovering')}</div>
           ) : agents.length === 0 ? (
-            <div className="text-fg-muted italic px-1 py-2">
-              No agents. Drop a markdown file into{' '}
-              <code className="text-fg-muted">~/.kodax/agents/</code> or{' '}
-              <code className="text-fg-muted">{'<project>/.kodax/agents/'}</code>.
-            </div>
+            <div className="text-fg-muted italic px-1 py-2">{t('agentPicker.empty')}</div>
           ) : (
             <ul className="space-y-0.5">
               {agents.map((a) => (

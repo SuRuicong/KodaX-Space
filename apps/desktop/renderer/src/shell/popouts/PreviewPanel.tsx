@@ -10,6 +10,7 @@ import { MonacoViewer } from '../../features/code/MonacoViewer.js';
 // F024 富预览：PDF / docx / xlsx 各自 lazy 加载（每个 viewer 自己一个 chunk）
 import { RichPreview } from '../../features/preview/RichPreview.js';
 import { detectKind } from '../../features/preview/binaryUtils.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 interface FileContent {
   content: string;
@@ -19,6 +20,7 @@ interface FileContent {
 }
 
 export function PreviewPanel(): JSX.Element {
+  const { t } = useI18n();
   const projectRoot = useAppStore((s) => s.currentProjectPath);
   const [path, setPath] = useState<string>('');
   const [pathInput, setPathInput] = useState<string>('');
@@ -52,7 +54,7 @@ export function PreviewPanel(): JSX.Element {
             size: r.data.size,
           });
         } else {
-          setErr(`${r.error.code}: ${r.error.message}`);
+          setErr(`${t('preview.failedLoadFile')}: ${r.error.code}: ${r.error.message}`);
         }
       })
       .finally(() => {
@@ -61,7 +63,7 @@ export function PreviewPanel(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [path, projectRoot, richKind]);
+  }, [path, projectRoot, richKind, t]);
 
   return (
     <div className="h-full flex flex-col">
@@ -76,14 +78,14 @@ export function PreviewPanel(): JSX.Element {
           type="text"
           value={pathInput}
           onChange={(e) => setPathInput(e.target.value)}
-          placeholder="path/to/file.ts (relative to project root)"
+          placeholder={t('previewPanel.placeholder')}
           className="w-full bg-surface-2 border border-border-default text-xs text-fg-primary px-2 py-1 rounded focus:outline-none focus:border-border-strong"
         />
       </form>
       <div className="flex-1 min-h-0 relative">
         {!path && (
           <div className="absolute inset-0 flex items-center justify-center text-fg-faint text-xs">
-            Enter a path above.
+            {t('previewPanel.enterPath')}
           </div>
         )}
         {path !== '' && richKind !== null && projectRoot !== null && (
@@ -91,18 +93,18 @@ export function PreviewPanel(): JSX.Element {
         )}
         {richKind === null && busy && (
           <div className="absolute inset-0 flex items-center justify-center text-fg-muted text-xs">
-            loading…
+            {t('previewPanel.loading')}
           </div>
         )}
         {richKind === null && err && <div className="p-3 text-xs text-danger font-mono">{err}</div>}
         {richKind === null && !busy && !err && file?.truncated && (
           <div className="flex items-center justify-center h-full text-xs text-fg-muted p-4 text-center">
-            File too large ({(file.size / 1048576).toFixed(2)} MB) — viewer cap is 5 MB.
+            {t('previewPanel.tooLarge', { size: (file.size / 1048576).toFixed(2) })}
           </div>
         )}
         {richKind === null && !busy && !err && file?.isBinary && (
           <div className="flex items-center justify-center h-full text-xs text-fg-muted p-4 text-center">
-            <code className="font-mono">{path}</code> appears to be binary.
+            {t('previewPanel.binary', { path })}
           </div>
         )}
         {richKind === null && !busy && !err && file && !file.truncated && !file.isBinary && (

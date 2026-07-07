@@ -9,6 +9,7 @@ import Editor, { type Monaco, type OnMount } from '@monaco-editor/react';
 import { initMonacoOnce } from './monaco-setup.js';
 import { languageFromPath } from './language-detect.js';
 import { useEffectiveDark } from './useEffectiveDark.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 interface MonacoViewerProps {
   path: string;
@@ -16,6 +17,7 @@ interface MonacoViewerProps {
 }
 
 export function MonacoViewer({ path, content }: MonacoViewerProps): JSX.Element {
+  const { t } = useI18n();
   const editorRef = useRef<unknown>(null);
   const isDark = useEffectiveDark();
 
@@ -84,7 +86,7 @@ export function MonacoViewer({ path, content }: MonacoViewerProps): JSX.Element 
         // 隐藏 readonly tooltip 闪一下"Cannot edit..."
         readOnlyMessage: { value: '' },
       }}
-      loading={<div className="text-xs text-fg-muted p-2">loading editor…</div>}
+      loading={<div className="text-xs text-fg-muted p-2">{t('code.loadingEditor')}</div>}
     />
   );
 }

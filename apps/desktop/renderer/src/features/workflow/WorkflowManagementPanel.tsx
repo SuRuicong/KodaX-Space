@@ -27,6 +27,8 @@ import { useSurfaceStore } from '../../store/surface.js';
 import { useAppStore } from '../../store/appStore.js';
 import { pushToast } from '../../store/toastStore.js';
 import { requestConfirm } from '../../store/confirmStore.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
+import type { MessageKey } from '../../i18n/messages.js';
 import { WorkflowLauncher } from './WorkflowLauncher.js';
 import { WorkflowPanel } from './WorkflowPanel.js';
 import { workflowPhaseLabel } from './workflowPhaseDisplay.js';
@@ -60,7 +62,10 @@ const STATUS_COLOR: Record<WorkflowProcessStatusT, string> = {
   cancelled: 'text-fg-faint',
 };
 
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
+
 export function WorkflowManagementPanel(): JSX.Element {
+  const { t } = useI18n();
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const sessions = useAppStore((s) => s.sessions);
@@ -192,10 +197,10 @@ export function WorkflowManagementPanel(): JSX.Element {
       if (!next || next === current) return;
       await invokeWorkflowControl(
         window.kodaxSpace?.invoke('workflow.rename', { runId: run.runId, displayName: next }),
-        `Rename failed: ${current}`,
+        t('workflow.manager.renameFailedName', { name: current }),
       );
     },
-    [renameDraft],
+    [renameDraft, t],
   );
 
   const startRenameSaved = useCallback((saved: SavedWorkflowRef) => {
@@ -209,7 +214,7 @@ export function WorkflowManagementPanel(): JSX.Element {
       setRenaming(null);
       if (!next || next === saved.name) return;
       if (!sessionId) {
-        pushToast('Open a session before editing saved workflows', 'warning');
+        pushToast(t('workflow.manager.openSessionBeforeEdit'), 'warning');
         return;
       }
       const result = await invokeWorkflowControl(
@@ -219,14 +224,14 @@ export function WorkflowManagementPanel(): JSX.Element {
           sessionId,
           source: saved.source,
         }),
-        `Rename failed: ${saved.name}`,
+        t('workflow.manager.renameFailedName', { name: saved.name }),
       );
       if (result) {
-        pushToast(`Saved workflow renamed: ${next}`, 'success');
+        pushToast(t('workflow.manager.savedRenamed', { name: next }), 'success');
         refreshLibrary();
       }
     },
-    [renameDraft, refreshLibrary],
+    [renameDraft, refreshLibrary, t],
   );
 
   const cancelRename = useCallback(() => {
@@ -239,17 +244,23 @@ export function WorkflowManagementPanel(): JSX.Element {
       <div className="flex items-center gap-3 border-b border-border-default/60 px-3 py-2 flex-shrink-0">
         <Workflow className="h-4 w-4 text-fg-muted" strokeWidth={1.8} aria-hidden />
         <div className="min-w-0">
-          <div className="text-[12px] font-medium text-fg-primary">Workflow manager</div>
+          <div className="text-[12px] font-medium text-fg-primary">
+            {t('workflow.manager.title')}
+          </div>
           <div className="text-[10px] font-mono text-fg-faint truncate">
-            {activeRuns.length} live / {runs.length} runs / {saved.length} saved
+            {t('workflow.manager.summary', {
+              live: activeRuns.length,
+              runs: runs.length,
+              saved: saved.length,
+            })}
           </div>
         </div>
         <button
           type="button"
           onClick={refreshLibrary}
           className="ml-auto h-7 w-7 inline-flex items-center justify-center rounded text-fg-muted hover:bg-surface-3 hover:text-fg-primary"
-          title="Refresh workflow library"
-          aria-label="Refresh workflow library"
+          title={t('workflow.manager.refreshLibrary')}
+          aria-label={t('workflow.manager.refreshLibrary')}
         >
           <RefreshCw
             className={`h-3.5 w-3.5 ${loadingLibrary || loadingRuns ? 'animate-spin' : ''}`}
@@ -260,10 +271,10 @@ export function WorkflowManagementPanel(): JSX.Element {
       <div className="grid flex-1 min-h-0 grid-cols-[280px_minmax(0,1fr)]">
         <aside className="min-h-0 overflow-y-auto border-r border-border-default/60 bg-surface/30 p-2">
           <WorkflowLauncher />
-          <ManagementSection title="Runs" count={runs.length}>
+          <ManagementSection title={t('workflow.manager.runs')} count={runs.length}>
             {runs.length === 0 ? (
               <EmptyLine>
-                {loadingRuns ? 'Loading workflow runs...' : 'No workflow runs.'}
+                {loadingRuns ? t('workflow.manager.loadingRuns') : t('workflow.manager.noRuns')}
               </EmptyLine>
             ) : (
               <ul className="space-y-1">
@@ -279,10 +290,12 @@ export function WorkflowManagementPanel(): JSX.Element {
             )}
           </ManagementSection>
 
-          <ManagementSection title="Saved" count={saved.length}>
+          <ManagementSection title={t('workflow.manager.savedSection')} count={saved.length}>
             {saved.length === 0 ? (
               <EmptyLine>
-                {loadingLibrary ? 'Loading workflows...' : 'No saved workflows.'}
+                {loadingLibrary
+                  ? t('workflow.manager.loadingWorkflows')
+                  : t('workflow.manager.noSaved')}
               </EmptyLine>
             ) : (
               <ul className="space-y-1">
@@ -372,9 +385,10 @@ function RunListItem({
   readonly active: boolean;
   readonly onSelect: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const Icon = STATUS_ICON[run.status];
   const title = workflowRunTitle(run);
-  const phase = workflowPhaseLabel(run);
+  const phase = workflowPhaseLabel(run, t);
   return (
     <li>
       <button
@@ -418,6 +432,7 @@ function SavedListItem({
   readonly active: boolean;
   readonly onSelect: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <li>
       <button
@@ -441,7 +456,7 @@ function SavedListItem({
           </span>
         </div>
         <div className="mt-0.5 truncate text-[10px] font-mono text-fg-faint">
-          {saved.source ?? saved.execution ?? 'saved'}
+          {saved.source ?? saved.execution ?? t('workflow.manager.savedSourceFallback')}
         </div>
       </button>
     </li>
@@ -475,6 +490,7 @@ function RunDetail({
   readonly onCommitRename: () => void;
   readonly onCancelRename: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const title = workflowRunTitle(run);
   const [saving, setSaving] = useState(false);
   const [saveDraft, setSaveDraft] = useState('');
@@ -504,7 +520,7 @@ function RunDetail({
       if (!name) return;
       setSavePending(true);
       try {
-        const result = await saveWorkflowRun(run, name, currentSessionId, projectSessionIds);
+        const result = await saveWorkflowRun(run, name, currentSessionId, projectSessionIds, t);
         if (result) {
           setSaving(false);
           setSaveDraft('');
@@ -514,7 +530,7 @@ function RunDetail({
         setSavePending(false);
       }
     },
-    [currentSessionId, onChanged, projectSessionIds, run, saveDraft, savePending],
+    [currentSessionId, onChanged, projectSessionIds, run, saveDraft, savePending, t],
   );
 
   return (
@@ -537,7 +553,7 @@ function RunDetail({
               }}
               maxLength={256}
               className="w-full min-w-0 rounded border border-border-strong bg-surface px-1.5 py-0.5 text-[14px] font-semibold text-fg-primary"
-              aria-label="Rename workflow run"
+              aria-label={t('workflow.manager.renameRunAria')}
             />
           ) : undefined
         }
@@ -556,7 +572,7 @@ function RunDetail({
           className="rounded-md border border-border-default/60 bg-surface-2/60 p-2"
         >
           <div className="mb-1 text-[10px] font-mono uppercase tracking-wider text-fg-faint">
-            Save workflow
+            {t('workflow.manager.saveWorkflow')}
           </div>
           <div className="flex min-w-0 items-center gap-2">
             <input
@@ -570,14 +586,14 @@ function RunDetail({
               }}
               maxLength={256}
               className="min-w-0 flex-1 rounded border border-border-strong bg-surface px-2 py-1 text-[12px] text-fg-primary"
-              aria-label="Saved workflow name"
+              aria-label={t('workflow.manager.savedWorkflowNameAria')}
             />
             <button
               type="submit"
               disabled={saveDraft.trim().length === 0 || savePending}
               className="h-7 rounded-md border border-run/45 bg-run/10 px-2 text-[11px] font-medium text-fg-primary disabled:cursor-not-allowed disabled:opacity-45"
             >
-              {savePending ? 'Saving...' : 'Save'}
+              {savePending ? t('workflow.manager.saving') : t('common.save')}
             </button>
             <button
               type="button"
@@ -585,7 +601,7 @@ function RunDetail({
               disabled={savePending}
               className="h-7 rounded-md border border-border-default/60 px-2 text-[11px] text-fg-muted hover:bg-surface-3 hover:text-fg-primary disabled:cursor-not-allowed disabled:opacity-45"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
           </div>
         </form>
@@ -627,13 +643,14 @@ function SavedDetail({
   readonly onCommitRename: () => void;
   readonly onCancelRename: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const latestRun = relatedRuns[0];
   return (
     <div className="space-y-3">
       <DetailHeader
         icon={<FileCode2 className="h-4 w-4" strokeWidth={1.8} aria-hidden />}
         title={saved.name}
-        subtitle={saved.source ?? saved.execution ?? 'saved workflow'}
+        subtitle={saved.source ?? saved.execution ?? t('workflow.manager.savedWorkflowFallback')}
         renameSlot={
           isRenaming ? (
             <input
@@ -648,7 +665,7 @@ function SavedDetail({
               }}
               maxLength={256}
               className="w-full min-w-0 rounded border border-border-strong bg-surface px-1.5 py-0.5 text-[14px] font-semibold text-fg-primary"
-              aria-label="Rename saved workflow"
+              aria-label={t('workflow.renameAria')}
             />
           ) : undefined
         }
@@ -663,7 +680,7 @@ function SavedDetail({
 
       <div className="rounded-md border border-border-default/60 bg-surface-2/60 p-2">
         <div className="mb-1 text-[10px] font-mono uppercase tracking-wider text-fg-faint">
-          Capsule
+          {t('workflow.manager.capsule')}
         </div>
         <div className="break-all text-[11px] font-mono text-fg-secondary">{saved.path}</div>
       </div>
@@ -672,7 +689,7 @@ function SavedDetail({
         <>
           <div>
             <div className="mb-1.5 text-[10px] font-mono uppercase tracking-wider text-fg-faint">
-              Latest runtime graph
+              {t('workflow.manager.latestRuntimeGraph')}
             </div>
             <WorkflowPanel runs={[latestRun]} variant="full" defaultResultOpen />
           </div>
@@ -684,7 +701,7 @@ function SavedDetail({
         </>
       ) : (
         <div className="rounded-md border border-dashed border-border-default/70 bg-surface-2/35 p-3 text-xs text-fg-muted">
-          No runtime graph or execution history yet.
+          {t('workflow.manager.noRuntimeHistory')}
         </div>
       )}
     </div>
@@ -738,6 +755,7 @@ function RunActions({
   readonly onStartRename: () => void;
   readonly onStartSave: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const active = run.status === 'running' || run.status === 'paused';
   const terminal =
     run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled';
@@ -745,36 +763,50 @@ function RunActions({
   return (
     <>
       <ActionButton
-        label="Run again"
-        onClick={() => void rerunWorkflow(run, currentSessionId, projectSessionIds)}
+        label={t('workflow.manager.runAgain')}
+        onClick={() => void rerunWorkflow(run, currentSessionId, projectSessionIds, t)}
       >
         <PlayCircle size={13} />
       </ActionButton>
       {run.status === 'running' && (
-        <ActionButton label="Pause" onClick={() => void pauseWorkflow(run.runId, name)}>
+        <ActionButton
+          label={t('workflow.pause')}
+          onClick={() => void pauseWorkflow(run.runId, name, t)}
+        >
           <Pause size={13} />
         </ActionButton>
       )}
       {run.status === 'paused' && (
-        <ActionButton label="Resume" onClick={() => void resumeWorkflow(run.runId, name)}>
+        <ActionButton
+          label={t('workflow.resume')}
+          onClick={() => void resumeWorkflow(run.runId, name, t)}
+        >
           <Play size={13} />
         </ActionButton>
       )}
       {active && (
-        <ActionButton label="Stop" danger onClick={() => void stopWorkflow(run.runId, name)}>
+        <ActionButton
+          label={t('workflow.stop')}
+          danger
+          onClick={() => void stopWorkflow(run.runId, name, t)}
+        >
           <Square size={13} />
         </ActionButton>
       )}
-      <ActionButton label="Rename" onClick={onStartRename}>
+      <ActionButton label={t('workflow.rename')} onClick={onStartRename}>
         <Pencil size={13} />
       </ActionButton>
       {run.status === 'completed' && (
-        <ActionButton label="Save workflow" onClick={onStartSave}>
+        <ActionButton label={t('workflow.manager.saveWorkflowAction')} onClick={onStartSave}>
           <Save size={13} />
         </ActionButton>
       )}
       {terminal && (
-        <ActionButton label="Delete" danger onClick={() => void deleteWorkflowRun(run)}>
+        <ActionButton
+          label={t('workflow.delete')}
+          danger
+          onClick={() => void deleteWorkflowRun(run, t)}
+        >
           <Trash2 size={13} />
         </ActionButton>
       )}
@@ -793,18 +825,22 @@ function SavedActions({
   readonly onChanged: () => void;
   readonly onStartRename: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <>
-      <ActionButton label="Run" onClick={() => void startSavedWorkflow(saved, currentSessionId)}>
+      <ActionButton
+        label={t('workflow.manager.run')}
+        onClick={() => void startSavedWorkflow(saved, currentSessionId, t)}
+      >
         <Play size={13} />
       </ActionButton>
-      <ActionButton label="Rename" onClick={onStartRename}>
+      <ActionButton label={t('workflow.rename')} onClick={onStartRename}>
         <Pencil size={13} />
       </ActionButton>
       <ActionButton
-        label="Delete"
+        label={t('workflow.delete')}
         danger
-        onClick={() => void deleteSavedWorkflow(saved, currentSessionId, onChanged)}
+        onClick={() => void deleteSavedWorkflow(saved, currentSessionId, onChanged, t)}
       >
         <Trash2 size={13} />
       </ActionButton>
@@ -847,12 +883,13 @@ function HistoryBlock({
   readonly selectedRunId?: string;
   readonly onSelectRun: (run: WorkflowRunT) => void;
 }): JSX.Element | null {
+  const { t } = useI18n();
   if (runs.length === 0) return null;
   return (
     <div>
       <div className="mb-1.5 flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-fg-faint">
         <Clock3 className="h-3 w-3" strokeWidth={1.8} aria-hidden />
-        <span>Execution history</span>
+        <span>{t('workflow.manager.executionHistory')}</span>
       </div>
       <ul className="space-y-1">
         {runs.slice(0, 12).map((run) => (
@@ -911,9 +948,10 @@ function EmptyLine({ children }: { readonly children: React.ReactNode }): JSX.El
 }
 
 function EmptyState(): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className="flex h-full min-h-[220px] items-center justify-center rounded-md border border-dashed border-border-default/60 text-xs text-fg-muted">
-      No workflow selected.
+      {t('workflow.manager.noWorkflowSelected')}
     </div>
   );
 }
@@ -921,24 +959,24 @@ function EmptyState(): JSX.Element {
 // #13 fix: control actions are fire-and-forget IPC — the async result can land after the
 // user has switched to a different run/session. Every toast below names the run/workflow so
 // a "failed"/"succeeded" toast is never ambiguous about which one it refers to.
-async function pauseWorkflow(runId: string, name: string): Promise<void> {
+async function pauseWorkflow(runId: string, name: string, t: Translate): Promise<void> {
   await invokeWorkflowControl(
     window.kodaxSpace?.invoke('workflow.pause', { runId }),
-    `Pause failed: ${name}`,
+    t('workflow.manager.pauseFailedName', { name }),
   );
 }
 
-async function resumeWorkflow(runId: string, name: string): Promise<void> {
+async function resumeWorkflow(runId: string, name: string, t: Translate): Promise<void> {
   await invokeWorkflowControl(
     window.kodaxSpace?.invoke('workflow.resume', { runId }),
-    `Resume failed: ${name}`,
+    t('workflow.manager.resumeFailedName', { name }),
   );
 }
 
-async function stopWorkflow(runId: string, name: string): Promise<void> {
+async function stopWorkflow(runId: string, name: string, t: Translate): Promise<void> {
   await invokeWorkflowControl(
     window.kodaxSpace?.invoke('workflow.stop', { runId, reason: 'stopped from workflow manager' }),
-    `Stop failed: ${name}`,
+    t('workflow.manager.stopFailedName', { name }),
   );
 }
 
@@ -947,18 +985,20 @@ async function saveWorkflowRun(
   name: string,
   currentSessionId: string | null,
   projectSessionIds: ReadonlySet<string>,
+  t: Translate,
 ): Promise<{ readonly name?: string; readonly path?: string } | null> {
   const title = workflowRunTitle(run);
   const sessionId = workflowRerunSessionId({ run, currentSessionId, projectSessionIds });
   if (!sessionId) {
-    pushToast('Open a session before saving a workflow', 'warning');
+    pushToast(t('workflow.manager.openSessionBeforeSave'), 'warning');
     return null;
   }
   const result = await invokeWorkflowControl(
     window.kodaxSpace?.invoke('workflow.save', { runId: run.runId, name, sessionId }),
-    `Save failed: ${title}`,
+    t('workflow.manager.saveFailedName', { name: title }),
   );
-  if (result) pushToast(`Workflow saved: ${result.name ?? name}`, 'success');
+  if (result)
+    pushToast(t('workflow.manager.workflowSaved', { name: result.name ?? name }), 'success');
   return result;
 }
 
@@ -966,47 +1006,49 @@ async function rerunWorkflow(
   run: WorkflowRunT,
   currentSessionId: string | null,
   projectSessionIds: ReadonlySet<string>,
+  t: Translate,
 ): Promise<void> {
   const name = workflowRunTitle(run);
   const sessionId = workflowRerunSessionId({ run, currentSessionId, projectSessionIds });
   if (!sessionId) {
-    pushToast('Open a session before rerunning a workflow', 'warning');
+    pushToast(t('workflow.manager.openSessionBeforeRerun'), 'warning');
     return;
   }
   const result = await invokeWorkflowControl(
     window.kodaxSpace?.invoke('workflow.rerun', { runId: run.runId, sessionId }),
-    `Rerun failed: ${name}`,
+    t('workflow.manager.rerunFailedName', { name }),
   );
-  if (result) pushToast(`Workflow rerun started: ${name}`, 'success');
+  if (result) pushToast(t('workflow.manager.workflowRerunStarted', { name }), 'success');
 }
 
-async function deleteWorkflowRun(run: WorkflowRunT): Promise<void> {
+async function deleteWorkflowRun(run: WorkflowRunT, t: Translate): Promise<void> {
   const name = workflowRunTitle(run);
   // #1 fix: window.confirm 在 Electron sandbox=true 下会夺走 webContents 键盘焦点且拿不回来
   // ——改用应用内 requestConfirm。
   const confirmed = await requestConfirm({
-    message: `Delete workflow run "${name}"?`,
+    message: t('workflow.manager.deleteRunConfirm', { name }),
     danger: true,
-    confirmLabel: 'Delete',
+    confirmLabel: t('common.delete'),
   });
   if (!confirmed) return;
   const result = await invokeWorkflowControl(
     window.kodaxSpace?.invoke('workflow.delete', { runId: run.runId }),
-    `Delete failed: ${name}`,
+    t('workflow.manager.deleteFailedName', { name }),
   );
   if (result) {
     // 删除无 push 事件、seed 只增不删——必须显式从 store 移除，否则面板里删不掉。
     useAppStore.getState().removeWorkflowRun(run.runId);
-    pushToast(`Workflow run deleted: ${name}`, 'success');
+    pushToast(t('workflow.manager.runDeleted', { name }), 'success');
   }
 }
 
 async function startSavedWorkflow(
   saved: SavedWorkflowRef,
   currentSessionId: string | null,
+  t: Translate,
 ): Promise<void> {
   if (!currentSessionId) {
-    pushToast('Open a session before running a workflow', 'warning');
+    pushToast(t('workflow.manager.openSessionBeforeRun'), 'warning');
     return;
   }
   const result = await invokeWorkflowControl(
@@ -1015,26 +1057,27 @@ async function startSavedWorkflow(
       source: 'saved',
       sessionId: currentSessionId,
     }),
-    `Start failed: ${saved.name}`,
+    t('workflow.manager.startFailedName', { name: saved.name }),
   );
-  if (result) pushToast(`Workflow started: ${saved.name}`, 'success');
+  if (result) pushToast(t('workflow.manager.workflowStarted', { name: saved.name }), 'success');
 }
 
 async function deleteSavedWorkflow(
   saved: SavedWorkflowRef,
   currentSessionId: string | null,
   onChanged: () => void,
+  t: Translate,
 ): Promise<void> {
   if (!currentSessionId) {
-    pushToast('Open a session before editing saved workflows', 'warning');
+    pushToast(t('workflow.manager.openSessionBeforeEdit'), 'warning');
     return;
   }
   // #1 fix: window.confirm 在 Electron sandbox=true 下会夺走 webContents 键盘焦点且拿不回来
   // ——改用应用内 requestConfirm。
   const confirmed = await requestConfirm({
-    message: `Delete saved workflow "${saved.name}"?`,
+    message: t('workflow.manager.deleteSavedConfirm', { name: saved.name }),
     danger: true,
-    confirmLabel: 'Delete',
+    confirmLabel: t('common.delete'),
   });
   if (!confirmed) return;
   const result = await invokeWorkflowControl(
@@ -1043,10 +1086,10 @@ async function deleteSavedWorkflow(
       sessionId: currentSessionId,
       source: saved.source,
     }),
-    `Delete failed: ${saved.name}`,
+    t('workflow.manager.deleteFailedName', { name: saved.name }),
   );
   if (result) {
-    pushToast(`Saved workflow deleted: ${saved.name}`, 'success');
+    pushToast(t('workflow.manager.savedDeleted', { name: saved.name }), 'success');
     onChanged();
   }
 }

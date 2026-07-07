@@ -23,11 +23,13 @@ const TRANSPARENT_CONTENT_KINDS = new Set<string>(['workflow']);
 const POPOUT_WIDTH: Record<string, string> = {
   preview: 'w-[880px]',
   terminal: 'w-[800px]',
+  memory: 'w-[760px]',
   workflow: 'w-[900px]',
 };
 const DEFAULT_POPOUT_WIDTH = 'w-[480px]';
 
-import { Suspense, lazy } from 'react';
+import { Component, Suspense, lazy, type ErrorInfo, type ReactNode, type RefObject } from 'react';
+import { X } from 'lucide-react';
 import type { PopoutKind } from '../CommandToolbar.js';
 import { PreviewPanel } from './PreviewPanel.js';
 import { DiffPanel } from './DiffPanel.js';
@@ -44,31 +46,112 @@ import { TasksPanel } from './TasksPanel.js';
 import { PlanPanel } from './PlanPanel.js';
 import { AgentsMdPanel } from './AgentsMdPanel.js';
 import { McpPanel } from './McpPanel.js';
+import { MemoryPanel } from './MemoryPanel.js';
 import { ArtifactsView } from '../../features/artifact/ArtifactsView.js';
 import { WorkflowManagementPanel } from '../../features/workflow/WorkflowManagementPanel.js';
+import { FloatingSurfaceHost } from '../FloatingSurfaceHost.js';
 import { floatingSurfaceForPopout } from '../floatingSurfacePolicy.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
+import type { MessageKey } from '../../i18n/messages.js';
 
 interface PopoutOverlayProps {
   kind: PopoutKind;
   onClose: () => void;
+  boundsRef: RefObject<HTMLElement | null>;
 }
 
-export function PopoutOverlay({ kind, onClose }: PopoutOverlayProps): JSX.Element {
+interface PopoutPanelErrorBoundaryProps {
+  readonly kind: PopoutKind;
+  readonly onClose: () => void;
+  readonly panelFailedText: string;
+  readonly closeText: string;
+  readonly children: ReactNode;
+}
+
+interface PopoutPanelErrorBoundaryState {
+  readonly hasError: boolean;
+  readonly message: string | null;
+}
+
+class PopoutPanelErrorBoundary extends Component<
+  PopoutPanelErrorBoundaryProps,
+  PopoutPanelErrorBoundaryState
+> {
+  override state: PopoutPanelErrorBoundaryState = { hasError: false, message: null };
+
+  static getDerivedStateFromError(error: unknown): PopoutPanelErrorBoundaryState {
+    return {
+      hasError: true,
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  override componentDidCatch(error: unknown, info: ErrorInfo): void {
+    console.error('[kodax-space] popout panel render failed', {
+      kind: this.props.kind,
+      error,
+      componentStack: info.componentStack,
+    });
+  }
+
+  override componentDidUpdate(prevProps: PopoutPanelErrorBoundaryProps): void {
+    if (prevProps.kind !== this.props.kind && this.state.hasError) {
+      this.setState({ hasError: false, message: null });
+    }
+  }
+
+  override render(): ReactNode {
+    if (!this.state.hasError) return this.props.children;
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+        <div className="text-sm font-medium text-fg-primary">{this.props.panelFailedText}</div>
+        {this.state.message && (
+          <div className="max-w-[420px] break-words text-xs leading-relaxed text-fg-muted">
+            {this.state.message}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={this.props.onClose}
+          className="rounded-md border border-border-default px-3 py-1.5 text-xs text-fg-secondary hover:bg-surface-3 hover:text-fg-primary"
+        >
+          {this.props.closeText}
+        </button>
+      </div>
+    );
+  }
+}
+
+const POPOUT_TITLE_KEYS: Record<PopoutKind, MessageKey> = {
+  preview: 'popout.title.preview',
+  diff: 'popout.title.review',
+  terminal: 'popout.title.terminal',
+  tasks: 'popout.title.agents',
+  plan: 'popout.title.plan',
+  agents: 'popout.title.agents',
+  mcp: 'popout.title.mcp',
+  memory: 'popout.title.memory',
+  artifact: 'popout.title.artifact',
+  workflow: 'popout.title.workflow',
+};
+
+export function PopoutOverlay({ kind, onClose, boundsRef }: PopoutOverlayProps): JSX.Element {
+  const { t } = useI18n();
   const surface = floatingSurfaceForPopout(kind);
   const fullCover = FULL_COVER_KINDS.has(kind);
   const transparentContent = TRANSPARENT_CONTENT_KINDS.has(kind);
+  const title = t(POPOUT_TITLE_KEYS[kind]);
   // full-cover：left-0 铺满整个对话区；窄 panel：固定宽度从右侧贴边 slide-in。
   const widthCls = fullCover
     ? 'left-0'
     : `${POPOUT_WIDTH[kind] ?? DEFAULT_POPOUT_WIDTH} max-w-[95vw]`;
   return (
-    <>
-      <div
-        className="absolute inset-0 bg-black/30 z-30"
-        data-testid="popout-backdrop"
-        onClick={onClose}
-        aria-hidden
-      />
+    <FloatingSurfaceHost
+      surface={surface}
+      boundsRef={boundsRef}
+      onClose={onClose}
+      backdropTestId="popout-backdrop"
+    >
       <aside
         data-testid={`popout-${kind}`}
         data-popout-kind={kind}
@@ -80,39 +163,51 @@ export function PopoutOverlay({ kind, onClose }: PopoutOverlayProps): JSX.Elemen
         // 精准压住，且全仓仅此一处 glass+absolute 冲突，零波及其它 glass 面板。
         // 内容透明的全覆盖层（workflow）盖在对话流上面：加 `glass-cover` 拉高不透明度，避免下层
         // 对话文字透上来干扰阅读。diff / artifact 内容自带不透明表面、窄侧 panel 需透出上下文，均不加。
-        className={`glass ix-zone ${transparentContent ? 'glass-cover' : ''} !absolute right-0 top-10 bottom-0 ${widthCls} border-l border-border-default z-40 flex flex-col`}
+        className={`glass ix-zone pointer-events-auto ${transparentContent ? 'glass-cover' : ''} !absolute right-0 top-10 bottom-0 ${widthCls} border-l border-border-default flex flex-col`}
       >
         <div className="px-3 py-2 border-b border-border-default flex items-center text-xs text-fg-muted flex-shrink-0">
-          <span>{surface.label}</span>
+          <span>{title}</span>
           <button
             type="button"
             onClick={onClose}
-            className="ml-auto px-2 py-0.5 hover:text-fg-primary"
-            aria-label="Close popout"
+            className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded hover:bg-surface-3 hover:text-fg-primary"
+            aria-label={t('popout.closeAria')}
           >
-            ✕
+            <X className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
           </button>
         </div>
         <div className="flex-1 min-h-0 overflow-hidden">
-          {kind === 'preview' && <PreviewPanel />}
-          {kind === 'diff' && <DiffPanel />}
-          {kind === 'terminal' && (
-            <Suspense fallback={<div className="p-3 text-xs text-fg-muted">Loading terminal…</div>}>
-              <TerminalPanel />
-            </Suspense>
-          )}
-          {kind === 'tasks' && <TasksPanel />}
-          {kind === 'plan' && <PlanPanel />}
-          {kind === 'agents' && <AgentsMdPanel />}
-          {kind === 'mcp' && <McpPanel />}
-          {kind === 'artifact' && <ArtifactsView />}
-          {kind === 'workflow' && (
-            <div className="h-full min-h-0 overflow-hidden">
-              <WorkflowManagementPanel />
-            </div>
-          )}
+          <PopoutPanelErrorBoundary
+            kind={kind}
+            onClose={onClose}
+            panelFailedText={t('popout.panelFailed')}
+            closeText={t('popout.close')}
+          >
+            {kind === 'preview' && <PreviewPanel />}
+            {kind === 'diff' && <DiffPanel />}
+            {kind === 'terminal' && (
+              <Suspense
+                fallback={
+                  <div className="p-3 text-xs text-fg-muted">{t('popout.loadingTerminal')}</div>
+                }
+              >
+                <TerminalPanel />
+              </Suspense>
+            )}
+            {kind === 'tasks' && <TasksPanel />}
+            {kind === 'plan' && <PlanPanel />}
+            {kind === 'agents' && <AgentsMdPanel />}
+            {kind === 'mcp' && <McpPanel />}
+            {kind === 'memory' && <MemoryPanel />}
+            {kind === 'artifact' && <ArtifactsView />}
+            {kind === 'workflow' && (
+              <div className="h-full min-h-0 overflow-hidden">
+                <WorkflowManagementPanel />
+              </div>
+            )}
+          </PopoutPanelErrorBoundary>
         </div>
       </aside>
-    </>
+    </FloatingSurfaceHost>
   );
 }

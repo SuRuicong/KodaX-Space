@@ -8,6 +8,7 @@ import * as pdfjs from 'pdfjs-dist';
 // Vite ?url 把 worker 文件 emit 成静态 asset 并返 URL
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { base64ToBytes } from './binaryUtils.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 // Module-level set worker — pdfjs internal singleton, 多次 set 同值幂等
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -17,6 +18,7 @@ interface Props {
 }
 
 export function PdfViewer({ base64 }: Props): JSX.Element {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const docRef = useRef<pdfjs.PDFDocumentProxy | null>(null);
   const [pageNum, setPageNum] = useState(1);
@@ -44,7 +46,7 @@ export function PdfViewer({ base64 }: Props): JSX.Element {
         disableAutoFetch: true,
       });
     } catch {
-      setErr('Failed to decode PDF data');
+      setErr(t('preview.failedDecodePdf'));
       setBusy(false);
       return;
     }
@@ -61,7 +63,7 @@ export function PdfViewer({ base64 }: Props): JSX.Element {
       })
       .catch(() => {
         if (cancelled) return;
-        setErr('Failed to open PDF');
+        setErr(t('preview.failedOpenPdf'));
         setBusy(false);
       });
 
@@ -72,7 +74,7 @@ export function PdfViewer({ base64 }: Props): JSX.Element {
       docRef.current = null;
       if (prev !== null) void prev.destroy();
     };
-  }, [base64]);
+  }, [base64, t]);
 
   // Render current page
   useEffect(() => {
@@ -114,7 +116,7 @@ export function PdfViewer({ base64 }: Props): JSX.Element {
     return <div className="p-3 text-xs text-danger">{err}</div>;
   }
   if (busy) {
-    return <div className="p-3 text-xs text-fg-muted">Loading PDF…</div>;
+    return <div className="p-3 text-xs text-fg-muted">{t('preview.loadingPdf')}</div>;
   }
 
   return (

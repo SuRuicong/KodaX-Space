@@ -3,14 +3,21 @@
 // 用户在底部输入框输入 `/` 触发：
 //   - 拉 slash.discover + skill.discover 各一次（已缓存就不再拉）
 //   - 合并显示：slash command 与 skill 并列，按 name 字典序
-//   - 上下键选中、回车执行；Esc 关闭
+//   - 上下键选中、Tab 补全；Esc 关闭
 //
 // 不在 BottomBar 内部直接 inline 实现，独立组件方便 future 让 attach-menu 也复用同补全。
 
 import { useEffect, useRef, useState } from 'react';
-import type { ProviderInfo, SessionMeta, SlashCommandMeta, SkillMeta, WorkflowRunT } from '@kodax-space/space-ipc-schema';
+import type {
+  ProviderInfo,
+  SessionMeta,
+  SlashCommandMeta,
+  SkillMeta,
+  WorkflowRunT,
+} from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
 import { safeSkillSlashText, skillSlashInsertText } from './skillSlash.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 
 /**
  * 统一的 picker 项类型——把 slash command 和 skill 合并成一个列表。
@@ -78,13 +85,41 @@ const WORKFLOW_SUBCOMMANDS: ReadonlyArray<{
   { label: 'pause', description: 'Pause a workflow run', argsHint: '<runId>' },
   { label: 'resume', description: 'Resume a workflow run', argsHint: '<runId>' },
   { label: 'stop', description: 'Stop the latest active workflow or a run', argsHint: '[runId]' },
-  { label: 'delete', description: 'Delete a workflow run or saved workflow', argsHint: '[--force] [--run|--saved] <target>' },
-  { label: 'prune', description: 'Preview or clean old workflow runs', argsHint: '--dry-run|--keep N|--older-than Nd' },
-  { label: 'rerun', description: 'Rerun a generated run or saved workflow', argsHint: '<runId|savedName> [args]' },
-  { label: 'save', description: 'Save a generated workflow run as a capsule', argsHint: '<runId> <name>' },
-  { label: 'rename', description: 'Rename a run display name or generated saved workflow', argsHint: '<runId|savedName> <newName>' },
-  { label: 'revise', description: 'Generate and save a revised workflow capsule', argsHint: '[--replace] <runId|savedName> <change>' },
-  { label: 'create', description: 'Generate and start a workflow from natural language', argsHint: '<request>' },
+  {
+    label: 'delete',
+    description: 'Delete a workflow run or saved workflow',
+    argsHint: '[--force] [--run|--saved] <target>',
+  },
+  {
+    label: 'prune',
+    description: 'Preview or clean old workflow runs',
+    argsHint: '--dry-run|--keep N|--older-than Nd',
+  },
+  {
+    label: 'rerun',
+    description: 'Rerun a generated run or saved workflow',
+    argsHint: '<runId|savedName> [args]',
+  },
+  {
+    label: 'save',
+    description: 'Save a generated workflow run as a capsule',
+    argsHint: '<runId> <name>',
+  },
+  {
+    label: 'rename',
+    description: 'Rename a run display name or generated saved workflow',
+    argsHint: '<runId|savedName> <newName>',
+  },
+  {
+    label: 'revise',
+    description: 'Generate and save a revised workflow capsule',
+    argsHint: '[--replace] <runId|savedName> <change>',
+  },
+  {
+    label: 'create',
+    description: 'Generate and start a workflow from natural language',
+    argsHint: '<request>',
+  },
 ];
 
 function scanWorkflowSpans(rest: string): Array<{ value: string; start: number; end: number }> {
@@ -159,16 +194,31 @@ function buildWorkflowSuggestions(
   const firstArgMode = !first || (spans.length === 1 && !endsWithSpace);
 
   const filter = (items: readonly SlashPickerItem[]): readonly SlashPickerItem[] =>
-    prefix ? items.filter((item) => item.kind === 'workflow' && item.label.toLowerCase().startsWith(prefix)) : items;
+    prefix
+      ? items.filter(
+          (item) => item.kind === 'workflow' && item.label.toLowerCase().startsWith(prefix),
+        )
+      : items;
 
   if (firstArgMode) {
     const workflowNames: SlashPickerItem[] = [
-      ...(library?.builtin ?? []).map((w) => workflowSuggestion(query, w.name, w.description || 'Built-in workflow')),
+      ...(library?.builtin ?? []).map((w) =>
+        workflowSuggestion(query, w.name, w.description || 'Built-in workflow'),
+      ),
       ...(library?.saved ?? []).map((w) =>
-        workflowSuggestion(query, w.name, `Saved workflow${w.source ? ` (${w.source}${w.execution ? `, ${w.execution}` : ''})` : ''}`),
+        workflowSuggestion(
+          query,
+          w.name,
+          `Saved workflow${w.source ? ` (${w.source}${w.execution ? `, ${w.execution}` : ''})` : ''}`,
+        ),
       ),
     ];
-    return filter([...WORKFLOW_SUBCOMMANDS.map((c) => workflowSuggestion(query, c.label, c.description, c.argsHint)), ...workflowNames]);
+    return filter([
+      ...WORKFLOW_SUBCOMMANDS.map((c) =>
+        workflowSuggestion(query, c.label, c.description, c.argsHint),
+      ),
+      ...workflowNames,
+    ]);
   }
 
   const runItems = runs.map((run) =>
@@ -208,7 +258,11 @@ function buildWorkflowSuggestions(
     case 'rename':
       return filter([...runItems, ...savedItems]);
     case 'revise':
-      return filter([flag('--replace', 'Replace the saved workflow target'), ...runItems, ...savedItems]);
+      return filter([
+        flag('--replace', 'Replace the saved workflow target'),
+        ...runItems,
+        ...savedItems,
+      ]);
     default:
       return [];
   }
@@ -259,7 +313,10 @@ function slashArgSuggestion(
   };
 }
 
-function uniqueSlashArgItems(items: readonly SlashPickerItem[], limit = 80): readonly SlashPickerItem[] {
+function uniqueSlashArgItems(
+  items: readonly SlashPickerItem[],
+  limit = 80,
+): readonly SlashPickerItem[] {
   const seen = new Set<string>();
   const result: SlashPickerItem[] = [];
   for (const item of items) {
@@ -273,10 +330,15 @@ function uniqueSlashArgItems(items: readonly SlashPickerItem[], limit = 80): rea
   return result;
 }
 
-function filterSlashArgItems(items: readonly SlashPickerItem[], prefix: string): readonly SlashPickerItem[] {
+function filterSlashArgItems(
+  items: readonly SlashPickerItem[],
+  prefix: string,
+): readonly SlashPickerItem[] {
   const unique = uniqueSlashArgItems(items);
   if (!prefix) return unique;
-  return unique.filter((item) => item.kind === 'slash-arg' && item.label.toLowerCase().startsWith(prefix));
+  return unique.filter(
+    (item) => item.kind === 'slash-arg' && item.label.toLowerCase().startsWith(prefix),
+  );
 }
 
 function sessionSuggestions(query: string, sessions: readonly SessionMeta[]): SlashPickerItem[] {
@@ -290,7 +352,11 @@ function sessionSuggestions(query: string, sessions: readonly SessionMeta[]): Sl
   );
 }
 
-function providerSuggestions(query: string, providers: readonly ProviderInfo[], includeModelForms: boolean): SlashPickerItem[] {
+function providerSuggestions(
+  query: string,
+  providers: readonly ProviderInfo[],
+  includeModelForms: boolean,
+): SlashPickerItem[] {
   const items: SlashPickerItem[] = [];
   for (const provider of providers) {
     items.push(
@@ -302,17 +368,26 @@ function providerSuggestions(query: string, providers: readonly ProviderInfo[], 
     );
     if (!includeModelForms) continue;
     for (const model of provider.models ?? []) {
-      items.push(slashArgSuggestion(query, `${provider.id}/${model}`, `${provider.displayName} model`));
-      items.push(slashArgSuggestion(query, `/${model}`, `Model on current provider (${provider.id})`));
+      items.push(
+        slashArgSuggestion(query, `${provider.id}/${model}`, `${provider.displayName} model`),
+      );
+      items.push(
+        slashArgSuggestion(query, `/${model}`, `Model on current provider (${provider.id})`),
+      );
     }
   }
   return items;
 }
 
-function commandHelpSuggestions(query: string, commands: readonly SlashCommandMeta[]): SlashPickerItem[] {
+function commandHelpSuggestions(
+  query: string,
+  commands: readonly SlashCommandMeta[],
+): SlashPickerItem[] {
   return commands.flatMap((command) => [
     slashArgSuggestion(query, command.name, command.description),
-    ...(command.aliases ?? []).map((alias) => slashArgSuggestion(query, alias, `Alias for /${command.name}`)),
+    ...(command.aliases ?? []).map((alias) =>
+      slashArgSuggestion(query, alias, `Alias for /${command.name}`),
+    ),
   ]);
 }
 
@@ -391,7 +466,16 @@ function buildSlashArgSuggestions(
       suggestions = staticOptions(['on', 'off']);
       break;
     case 'goal':
-      suggestions = staticOptions(['status', 'pause', 'resume', 'complete', 'blocked', 'clear', 'help', '--tokens']);
+      suggestions = staticOptions([
+        'status',
+        'pause',
+        'resume',
+        'complete',
+        'blocked',
+        'clear',
+        'help',
+        '--tokens',
+      ]);
       break;
     case 'learn':
       suggestions = staticOptions(['pending', 'ledger', 'diff', 'approve', 'reject', 'help']);
@@ -400,7 +484,17 @@ function buildSlashArgSuggestions(
       suggestions = staticOptions(['list', 'show', 'help']);
       break;
     case 'memory':
-      suggestions = staticOptions(['pending', 'list', 'rebuild', 'open', 'help']);
+      suggestions = staticOptions([
+        'inbox',
+        'pending',
+        'list',
+        'show',
+        'approve',
+        'reject',
+        'curate',
+        'open',
+        'help',
+      ]);
       break;
     case 'review':
       suggestions = [
@@ -424,7 +518,11 @@ function buildSlashArgSuggestions(
       if ((first === 'label' || first === 'unlabel') && argIndex >= 1) {
         suggestions = sessionSuggestions(query, sessions);
       } else {
-        suggestions = [opt('label', 'Label a tree entry'), opt('unlabel', 'Remove a tree label'), ...sessionSuggestions(query, sessions)];
+        suggestions = [
+          opt('label', 'Label a tree entry'),
+          opt('unlabel', 'Remove a tree label'),
+          ...sessionSuggestions(query, sessions),
+        ];
       }
       break;
     case 'load':
@@ -501,6 +599,7 @@ export function _resetSlashCacheForTesting(): void {
 }
 
 export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Element | null {
+  const { t } = useI18n();
   const { onPick, registerKeyHandler } = props;
   const [items, setItems] = useState<readonly SlashPickerItem[]>([]);
   const [workflowLibrary, setWorkflowLibrary] = useState<WorkflowLibraryLite | null>(null);
@@ -528,12 +627,14 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
         if (cancelled) return;
         const merged: SlashPickerItem[] = [
           ...cmds.map((c): SlashPickerItem => ({ kind: 'slash', meta: c })),
-          ...skills.map((s): SlashPickerItem => ({
-            kind: 'skill',
-            meta: s,
-            displayName: safeSkillSlashText(s.name, cmds),
-            insertText: skillSlashInsertText(s.name, cmds),
-          })),
+          ...skills.map(
+            (s): SlashPickerItem => ({
+              kind: 'skill',
+              meta: s,
+              displayName: safeSkillSlashText(s.name, cmds),
+              insertText: skillSlashInsertText(s.name, cmds),
+            }),
+          ),
         ];
         merged.sort((a, b) => pickerItemName(a).localeCompare(pickerItemName(b)));
         setItems(merged);
@@ -584,17 +685,20 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
     ? buildWorkflowSuggestions(props.query, workflowLibrary, workflowRuns)
     : slashArgMode
       ? buildSlashArgSuggestions(props.query, providers, sessions, commandMetas)
-    : items.filter((c) => {
-        if (skillOnlyMode && c.kind !== 'skill') return false;
-        if (c.kind === 'workflow') return false;
-        if (c.kind === 'slash-arg') return false;
-        if (c.kind === 'slash') {
-          return c.meta.name.startsWith(prefix) || (c.meta.aliases ?? []).some((alias) => alias.startsWith(prefix));
-        }
-        return c.meta.name.startsWith(prefix);
-      });
+      : items.filter((c) => {
+          if (skillOnlyMode && c.kind !== 'skill') return false;
+          if (c.kind === 'workflow') return false;
+          if (c.kind === 'slash-arg') return false;
+          if (c.kind === 'slash') {
+            return (
+              c.meta.name.startsWith(prefix) ||
+              (c.meta.aliases ?? []).some((alias) => alias.startsWith(prefix))
+            );
+          }
+          return c.meta.name.startsWith(prefix);
+        });
 
-  // 上下键 / 回车 / Esc 键盘处理
+  // 上下键 / Tab / Esc 键盘处理
   useEffect(() => {
     const onKey = (e: KeyboardEvent): boolean => {
       if (filtered.length === 0) return false;
@@ -606,8 +710,8 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
         e.preventDefault();
         setSelectedIdx((i) => Math.max(i - 1, 0));
         return true;
-      } else if (e.key === 'Enter' || e.key === 'Tab') {
-        // Enter 或 Tab 都补全选中项（Tab = 编辑器惯例的"补全"键，用户复报 Tab 补不出来）。
+      } else if (e.key === 'Tab') {
+        // Tab accepts completion. Enter is reserved for composer send; Shift+Enter remains textarea newline.
         const item = filtered[selectedIdx];
         if (item) {
           e.preventDefault();
@@ -640,22 +744,28 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
       ref={listRef}
       className="absolute left-3 right-3 bottom-full mb-1 max-h-64 overflow-y-auto bg-surface-4 border border-border-default rounded-lg shadow-xl text-xs z-40"
       role="listbox"
-      aria-label="Slash commands and skills"
+      aria-label={t('slash.commandsAndSkills')}
     >
       {filtered.map((item, idx) => {
         const selected = idx === selectedIdx;
-        const name = item.kind === 'workflow' || item.kind === 'slash-arg' ? item.label : item.meta.name;
-        const description = item.kind === 'workflow' || item.kind === 'slash-arg' ? item.description : item.meta.description;
-        const argsHint = item.kind === 'workflow' || item.kind === 'slash-arg'
-          ? item.argsHint
-          : item.kind === 'slash'
-            ? item.meta.argsHint
-            : item.meta.argumentHint;
-        const displayName = item.kind === 'workflow' || item.kind === 'slash-arg'
-          ? item.label
-          : item.kind === 'skill'
-            ? item.displayName
-            : `/${item.meta.name}`;
+        const name =
+          item.kind === 'workflow' || item.kind === 'slash-arg' ? item.label : item.meta.name;
+        const description =
+          item.kind === 'workflow' || item.kind === 'slash-arg'
+            ? item.description
+            : item.meta.description;
+        const argsHint =
+          item.kind === 'workflow' || item.kind === 'slash-arg'
+            ? item.argsHint
+            : item.kind === 'slash'
+              ? item.meta.argsHint
+              : item.meta.argumentHint;
+        const displayName =
+          item.kind === 'workflow' || item.kind === 'slash-arg'
+            ? item.label
+            : item.kind === 'skill'
+              ? item.displayName
+              : `/${item.meta.name}`;
         return (
           <div
             key={`${item.kind}:${name}`}
@@ -689,12 +799,12 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
               {item.kind === 'workflow'
                 ? 'workflow'
                 : item.kind === 'slash-arg'
-                ? 'arg'
-                : item.kind === 'slash'
-                ? item.meta.source === 'user'
-                  ? 'user'
-                  : ''
-                : item.meta.source}
+                  ? 'arg'
+                  : item.kind === 'slash'
+                    ? item.meta.source === 'user'
+                      ? 'user'
+                      : ''
+                    : item.meta.source}
             </span>
           </div>
         );

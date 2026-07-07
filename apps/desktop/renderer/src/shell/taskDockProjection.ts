@@ -1,6 +1,7 @@
 import type { SessionEvent, WorkflowRunT } from '@kodax-space/space-ipc-schema';
 import { summarizeTodoProgress } from '../lib/liveTaskProgress.js';
 import { buildAgentStatuses, type AgentStatusViewModel } from './agentStatusProjection.js';
+import type { MessageKey } from '../i18n/messages.js';
 
 type TodoItem = {
   readonly id: string;
@@ -12,6 +13,7 @@ type TodoItem = {
 type ManagedTaskStatus = Extract<SessionEvent, { kind: 'managed_task_status' }>['status'];
 
 export interface TaskDockMetric {
+  readonly key: 'plan' | 'agents' | 'workflow' | 'budget';
   readonly label: string;
   readonly value: string;
 }
@@ -45,9 +47,11 @@ export interface BuildTaskDockRunInput {
   readonly budget?: { readonly used: number; readonly cap: number };
   readonly hasPermissionRequest?: boolean;
   readonly hasAskUserRequest?: boolean;
+  readonly t?: (key: MessageKey, vars?: Record<string, string | number>) => string;
 }
 
 export function buildTaskDockRunView(input: BuildTaskDockRunInput): TaskDockRunViewModel {
+  const t = input.t ?? ((key: MessageKey): string => key);
   let agentStatuses: readonly AgentStatusViewModel[] | null = null;
   const getAgents = (): readonly AgentStatusViewModel[] => {
     if (agentStatuses === null) agentStatuses = buildAgentStatuses(input.managedStatus);
@@ -58,23 +62,23 @@ export function buildTaskDockRunView(input: BuildTaskDockRunInput): TaskDockRunV
     return {
       mode: 'no_project',
       severity: 'neutral',
-      headline: 'Open a project to start',
-      detail: 'Workspace actions and task context will appear here.',
+      headline: t('taskDock.openProjectHeadline'),
+      detail: t('taskDock.openProjectDetail'),
       metrics: [],
       primaryTarget: 'run',
     };
   }
 
   if (input.hasPermissionRequest) {
-    return attention('Permission needed', 'A tool call is waiting for approval.', 'permission');
+    return attention(t('taskDock.permissionNeeded'), t('taskDock.permissionDetail'), 'permission');
   }
   if (input.hasAskUserRequest) {
-    return attention('Answer needed', 'The agent is waiting for your response.', 'ask_user');
+    return attention(t('taskDock.answerNeeded'), t('taskDock.answerDetail'), 'ask_user');
   }
   if (input.managedStatus?.budgetApprovalRequired) {
     return attention(
-      'Budget approval needed',
-      'Work is paused until the budget is approved.',
+      t('taskDock.budgetApprovalNeeded'),
+      t('taskDock.budgetApprovalDetail'),
       'budget',
     );
   }
@@ -84,9 +88,9 @@ export function buildTaskDockRunView(input: BuildTaskDockRunInput): TaskDockRunV
     return {
       mode: 'error',
       severity: 'danger',
-      headline: 'Run hit an error',
-      detail: 'Open the run context for recovery details.',
-      metrics: buildMetrics(input, getAgents()),
+      headline: t('taskDock.runError'),
+      detail: t('taskDock.runErrorDetail'),
+      metrics: buildMetrics(input, getAgents(), t),
       primaryTarget: 'run',
       attentionKind: 'error',
     };
@@ -99,9 +103,10 @@ export function buildTaskDockRunView(input: BuildTaskDockRunInput): TaskDockRunV
     return {
       mode: 'running',
       severity: 'running',
-      headline: activeWorkflow.displayName || activeWorkflow.workflowName || 'Workflow running',
-      detail: activeWorkflow.latestMessage ?? 'Workflow is active.',
-      metrics: buildMetrics(input, getAgents()),
+      headline:
+        activeWorkflow.displayName || activeWorkflow.workflowName || t('taskDock.workflowRunning'),
+      detail: activeWorkflow.latestMessage ?? t('taskDock.workflowActive'),
+      metrics: buildMetrics(input, getAgents(), t),
       primaryTarget: 'workflow',
     };
   }
@@ -112,9 +117,9 @@ export function buildTaskDockRunView(input: BuildTaskDockRunInput): TaskDockRunV
     return {
       mode: 'running',
       severity: 'running',
-      headline: `${activeAgent.title} is working`,
-      detail: activeAgent.latest ?? activeAgent.responsibility ?? 'Agent work is active.',
-      metrics: buildMetrics(input, agents),
+      headline: t('taskDock.agentWorking', { title: activeAgent.title }),
+      detail: activeAgent.latest ?? activeAgent.responsibility ?? t('taskDock.agentActive'),
+      metrics: buildMetrics(input, agents, t),
       primaryTarget: 'agents',
     };
   }
@@ -124,9 +129,9 @@ export function buildTaskDockRunView(input: BuildTaskDockRunInput): TaskDockRunV
     return {
       mode: 'running',
       severity: 'running',
-      headline: 'Plan in progress',
+      headline: t('taskDock.planInProgress'),
       detail: activeTodo.activeForm ?? activeTodo.content,
-      metrics: buildMetrics(input, agents),
+      metrics: buildMetrics(input, agents, t),
       primaryTarget: 'plan',
     };
   }
@@ -135,9 +140,9 @@ export function buildTaskDockRunView(input: BuildTaskDockRunInput): TaskDockRunV
     return {
       mode: 'running',
       severity: 'running',
-      headline: 'Sending message',
-      detail: 'The current turn is starting.',
-      metrics: buildMetrics(input, agents),
+      headline: t('taskDock.sendingMessage'),
+      detail: t('taskDock.turnStarting'),
+      metrics: buildMetrics(input, agents, t),
       primaryTarget: 'run',
     };
   }
@@ -146,9 +151,9 @@ export function buildTaskDockRunView(input: BuildTaskDockRunInput): TaskDockRunV
     return {
       mode: 'completed',
       severity: 'success',
-      headline: 'Run complete',
-      detail: 'Review changes, sources, and artifacts before moving on.',
-      metrics: buildMetrics(input, agents),
+      headline: t('taskDock.runComplete'),
+      detail: t('taskDock.runCompleteDetail'),
+      metrics: buildMetrics(input, agents, t),
       primaryTarget: 'changes',
     };
   }
@@ -156,11 +161,9 @@ export function buildTaskDockRunView(input: BuildTaskDockRunInput): TaskDockRunV
   return {
     mode: 'idle',
     severity: input.hasSession ? 'info' : 'neutral',
-    headline: input.hasSession ? 'Ready for the next step' : 'Ready',
-    detail: input.hasSession
-      ? 'Task context will update as the agent works.'
-      : 'Start or select a session to see run details.',
-    metrics: buildMetrics(input, agents),
+    headline: input.hasSession ? t('taskDock.readyNext') : t('taskDock.ready'),
+    detail: input.hasSession ? t('taskDock.contextUpdates') : t('taskDock.startSession'),
+    metrics: buildMetrics(input, agents, t),
     primaryTarget: 'run',
   };
 }
@@ -184,24 +187,41 @@ function attention(
 function buildMetrics(
   input: BuildTaskDockRunInput,
   agents: readonly AgentStatusViewModel[],
+  t: (key: MessageKey, vars?: Record<string, string | number>) => string,
 ): readonly TaskDockMetric[] {
   const metrics: TaskDockMetric[] = [];
   const todos = input.todos ?? [];
   if (todos.length > 0) {
     const progress = summarizeTodoProgress(todos);
-    metrics.push({ label: 'Plan', value: `${progress.completed}/${progress.total}` });
+    metrics.push({
+      key: 'plan',
+      label: t('taskDock.metric.plan'),
+      value: `${progress.completed}/${progress.total}`,
+    });
   }
   if (agents.length > 0) {
-    metrics.push({ label: 'Agents', value: String(agents.length) });
+    metrics.push({
+      key: 'agents',
+      label: t('taskDock.metric.agents'),
+      value: String(agents.length),
+    });
   }
   const activeWorkflowCount =
     input.workflowRuns?.filter((run) => run.status === 'running' || run.status === 'paused')
       .length ?? 0;
   if (activeWorkflowCount > 0) {
-    metrics.push({ label: 'Workflow', value: String(activeWorkflowCount) });
+    metrics.push({
+      key: 'workflow',
+      label: t('taskDock.metric.workflow'),
+      value: String(activeWorkflowCount),
+    });
   }
   if (input.budget) {
-    metrics.push({ label: 'Budget', value: `${input.budget.used}/${input.budget.cap}` });
+    metrics.push({
+      key: 'budget',
+      label: t('taskDock.metric.budget'),
+      value: `${input.budget.used}/${input.budget.cap}`,
+    });
   }
   return metrics;
 }

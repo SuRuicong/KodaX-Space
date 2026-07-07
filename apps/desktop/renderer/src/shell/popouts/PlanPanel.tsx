@@ -7,8 +7,10 @@
 import { ListChecks } from 'lucide-react';
 import { summarizeTodoProgress } from '../../lib/liveTaskProgress.js';
 import { useAppStore } from '../../store/appStore.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 export function PlanPanel(): JSX.Element {
+  const { t } = useI18n();
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const todos = useAppStore((s) =>
     currentSessionId ? s.todoListBySession[currentSessionId] : undefined,
@@ -17,7 +19,7 @@ export function PlanPanel(): JSX.Element {
   if (!currentSessionId) {
     return (
       <div className="h-full flex items-center justify-center text-fg-faint text-xs">
-        No active session.
+        {t('popout.plan.noSession')}
       </div>
     );
   }
@@ -26,10 +28,8 @@ export function PlanPanel(): JSX.Element {
     return (
       <div className="h-full flex flex-col items-center justify-center text-fg-faint text-xs p-4 gap-2">
         <ListChecks className="w-7 h-7 text-fg-faint" strokeWidth={1.5} aria-hidden />
-        <div className="text-fg-muted">No plan yet</div>
-        <div className="text-center max-w-[260px]">
-          Send a multi-step request. KodaX Scout will seed the todo list when planning is needed.
-        </div>
+        <div className="text-fg-muted">{t('popout.plan.emptyTitle')}</div>
+        <div className="text-center max-w-[260px]">{t('popout.plan.emptyBody')}</div>
       </div>
     );
   }
@@ -43,7 +43,7 @@ export function PlanPanel(): JSX.Element {
     <div className="h-full flex flex-col text-xs">
       <header className="px-3 py-2 border-b border-border-default/60 flex items-center justify-between">
         <div className="text-fg-secondary font-medium">
-          Plan{' '}
+          {t('popout.plan.title')}{' '}
           <span className="text-fg-muted font-normal">
             ({done}/{total})
           </span>
@@ -86,7 +86,7 @@ export function PlanPanel(): JSX.Element {
             >
               <span
                 className={'flex-shrink-0 w-3 h-3 rounded-full mt-0.5 border ' + dotCls}
-                aria-label={`status: ${todo.status}`}
+                aria-label={t('right.statusAria', { status: todo.status })}
               />
               <span className={textCls}>{todo.content}</span>
             </li>

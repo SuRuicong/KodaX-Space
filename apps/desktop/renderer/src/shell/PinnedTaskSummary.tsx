@@ -13,6 +13,8 @@ import { useSessionWorkflowRuns } from '../features/workflow/WorkflowPanel.js';
 import { useAppStore } from '../store/appStore.js';
 import { buildTaskDockRunView, type TaskDockRunViewModel } from './taskDockProjection.js';
 import { requestTaskDockFocus, type TaskDockSectionId } from './taskDockControl.js';
+import { useI18n } from '../i18n/I18nProvider.js';
+import type { MessageKey } from '../i18n/messages.js';
 
 const EMPTY_EVENTS: readonly SessionEvent[] = [];
 
@@ -25,6 +27,7 @@ interface SummaryChip {
 }
 
 export function PinnedTaskSummary(): JSX.Element | null {
+  const { t } = useI18n();
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const pendingSend = useAppStore((s) =>
@@ -65,10 +68,12 @@ export function PinnedTaskSummary(): JSX.Element | null {
     budget,
     hasPermissionRequest,
     hasAskUserRequest,
+    t,
   });
 
-  const chips = useMemo(() => buildSummaryChips(view), [view]);
+  const chips = useMemo(() => buildSummaryChips(view, t), [view, t]);
   const primaryTarget = view.primaryTarget ?? 'run';
+  const primaryTargetLabel = sectionLabel(primaryTarget, t);
   const shouldRender =
     currentProjectPath !== null ||
     currentSessionId !== null ||
@@ -88,7 +93,7 @@ export function PinnedTaskSummary(): JSX.Element | null {
           view.severity,
         )}`}
         title={summaryTitle(view)}
-        aria-label={`Open ${primaryTarget} in Task Dock`}
+        aria-label={t('pinned.openTarget', { target: primaryTargetLabel })}
         data-testid="pinned-summary-primary"
       >
         <span className="flex h-4 w-4 items-center justify-center">
@@ -114,13 +119,14 @@ export function PinnedTaskSummary(): JSX.Element | null {
 }
 
 function SummaryChipButton({ chip }: { readonly chip: SummaryChip }): JSX.Element {
+  const { t } = useI18n();
   return (
     <button
       type="button"
       onClick={() => requestTaskDockFocus(chip.section)}
       className="inline-flex h-7 max-w-[120px] items-center gap-1.5 rounded-md border border-border-default bg-surface-2 px-2 text-fg-secondary transition-colors hover:bg-hover-bg hover:text-fg-primary"
-      title={`Open ${chip.label} in Task Dock`}
-      aria-label={`Open ${chip.label} in Task Dock`}
+      title={t('pinned.openChip', { label: chip.label })}
+      aria-label={t('pinned.openChip', { label: chip.label })}
       data-testid={`pinned-summary-${chip.key}`}
     >
       <span className="flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center text-fg-muted">
@@ -132,10 +138,12 @@ function SummaryChipButton({ chip }: { readonly chip: SummaryChip }): JSX.Elemen
   );
 }
 
-function buildSummaryChips(view: TaskDockRunViewModel): readonly SummaryChip[] {
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
+
+function buildSummaryChips(view: TaskDockRunViewModel, t: Translate): readonly SummaryChip[] {
   const chips = view.metrics.map((metric): SummaryChip => {
-    const section = sectionForMetric(metric.label);
-    const key = metric.label.toLowerCase();
+    const section = sectionForMetric(metric.key);
+    const key = metric.key;
     return {
       key,
       label: metric.label,
@@ -150,7 +158,7 @@ function buildSummaryChips(view: TaskDockRunViewModel): readonly SummaryChip[] {
       ...chips,
       {
         key: 'changes',
-        label: 'Review',
+        label: t('pinned.review'),
         section: 'changes',
         icon: <GitCompare className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />,
       },
@@ -160,7 +168,7 @@ function buildSummaryChips(view: TaskDockRunViewModel): readonly SummaryChip[] {
     return [
       {
         key: 'attention',
-        label: attentionLabel(view.attentionKind),
+        label: attentionLabel(view.attentionKind, t),
         section: 'run',
         icon: <AlertTriangle className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />,
       },
@@ -170,18 +178,16 @@ function buildSummaryChips(view: TaskDockRunViewModel): readonly SummaryChip[] {
   return chips;
 }
 
-function sectionForMetric(label: string): TaskDockSectionId {
-  switch (label) {
-    case 'Plan':
+function sectionForMetric(key: TaskDockRunViewModel['metrics'][number]['key']): TaskDockSectionId {
+  switch (key) {
+    case 'plan':
       return 'plan';
-    case 'Agents':
+    case 'agents':
       return 'agents';
-    case 'Workflow':
+    case 'workflow':
       return 'workflow';
-    case 'Budget':
+    case 'budget':
       return 'agents';
-    default:
-      return 'run';
   }
 }
 
@@ -200,19 +206,36 @@ function iconForSection(section: TaskDockSectionId): JSX.Element {
   }
 }
 
-function attentionLabel(kind: NonNullable<TaskDockRunViewModel['attentionKind']>): string {
+function attentionLabel(
+  kind: NonNullable<TaskDockRunViewModel['attentionKind']>,
+  t: Translate,
+): string {
   switch (kind) {
     case 'permission':
-      return 'Permission';
+      return t('pinned.attention.permission');
     case 'ask_user':
-      return 'Answer';
+      return t('pinned.attention.answer');
     case 'budget':
-      return 'Budget';
+      return t('pinned.attention.budget');
     case 'error':
-      return 'Error';
+      return t('pinned.attention.error');
     case 'blocked':
-      return 'Blocked';
+      return t('pinned.attention.blocked');
   }
+}
+
+function sectionLabel(section: TaskDockSectionId, t: Translate): string {
+  const key: Record<TaskDockSectionId, MessageKey> = {
+    run: 'taskDock.section.run',
+    plan: 'taskDock.section.plan',
+    workflow: 'taskDock.section.workflow',
+    agents: 'taskDock.section.agents',
+    changes: 'taskDock.section.changes',
+    sources: 'taskDock.section.sources',
+    artifacts: 'taskDock.section.artifacts',
+    context: 'taskDock.section.context',
+  };
+  return t(key[section]);
 }
 
 function summaryTitle(view: TaskDockRunViewModel): string {

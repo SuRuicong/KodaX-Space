@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Inbox, X } from 'lucide-react';
 import type { HandoffFileT } from '@kodax-space/space-ipc-schema';
 import { useAppStore } from '../store/appStore.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 
 export function HandoffInbox(): JSX.Element | null {
+  const { t } = useI18n();
   const [handoffs, setHandoffs] = useState<readonly HandoffFileT[]>([]);
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -15,8 +17,8 @@ export function HandoffInbox(): JSX.Element | null {
     if (!window.kodaxSpace) return;
     const result = await window.kodaxSpace.invoke('handoff.list', undefined);
     if (result.ok) setHandoffs(result.data.handoffs);
-    else setErr(result.error?.message ?? 'handoff list failed');
-  }, []);
+    else setErr(result.error?.message ?? t('handoff.listFailed'));
+  }, [t]);
 
   useEffect(() => {
     void refresh();
@@ -40,7 +42,7 @@ export function HandoffInbox(): JSX.Element | null {
     if (!window.kodaxSpace) return;
     setErr(null);
     if (!handoff.sessionId || !handoff.projectRoot) {
-      setErr(handoff.error ?? 'handoff is missing a session or project');
+      setErr(handoff.error ?? t('handoff.missingSessionProject'));
       await refresh();
       return;
     }
@@ -50,13 +52,13 @@ export function HandoffInbox(): JSX.Element | null {
       surface: 'code',
     });
     if (!listed.ok) {
-      setErr(listed.error?.message ?? 'session list failed');
+      setErr(listed.error?.message ?? t('handoff.sessionListFailed'));
       await refresh();
       return;
     }
     const found = listed.data.sessions.find((s) => s.sessionId === handoff.sessionId);
     if (!found) {
-      setErr(`Session ${handoff.sessionId} was not found on disk; handoff was kept.`);
+      setErr(t('handoff.sessionNotFound', { sessionId: handoff.sessionId }));
       await refresh();
       return;
     }
@@ -66,12 +68,12 @@ export function HandoffInbox(): JSX.Element | null {
       expectedSessionId: handoff.sessionId,
     });
     if (!accepted.ok || !accepted.data.accepted || !accepted.data.sessionId) {
-      setErr(accepted.ok ? (accepted.data.error ?? 'handoff rejected') : accepted.error.message);
+      setErr(accepted.ok ? (accepted.data.error ?? t('handoff.rejected')) : accepted.error.message);
       await refresh();
       return;
     }
     if (accepted.data.sessionId !== handoff.sessionId) {
-      setErr(`Handoff changed before accept: ${accepted.data.sessionId}`);
+      setErr(t('handoff.changedBeforeAccept', { sessionId: accepted.data.sessionId }));
       await refresh();
       return;
     }
@@ -79,7 +81,7 @@ export function HandoffInbox(): JSX.Element | null {
     for (const session of listed.data.sessions) upsertSession(session);
     setCurrentSession(found.sessionId);
     if (!accepted.data.removed) {
-      setErr(accepted.data.error ?? 'accepted but failed to remove handoff file');
+      setErr(accepted.data.error ?? t('handoff.acceptedRemoveFailed'));
       await refresh();
       return;
     }
@@ -92,7 +94,7 @@ export function HandoffInbox(): JSX.Element | null {
     setErr(null);
     const result = await window.kodaxSpace.invoke('handoff.dismiss', { handoffId: handoff.id });
     if (!result.ok || !result.data.dismissed) {
-      setErr(result.ok ? (result.data.error ?? 'dismiss failed') : result.error.message);
+      setErr(result.ok ? (result.data.error ?? t('handoff.dismissFailed')) : result.error.message);
     }
     await refresh();
   }
@@ -107,30 +109,39 @@ export function HandoffInbox(): JSX.Element | null {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border-default bg-surface-2 px-2 text-[11px] font-mono text-fg-muted hover:bg-hover-bg hover:text-fg-primary"
-        title="Incoming handoffs"
-        aria-label="Incoming handoffs"
+        title={t('handoff.incoming')}
+        aria-label={t('handoff.incoming')}
       >
         <Inbox className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
-        <span>{validCount}/{handoffs.length}</span>
+        <span>
+          {validCount}/{handoffs.length}
+        </span>
       </button>
 
       {open && (
         <div className="absolute right-0 top-full mt-1 w-[min(420px,calc(100vw-24px))] rounded-lg border border-border-default bg-surface/95 p-2 text-xs text-fg-secondary shadow-2xl backdrop-blur-xl">
           <div className="mb-1 flex items-center justify-between px-1">
-            <span className="font-semibold text-fg-primary">Incoming Handoffs</span>
+            <span className="font-semibold text-fg-primary">{t('handoff.incoming')}</span>
             <button
               type="button"
               onClick={() => setOpen(false)}
               className="rounded p-1 text-fg-muted hover:bg-hover-bg hover:text-fg-primary"
-              aria-label="Close handoffs"
+              aria-label={t('handoff.close')}
             >
               <X className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
             </button>
           </div>
-          {err && <div className="mb-2 rounded border border-danger/40 bg-danger/10 px-2 py-1 text-danger">{err}</div>}
+          {err && (
+            <div className="mb-2 rounded border border-danger/40 bg-danger/10 px-2 py-1 text-danger">
+              {err}
+            </div>
+          )}
           <div className="max-h-72 space-y-1 overflow-auto">
             {handoffs.map((handoff) => (
-              <div key={handoff.id} className="rounded-md border border-border-default bg-surface-2 p-2">
+              <div
+                key={handoff.id}
+                className="rounded-md border border-border-default bg-surface-2 p-2"
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="truncate font-mono text-fg-primary">
@@ -151,14 +162,14 @@ export function HandoffInbox(): JSX.Element | null {
                       onClick={() => void accept(handoff)}
                       className="rounded border border-ok/40 bg-ok/10 px-2 py-0.5 text-[11px] text-ok hover:bg-ok/20 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      Accept
+                      {t('handoff.accept')}
                     </button>
                     <button
                       type="button"
                       onClick={() => void dismiss(handoff)}
                       className="rounded border border-border-default px-2 py-0.5 text-[11px] text-fg-muted hover:bg-hover-bg hover:text-fg-primary"
                     >
-                      Dismiss
+                      {t('handoff.dismiss')}
                     </button>
                   </div>
                 </div>

@@ -4,8 +4,10 @@ import type { WorkflowRunT } from '@kodax-space/space-ipc-schema';
 import { useSurfaceStore } from '../../store/surface.js';
 import { useAppStore } from '../../store/appStore.js';
 import { workflowRunBelongsToProject } from './workflowManagementModel.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 export function WorkflowNavPanel(): JSX.Element | null {
+  const { t } = useI18n();
   const currentProjectPath = useAppStore((s) => s.currentProjectPath);
   const currentSessionId = useAppStore((s) => s.currentSessionId);
   const sessions = useAppStore((s) => s.sessions);
@@ -40,7 +42,9 @@ export function WorkflowNavPanel(): JSX.Element | null {
     (run) => run.status === 'running' || run.status === 'paused',
   ).length;
   const subtitle =
-    liveCount > 0 ? `${liveCount} live / ${runs.length} runs` : `${runs.length} runs`;
+    liveCount > 0
+      ? t('workflow.navLiveRuns', { live: liveCount, total: runs.length })
+      : t('workflow.navRuns', { count: runs.length });
   const open = activePopoutKind === 'workflow';
 
   const openWorkflowPanel = useCallback(() => {
@@ -53,7 +57,7 @@ export function WorkflowNavPanel(): JSX.Element | null {
     <button
       type="button"
       onClick={openWorkflowPanel}
-      aria-label="Open workflow panel"
+      aria-label={t('workflow.navOpen')}
       aria-pressed={open}
       className={`group grid min-h-[44px] w-full grid-cols-[18px_minmax(0,1fr)_18px] items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-colors ${
         open
@@ -63,7 +67,7 @@ export function WorkflowNavPanel(): JSX.Element | null {
     >
       <Workflow className="h-4 w-4 text-run" strokeWidth={1.8} aria-hidden />
       <span className="min-w-0">
-        <span className="block truncate text-[12px] font-medium">Workflow</span>
+        <span className="block truncate text-[12px] font-medium">{t('workflow.navTitle')}</span>
         <span className="block truncate text-[10px] font-mono text-fg-faint">{subtitle}</span>
       </span>
       <ExternalLink

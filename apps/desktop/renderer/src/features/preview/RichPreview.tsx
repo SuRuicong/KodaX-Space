@@ -7,6 +7,7 @@
 
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { PREVIEW_SIZE_CAPS, formatBytes, type RichPreviewKind } from './binaryUtils.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 const PdfViewer = lazy(() => import('./PdfViewer.js').then((m) => ({ default: m.PdfViewer })));
 const DocxViewer = lazy(() => import('./DocxViewer.js').then((m) => ({ default: m.DocxViewer })));
@@ -19,6 +20,7 @@ interface Props {
 }
 
 export function RichPreview({ projectRoot, path, kind }: Props): JSX.Element {
+  const { t } = useI18n();
   const [base64, setBase64] = useState<string | null>(null);
   const [truncated, setTruncated] = useState<{ size: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -41,7 +43,7 @@ export function RichPreview({ projectRoot, path, kind }: Props): JSX.Element {
       .then((r) => {
         if (cancelled) return;
         if (!r.ok) {
-          setErr('Failed to load file');
+          setErr(t('preview.failedLoadFile'));
           return;
         }
         if (r.data.truncated) {
@@ -57,10 +59,10 @@ export function RichPreview({ projectRoot, path, kind }: Props): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [projectRoot, path, kind]);
+  }, [projectRoot, path, kind, t]);
 
   if (busy && base64 === null) {
-    return <div className="p-3 text-xs text-fg-muted">Loading…</div>;
+    return <div className="p-3 text-xs text-fg-muted">{t('preview.loading')}</div>;
   }
   if (err !== null) {
     return <div className="p-3 text-xs text-danger">{err}</div>;
@@ -68,15 +70,21 @@ export function RichPreview({ projectRoot, path, kind }: Props): JSX.Element {
   if (truncated !== null) {
     return (
       <div className="p-4 text-xs text-fg-muted text-center">
-        File too large to preview ({formatBytes(truncated.size)}). Cap for {kind.toUpperCase()} is{' '}
-        {formatBytes(PREVIEW_SIZE_CAPS[kind])}.
+        {t('preview.fileTooLarge', {
+          size: formatBytes(truncated.size),
+          kind: kind.toUpperCase(),
+          cap: formatBytes(PREVIEW_SIZE_CAPS[kind]),
+        })}
       </div>
     );
   }
-  if (base64 === null) return <div className="p-3 text-xs text-fg-muted">No content.</div>;
+  if (base64 === null)
+    return <div className="p-3 text-xs text-fg-muted">{t('preview.noContent')}</div>;
 
   return (
-    <Suspense fallback={<div className="p-3 text-xs text-fg-muted">Loading viewer…</div>}>
+    <Suspense
+      fallback={<div className="p-3 text-xs text-fg-muted">{t('preview.loadingViewer')}</div>}
+    >
       {kind === 'pdf' && <PdfViewer base64={base64} />}
       {kind === 'docx' && <DocxViewer base64={base64} />}
       {kind === 'xlsx' && <XlsxViewer base64={base64} />}

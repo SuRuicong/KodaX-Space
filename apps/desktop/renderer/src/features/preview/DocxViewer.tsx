@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import mammoth from 'mammoth';
 import { base64ToBytes } from './binaryUtils.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 interface Props {
   readonly base64: string;
@@ -92,6 +93,7 @@ function walkAndSanitize(node: Element): void {
 }
 
 export function DocxViewer({ base64 }: Props): JSX.Element {
+  const { t } = useI18n();
   const [html, setHtml] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(true);
@@ -108,7 +110,7 @@ export function DocxViewer({ base64 }: Props): JSX.Element {
 
   useEffect(() => {
     if (bytes === null) {
-      setErr('Failed to decode document data');
+      setErr(t('preview.failedDecodeDocument'));
       setBusy(false);
       return;
     }
@@ -131,17 +133,18 @@ export function DocxViewer({ base64 }: Props): JSX.Element {
       })
       .catch(() => {
         if (cancelled) return;
-        setErr('Failed to render .docx');
+        setErr(t('preview.failedRenderDocx'));
         setBusy(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [bytes]);
+  }, [bytes, t]);
 
   if (err !== null) return <div className="p-3 text-xs text-danger">{err}</div>;
-  if (busy) return <div className="p-3 text-xs text-fg-muted">Rendering .docx…</div>;
-  if (html === null) return <div className="p-3 text-xs text-fg-muted">Empty document.</div>;
+  if (busy) return <div className="p-3 text-xs text-fg-muted">{t('preview.renderingDocx')}</div>;
+  if (html === null)
+    return <div className="p-3 text-xs text-fg-muted">{t('preview.emptyDocument')}</div>;
 
   return (
     <div className="h-full overflow-auto p-4 bg-surface text-fg-primary text-sm leading-relaxed docx-preview">

@@ -8,6 +8,7 @@ import { Play, ChevronDown, ChevronRight, ShieldCheck, RefreshCw, Lock } from 'l
 import { useAppStore } from '../../store/appStore.js';
 import { pushToast } from '../../store/toastStore.js';
 import { requestConfirm } from '../../store/confirmStore.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 interface MetaLite {
   name: string;
@@ -22,6 +23,7 @@ interface SavedLite {
 }
 
 export function WorkflowLauncher(): JSX.Element {
+  const { t } = useI18n();
   const sessionId = useAppStore((s) => s.currentSessionId);
   const projectRoot = useAppStore((s) => s.currentProjectPath);
   const [expanded, setExpanded] = useState(false);
@@ -33,15 +35,18 @@ export function WorkflowLauncher(): JSX.Element {
   async function loadLibrary(): Promise<void> {
     setLoading(true);
     try {
-      const r = await window.kodaxSpace?.invoke('workflow.library', projectRoot ? { projectRoot } : {});
+      const r = await window.kodaxSpace?.invoke(
+        'workflow.library',
+        projectRoot ? { projectRoot } : {},
+      );
       if (r?.ok) {
         setBuiltin(r.data.builtin);
         setSaved(r.data.saved);
       } else {
-        pushToast('加载工作流库失败', 'warning');
+        pushToast(t('workflow.libraryLoadFailed'), 'warning');
       }
     } catch {
-      pushToast('加载工作流库失败', 'warning');
+      pushToast(t('workflow.libraryLoadFailed'), 'warning');
     } finally {
       setLoading(false);
     }
@@ -53,18 +58,30 @@ export function WorkflowLauncher(): JSX.Element {
     if (next && builtin.length === 0 && saved.length === 0) void loadLibrary();
   }
 
-  async function launch(target: string, source: 'builtin' | 'saved', savedPath?: string): Promise<void> {
+  async function launch(
+    target: string,
+    source: 'builtin' | 'saved',
+    savedPath?: string,
+  ): Promise<void> {
     if (!sessionId) {
-      pushToast('请先选择或创建一个会话再启动工作流', 'warning');
+      pushToast(t('workflow.selectSessionBeforeStart'), 'warning');
       return;
     }
     setBusyTarget(target);
     try {
       // saved 先预检；有问题则确认后再启动（built-in 视为可信，跳过）。
       if (source === 'saved' && savedPath) {
-        const pf = await window.kodaxSpace?.invoke('workflow.preflight', { path: savedPath, sessionId });
+        const pf = await window.kodaxSpace?.invoke('workflow.preflight', {
+          path: savedPath,
+          sessionId,
+        });
         if (!pf?.ok) {
-          pushToast(pf?.error?.message ? `预检失败：${pf.error.message}` : '预检失败', 'warning');
+          pushToast(
+            pf?.error?.message
+              ? t('workflow.preflightFailedWithMessage', { message: pf.error.message })
+              : t('workflow.preflightFailed'),
+            'warning',
+          );
           return;
         }
         if (!pf.data.ok && pf.data.issues.length > 0) {
@@ -72,21 +89,31 @@ export function WorkflowLauncher(): JSX.Element {
           // #1 fix: window.confirm 在 Electron sandbox=true 下会夺走 webContents 键盘焦点且拿不回来
           // ——改用应用内 requestConfirm。非破坏性操作（仍然启动，不是删除），不走 danger 样式。
           const proceed = await requestConfirm({
-            message: `预检发现问题：\n${msg}\n\n仍然启动？`,
-            confirmLabel: '启动',
+            message: t('workflow.preflightIssuesConfirm', { issues: msg }),
+            confirmLabel: t('workflow.start'),
           });
           if (!proceed) return;
         }
       }
       const r = await window.kodaxSpace?.invoke('workflow.start', { target, source, sessionId });
       if (!r?.ok || !r.data.runId) {
-        pushToast(r?.ok ? (r.data.error ?? '启动失败') : (r?.error?.message ?? '启动失败'), 'warning');
+        pushToast(
+          r?.ok
+            ? (r.data.error ?? t('workflow.startFailed'))
+            : (r?.error?.message ?? t('workflow.startFailed')),
+          'warning',
+        );
         return;
       }
-      pushToast(`工作流已启动：${target} (${r.data.runId})`, 'success');
+      pushToast(t('workflow.started', { target, runId: r.data.runId }), 'success');
       setExpanded(false);
     } catch (err) {
-      pushToast(err instanceof Error ? `启动失败：${err.message}` : '启动失败', 'warning');
+      pushToast(
+        err instanceof Error
+          ? t('workflow.startFailedWithMessage', { message: err.message })
+          : t('workflow.startFailed'),
+        'warning',
+      );
     } finally {
       setBusyTarget(null);
     }
@@ -102,14 +129,14 @@ export function WorkflowLauncher(): JSX.Element {
         >
           {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
           <Play size={12} className="text-accent" />
-          启动工作流
+          {t('workflow.launcherTitle')}
         </button>
         {expanded && (
           <button
             type="button"
             onClick={() => void loadLibrary()}
-            title="刷新列表"
-            aria-label="刷新工作流列表"
+            title={t('workflow.refreshList')}
+            aria-label={t('workflow.refreshListAria')}
             className="w-6 h-6 inline-flex items-center justify-center rounded text-fg-muted hover:text-fg-primary hover:bg-surface-3"
           >
             <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
@@ -120,12 +147,12 @@ export function WorkflowLauncher(): JSX.Element {
       {expanded && (
         <div className="px-2 pb-2 space-y-2">
           {loading && builtin.length === 0 && saved.length === 0 ? (
-            <div className="text-[11px] text-fg-muted py-1">加载中…</div>
+            <div className="text-[11px] text-fg-muted py-1">{t('artifact.loading')}</div>
           ) : (
             <>
-              <LibGroup title="内置">
+              <LibGroup title={t('workflow.builtin')}>
                 {builtin.length === 0 ? (
-                  <EmptyHint text="无内置工作流" />
+                  <EmptyHint text={t('workflow.noBuiltin')} />
                 ) : (
                   builtin.map((w) => (
                     <LibItem
@@ -140,9 +167,9 @@ export function WorkflowLauncher(): JSX.Element {
                   ))
                 )}
               </LibGroup>
-              <LibGroup title="已保存">
+              <LibGroup title={t('workflow.saved')}>
                 {saved.length === 0 ? (
-                  <EmptyHint text="无已保存工作流（~/.kodax/workflows）" />
+                  <EmptyHint text={t('workflow.noSaved')} />
                 ) : (
                   saved.map((w) => (
                     <LibItem
@@ -167,7 +194,9 @@ export function WorkflowLauncher(): JSX.Element {
 function LibGroup({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
   return (
     <div>
-      <div className="text-[10px] font-mono uppercase tracking-wide text-fg-faint px-1 pb-0.5">{title}</div>
+      <div className="text-[10px] font-mono uppercase tracking-wide text-fg-faint px-1 pb-0.5">
+        {title}
+      </div>
       <div className="space-y-1">{children}</div>
     </div>
   );
@@ -194,6 +223,7 @@ function LibItem({
   busy?: boolean;
   onLaunch: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className="flex items-start gap-1.5 rounded border border-border-default/60 bg-surface p-1.5">
       <div className="min-w-0 flex-1">
@@ -202,14 +232,25 @@ function LibItem({
             {name}
           </span>
           {readOnly && (
-            <span className="inline-flex items-center gap-0.5 text-[9px] text-ok" title="只读（不写文件）">
-              <Lock size={9} /> 只读
+            <span
+              className="inline-flex items-center gap-0.5 text-[9px] text-ok"
+              title={t('workflow.readOnlyTitle')}
+            >
+              <Lock size={9} /> {t('workflow.readOnly')}
             </span>
           )}
           {plannedAgents !== undefined && (
-            <span className="text-[9px] font-mono text-fg-faint">~{plannedAgents} agents</span>
+            <span className="text-[9px] font-mono text-fg-faint">
+              {t('workflow.plannedAgents', { count: plannedAgents })}
+            </span>
           )}
-          {preflightable && <ShieldCheck size={10} className="text-fg-faint" aria-label="启动前预检" />}
+          {preflightable && (
+            <ShieldCheck
+              size={10}
+              className="text-fg-faint"
+              aria-label={t('workflow.preflightAria')}
+            />
+          )}
         </div>
         {description && <div className="text-[10px] text-fg-muted line-clamp-2">{description}</div>}
       </div>
@@ -217,8 +258,8 @@ function LibItem({
         type="button"
         onClick={onLaunch}
         disabled={busy}
-        title="启动"
-        aria-label={`启动 ${name}`}
+        title={t('workflow.start')}
+        aria-label={t('workflow.launchAria', { name })}
         className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-accent hover:bg-surface-3 disabled:opacity-50"
       >
         <Play size={11} />

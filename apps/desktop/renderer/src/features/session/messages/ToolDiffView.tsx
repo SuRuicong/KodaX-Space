@@ -12,6 +12,7 @@ import { useMemo, useState, lazy, Suspense } from 'react';
 import { Eye, FolderOpen } from 'lucide-react';
 import { Caret } from '../../../components/Caret.js';
 import { openFileSmart, isPreviewablePath } from '../../../lib/openPath.js';
+import { useI18n } from '../../../i18n/I18nProvider.js';
 
 // 仅在展开时才动态加载 Monaco（Suspense fallback 给出"loading diff"提示）。
 // MonacoDiffViewer 本身 import @monaco-editor/react + 完整 monaco-editor，
@@ -61,6 +62,7 @@ function basenameOf(p: string): string {
 }
 
 export function ToolDiffView(props: ToolDiffViewProps): JSX.Element {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(props.defaultExpanded ?? false);
   const summary = useMemo(
     () => summarizeChange(props.before, props.after),
@@ -96,18 +98,18 @@ export function ToolDiffView(props: ToolDiffViewProps): JSX.Element {
               重排了" —— 说 "no change" 会误导用户（Monaco 展开后会显示真实 diff）。
               用 ~reordered 跟"真没改"区分。 */}
           {summary.plus === 0 && summary.minus === 0 && props.before !== props.after && (
-            <span className="text-fg-muted">~reordered</span>
+            <span className="text-fg-muted">{t('toolDiff.reordered')}</span>
           )}
           {summary.plus === 0 && summary.minus === 0 && props.before === props.after && (
-            <span className="text-fg-muted">no change</span>
+            <span className="text-fg-muted">{t('toolDiff.noChange')}</span>
           )}
         </button>
         {hasPath && (
           <button
             type="button"
             onClick={() => void openFileSmart(props.path)}
-            title={previewable ? '在 Artifact 面板预览' : '打开文件'}
-            aria-label={previewable ? '在 Artifact 面板预览' : '打开文件'}
+            title={previewable ? t('toolDiff.previewArtifact') : t('toolDiff.openFile')}
+            aria-label={previewable ? t('toolDiff.previewArtifact') : t('toolDiff.openFile')}
             className="flex-shrink-0 px-2 py-1.5 inline-flex items-center justify-center text-fg-muted hover:text-fg-primary hover:bg-hover-bg border-l border-border-default/60"
           >
             {previewable ? (
@@ -122,7 +124,9 @@ export function ToolDiffView(props: ToolDiffViewProps): JSX.Element {
         // 固定 maxHeight，内部滚动；DiffEditor height=100% 撑满父容器
         // Monaco 内部 horizontal scroll 也自带，长行不会撑爆 layout
         <div className="dark:bg-[#09090b] bg-white" style={{ height: '50vh', maxHeight: 480 }}>
-          <Suspense fallback={<div className="text-xs text-fg-muted p-2">loading diff…</div>}>
+          <Suspense
+            fallback={<div className="text-xs text-fg-muted p-2">{t('toolDiff.loading')}</div>}
+          >
             <MonacoDiffViewer path={props.path} before={props.before} after={props.after} />
           </Suspense>
         </div>

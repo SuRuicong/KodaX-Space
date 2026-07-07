@@ -12,6 +12,7 @@
 import { useAppStore } from '../store/appStore.js';
 import { useSurfaceStore } from '../store/surface.js';
 import { pushToast } from '../store/toastStore.js';
+import { translateMessage } from '../i18n/I18nProvider.js';
 import { isPreviewablePath, isCodePath, toProjectRelative } from './pathClassify.js';
 
 // 纯分类/归一化逻辑在 pathClassify.ts（可被 node:test 单测）；这里转出常用的几个，
@@ -31,7 +32,7 @@ interface PreviewCtx {
   readonly surface: 'code' | 'partner';
 }
 
-function isAbsolutePathOutsideProject(rawPath: string, projectRoot: string): boolean {
+export function isAbsolutePathOutsideProject(rawPath: string, projectRoot: string): boolean {
   const p = rawPath.replace(/\\/g, '/');
   const root = projectRoot.replace(/\\/g, '/').replace(/\/+$/, '');
   const isAbsolute = p.startsWith('/') || /^[A-Za-z]:\//.test(p);
@@ -47,9 +48,9 @@ export async function openExternalUrl(url: string): Promise<void> {
   if (!bridge) return;
   try {
     const r = await bridge.invoke('shell.openExternal', { url });
-    if (!r.ok || !r.data.opened) pushToast('无法打开该链接', 'error');
+    if (!r.ok || !r.data.opened) pushToast(translateMessage('openPath.linkOpenFailed'), 'error');
   } catch {
-    pushToast('无法打开该链接', 'error');
+    pushToast(translateMessage('openPath.linkOpenFailed'), 'error');
   }
 }
 
@@ -63,10 +64,10 @@ export async function revealPath(rawPath: string, projectRoot?: string | null): 
       projectRoot ? { path: rawPath, projectRoot } : { path: rawPath },
     );
     if (r.ok && r.data.revealed) return true;
-    pushToast('未找到该文件，无法定位', 'warning');
+    pushToast(translateMessage('openPath.fileNotFound'), 'warning');
     return false;
   } catch {
-    pushToast('无法在文件管理器中显示', 'error');
+    pushToast(translateMessage('openPath.revealFailed'), 'error');
     return false;
   }
 }
@@ -86,7 +87,9 @@ export async function previewFileAsArtifact(rawPath: string, ctx: PreviewCtx): P
     if (!r.ok) return false;
     // 确保右侧栏开着，然后切到 Artifact tab + 选中该 id（RightSidebar / ArtifactsView 监听此事件）。
     useAppStore.getState().setRightSidebarOpen(true);
-    window.dispatchEvent(new CustomEvent('kodax-space.focus-artifact', { detail: { id: r.data.id } }));
+    window.dispatchEvent(
+      new CustomEvent('kodax-space.focus-artifact', { detail: { id: r.data.id } }),
+    );
     return true;
   } catch {
     return false;
@@ -97,22 +100,35 @@ export async function previewFileAsArtifact(rawPath: string, ctx: PreviewCtx): P
 export async function openInDiff(rawPath: string, projectRoot: string | null): Promise<boolean> {
   const bridge = window.kodaxSpace;
   if (!bridge || !projectRoot) {
-    pushToast('无法打开 diff：未选择项目', 'warning');
+    pushToast(translateMessage('openPath.diffNoProject'), 'warning');
     return false;
   }
   if (isAbsolutePathOutsideProject(rawPath, projectRoot)) {
-    pushToast('无法打开 diff：路径不在当前项目内', 'warning');
+    pushToast(translateMessage('openPath.diffOutsideProject'), 'warning');
     return false;
   }
   const rel = toProjectRelative(rawPath, projectRoot);
   try {
     const check = await bridge.invoke('files.diff', { projectRoot, path: rel });
     if (!check.ok) {
-      pushToast(`无法打开 diff：${check.error?.message ?? '路径无效'}`, 'error');
+      pushToast(
+        translateMessage('openPath.diffFailedWithMessage', {
+          message: check.error?.message ?? translateMessage('openPath.invalidPath'),
+        }),
+        'error',
+      );
       return false;
     }
   } catch (err) {
-    pushToast(err instanceof Error ? err.message : '无法打开 diff', 'error');
+    pushToast(
+      translateMessage('openPath.diffFailedWithMessage', {
+        message:
+          err instanceof Error && err.message.trim()
+            ? err.message
+            : translateMessage('common.unknownError'),
+      }),
+      'error',
+    );
     return false;
   }
   useAppStore.getState().setLastDiffPath(rel || rawPath);

@@ -207,8 +207,8 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
    */
   async function doRewind(): Promise<void> {
     if (!window.kodaxSpace || !session) return;
-    if (userMessages.length === 0) {
-      pushToast(t('menu.session.noTurnsYet'), 'info');
+    if (userMessages.length < 2) {
+      pushToast(t('menu.session.noEarlierTurn'), 'info');
       onClose();
       return;
     }
@@ -223,10 +223,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
       return;
     }
     // rewindPastTurnIdx = 保留前 N 条 user messages；要丢最后一条意味着保留 (length - 2) 索引位。
-    // 当 length === 1 时 (-1) 即 "啥都不留"——main 端 schema 要求 idx >= 0，所以传 0；
-    // renderer 端 1-turn-only 走 reset 全部分支（resetSessionMessages 当 length===1 时等价）。
-    const onlyOneTurn = userMessages.length === 1;
-    const rewindPastTurnIdx = onlyOneTurn ? 0 : userMessages.length - 2;
+    const rewindPastTurnIdx = userMessages.length - 2;
     const r = await window.kodaxSpace.invoke('session.rewind', { sessionId, rewindPastTurnIdx });
     if (!r.ok) {
       pushToast(
@@ -248,12 +245,18 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
       onClose();
       return;
     }
-    // IPC ok → 才动 local state（reviewer F033 MEDIUM-4: 失败时不要优化更新本地）
-    if (onlyOneTurn) {
-      useAppStore.getState().resetSessionMessages(sessionId);
-    } else {
-      rewindSessionBuffers(sessionId, rewindPastTurnIdx);
+    if (r.data.diskRewound === false) {
+      pushToast(
+        t('menu.session.rewindRejected', {
+          message: 'disk history was not rewound',
+        }),
+        'error',
+      );
+      onClose();
+      return;
     }
+    // IPC ok → 才动 local state（reviewer F033 MEDIUM-4: 失败时不要优化更新本地）
+    rewindSessionBuffers(sessionId, rewindPastTurnIdx);
     onClose();
   }
 
@@ -321,9 +324,7 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
       />
       <MenuRow
         Icon={Circle}
-        label={
-          sessionFlags?.unread ? t('menu.session.markRead') : t('menu.session.markUnread')
-        }
+        label={sessionFlags?.unread ? t('menu.session.markRead') : t('menu.session.markUnread')}
         shortcut="U"
         onClick={() => {
           toggleFlag(sessionId, 'unread');
@@ -347,8 +348,8 @@ export function SessionMenu({ sessionId, onClose }: SessionMenuProps): JSX.Eleme
         label={t('menu.session.rewindOneTurn')}
         shortcut="W"
         onClick={() => void doRewind()}
-        disabled={userMessages.length === 0}
-        hint={userMessages.length === 0 ? t('menu.session.noTurnsYet') : undefined}
+        disabled={userMessages.length < 2}
+        hint={userMessages.length < 2 ? t('menu.session.noEarlierTurn') : undefined}
       />
       <MenuRow
         Icon={Network}

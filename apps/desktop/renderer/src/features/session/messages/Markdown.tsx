@@ -19,6 +19,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { openFileSmart, openExternalUrl, looksLikeFilePath } from '../../../lib/openPath.js';
+import { useI18n } from '../../../i18n/I18nProvider.js';
 
 interface MarkdownProps {
   readonly content: string;
@@ -75,6 +76,7 @@ export function _clearMarkdownLruCacheForTesting(): void {
 //   3. 字号 text-xs，图标 12×12，与文字 baseline 对齐
 //   4. 文字 "Copy" 大小写正常（之前 "copy" 全小写显得像 placeholder）
 function CopyCodeButton({ getText }: { getText: () => string }): JSX.Element {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   async function onCopy(): Promise<void> {
     try {
@@ -94,11 +96,11 @@ function CopyCodeButton({ getText }: { getText: () => string }): JSX.Element {
         'opacity-60 hover:opacity-100 focus:opacity-100 group-hover/codeblock:opacity-100 transition-[opacity,background-color,color,border-color]',
         // Material chip stays readable on both light and dark content layers.
       ].join(' ')}
-      title={copied ? 'Copied' : 'Copy code'}
-      aria-label={copied ? 'Code copied to clipboard' : 'Copy code to clipboard'}
+      title={copied ? t('markdown.copied') : t('markdown.copyCode')}
+      aria-label={copied ? t('markdown.codeCopiedAria') : t('markdown.copyCodeAria')}
     >
       {copied ? (
-        <span className="text-ok font-medium">✓ Copied</span>
+        <span className="text-ok font-medium">✓ {t('markdown.copied')}</span>
       ) : (
         <>
           <svg
@@ -115,7 +117,7 @@ function CopyCodeButton({ getText }: { getText: () => string }): JSX.Element {
             <rect width="14" height="14" x="8" y="8" rx="2" />
             <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
           </svg>
-          Copy
+          {t('markdown.copyCode')}
         </>
       )}
     </button>
@@ -137,12 +139,14 @@ function extractTextFromNode(node: ReactNode): string {
 }
 
 function MarkdownInner({ content }: MarkdownProps): JSX.Element {
+  const { effectiveLocale, t } = useI18n();
   // OC-19 module-level LRU 命中即返。命中率高=稳定内容反复 render；流式 delta 不会命中。
-  const cached = lruCache.get(content);
+  const cacheKey = `${effectiveLocale}\0${content}`;
+  const cached = lruCache.get(cacheKey);
   if (cached !== undefined) {
     // 触发 LRU "刚用过"重排
-    lruCache.delete(content);
-    lruCache.set(content, cached);
+    lruCache.delete(cacheKey);
+    lruCache.set(cacheKey, cached);
     return cached;
   }
 
@@ -187,7 +191,7 @@ function MarkdownInner({ content }: MarkdownProps): JSX.Element {
                 <button
                   type="button"
                   onClick={() => void openFileSmart(inlineText)}
-                  title={`打开 ${inlineText}`}
+                  title={t('markdown.openInlinePath', { path: inlineText })}
                   className="bg-info/12 text-info hover:bg-info/20 px-1.5 py-0.5 rounded text-[12px] font-mono underline decoration-info/40 underline-offset-2 cursor-pointer"
                 >
                   {children}
@@ -299,7 +303,9 @@ function MarkdownInner({ content }: MarkdownProps): JSX.Element {
               {children}
             </thead>
           ),
-          tbody: ({ children }) => <tbody className="content-table-body divide-y">{children}</tbody>,
+          tbody: ({ children }) => (
+            <tbody className="content-table-body divide-y">{children}</tbody>
+          ),
           tr: ({ children }) => <tr>{children}</tr>,
           th: ({ children }) => (
             <th className="px-2.5 py-1.5 text-left font-semibold">{children}</th>
@@ -331,7 +337,7 @@ function MarkdownInner({ content }: MarkdownProps): JSX.Element {
     </div>
   );
 
-  return rememberInLru(content, rendered);
+  return rememberInLru(cacheKey, rendered);
 }
 
 // React.memo: parent 重 render 但 content prop 未变时整个组件 short-circuit。

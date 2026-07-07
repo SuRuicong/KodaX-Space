@@ -9,22 +9,28 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  Archive,
   AlertTriangle,
   CheckCircle2,
+  Database,
+  FileArchive,
   FolderOpen,
   KeyRound,
   Languages,
   Loader2,
+  Network,
   Plus,
   RefreshCw,
   Search,
   Settings2,
   ShieldCheck,
   SlidersHorizontal,
+  Upload,
   X,
   type LucideIcon,
 } from 'lucide-react';
 import type {
+  KodaxConfigOverviewT,
   LanguageModeT,
   LicenseStatusT,
   ProviderInfo,
@@ -38,7 +44,7 @@ import { ProviderCard } from '../provider/ProviderCard.js';
 import { CustomProviderForm } from '../provider/CustomProviderForm.js';
 import { WorkflowPolicySection } from '../workflow/WorkflowPolicySection.js';
 
-export type SettingsTab = 'providers' | 'preferences' | 'license';
+export type SettingsTab = 'providers' | 'preferences' | 'runtime' | 'license';
 
 interface SettingsModalProps {
   readonly initialTab?: SettingsTab;
@@ -66,6 +72,12 @@ const TABS: readonly SettingsTabMeta[] = [
     labelKey: 'settings.providers',
     descriptionKey: 'settings.providers.description',
     Icon: KeyRound,
+  },
+  {
+    id: 'runtime',
+    labelKey: 'settings.runtime',
+    descriptionKey: 'settings.runtime.description',
+    Icon: Database,
   },
   {
     id: 'license',
@@ -210,6 +222,15 @@ export function SettingsModal({
               className="h-full"
             >
               <ProvidersPanel />
+            </div>
+            <div
+              id="settings-panel-runtime"
+              role="tabpanel"
+              aria-labelledby="settings-tab-runtime"
+              hidden={tab !== 'runtime'}
+              className="h-full"
+            >
+              <RuntimePanel />
             </div>
             <div
               id="settings-panel-license"
@@ -414,6 +435,460 @@ function PreferencesPanel(): JSX.Element {
         <WorkflowPolicySection />
       </SettingsSection>
     </div>
+  );
+}
+
+type SkillInstallBusy = 'user-directory' | 'user-archive' | 'project-directory' | 'project-archive';
+
+function RuntimePanel(): JSX.Element {
+  const { t } = useI18n();
+  const currentProjectPath = useAppStore((s) => s.currentProjectPath);
+  const [overview, setOverview] = useState<KodaxConfigOverviewT | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [mcpReloading, setMcpReloading] = useState(false);
+  const [installing, setInstalling] = useState<SkillInstallBusy | null>(null);
+  const [compactionEnabled, setCompactionEnabled] = useState(true);
+  const [triggerPercent, setTriggerPercent] = useState('');
+  const [contextWindow, setContextWindow] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  function syncCompactionForm(next: KodaxConfigOverviewT): void {
+    setCompactionEnabled(next.compaction.enabled ?? true);
+    setTriggerPercent(next.compaction.triggerPercent?.toString() ?? '');
+    setContextWindow(next.compaction.contextWindow?.toString() ?? '');
+  }
+
+  async function refresh(): Promise<void> {
+    if (!window.kodaxSpace) return;
+    setLoading(true);
+    setErr(null);
+    try {
+      const result = await window.kodaxSpace.invoke('settings.kodaxConfig.get', {
+        ...(currentProjectPath ? { projectRoot: currentProjectPath } : {}),
+      });
+      if (!result.ok) {
+        setErr(`${result.error.code}: ${result.error.message}`);
+        return;
+      }
+      setOverview(result.data);
+      syncCompactionForm(result.data);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProjectPath]);
+
+  async function saveCompaction(): Promise<void> {
+    if (!window.kodaxSpace) return;
+    setSaving(true);
+    setErr(null);
+    setSaved(false);
+    try {
+      const trigger = parseOptionalInt(
+        triggerPercent,
+        t('settings.compaction.triggerPercent'),
+        1,
+        100,
+        t,
+      );
+      const windowTokens = parseOptionalInt(
+        contextWindow,
+        t('settings.compaction.contextWindow'),
+        1024,
+        10_000_000,
+        t,
+      );
+      const result = await window.kodaxSpace.invoke('settings.kodaxConfig.setCompaction', {
+        ...(currentProjectPath ? { projectRoot: currentProjectPath } : {}),
+        compaction: {
+          enabled: compactionEnabled,
+          ...(trigger !== undefined ? { triggerPercent: trigger } : {}),
+          ...(windowTokens !== undefined ? { contextWindow: windowTokens } : {}),
+        },
+      });
+      if (!result.ok) {
+        setErr(`${result.error.code}: ${result.error.message}`);
+        return;
+      }
+      setOverview(result.data);
+      syncCompactionForm(result.data);
+      setSaved(true);
+      pushToast(t('settings.compaction.saved'), 'success', 1800);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function reloadMcp(): Promise<void> {
+    if (!window.kodaxSpace) return;
+    setMcpReloading(true);
+    setErr(null);
+    try {
+      const result = await window.kodaxSpace.invoke('mcp.reload', {
+        ...(currentProjectPath ? { projectRoot: currentProjectPath } : {}),
+      });
+      if (!result.ok) {
+        setErr(`${result.error.code}: ${result.error.message}`);
+        return;
+      }
+      pushToast(
+        t('settings.mcp.reloaded', { count: result.data.serverCount }),
+        result.data.ok ? 'success' : 'warning',
+        1800,
+      );
+      await refresh();
+    } finally {
+      setMcpReloading(false);
+    }
+  }
+
+  async function installSkill(
+    source: 'directory' | 'archive',
+    target: 'user' | 'project',
+  ): Promise<void> {
+    if (!window.kodaxSpace) return;
+    if (target === 'project' && !currentProjectPath) {
+      setErr(t('settings.skills.projectUnavailable'));
+      return;
+    }
+    const busyKey = `${target}-${source}` as SkillInstallBusy;
+    setInstalling(busyKey);
+    setErr(null);
+    try {
+      const result = await window.kodaxSpace.invoke('skill.install', {
+        source,
+        target,
+        ...(target === 'project' && currentProjectPath ? { projectRoot: currentProjectPath } : {}),
+      });
+      if (!result.ok) {
+        setErr(`${result.error.code}: ${result.error.message}`);
+        return;
+      }
+      if (result.data.cancelled) return;
+      if (currentProjectPath) {
+        await window.kodaxSpace
+          .invoke('skill.discover', { projectRoot: currentProjectPath, forceReload: true })
+          .catch(() => undefined);
+      }
+      pushToast(
+        t('settings.skills.installed', { name: result.data.name ?? 'skill' }),
+        'success',
+        2200,
+      );
+      await refresh();
+    } finally {
+      setInstalling(null);
+    }
+  }
+
+  const projectConfigLabel = overview?.mcp.projectPath ?? t('settings.runtime.none');
+  const projectSkillDir = overview?.skills.projectSkillsDir ?? t('settings.runtime.none');
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-4 p-5">
+      {err && (
+        <div className="rounded-lg border border-danger/40 bg-danger/12 px-3 py-2 text-xs text-danger">
+          {err}
+        </div>
+      )}
+
+      <SettingsSection
+        title={t('settings.kodaxConfig.title')}
+        description={t('settings.kodaxConfig.description')}
+        icon={Database}
+      >
+        <div className="grid gap-x-6 gap-y-3 text-xs sm:grid-cols-2">
+          <RuntimeField
+            label={t('settings.kodaxConfig.configPath')}
+            value={overview?.configPath ?? t('common.loading')}
+            mono
+            wide
+          />
+          <RuntimeField
+            label={t('settings.kodaxConfig.configExists')}
+            value={
+              overview
+                ? overview.configExists
+                  ? t('settings.runtime.yes')
+                  : t('settings.runtime.no')
+                : t('common.loading')
+            }
+          />
+          <RuntimeField
+            label={t('settings.kodaxConfig.scope')}
+            value={t('settings.kodaxConfig.sharedScope')}
+            wide
+          />
+        </div>
+        {loading && !overview && (
+          <div className="mt-3 inline-flex items-center gap-2 text-xs text-fg-muted">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} />
+            {t('common.loading')}
+          </div>
+        )}
+        {overview && overview.errors.length > 0 && (
+          <div className="mt-3 space-y-1 border-t border-border-default pt-3">
+            {overview.errors.map((item) => (
+              <div key={`${item.path}-${item.error}`} className="text-xs leading-5 text-warn">
+                <span className="font-mono">{item.path}</span>: {item.error}
+              </div>
+            ))}
+          </div>
+        )}
+      </SettingsSection>
+
+      <SettingsSection
+        title={t('settings.compaction.title')}
+        description={t('settings.compaction.description')}
+        icon={Archive}
+      >
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            checked={compactionEnabled}
+            onChange={(e) => {
+              setCompactionEnabled(e.target.checked);
+              setSaved(false);
+            }}
+            className="mt-1 h-4 w-4 accent-ok"
+          />
+          <span className="min-w-0">
+            <span className="block text-sm font-medium text-fg-primary">
+              {t('settings.compaction.enabled')}
+            </span>
+            <span className="mt-1 block text-xs leading-5 text-fg-muted">
+              {t('settings.compaction.enabledHint')}
+            </span>
+          </span>
+        </label>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-fg-muted">
+              {t('settings.compaction.triggerPercent')}
+            </span>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={triggerPercent}
+              onChange={(e) => {
+                setTriggerPercent(e.target.value);
+                setSaved(false);
+              }}
+              placeholder="75"
+              className="mt-2 h-9 w-full rounded-lg border border-border-default bg-surface px-3 text-xs text-fg-primary outline-none focus:border-info"
+            />
+            <span className="mt-1 block text-[11px] leading-5 text-fg-muted">
+              {t('settings.compaction.triggerPercentHint')}
+            </span>
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-fg-muted">
+              {t('settings.compaction.contextWindow')}
+            </span>
+            <input
+              type="number"
+              min={1024}
+              max={10_000_000}
+              value={contextWindow}
+              onChange={(e) => {
+                setContextWindow(e.target.value);
+                setSaved(false);
+              }}
+              placeholder={t('settings.compaction.contextWindowPlaceholder')}
+              className="mt-2 h-9 w-full rounded-lg border border-border-default bg-surface px-3 text-xs text-fg-primary outline-none focus:border-info"
+            />
+            <span className="mt-1 block text-[11px] leading-5 text-fg-muted">
+              {t('settings.compaction.contextWindowHint')}
+            </span>
+          </label>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void saveCompaction()}
+            disabled={saving}
+            className="inline-flex min-h-8 items-center justify-center gap-2 rounded-lg border border-ok/50 bg-ok/15 px-3 text-xs font-medium text-ok hover:bg-ok/25 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} />}
+            {saving ? t('common.saving') : t('settings.compaction.save')}
+          </button>
+          {saved && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-ok">
+              <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
+              {t('common.saved')}
+            </span>
+          )}
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title={t('settings.mcp.title')}
+        description={t('settings.mcp.description')}
+        icon={Network}
+      >
+        <div className="grid gap-x-6 gap-y-3 text-xs sm:grid-cols-2">
+          <RuntimeField
+            label={t('settings.mcp.globalConfig')}
+            value={overview?.mcp.globalPath ?? t('common.loading')}
+            mono
+          />
+          <RuntimeField label={t('settings.mcp.projectConfig')} value={projectConfigLabel} mono />
+          <RuntimeField
+            label={t('settings.mcp.globalServers')}
+            value={overview ? String(overview.mcp.globalServers) : t('common.loading')}
+          />
+          <RuntimeField
+            label={t('settings.mcp.projectServers')}
+            value={overview ? String(overview.mcp.projectServers) : t('common.loading')}
+          />
+          <RuntimeField
+            label={t('settings.mcp.recommendationLabel')}
+            value={t('settings.mcp.recommendation')}
+            wide
+          />
+        </div>
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={() => void reloadMcp()}
+            disabled={mcpReloading}
+            className="inline-flex min-h-8 items-center justify-center gap-2 rounded-lg border border-border-default bg-surface-3 px-3 text-xs text-fg-primary hover:bg-hover-bg disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${mcpReloading ? 'animate-spin' : ''}`}
+              strokeWidth={1.8}
+            />
+            {t('settings.mcp.reload')}
+          </button>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title={t('settings.skills.title')}
+        description={t('settings.skills.description')}
+        icon={FileArchive}
+      >
+        <div className="grid gap-x-6 gap-y-3 text-xs sm:grid-cols-2">
+          <RuntimeField
+            label={t('settings.skills.userDir')}
+            value={overview?.skills.userSkillsDir ?? t('common.loading')}
+            mono
+          />
+          <RuntimeField label={t('settings.skills.projectDir')} value={projectSkillDir} mono />
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <SkillInstallButton
+            label={t('settings.skills.installUserFolder')}
+            busy={installing === 'user-directory'}
+            icon={FolderOpen}
+            onClick={() => void installSkill('directory', 'user')}
+          />
+          <SkillInstallButton
+            label={t('settings.skills.installUserZip')}
+            busy={installing === 'user-archive'}
+            icon={Upload}
+            onClick={() => void installSkill('archive', 'user')}
+          />
+          <SkillInstallButton
+            label={t('settings.skills.installProjectFolder')}
+            busy={installing === 'project-directory'}
+            icon={FolderOpen}
+            disabled={!currentProjectPath}
+            onClick={() => void installSkill('directory', 'project')}
+          />
+          <SkillInstallButton
+            label={t('settings.skills.installProjectZip')}
+            busy={installing === 'project-archive'}
+            icon={Upload}
+            disabled={!currentProjectPath}
+            onClick={() => void installSkill('archive', 'project')}
+          />
+        </div>
+      </SettingsSection>
+    </div>
+  );
+}
+
+function parseOptionalInt(
+  value: string,
+  field: string,
+  min: number,
+  max: number,
+  t: Translate,
+): number | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw new Error(t('settings.runtime.numberError', { field, min, max }));
+  }
+  return parsed;
+}
+
+function RuntimeField({
+  label,
+  value,
+  mono = false,
+  wide = false,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly mono?: boolean;
+  readonly wide?: boolean;
+}): JSX.Element {
+  return (
+    <div className={wide ? 'sm:col-span-2' : undefined}>
+      <div className="text-[11px] font-medium uppercase tracking-wide text-fg-muted">{label}</div>
+      <div
+        className={[
+          'mt-0.5 break-words text-[11px] leading-5 text-fg-primary',
+          mono ? 'font-mono' : '',
+        ].join(' ')}
+        title={value}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function SkillInstallButton({
+  label,
+  icon: Icon,
+  busy,
+  disabled = false,
+  onClick,
+}: {
+  readonly label: string;
+  readonly icon: LucideIcon;
+  readonly busy: boolean;
+  readonly disabled?: boolean;
+  readonly onClick: () => void;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy || disabled}
+      className="inline-flex min-h-8 items-center justify-center gap-2 rounded-lg border border-border-default bg-surface-3 px-3 text-xs text-fg-primary hover:bg-hover-bg disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {busy ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.8} />
+      ) : (
+        <Icon className="h-3.5 w-3.5" strokeWidth={1.8} />
+      )}
+      {label}
+    </button>
   );
 }
 
@@ -674,7 +1149,11 @@ function LicensePanel(): JSX.Element {
             />
             <LicenseField
               label={t('license.field.expires')}
-              value={status?.expiresAt ? formatDate(status.expiresAt, effectiveLocale) : t('license.none')}
+              value={
+                status?.expiresAt
+                  ? formatDate(status.expiresAt, effectiveLocale)
+                  : t('license.none')
+              }
             />
             <LicenseField
               label={t('license.field.source')}
@@ -683,7 +1162,9 @@ function LicensePanel(): JSX.Element {
             <LicenseField
               label={t('license.field.features')}
               value={
-                status && status.features.length > 0 ? status.features.join(', ') : t('license.none')
+                status && status.features.length > 0
+                  ? status.features.join(', ')
+                  : t('license.none')
               }
               wide
             />

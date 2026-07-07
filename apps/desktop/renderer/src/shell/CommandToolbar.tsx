@@ -15,13 +15,26 @@ import {
   Bot,
   Plug,
   Workflow,
+  Brain,
   Check,
   type LucideIcon,
 } from 'lucide-react';
 import { TranscriptViewMenu } from './TranscriptViewMenu.js';
+import { useI18n } from '../i18n/I18nProvider.js';
+import type { MessageKey } from '../i18n/messages.js';
 
 // 'artifact' (F059b) 不进 toolbar 下拉(同 tasks/plan)——由 RightSidebar Artifact section 的 ⤢ 触发。
-export type PopoutKind = 'preview' | 'diff' | 'terminal' | 'tasks' | 'plan' | 'agents' | 'mcp' | 'artifact' | 'workflow';
+export type PopoutKind =
+  | 'preview'
+  | 'diff'
+  | 'terminal'
+  | 'tasks'
+  | 'plan'
+  | 'agents'
+  | 'mcp'
+  | 'memory'
+  | 'artifact'
+  | 'workflow';
 
 interface CommandToolbarProps {
   active: PopoutKind | null;
@@ -33,16 +46,17 @@ interface CommandToolbarProps {
 // 保留 PopoutKind 联合的 'tasks' / 'plan' 以兼容 requestPopout 字符串值，但下拉里看不到。
 const POPOUTS: ReadonlyArray<{
   kind: PopoutKind;
-  label: string;
+  labelKey: MessageKey;
   Icon: LucideIcon;
   shortcut: string;
 }> = [
-  { kind: 'preview', label: 'Preview', Icon: Eye, shortcut: '⇧Ctrl V' },
-  { kind: 'diff', label: 'Diff', Icon: GitCompare, shortcut: '⇧Ctrl D' },
-  { kind: 'terminal', label: 'Terminal', Icon: Terminal, shortcut: 'Ctrl `' },
-  { kind: 'agents', label: 'Agents', Icon: Bot, shortcut: '' },
-  { kind: 'mcp', label: 'MCP', Icon: Plug, shortcut: '' },
-  { kind: 'workflow', label: 'Workflow', Icon: Workflow, shortcut: '' },
+  { kind: 'preview', labelKey: 'popout.title.preview', Icon: Eye, shortcut: '⇧Ctrl V' },
+  { kind: 'diff', labelKey: 'popout.title.review', Icon: GitCompare, shortcut: '⇧Ctrl D' },
+  { kind: 'terminal', labelKey: 'popout.title.terminal', Icon: Terminal, shortcut: 'Ctrl `' },
+  { kind: 'agents', labelKey: 'popout.title.agents', Icon: Bot, shortcut: '' },
+  { kind: 'mcp', labelKey: 'popout.title.mcp', Icon: Plug, shortcut: '' },
+  { kind: 'memory', labelKey: 'popout.title.memory', Icon: Brain, shortcut: '' },
+  { kind: 'workflow', labelKey: 'popout.title.workflow', Icon: Workflow, shortcut: '' },
 ];
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -52,6 +66,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 export function CommandToolbar({ active, onToggle }: CommandToolbarProps): JSX.Element {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
@@ -98,6 +113,7 @@ export function CommandToolbar({ active, onToggle }: CommandToolbarProps): JSX.E
   }, [active, onToggle]);
 
   const activeMeta = active ? POPOUTS.find((p) => p.kind === active) : null;
+  const activeLabel = activeMeta ? t(activeMeta.labelKey) : null;
 
   return (
     <div className="flex items-center gap-1 flex-shrink-0">
@@ -112,37 +128,40 @@ export function CommandToolbar({ active, onToggle }: CommandToolbarProps): JSX.E
               ? 'bg-surface-3 text-fg-primary'
               : 'text-fg-secondary hover:text-fg-primary hover:bg-hover-bg'
           }`}
-          title="Activity views"
-          aria-label="Activity views"
+          title={t('command.activityViews')}
+          aria-label={t('command.activityViews')}
         >
           <LayoutGrid className="w-4 h-4" strokeWidth={1.75} aria-hidden />
-          {activeMeta && <span className="text-xs">{activeMeta.label}</span>}
+          {activeLabel && <span className="text-xs">{activeLabel}</span>}
         </button>
         {open && (
           <div className="absolute right-0 top-full mt-1 w-56 bg-surface-4 border border-border-default rounded-lg shadow-xl py-1 text-[13px] z-50">
-            {POPOUTS.map((p) => (
-              <button
-                key={p.kind}
-                type="button"
-                onClick={() => {
-                  onToggle(active === p.kind ? null : p.kind);
-                  setOpen(false);
-                }}
-                className={`w-full text-left px-3 py-1.5 hover:bg-hover-bg flex items-center gap-2.5 transition-colors ${
-                  active === p.kind ? 'text-fg-primary' : 'text-fg-secondary'
-                }`}
-                title={p.shortcut ? `${p.label} (${p.shortcut})` : p.label}
-              >
-                <p.Icon className="w-4 h-4 text-fg-muted" strokeWidth={1.75} aria-hidden />
-                <span className="flex-1">{p.label}</span>
-                {p.shortcut && (
-                  <span className="text-fg-muted text-[11px] font-mono">{p.shortcut}</span>
-                )}
-                {active === p.kind && (
-                  <Check className="w-3.5 h-3.5 text-accent-ink" strokeWidth={2.5} aria-hidden />
-                )}
-              </button>
-            ))}
+            {POPOUTS.map((p) => {
+              const label = t(p.labelKey);
+              return (
+                <button
+                  key={p.kind}
+                  type="button"
+                  onClick={() => {
+                    onToggle(active === p.kind ? null : p.kind);
+                    setOpen(false);
+                  }}
+                  className={`w-full text-left px-3 py-1.5 hover:bg-hover-bg flex items-center gap-2.5 transition-colors ${
+                    active === p.kind ? 'text-fg-primary' : 'text-fg-secondary'
+                  }`}
+                  title={p.shortcut ? `${label} (${p.shortcut})` : label}
+                >
+                  <p.Icon className="w-4 h-4 text-fg-muted" strokeWidth={1.75} aria-hidden />
+                  <span className="flex-1">{label}</span>
+                  {p.shortcut && (
+                    <span className="text-fg-muted text-[11px] font-mono">{p.shortcut}</span>
+                  )}
+                  {active === p.kind && (
+                    <Check className="w-3.5 h-3.5 text-accent-ink" strokeWidth={2.5} aria-hidden />
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

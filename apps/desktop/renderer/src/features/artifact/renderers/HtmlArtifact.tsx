@@ -8,6 +8,7 @@
 
 import type { ArtifactHtmlPermissionsT } from '@kodax-space/space-ipc-schema';
 import { buildInteractiveHtmlSrcDoc, sandboxForInteractiveHtml } from '../htmlSandbox';
+import { useI18n } from '../../../i18n/I18nProvider';
 
 export interface HtmlArtifactProps {
   html: string;
@@ -18,9 +19,10 @@ export interface InteractiveHtmlArtifactProps extends HtmlArtifactProps {
 }
 
 export function HtmlArtifact({ html }: HtmlArtifactProps): JSX.Element {
+  const { t } = useI18n();
   return (
     <iframe
-      title="HTML artifact"
+      title={t('artifact.htmlTitle')}
       srcDoc={html}
       sandbox=""
       className="w-full h-full flex-1 border-0 bg-white"
@@ -32,9 +34,10 @@ export function InteractiveHtmlArtifact({
   html,
   permissions,
 }: InteractiveHtmlArtifactProps): JSX.Element {
+  const { t } = useI18n();
   return (
     <iframe
-      title="Interactive HTML artifact"
+      title={t('artifact.interactiveHtmlTitle')}
       srcDoc={buildInteractiveHtmlSrcDoc(html, permissions)}
       sandbox={sandboxForInteractiveHtml(permissions)}
       referrerPolicy="no-referrer"

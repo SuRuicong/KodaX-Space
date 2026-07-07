@@ -19,6 +19,7 @@
 //   - 只 release 时调一次 onCommit → 写 localStorage；拖动中 onPreview 实时驱动父 width。
 
 import { useCallback, useEffect, useRef } from 'react';
+import { useI18n } from '../i18n/I18nProvider.js';
 
 export interface ResizeHandleProps {
   readonly side: 'left' | 'right';
@@ -39,6 +40,7 @@ export function ResizeHandle({
   defaultWidth,
   onPreview,
 }: ResizeHandleProps): JSX.Element {
+  const { t } = useI18n();
   // 拖动 session 信息（startX/startWidth）放 ref，避免 move handler 闭包过期。
   const dragRef = useRef<{ startX: number; startWidth: number; active: boolean } | null>(null);
   // 拖动中 unmount 时，绑在 handle 上的 listener + pointer capture 不会被 onUp 清掉；
@@ -149,7 +151,7 @@ export function ResizeHandle({
     <div
       role="separator"
       aria-orientation="vertical"
-      aria-label={side === 'left' ? 'Resize left sidebar' : 'Resize right sidebar'}
+      aria-label={side === 'left' ? t('resize.leftAria') : t('resize.rightAria')}
       aria-valuenow={width}
       tabIndex={0}
       onPointerDown={onPointerDown}
@@ -158,7 +160,7 @@ export function ResizeHandle({
         'flex-shrink-0 w-1 cursor-ew-resize relative select-none touch-none',
         'hover:bg-info/30 active:bg-info/50 transition-colors',
       ].join(' ')}
-      title="Drag to resize · Double-click to reset · Esc to cancel"
+      title={t('resize.title')}
     />
   );
 }

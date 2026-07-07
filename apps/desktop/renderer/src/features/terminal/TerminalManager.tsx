@@ -24,8 +24,10 @@
 import { useCallback, useReducer } from 'react';
 import { Terminal } from './Terminal.js';
 import { tabsReducer, initialTabsState, MAX_TABS } from './tabsReducer.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 export function TerminalManager(): JSX.Element {
+  const { t } = useI18n();
   const [state, dispatch] = useReducer(tabsReducer, undefined, initialTabsState);
 
   const canAddMore = state.tabs.length < MAX_TABS;
@@ -57,8 +59,8 @@ export function TerminalManager(): JSX.Element {
                     e.stopPropagation();
                     closeTab(tab.id);
                   }}
-                  aria-label={`Close ${tab.label}`}
-                  title="Close tab"
+                  aria-label={t('terminal.closeTab', { label: tab.label })}
+                  title={t('terminal.closeTabTitle')}
                 >
                   ×
                 </button>
@@ -71,8 +73,8 @@ export function TerminalManager(): JSX.Element {
           className="px-2 py-1 border-l border-border-default/60 text-fg-muted hover:text-fg-primary disabled:opacity-30 disabled:cursor-not-allowed"
           onClick={addTab}
           disabled={!canAddMore}
-          aria-label="New terminal tab"
-          title={canAddMore ? 'New terminal tab' : `Max ${MAX_TABS} tabs`}
+          aria-label={t('terminal.newTab')}
+          title={canAddMore ? t('terminal.newTab') : t('terminal.maxTabs', { count: MAX_TABS })}
         >
           +
         </button>

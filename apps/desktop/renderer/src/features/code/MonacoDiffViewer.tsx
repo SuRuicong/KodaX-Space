@@ -6,6 +6,7 @@ import { DiffEditor, type Monaco } from '@monaco-editor/react';
 import { initMonacoOnce } from './monaco-setup.js';
 import { languageFromPath } from './language-detect.js';
 import { useEffectiveDark } from './useEffectiveDark.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 // v0.1.4 review C3-HIGH-1: 必须在 @monaco-editor/react 的 loader 启动之前完成
 // loader.config({monaco})，否则会回退到默认 CDN 加载（CSP 禁止）。挪到 module
@@ -23,6 +24,7 @@ interface MonacoDiffViewerProps {
 }
 
 export function MonacoDiffViewer({ path, before, after }: MonacoDiffViewerProps): JSX.Element {
+  const { t } = useI18n();
   const isDark = useEffectiveDark();
 
   const handleBeforeMount = (monaco: Monaco): void => {
@@ -83,7 +85,7 @@ export function MonacoDiffViewer({ path, before, after }: MonacoDiffViewerProps)
         // 折叠未改动段，焦点放在 diff
         hideUnchangedRegions: { enabled: true },
       }}
-      loading={<div className="text-xs text-fg-muted p-2">loading diff…</div>}
+      loading={<div className="text-xs text-fg-muted p-2">{t('code.loadingDiff')}</div>}
     />
   );
 }

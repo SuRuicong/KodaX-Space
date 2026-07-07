@@ -15,6 +15,8 @@ import {
   type WorkflowGraphPhase,
   type WorkflowGraphStatus,
 } from './buildWorkflowGraph.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
+import type { MessageKey } from '../../i18n/messages.js';
 
 const STATUS_ICON: Record<WorkflowGraphStatus, LucideIcon> = {
   pending: Circle,
@@ -46,6 +48,8 @@ const DOT_CLASS: Record<WorkflowGraphStatus, string> = {
   skipped: 'border-border-default bg-surface text-fg-faint',
 };
 
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
+
 const CHIP_CLASS: Record<WorkflowGraphStatus, string> = {
   pending: 'border-border-default/50 text-fg-muted bg-surface/20',
   running: 'border-warn/60 text-warn bg-warn/10',
@@ -56,20 +60,20 @@ const CHIP_CLASS: Record<WorkflowGraphStatus, string> = {
   skipped: 'border-border-default/50 text-fg-faint bg-surface/20',
 };
 
-export function WorkflowRunGraph({
-  run,
-}: {
-  readonly run: WorkflowRunT;
-}): JSX.Element | null {
+export function WorkflowRunGraph({ run }: { readonly run: WorkflowRunT }): JSX.Element | null {
+  const { t } = useI18n();
   const model = buildWorkflowGraphModel(run);
   if (model.phases.length === 0) return null;
 
   // Only RUNTIME STATUS remains — the WORKFLOW DIAGRAM (pattern topology + phase
   // graph) was redundant with this live per-phase/per-agent list and was removed.
   return (
-    <div className="mt-2 border-t border-border-default/40 pt-2" aria-label="Workflow runtime status">
+    <div
+      className="mt-2 border-t border-border-default/40 pt-2"
+      aria-label={t('workflow.runtimeStatus')}
+    >
       <div className="mb-1 text-[10px] font-mono uppercase tracking-wider text-fg-faint">
-        Runtime status
+        {t('workflow.runtimeStatusHeading')}
       </div>
       <div className="space-y-0.5">
         {model.phases.map((phase, index) => (
@@ -91,6 +95,7 @@ function WorkflowPhaseRow({
   readonly phase: WorkflowGraphPhase;
   readonly isLast: boolean;
 }): JSX.Element {
+  const { t } = useI18n();
   const Icon = STATUS_ICON[phase.status];
   const phaseClass = phase.status === 'running' ? 'text-fg-primary' : 'text-fg-secondary';
   return (
@@ -106,7 +111,7 @@ function WorkflowPhaseRow({
       <span
         className={`z-[1] mt-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full border ${DOT_CLASS[phase.status]}`}
         title={phase.status}
-        aria-label={`phase status: ${phase.status}`}
+        aria-label={t('workflow.phaseStatusAria', { status: phase.status })}
       >
         <Icon
           size={10}
@@ -124,7 +129,7 @@ function WorkflowPhaseRow({
             {phase.title}
           </span>
           <span className="ml-auto flex-shrink-0 text-[10px] font-mono text-fg-faint">
-            {phaseStatsLabel(phase)}
+            {phaseStatsLabel(phase, t)}
           </span>
         </div>
         {phase.activeLabel && (
@@ -170,10 +175,10 @@ function WorkflowBranchChip({ node }: { readonly node: WorkflowGraphNode }): JSX
   );
 }
 
-function phaseStatsLabel(phase: WorkflowGraphPhase): string {
+function phaseStatsLabel(phase: WorkflowGraphPhase, t: Translate): string {
   const { counts } = phase;
-  if (counts.failed > 0) return `${counts.failed} failed`;
-  if (counts.cancelled > 0) return `${counts.cancelled} stopped`;
+  if (counts.failed > 0) return t('workflow.phaseFailed', { count: counts.failed });
+  if (counts.cancelled > 0) return t('workflow.phaseStopped', { count: counts.cancelled });
   if (counts.total === 0) return phase.status;
   if (counts.running > 0) return `${counts.completed}/${counts.total}`;
   return `${counts.completed}/${counts.total}`;

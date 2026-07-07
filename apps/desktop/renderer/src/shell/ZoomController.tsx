@@ -9,10 +9,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useZoomStore, ZOOM_STEP } from '../store/zoomStore.js';
+import { useI18n } from '../i18n/I18nProvider.js';
 
 const BADGE_MS = 1400;
 
 export function ZoomController(): JSX.Element | null {
+  const { t } = useI18n();
   const factor = useZoomStore((s) => s.factor);
   const bump = useZoomStore((s) => s.bump);
   const stepZoom = useZoomStore((s) => s.stepZoom);
@@ -79,14 +81,14 @@ export function ZoomController(): JSX.Element | null {
     <button
       type="button"
       onClick={resetZoom}
-      title="点击复位 100%（Ctrl+0）"
+      title={t('zoom.resetTitle')}
       className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] px-3 py-1.5 rounded-full
                  bg-surface-2/90 border border-border-strong text-fg-primary text-xs font-mono shadow-xl
                  backdrop-blur-sm flex items-center gap-2 select-none cursor-pointer
                  hover:bg-hover-bg transition-colors"
     >
       <span className="tabular-nums">{percent}%</span>
-      {percent !== 100 && <span className="text-[11px] text-fg-muted">Ctrl+0 复位</span>}
+      {percent !== 100 && <span className="text-[11px] text-fg-muted">{t('zoom.resetHint')}</span>}
     </button>
   );
 }

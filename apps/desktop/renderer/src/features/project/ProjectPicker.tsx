@@ -9,8 +9,10 @@
 
 import { useEffect } from 'react';
 import { useAppStore } from '../../store/appStore.js';
+import { useI18n } from '../../i18n/I18nProvider.js';
 
 export function ProjectPicker(): JSX.Element {
+  const { t } = useI18n();
   const projects = useAppStore((s) => s.projects);
   const currentPath = useAppStore((s) => s.currentProjectPath);
   const setProjects = useAppStore((s) => s.setProjects);
@@ -56,20 +58,20 @@ export function ProjectPicker(): JSX.Element {
   return (
     <div className="flex flex-col gap-2 p-3 border-b border-border-default">
       <div className="flex items-center justify-between">
-        <h2 className="text-xs uppercase tracking-wider text-fg-muted font-semibold">Projects</h2>
+        <h2 className="text-xs uppercase tracking-wider text-fg-muted font-semibold">
+          {t('project.projects')}
+        </h2>
         <button
           type="button"
           onClick={handleOpenDialog}
           className="text-xs px-2 py-1 rounded bg-surface-3 hover:bg-hover-bg text-fg-primary"
         >
-          Open…
+          {t('project.open')}
         </button>
       </div>
       <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
         {projects.length === 0 && (
-          <div className="text-xs text-fg-faint italic px-1">
-            No recent projects. Click "Open…" to start.
-          </div>
+          <div className="text-xs text-fg-faint italic px-1">{t('project.noRecent')}</div>
         )}
         {projects.map((p) => {
           const isActive = p.path === currentPath;
@@ -97,7 +99,7 @@ export function ProjectPicker(): JSX.Element {
                   }
                 }}
                 className="opacity-0 group-hover:opacity-100 text-fg-muted hover:text-danger px-1 cursor-pointer"
-                aria-label={`Remove ${p.name} from recent`}
+                aria-label={t('project.removeRecent', { name: p.name })}
               >
                 ×
               </span>
