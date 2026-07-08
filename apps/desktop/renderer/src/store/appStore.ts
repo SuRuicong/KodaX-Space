@@ -98,6 +98,7 @@ export interface UserMessage {
   readonly id: string;
   readonly content: string;
   readonly sentAt: number;
+  readonly historyNoAssistantSegment?: boolean;
 }
 
 export interface LocalNoticeMessage {
@@ -1399,14 +1400,38 @@ export const useAppStore = create<AppState>((set) => ({
       const histMsgs: UserMessage[] = [];
       const histEvents: SessionEvent[] = [];
       const histLocalNotices: LocalNoticeMessage[] = [];
+      let lastHistoricalUserSentAt = Number.NEGATIVE_INFINITY;
+      const nextHistoricalUserSentAt = (candidateSentAt?: number): number => {
+        const fallback = Number.isFinite(fallbackSentAt) ? fallbackSentAt : Date.now();
+        const base = Number.isFinite(candidateSentAt) ? candidateSentAt : fallback;
+        const sentAt = Math.max(base, lastHistoricalUserSentAt + 1);
+        lastHistoricalUserSentAt = sentAt;
+        return sentAt;
+      };
       // 用来跟踪"上一项是否为 user (turn 边界)"-- 在 user 到来前如果有 pending assistant
       // events 还没 session_complete,先 flush 一个 complete
       let assistantPendingComplete = false;
+      let openUserWithoutAssistant = false;
       const flushTurnIfNeeded = (): void => {
         if (assistantPendingComplete) {
           histEvents.push({ kind: 'session_complete', sessionId });
           assistantPendingComplete = false;
+          openUserWithoutAssistant = false;
         }
+      };
+      const flushEmptyTurnIfNeeded = (): void => {
+        if (!assistantPendingComplete && openUserWithoutAssistant) {
+          const lastIndex = histMsgs.length - 1;
+          const last = histMsgs[lastIndex];
+          if (last) {
+            histMsgs[lastIndex] = { ...last, historyNoAssistantSegment: true };
+          }
+          openUserWithoutAssistant = false;
+        }
+      };
+      const markTurnHasEvents = (): void => {
+        assistantPendingComplete = true;
+        openUserWithoutAssistant = false;
       };
       // composeMessages 按 userMessages 索引配对 events 段。如果 items 以 assistant
       // 或 tool_call 开头 (KodaX 偶尔会有 greeting / initiative turn 没有 user prompt),
@@ -1416,14 +1441,25 @@ export const useAppStore = create<AppState>((set) => ({
       const ensureLeadingUserSentinel = (): void => {
         if (histMsgs.length === 0) {
           const id = `u_${sessionId}_${++userMessageCounter}`;
-          histMsgs.push({ id, content: '', sentAt: fallbackSentAt });
+          histMsgs.push({ id, content: '', sentAt: nextHistoricalUserSentAt(fallbackSentAt) });
+          openUserWithoutAssistant = true;
         }
       };
       for (const item of items) {
         if (item.kind === 'user') {
-          flushTurnIfNeeded();
+          if (assistantPendingComplete) flushTurnIfNeeded();
+          else flushEmptyTurnIfNeeded();
           const id = `u_${sessionId}_${++userMessageCounter}`;
-          histMsgs.push({ id, content: item.content, sentAt: item.sentAt ?? fallbackSentAt });
+          // History pairing is transcript-order based, while composeMessages still sorts by
+          // sentAt. SDK compaction/re-root and tool-result restores can collapse or backdate
+          // historical timestamps, so normalize only restored user turns to keep sort order
+          // equal to transcript order.
+          histMsgs.push({
+            id,
+            content: item.content,
+            sentAt: nextHistoricalUserSentAt(item.sentAt),
+          });
+          openUserWithoutAssistant = true;
         } else if (item.kind === 'assistant') {
           ensureLeadingUserSentinel();
           if (item.thinking !== undefined && item.thinking.length > 0) {
@@ -1432,7 +1468,7 @@ export const useAppStore = create<AppState>((set) => ({
           if (item.text.length > 0) {
             histEvents.push({ kind: 'text_delta', sessionId, text: item.text });
           }
-          assistantPendingComplete = true;
+          markTurnHasEvents();
         } else if (item.kind === 'sidecar_message') {
           ensureLeadingUserSentinel();
           histEvents.push({
@@ -1440,7 +1476,7 @@ export const useAppStore = create<AppState>((set) => ({
             sessionId,
             message: item.message,
           });
-          assistantPendingComplete = true;
+          markTurnHasEvents();
         } else if (item.kind === 'lineage_notice') {
           // #3 fix: fork/rewind 产生的 branch_summary / compaction 摘要——不是用户消息，
           // 路由到非 user 的 lineage_notice 事件，composeMessages 渲染成 system_notice
@@ -1452,14 +1488,14 @@ export const useAppStore = create<AppState>((set) => ({
             noticeKind: item.noticeKind,
             text: item.text,
           });
-          assistantPendingComplete = true;
+          markTurnHasEvents();
         } else if (item.kind === 'workflow_notice') {
           // Workflow 结果/失败提示条:SDK 把它作为 `<task-completed>` 合成消息存进 transcript,
           // session.history 识别后发这个 kind。路由成 workflow_notice 事件 → composeMessages
           // 原位渲染成 system_notice(variant='workflow'),不再走侧存储按 wall-clock 重排。
           ensureLeadingUserSentinel();
           histEvents.push({ kind: 'workflow_notice', sessionId, text: item.text });
-          assistantPendingComplete = true;
+          markTurnHasEvents();
         } else if (item.kind === 'local_notice') {
           histLocalNotices.push({
             id: item.id,
@@ -1487,11 +1523,12 @@ export const useAppStore = create<AppState>((set) => ({
               content: item.result,
             });
           }
-          assistantPendingComplete = true;
+          markTurnHasEvents();
         }
       }
       // tail: 最后一项是 assistant/tool_call 时补一个 session_complete 让段闭合
-      flushTurnIfNeeded();
+      if (assistantPendingComplete) flushTurnIfNeeded();
+      else flushEmptyTurnIfNeeded();
       const currentMsgs = state.userMessagesBySession[sessionId] ?? [];
       const currentEvents = state.eventsBySession[sessionId] ?? [];
       const currentLocalNotices = state.localNoticesBySession[sessionId] ?? [];

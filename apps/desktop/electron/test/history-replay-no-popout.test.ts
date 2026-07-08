@@ -218,6 +218,111 @@ test('restored conversation keeps real per-message sentAt so workflow notices ar
   assert.equal(controlOut[0]?.kind, 'user', 'the first restored user turn stays at the top, not the workflow notice');
 });
 
+test('history replay preserves transcript pairing when restored user timestamps move backwards', () => {
+  // Real KodaX JSONL history can contain transcript-ordered user turns whose wall-clock
+  // timestamps were collapsed or backdated by restore/compaction metadata. Replies are
+  // replayed as an ordered event stream, so the restored user sort order must stay the
+  // transcript order or each assistant segment can attach to the wrong prompt.
+  useAppStore.setState({
+    eventsBySession: {},
+    userMessagesBySession: {},
+    localNoticesBySession: {},
+    workflowNoticesBySession: {},
+  });
+
+  useAppStore.getState().prependSessionHistory(
+    SID,
+    [
+      { kind: 'user', content: 'first query', sentAt: 3000 },
+      { kind: 'assistant', text: 'first answer' },
+      { kind: 'user', content: 'second query', sentAt: 1000 },
+      { kind: 'assistant', text: 'second answer' },
+      { kind: 'user', content: 'third query', sentAt: 2000 },
+      { kind: 'assistant', text: 'third answer' },
+    ],
+    FALLBACK_SENT_AT,
+  );
+
+  const state = useAppStore.getState();
+  const userMessages = state.userMessagesBySession[SID] ?? [];
+  assert.deepEqual(
+    userMessages.map((message) => message.content),
+    ['first query', 'second query', 'third query'],
+  );
+  assert.ok(
+    userMessages[0].sentAt < userMessages[1].sentAt &&
+      userMessages[1].sentAt < userMessages[2].sentAt,
+    `restored user sentAt values must be monotonic (${userMessages
+      .map((message) => message.sentAt)
+      .join(',')})`,
+  );
+
+  const out = composeMessages({
+    events: state.eventsBySession[SID] ?? [],
+    userMessages,
+  });
+  const visibleTurns = out.flatMap((message) => {
+    if (message.kind === 'user') return [`user:${message.content}`];
+    if (message.kind === 'assistant_text') return [`assistant:${message.text}`];
+    return [];
+  });
+  assert.deepEqual(visibleTurns, [
+    'user:first query',
+    'assistant:first answer',
+    'user:second query',
+    'assistant:second answer',
+    'user:third query',
+    'assistant:third answer',
+  ]);
+});
+
+test('history replay preserves pairing after consecutive restored user prompts', () => {
+  // KodaX CLI sessions can contain back-to-back real user prompts before the next
+  // assistant response. Each visible user still consumes one composeMessages segment,
+  // so the first prompt needs an explicit empty boundary; otherwise every later
+  // assistant segment shifts up and appears before its real query.
+  useAppStore.setState({
+    eventsBySession: {},
+    userMessagesBySession: {},
+    localNoticesBySession: {},
+    workflowNoticesBySession: {},
+  });
+
+  useAppStore.getState().prependSessionHistory(
+    SID,
+    [
+      { kind: 'user', content: 'first prompt', sentAt: 1000 },
+      { kind: 'assistant', text: 'first answer' },
+      { kind: 'user', content: 'clarification one', sentAt: 2000 },
+      { kind: 'user', content: 'clarification two', sentAt: 2000 },
+      { kind: 'assistant', text: 'clarification answer' },
+      { kind: 'user', content: 'next prompt', sentAt: 3000 },
+      { kind: 'assistant', text: 'next answer' },
+    ],
+    FALLBACK_SENT_AT,
+  );
+
+  const state = useAppStore.getState();
+  const out = composeMessages({
+    events: state.eventsBySession[SID] ?? [],
+    userMessages: state.userMessagesBySession[SID] ?? [],
+  });
+  const visibleTurns = out.flatMap((message) => {
+    if (message.kind === 'user') return [`user:${message.content}`];
+    if (message.kind === 'assistant_text') return [`assistant:${message.text}`];
+    return [];
+  });
+  assert.deepEqual(visibleTurns, [
+    'user:first prompt',
+    'assistant:first answer',
+    'user:clarification one',
+    'user:clarification two',
+    'assistant:clarification answer',
+    'user:next prompt',
+    'assistant:next answer',
+  ]);
+});
+
 test('history replay restores sidecar verifier messages as sidecar notices', () => {
   const items: SessionHistoryItem[] = [
     { kind: 'user', content: 'q' },

@@ -1,6 +1,6 @@
 # Known Issues
 
-Last Updated: 2026-06-24
+Last Updated: 2026-07-08
 
 ## Issue Index
 
@@ -18,6 +18,7 @@ Last Updated: 2026-06-24
 | 010 | High | Resolved | Changing current project could keep a stale active session, so agent ran in the previous workspace | v0.1.x | 2026-06-23 |
 | 011 | Medium | Resolved | Streaming transcript auto-follow ignores upward wheel input and locks the view to the bottom | v0.1.23 | 2026-06-24 |
 | 012 | High | Resolved | Mid-turn interrupt prompts stayed visually above the spinner because SDK prompt-consumption events were not surfaced | v0.1.22 | 2026-06-24 |
+| 013 | High | Resolved | Restored KodaX sessions could pair assistant segments with the following user prompt after consecutive user messages | v0.1.29 | 2026-07-08 |
 
 ## Issue Details
 
@@ -1023,12 +1024,74 @@ Verification:
 - `node --test --import tsx/esm test/session.test.ts` from `packages/space-ipc-schema` passed: 49/49.
 - `npm run typecheck` passed.
 
+### 013: Restored KodaX sessions could pair assistant segments with the following user prompt after consecutive user messages
+
+- Priority: High
+- Status: Resolved
+- Introduced: v0.1.29
+- Fixed: v0.1.29
+- Created: 2026-07-08
+- Resolution Date: 2026-07-08
+
+#### Original Problem
+
+Current behavior:
+
+- Opening a session created by KodaX CLI in KodaX Space could show a user's query below the answer that actually responded to it.
+- The reproduced session `20260707_220442` had consecutive real user messages at 2026-07-07 14:27:00 before the next assistant response.
+- After those consecutive user messages, later restored turns were shifted by one segment. For example, the `repoIntelligenceMode` query could appear after the assistant/tool content that belonged to it.
+
+Expected behavior:
+
+- Space should preserve KodaX's persisted display order when replaying historical sessions.
+- Consecutive user prompts with no intervening assistant output should not consume the next assistant event segment.
+- The shared assistant response should remain attached to the later effective prompt instead of shifting every subsequent turn.
+
+#### Context
+
+Affected components:
+
+- `apps/desktop/renderer/src/store/appStore.ts`
+- `apps/desktop/renderer/src/features/session/composeMessages.ts`
+- `apps/desktop/electron/test/history-replay-no-popout.test.ts`
+
+Observed evidence:
+
+- The KodaX JSONL `meta.uiHistory` / `meta_update.uiHistory` for `20260707_220442` was already in the correct visible order.
+- SDK `loadFullTranscript()` also preserved the real prompt order. Its `transcriptEntries` are the structured host-facing scrollback, but still expose append-order transcript entries that may include consecutive user prompts and tool-result user entries; Space must project those entries into UI turns without assuming one visible user always consumes one assistant segment.
+- Space rebuilt display turns from `transcriptEntries` and used one event segment per visible user message. A visible user with no assistant segment was not represented, producing an off-by-one shift.
+
+#### Root Cause
+
+Space's history replay assumed each restored user message consumes an assistant/tool event segment. That is false for KodaX sessions where the user sends multiple prompts before the assistant responds. Because no empty segment was represented for the earlier prompt, `composeMessages()` consumed the following prompt's assistant events too early and every later turn was paired one slot ahead.
+
+This was a Space replay bug. KodaX's persisted `uiHistory` was correct, and the transcript dedupe logic was not the direct cause.
+
+#### Resolution
+
+Implemented an explicit restored-history marker for user prompts that have no assistant segment:
+
+- `prependSessionHistory()` now tracks restored users that are followed by another user before any assistant/tool/notice event.
+- Such users are stored with `historyNoAssistantSegment: true` instead of emitting an extra terminal event that `findSegmentEnd()` could merge away.
+- `composeMessages()` still renders the user bubble but skips consuming an event segment for that marked user.
+- Historical user timestamps are normalized to remain monotonic in transcript order, preventing timestamp backtracking from causing the same pairing problem through sorting.
+
+Tests added:
+
+- `history replay preserves pairing after consecutive restored user prompts`
+- `history replay preserves transcript pairing when restored user timestamps move backwards`
+
+Verification:
+
+- `node --test --import tsx/esm apps/desktop/electron/test/transcript-dedup.test.ts apps/desktop/electron/test/composeMessages.test.ts apps/desktop/electron/test/history-replay-no-popout.test.ts` passed: 52/52.
+- `npm run build -w @kodax-space/desktop` passed. Vite reported existing large-chunk and dynamic-import warnings.
+
 ## Summary
 
-- Total: 12
+- Total: 13
 - Open: 1
-- Resolved: 11
-- High: 8
+- Resolved: 12
+- High: 9
 - Medium: 3
 - Low: 1
 - Next to resolve: 006

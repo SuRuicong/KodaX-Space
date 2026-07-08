@@ -198,6 +198,9 @@ export function composeMessages({
       content: userMsg.content,
       sentAt: userMsg.sentAt,
     });
+    if (userMsg.historyNoAssistantSegment === true) {
+      continue;
+    }
 
     // 找这条 user message 对应的 events 段：从 cursor 起，到遇到
     // session_complete / session_error / 或所有 events 用完。
