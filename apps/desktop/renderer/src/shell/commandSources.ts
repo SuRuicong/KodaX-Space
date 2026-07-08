@@ -14,10 +14,9 @@
 import { pushToast } from '../store/toastStore.js';
 import { useAppStore } from '../store/appStore.js';
 import type { SupportedLocaleT } from '@kodax-space/space-ipc-schema';
-import type { MessageKey } from '../i18n/messages.js';
+import { slashCommandDescription, type Translate } from './slashCommandDescriptions.js';
 
 export type CommandKind = 'action' | 'session' | 'file' | 'slash';
-type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
 export interface CommandItem {
   readonly id: string;
@@ -163,18 +162,21 @@ async function slashCommands(ctx: CommandContext): Promise<readonly CommandItem[
   if (!window.kodaxSpace) return [];
   const r = await window.kodaxSpace.invoke('slash.discover', undefined);
   if (!r.ok || !Array.isArray(r.data?.commands)) return [];
-  return r.data.commands.map((c) => ({
-    id: `slash:${c.name}`,
-    kind: 'slash' as const,
-    label: `/${c.name}`,
-    hint: c.description || c.source,
-    searchText: `${c.name} ${c.description ?? ''}`.trim(),
-    onPick: () => {
-      ctx.close();
-      // 插命令名 — 用户可再补 args 后回车
-      ctx.insertToInput(`/${c.name} `);
-    },
-  }));
+  return r.data.commands.map((c) => {
+    const description = slashCommandDescription(c, ctx.t);
+    return {
+      id: `slash:${c.name}`,
+      kind: 'slash' as const,
+      label: `/${c.name}`,
+      hint: description || c.source,
+      searchText: `${c.name} ${description} ${c.description}`.trim(),
+      onPick: () => {
+        ctx.close();
+        // 插命令名 — 用户可再补 args 后回车
+        ctx.insertToInput(`/${c.name} `);
+      },
+    };
+  });
 }
 
 /** 聚合 4 个 kind；IPC 并发拉 */

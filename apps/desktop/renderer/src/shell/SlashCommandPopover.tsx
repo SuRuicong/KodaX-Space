@@ -18,6 +18,8 @@ import type {
 import { useAppStore } from '../store/appStore.js';
 import { safeSkillSlashText, skillSlashInsertText } from './skillSlash.js';
 import { useI18n } from '../i18n/I18nProvider.js';
+import type { MessageKey } from '../i18n/messages.js';
+import { slashCommandDescription, type Translate } from './slashCommandDescriptions.js';
 
 /**
  * 统一的 picker 项类型——把 slash command 和 skill 合并成一个列表。
@@ -75,49 +77,49 @@ interface WorkflowLibraryLite {
 
 const WORKFLOW_SUBCOMMANDS: ReadonlyArray<{
   readonly label: string;
-  readonly description: string;
+  readonly descriptionKey: MessageKey;
   readonly argsHint?: string;
 }> = [
-  { label: 'help', description: 'Show workflow usage' },
-  { label: 'list', description: 'List built-in, pattern, and saved workflows' },
-  { label: 'runs', description: 'List workflow runs', argsHint: '[--all|--limit N]' },
-  { label: 'show', description: 'Show a workflow run', argsHint: '[--full] [runId]' },
-  { label: 'pause', description: 'Pause a workflow run', argsHint: '<runId>' },
-  { label: 'resume', description: 'Resume a workflow run', argsHint: '<runId>' },
-  { label: 'stop', description: 'Stop the latest active workflow or a run', argsHint: '[runId]' },
+  { label: 'help', descriptionKey: 'slash.workflow.help.desc' },
+  { label: 'list', descriptionKey: 'slash.workflow.list.desc' },
+  { label: 'runs', descriptionKey: 'slash.workflow.runs.desc', argsHint: '[--all|--limit N]' },
+  { label: 'show', descriptionKey: 'slash.workflow.show.desc', argsHint: '[--full] [runId]' },
+  { label: 'pause', descriptionKey: 'slash.workflow.pause.desc', argsHint: '<runId>' },
+  { label: 'resume', descriptionKey: 'slash.workflow.resume.desc', argsHint: '<runId>' },
+  { label: 'stop', descriptionKey: 'slash.workflow.stop.desc', argsHint: '[runId]' },
   {
     label: 'delete',
-    description: 'Delete a workflow run or saved workflow',
+    descriptionKey: 'slash.workflow.delete.desc',
     argsHint: '[--force] [--run|--saved] <target>',
   },
   {
     label: 'prune',
-    description: 'Preview or clean old workflow runs',
+    descriptionKey: 'slash.workflow.prune.desc',
     argsHint: '--dry-run|--keep N|--older-than Nd',
   },
   {
     label: 'rerun',
-    description: 'Rerun a generated run or saved workflow',
+    descriptionKey: 'slash.workflow.rerun.desc',
     argsHint: '<runId|savedName> [args]',
   },
   {
     label: 'save',
-    description: 'Save a generated workflow run as a capsule',
+    descriptionKey: 'slash.workflow.save.desc',
     argsHint: '<runId> <name>',
   },
   {
     label: 'rename',
-    description: 'Rename a run display name or generated saved workflow',
+    descriptionKey: 'slash.workflow.rename.desc',
     argsHint: '<runId|savedName> <newName>',
   },
   {
     label: 'revise',
-    description: 'Generate and save a revised workflow capsule',
+    descriptionKey: 'slash.workflow.revise.desc',
     argsHint: '[--replace] <runId|savedName> <change>',
   },
   {
     label: 'create',
-    description: 'Generate and start a workflow from natural language',
+    descriptionKey: 'slash.workflow.create.desc',
     argsHint: '<request>',
   },
 ];
@@ -184,6 +186,7 @@ function buildWorkflowSuggestions(
   query: string,
   library: WorkflowLibraryLite | null,
   runs: readonly WorkflowRunT[],
+  t: Translate,
 ): readonly SlashPickerItem[] {
   const q = query.trimStart();
   const after = q.replace(/^\/workflow\b/i, '').replace(/^\s*/, '');
@@ -203,19 +206,23 @@ function buildWorkflowSuggestions(
   if (firstArgMode) {
     const workflowNames: SlashPickerItem[] = [
       ...(library?.builtin ?? []).map((w) =>
-        workflowSuggestion(query, w.name, w.description || 'Built-in workflow'),
+        workflowSuggestion(query, w.name, w.description || t('slash.workflow.builtinWorkflow')),
       ),
       ...(library?.saved ?? []).map((w) =>
         workflowSuggestion(
           query,
           w.name,
-          `Saved workflow${w.source ? ` (${w.source}${w.execution ? `, ${w.execution}` : ''})` : ''}`,
+          w.source || w.execution
+            ? t('slash.workflow.savedWorkflowWithMeta', {
+                meta: [w.source, w.execution].filter(Boolean).join(', '),
+              })
+            : t('slash.workflow.savedWorkflow'),
         ),
       ),
     ];
     return filter([
       ...WORKFLOW_SUBCOMMANDS.map((c) =>
-        workflowSuggestion(query, c.label, c.description, c.argsHint),
+        workflowSuggestion(query, c.label, t(c.descriptionKey), c.argsHint),
       ),
       ...workflowNames,
     ]);
@@ -225,16 +232,25 @@ function buildWorkflowSuggestions(
     workflowSuggestion(query, run.runId, `${run.status} ${workflowTitle(run)}`),
   );
   const savedItems = (library?.saved ?? []).map((w) =>
-    workflowSuggestion(query, w.name, `Saved workflow${w.source ? ` (${w.source})` : ''}`),
+    workflowSuggestion(
+      query,
+      w.name,
+      w.source
+        ? t('slash.workflow.savedWorkflowWithMeta', { meta: w.source })
+        : t('slash.workflow.savedWorkflow'),
+    ),
   );
   const flag = (label: string, description: string): SlashPickerItem =>
     workflowSuggestion(query, label, description);
 
   switch (first) {
     case 'runs':
-      return filter([flag('--all', 'Show all runs'), flag('--limit', 'Limit run count')]);
+      return filter([
+        flag('--all', t('slash.workflow.flag.all')),
+        flag('--limit', t('slash.workflow.flag.limit')),
+      ]);
     case 'show':
-      return filter([flag('--full', 'Show run items and artifacts'), ...runItems]);
+      return filter([flag('--full', t('slash.workflow.flag.full')), ...runItems]);
     case 'pause':
     case 'resume':
     case 'stop':
@@ -242,24 +258,24 @@ function buildWorkflowSuggestions(
       return filter(runItems);
     case 'delete':
       return filter([
-        flag('--force', 'Force-delete a stale run record'),
-        flag('--run', 'Treat target as a run'),
-        flag('--saved', 'Treat target as a saved workflow'),
+        flag('--force', t('slash.workflow.flag.force')),
+        flag('--run', t('slash.workflow.flag.run')),
+        flag('--saved', t('slash.workflow.flag.saved')),
         ...runItems,
         ...savedItems,
       ]);
     case 'prune':
       return filter([
-        flag('--dry-run', 'Preview candidates only'),
-        flag('--keep', 'Keep the newest N terminal runs'),
-        flag('--older-than', 'Delete terminal runs older than Nd or Nh'),
+        flag('--dry-run', t('slash.workflow.flag.dryRun')),
+        flag('--keep', t('slash.workflow.flag.keep')),
+        flag('--older-than', t('slash.workflow.flag.olderThan')),
       ]);
     case 'rerun':
     case 'rename':
       return filter([...runItems, ...savedItems]);
     case 'revise':
       return filter([
-        flag('--replace', 'Replace the saved workflow target'),
+        flag('--replace', t('slash.workflow.flag.replace')),
         ...runItems,
         ...savedItems,
       ]);
@@ -341,13 +357,19 @@ function filterSlashArgItems(
   );
 }
 
-function sessionSuggestions(query: string, sessions: readonly SessionMeta[]): SlashPickerItem[] {
+function sessionSuggestions(
+  query: string,
+  sessions: readonly SessionMeta[],
+  t: Translate,
+): SlashPickerItem[] {
   return sessions.map((session) =>
     slashArgSuggestion(
       query,
       session.sessionId,
       session.title || session.projectRoot,
-      session.msgCount !== undefined ? `${session.msgCount} msg(s)` : undefined,
+      session.msgCount !== undefined
+        ? t('slash.arg.sessionMsgCount', { count: session.msgCount })
+        : undefined,
     ),
   );
 }
@@ -356,6 +378,7 @@ function providerSuggestions(
   query: string,
   providers: readonly ProviderInfo[],
   includeModelForms: boolean,
+  t: Translate,
 ): SlashPickerItem[] {
   const items: SlashPickerItem[] = [];
   for (const provider of providers) {
@@ -363,16 +386,26 @@ function providerSuggestions(
       slashArgSuggestion(
         query,
         provider.id,
-        `${provider.displayName}${provider.configured ? '' : ' (not configured)'}`,
+        provider.configured
+          ? provider.displayName
+          : t('slash.arg.providerNotConfigured', { provider: provider.displayName }),
       ),
     );
     if (!includeModelForms) continue;
     for (const model of provider.models ?? []) {
       items.push(
-        slashArgSuggestion(query, `${provider.id}/${model}`, `${provider.displayName} model`),
+        slashArgSuggestion(
+          query,
+          `${provider.id}/${model}`,
+          t('slash.arg.providerModel', { provider: provider.displayName }),
+        ),
       );
       items.push(
-        slashArgSuggestion(query, `/${model}`, `Model on current provider (${provider.id})`),
+        slashArgSuggestion(
+          query,
+          `/${model}`,
+          t('slash.arg.currentProviderModel', { providerId: provider.id }),
+        ),
       );
     }
   }
@@ -382,11 +415,12 @@ function providerSuggestions(
 function commandHelpSuggestions(
   query: string,
   commands: readonly SlashCommandMeta[],
+  t: Translate,
 ): SlashPickerItem[] {
   return commands.flatMap((command) => [
-    slashArgSuggestion(query, command.name, command.description),
+    slashArgSuggestion(query, command.name, slashCommandDescription(command, t)),
     ...(command.aliases ?? []).map((alias) =>
-      slashArgSuggestion(query, alias, `Alias for /${command.name}`),
+      slashArgSuggestion(query, alias, t('slash.arg.aliasFor', { command: command.name })),
     ),
   ]);
 }
@@ -396,6 +430,7 @@ function buildSlashArgSuggestions(
   providers: readonly ProviderInfo[],
   sessions: readonly SessionMeta[],
   commands: readonly SlashCommandMeta[],
+  t: Translate,
 ): readonly SlashPickerItem[] {
   const q = query.trimStart();
   const match = q.match(/^\/([^\s]+)(?:\s+(.*))?$/);
@@ -413,12 +448,14 @@ function buildSlashArgSuggestions(
     slashArgSuggestion(query, label, description, argsHint);
 
   const staticOptions = (labels: readonly string[]): SlashPickerItem[] =>
-    labels.map((label) => opt(label, `/${rawCommand} ${label}`));
+    labels.map((label) =>
+      opt(label, t('slash.arg.optionForCommand', { command: rawCommand, option: label })),
+    );
 
   let suggestions: readonly SlashPickerItem[];
   switch (command) {
     case 'help':
-      suggestions = commandHelpSuggestions(query, commands);
+      suggestions = commandHelpSuggestions(query, commands, t);
       break;
     case 'mode':
       suggestions = staticOptions(['plan', 'accept-edits', 'auto']);
@@ -439,13 +476,13 @@ function buildSlashArgSuggestions(
       suggestions = staticOptions(['on', 'off', 'auto', 'quick', 'balanced', 'deep']);
       break;
     case 'provider':
-      suggestions = providerSuggestions(query, providers, true);
+      suggestions = providerSuggestions(query, providers, true, t);
       break;
     case 'model':
       suggestions = [
-        opt('default', 'Clear the model override'),
-        opt('list', 'List models for the current provider'),
-        ...providerSuggestions(query, providers, true),
+        opt('default', t('slash.arg.model.default')),
+        opt('list', t('slash.arg.model.list')),
+        ...providerSuggestions(query, providers, true, t),
       ];
       break;
     case 'status':
@@ -456,9 +493,9 @@ function buildSlashArgSuggestions(
       break;
     case 'fallback':
       suggestions = [
-        opt('status', 'Show the fallback chain'),
-        opt('off', 'Disable fallback for this Space process'),
-        ...providerSuggestions(query, providers, false),
+        opt('status', t('slash.arg.fallback.status')),
+        opt('off', t('slash.arg.fallback.off')),
+        ...providerSuggestions(query, providers, false, t),
       ];
       break;
     case 'verifier-log':
@@ -498,11 +535,11 @@ function buildSlashArgSuggestions(
       break;
     case 'review':
       suggestions = [
-        opt('--lean', 'Add a minimal-diff review pass'),
-        opt('--workflow', 'Ask workflow mode to review changes'),
-        opt('base', 'Review against the base branch'),
-        opt('sha', 'Review against a specific commit', '<hash>'),
-        opt('help', 'Show review help'),
+        opt('--lean', t('slash.arg.review.lean')),
+        opt('--workflow', t('slash.arg.review.workflow')),
+        opt('base', t('slash.arg.review.base')),
+        opt('sha', t('slash.arg.review.sha'), '<hash>'),
+        opt('help', t('slash.arg.review.help')),
       ];
       break;
     case 'repointel':
@@ -516,12 +553,12 @@ function buildSlashArgSuggestions(
       break;
     case 'tree':
       if ((first === 'label' || first === 'unlabel') && argIndex >= 1) {
-        suggestions = sessionSuggestions(query, sessions);
+        suggestions = sessionSuggestions(query, sessions, t);
       } else {
         suggestions = [
-          opt('label', 'Label a tree entry'),
-          opt('unlabel', 'Remove a tree label'),
-          ...sessionSuggestions(query, sessions),
+          opt('label', t('slash.arg.tree.label')),
+          opt('unlabel', t('slash.arg.tree.unlabel')),
+          ...sessionSuggestions(query, sessions, t),
         ];
       }
       break;
@@ -529,7 +566,7 @@ function buildSlashArgSuggestions(
     case 'delete':
     case 'fork':
     case 'rewind':
-      suggestions = sessionSuggestions(query, sessions);
+      suggestions = sessionSuggestions(query, sessions, t);
       break;
     case 'extensions':
       if (first === 'sdk' && argIndex >= 1) {
@@ -682,9 +719,9 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
   const prefix = skillOnlyMode ? skillNamespaceMatch[1]! : queryLower.replace(/^\//, '');
   const commandMetas = items.flatMap((item) => (item.kind === 'slash' ? [item.meta] : []));
   const filtered = workflowMode
-    ? buildWorkflowSuggestions(props.query, workflowLibrary, workflowRuns)
+    ? buildWorkflowSuggestions(props.query, workflowLibrary, workflowRuns, t)
     : slashArgMode
-      ? buildSlashArgSuggestions(props.query, providers, sessions, commandMetas)
+      ? buildSlashArgSuggestions(props.query, providers, sessions, commandMetas, t)
       : items.filter((c) => {
           if (skillOnlyMode && c.kind !== 'skill') return false;
           if (c.kind === 'workflow') return false;
@@ -753,7 +790,9 @@ export function SlashCommandPopover(props: SlashCommandPopoverProps): JSX.Elemen
         const description =
           item.kind === 'workflow' || item.kind === 'slash-arg'
             ? item.description
-            : item.meta.description;
+            : item.kind === 'slash'
+              ? slashCommandDescription(item.meta, t)
+              : item.meta.description;
         const argsHint =
           item.kind === 'workflow' || item.kind === 'slash-arg'
             ? item.argsHint
