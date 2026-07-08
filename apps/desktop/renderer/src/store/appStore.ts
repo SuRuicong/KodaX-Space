@@ -1402,8 +1402,14 @@ export const useAppStore = create<AppState>((set) => ({
       const histLocalNotices: LocalNoticeMessage[] = [];
       let lastHistoricalUserSentAt = Number.NEGATIVE_INFINITY;
       const nextHistoricalUserSentAt = (candidateSentAt?: number): number => {
-        const fallback = Number.isFinite(fallbackSentAt) ? fallbackSentAt : Date.now();
-        const base = Number.isFinite(candidateSentAt) ? candidateSentAt : fallback;
+        const fallback =
+          typeof fallbackSentAt === 'number' && Number.isFinite(fallbackSentAt)
+            ? fallbackSentAt
+            : Date.now();
+        const base =
+          typeof candidateSentAt === 'number' && Number.isFinite(candidateSentAt)
+            ? candidateSentAt
+            : fallback;
         const sentAt = Math.max(base, lastHistoricalUserSentAt + 1);
         lastHistoricalUserSentAt = sentAt;
         return sentAt;
