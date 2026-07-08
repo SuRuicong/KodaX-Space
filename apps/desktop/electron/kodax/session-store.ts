@@ -34,6 +34,12 @@ export type PersistedSessionCompactionResult = Awaited<
   ReturnType<SessionManager['compactSession']>
 >;
 
+export const SPACE_EPHEMERAL_SESSION_TAG = 'space-ephemeral';
+
+export function isEphemeralSessionTag(tag: string | undefined): boolean {
+  return tag === SPACE_EPHEMERAL_SESSION_TAG || tag === 'quick-ask';
+}
+
 /**
  * F045: 把 SDK SessionSummary.tag（consumer 私有自由字符串）反推回 Space 的 surface。
  * 只有 tag==='partner' 归 Partner；其余（'code' / 未知值 / 历史无 tag）一律保守归 Coder。
@@ -49,6 +55,10 @@ export interface SessionStoreImpl {
   readonly rewindSession: SdkSessionModule['rewindSession'];
   readonly deleteSession: SdkSessionModule['deleteSession'];
   readonly loadSession: SdkSessionModule['loadSession'];
+  readonly saveSession?: (
+    id: string,
+    data: NonNullable<Awaited<ReturnType<SdkSessionModule['loadSession']>>>,
+  ) => Promise<boolean>;
   /**
    * FEATURE_246/0.7.51 — append-order full transcript across compaction islands
    * (for UI scrollback). Optional so older SDKs / test mocks that omit it fall
@@ -110,12 +120,30 @@ export async function getSessionStorageHandle(): Promise<unknown> {
   }
 }
 
+type StorageWithSave = {
+  save: (id: string, data: unknown) => Promise<void>;
+};
+
+function hasStorageSave(value: unknown): value is StorageWithSave {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    typeof (value as { save?: unknown }).save === 'function'
+  );
+}
+
 const DEFAULT_IMPL: SessionStoreImpl = {
   listSessions: async (opts) => (await loadSdkModule()).listSessions(opts),
   forkSession: async (id, opts) => (await loadSdkModule()).forkSession(id, opts),
   rewindSession: async (id, opts) => (await loadSdkModule()).rewindSession(id, opts),
   deleteSession: async (id) => (await loadSdkModule()).deleteSession(id),
   loadSession: async (id) => (await loadSdkModule()).loadSession(id),
+  saveSession: async (id, data) => {
+    const storage = await getSessionStorageHandle();
+    if (!hasStorageSave(storage)) return false;
+    await storage.save(id, data);
+    return true;
+  },
   loadFullTranscript: async (id) => {
     const sdk = await loadSdkModule();
     // Guard against a spuriously-old SDK build without the method (never-throw contract).
@@ -211,7 +239,7 @@ export async function listPersistedSessions(opts: {
     scope: 'user',
     limit: opts.limit ?? 200,
   });
-  return summaries.map((s) => ({
+  return summaries.filter((s) => !isEphemeralSessionTag(s.tag)).map((s) => ({
     sessionId: s.id,
     title: s.title,
     msgCount: s.msgCount,
@@ -358,6 +386,19 @@ export async function loadPersistedSession(sessionId: string): Promise<LoadedSes
     loadCache.delete(oldestKey);
   }
   return data;
+}
+
+export async function retagPersistedSession(opts: {
+  readonly sessionId: string;
+  readonly tag: Surface;
+}): Promise<boolean> {
+  const data = await activeImpl.loadSession(opts.sessionId);
+  if (data === null) return false;
+  const saved = activeImpl.saveSession
+    ? await activeImpl.saveSession(opts.sessionId, { ...data, tag: opts.tag })
+    : false;
+  if (saved) invalidatePersistedSessionCache(opts.sessionId);
+  return saved;
 }
 
 export async function appendPersistedClientNotice(

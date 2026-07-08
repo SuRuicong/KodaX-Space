@@ -26,6 +26,7 @@ import {
   compactPersistedSession,
   findPersistedTurnEndSelector,
   sdkTagToSurface,
+  retagPersistedSession,
 } from './session-store.js';
 import { loadKodaxUserDefaults, registerKodaxCustomProviders } from './user-config.js';
 import { resolveRuntimeDefaults } from './runtime-defaults.js';
@@ -189,6 +190,8 @@ class KodaXHost {
     forkPointTurnIdx?: number;
     /** tryResume 专用：复用磁盘上的 sessionId 而非生成新的。*/
     existingSessionId?: string;
+    /** Hidden until explicitly promoted from a transient surface such as Quick Ask. */
+    ephemeral?: boolean;
   }): { sessionId: string; createdAt: number } {
     const sessionId = opts.existingSessionId ?? `s_${randomUUID()}`;
     const session = this.factory({
@@ -202,6 +205,7 @@ class KodaXHost {
       autoModeEngine: opts.autoModeEngine ?? 'llm',
       agentMode: opts.agentMode ?? 'ama',
       surface: opts.surface ?? 'code',
+      ephemeral: opts.ephemeral ?? false,
       parentSessionId: opts.parentSessionId,
       forkPointTurnIdx: opts.forkPointTurnIdx,
       emit: (event: SessionEvent) => {
@@ -337,6 +341,22 @@ class KodaXHost {
     return [...this.sessions.values()];
   }
 
+  async promoteEphemeral(sessionId: string): Promise<boolean> {
+    const s = this.sessions.get(sessionId);
+    if (!s) return false;
+    if (!s.ephemeral) return true;
+    s.ephemeral = false;
+    try {
+      await retagPersistedSession({ sessionId, tag: s.surface });
+    } catch (err) {
+      console.warn(
+        `[host.promoteEphemeral] retag ${sessionId} failed:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+    return true;
+  }
+
   /**
    * FEATURE_038: 合并视图 — in-flight (in-memory) ∪ SDK persisted。
    * 同 sessionId 时 in-flight 优先（运行时设置 full-detail）；historical 仅有
@@ -348,7 +368,7 @@ class KodaXHost {
     projectRoot?: string;
     surface?: ManagedSession['surface'];
   }): Promise<ListMergedItem[]> {
-    const inFlight = this.listInFlight();
+    const inFlight = this.listInFlight().filter((s) => !s.ephemeral);
     const inFlightIds = new Set(inFlight.map((s) => s.sessionId));
     const persisted = await listPersistedSessions({ projectRoot: opts?.projectRoot });
 

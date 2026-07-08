@@ -140,7 +140,7 @@ import { ensurePartnerSourceToolRegistered } from './partner-source-tool.js';
 import { partnerSourceStore } from './partner-source-store.js';
 import { withSessionRunContext } from './session-run-context.js';
 import { runWithSessionQueueScope } from './session-queue-guard.js';
-import { getSessionStorageHandle } from './session-store.js';
+import { getSessionStorageHandle, SPACE_EPHEMERAL_SESSION_TAG } from './session-store.js';
 import { wrapSdkError } from './sdk-errors.js';
 import { buildSkillsPrompt } from './skills-prompt.js';
 import {
@@ -301,6 +301,7 @@ export class RealKodaXSession implements ManagedSession {
    * 决定它出现在哪个面的列表，并将来驱动工具集裁剪（F047）。
    */
   readonly surface: Surface;
+  ephemeral: boolean;
   /** SDK 0.7.42 wired: 用户 /model 设的覆盖；undefined 走 provider 默认。*/
   model?: string;
   /** SDK 0.7.42 wired: 用户 /thinking 设的开关；undefined 走 KodaX 默认。*/
@@ -331,6 +332,7 @@ export class RealKodaXSession implements ManagedSession {
     this.autoModeEngine = opts.autoModeEngine ?? 'llm';
     this.agentMode = opts.agentMode ?? 'ama';
     this.surface = opts.surface ?? 'code';
+    this.ephemeral = opts.ephemeral ?? false;
     this.createdAt = Date.now();
     this.lastActivityAt = this.createdAt;
     this.parentSessionId = opts.parentSessionId;
@@ -1543,7 +1545,7 @@ export class RealKodaXSession implements ManagedSession {
         session: {
           id: sid,
           scope: 'user',
-          tag: this.surface,
+          tag: this.ephemeral ? SPACE_EPHEMERAL_SESSION_TAG : this.surface,
           storage: sessionStorage as KodaXSessionStorage | undefined,
         },
         context,

@@ -54,6 +54,7 @@ export {
 
 export {
   sessionCreateChannel,
+  sessionPromoteEphemeralChannel,
   sessionSendChannel,
   sessionCancelChannel,
   sessionListChannel,

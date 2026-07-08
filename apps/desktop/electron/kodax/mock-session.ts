@@ -130,6 +130,7 @@ export class MockKodaXSession implements ManagedSession {
   agentMode: ManagedSession['agentMode'];
   /** F045: 工作面归属；mock 不落盘 tag，但需持有字段使 interface 符合 + host meta 透传。*/
   readonly surface: ManagedSession['surface'];
+  ephemeral: boolean;
   /** v0.7.42 P0 wire：mock 不实际用 model，只持有字段供 host setter。*/
   model?: string;
   /** v0.7.42 P0 wire：mock 不实际用 thinking，只持有字段供 host setter。*/
@@ -156,6 +157,7 @@ export class MockKodaXSession implements ManagedSession {
     this.autoModeEngine = opts.autoModeEngine ?? 'llm';
     this.agentMode = opts.agentMode ?? 'ama';
     this.surface = opts.surface ?? 'code';
+    this.ephemeral = opts.ephemeral ?? false;
     this.createdAt = Date.now();
     this.lastActivityAt = this.createdAt;
     this.parentSessionId = opts.parentSessionId;

@@ -33,6 +33,7 @@ export type SessionCreateOptions = {
   readonly autoModeEngine?: AutoModeEngine;
   readonly agentMode?: AgentMode;
   readonly surface?: Surface;
+  readonly ephemeral?: boolean;
   readonly model?: string;
   readonly parentSessionId?: string;
   readonly forkPointTurnIdx?: number;
@@ -78,6 +79,11 @@ export interface ManagedSession {
    * 持久化为 KodaX SDK session tag。决定 session 出现在哪个面的列表。
    */
   readonly surface: Surface;
+  /**
+   * Host-only temporary sessions are hidden from normal session lists until the
+   * user explicitly promotes them, e.g. Quick Ask -> Continue in Coder.
+   */
+  ephemeral?: boolean;
   /**
    * SDK 0.7.42 setModel: model 覆盖 provider 默认；undefined = 用 provider 默认。
    * 切换不重启 session——下一次 send 时传入 runKodaX options.model。

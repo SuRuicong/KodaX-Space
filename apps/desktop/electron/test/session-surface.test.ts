@@ -13,6 +13,7 @@ import { kodaxHost } from '../kodax/host.js';
 import { setRendererTarget } from '../ipc/push.js';
 import {
   listPersistedSessions,
+  SPACE_EPHEMERAL_SESSION_TAG,
   sdkTagToSurface,
 } from '../kodax/session-store.js';
 import { installSessionStoreMock, type MockSessionState } from './_helpers/session-store-mock.js';
@@ -61,7 +62,8 @@ test('schema: sessionMeta defaults surface to "code" when omitted', async () => 
 });
 
 test('schema: create/list input.surface is optional and validates the enum', async () => {
-  const { sessionCreateChannel, sessionListChannel } = await import('@kodax-space/space-ipc-schema');
+  const { sessionCreateChannel, sessionListChannel, sessionPromoteEphemeralChannel } =
+    await import('@kodax-space/space-ipc-schema');
   // 缺省合法
   assert.equal(
     sessionCreateChannel.input.safeParse({ projectRoot: '/r', provider: 'mock' }).success,
@@ -82,6 +84,18 @@ test('schema: create/list input.surface is optional and validates the enum', asy
   // list input.surface 同样 optional
   assert.equal(sessionListChannel.input.safeParse({ surface: 'partner' }).success, true);
   assert.equal(sessionListChannel.input.safeParse(undefined).success, true);
+  assert.equal(
+    sessionCreateChannel.input.safeParse({
+      projectRoot: '/r',
+      provider: 'mock',
+      ephemeral: true,
+    }).success,
+    true,
+  );
+  assert.equal(
+    sessionPromoteEphemeralChannel.input.safeParse({ sessionId: 's_1' }).success,
+    true,
+  );
 });
 
 // ---- 2. mapper ----
@@ -110,6 +124,18 @@ test('listPersistedSessions: derives surface from SDK summary.tag', async () => 
 
 // ---- 4. host.createSession + listMerged 过滤 ----
 
+test('listPersistedSessions: hides ephemeral quick-ask sessions', async () => {
+  mockState.seedTagged('s_ephemeral', '/r', SPACE_EPHEMERAL_SESSION_TAG, 'quick ask');
+  mockState.seedTagged('s_old_quick_ask', '/r', 'quick-ask', 'legacy quick ask');
+  mockState.seedTagged('s_code', '/r', 'code', 'coding');
+
+  const list = await listPersistedSessions({ projectRoot: '/r' });
+  assert.deepEqual(
+    list.map((s) => s.sessionId),
+    ['s_code'],
+  );
+});
+
 test('createSession: defaults surface to "code" and persists explicit surface', () => {
   const a = kodaxHost.createSession({ projectRoot: '/r', provider: 'mock' });
   assert.equal(kodaxHost.get(a.sessionId)?.surface, 'code');
@@ -131,6 +157,43 @@ test('listMerged({surface}): filters in-flight sessions by surface', async () =>
   const partner = await kodaxHost.listMerged({ surface: 'partner' });
   assert.equal(partner.length, 1);
   assert.equal(partner[0]!.surface, 'partner');
+});
+
+test('listMerged: hides in-flight ephemeral sessions until promoted', async () => {
+  const hidden = kodaxHost.createSession({
+    projectRoot: '/r',
+    provider: 'mock',
+    ephemeral: true,
+  });
+  const visible = kodaxHost.createSession({ projectRoot: '/r', provider: 'mock' });
+
+  let all = await kodaxHost.listMerged();
+  assert.deepEqual(
+    all.map((m) => m.sessionId),
+    [visible.sessionId],
+  );
+
+  assert.equal(await kodaxHost.promoteEphemeral(hidden.sessionId), true);
+  all = await kodaxHost.listMerged();
+  assert.deepEqual(
+    all.map((m) => m.sessionId).sort(),
+    [hidden.sessionId, visible.sessionId].sort(),
+  );
+});
+
+test('promoteEphemeral: retags persisted hidden sessions to their surface', async () => {
+  mockState.seedTagged('s_hidden', '/r', SPACE_EPHEMERAL_SESSION_TAG, 'quick ask');
+  kodaxHost.createSession({
+    projectRoot: '/r',
+    provider: 'mock',
+    surface: 'code',
+    ephemeral: true,
+    existingSessionId: 's_hidden',
+  });
+
+  assert.equal(await kodaxHost.promoteEphemeral('s_hidden'), true);
+  const list = await listPersistedSessions({ projectRoot: '/r' });
+  assert.equal(list.find((s) => s.sessionId === 's_hidden')?.surface, 'code');
 });
 
 test('listMerged({surface}): filters persisted (tag-derived) sessions and treats untagged as code', async () => {

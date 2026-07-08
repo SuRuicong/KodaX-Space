@@ -86,6 +86,36 @@ export function installSessionStoreMock(): MockSessionState {
         ...(s.tag !== undefined ? { tag: s.tag } : {}),
       } as never;
     },
+    saveSession: async (id, data) => {
+      const existing = storage.get(id);
+      const rec = data as {
+        title?: unknown;
+        gitRoot?: unknown;
+        tag?: unknown;
+        runtimeInfo?: { workspaceRoot?: unknown; gitRoot?: unknown };
+        transcriptEntries?: unknown;
+      };
+      const gitRoot =
+        typeof rec.gitRoot === 'string'
+          ? rec.gitRoot
+          : typeof rec.runtimeInfo?.workspaceRoot === 'string'
+            ? rec.runtimeInfo.workspaceRoot
+            : typeof rec.runtimeInfo?.gitRoot === 'string'
+              ? rec.runtimeInfo.gitRoot
+              : (existing?.gitRoot ?? '');
+      storage.set(id, {
+        id,
+        title: typeof rec.title === 'string' ? rec.title : (existing?.title ?? 'Untitled'),
+        gitRoot,
+        ...(typeof rec.tag === 'string' ? { tag: rec.tag } : {}),
+        ...(Array.isArray(rec.transcriptEntries)
+          ? { transcriptEntries: rec.transcriptEntries }
+          : existing?.transcriptEntries !== undefined
+            ? { transcriptEntries: existing.transcriptEntries }
+            : {}),
+      });
+      return true;
+    },
     loadFullTranscript: async (id) => {
       const s = storage.get(id);
       if (!s) return null;

@@ -184,6 +184,12 @@ export const sessionCreateChannel = {
     agentMode: agentModeSchema.optional(),
     /** F045: 工作面。缺省 'code'。决定 session 的 tag（写盘）/ 工具集 / 列表归属。*/
     surface: surfaceSchema.optional(),
+    /**
+     * Host-only temporary session marker. Ephemeral sessions may run through the
+     * normal SDK stream, but they are hidden from restored user session lists
+     * until explicitly promoted.
+     */
+    ephemeral: z.boolean().optional(),
   }),
   output: z.object({
     sessionId: z.string().min(1),
@@ -192,6 +198,18 @@ export const sessionCreateChannel = {
     permissionMode: permissionModeSchema,
     autoModeEngine: autoModeEngineSchema,
     agentMode: agentModeSchema,
+  }),
+} as const;
+
+// ---- Invoke: session.promoteEphemeral ----
+export const sessionPromoteEphemeralChannel = {
+  name: 'session.promoteEphemeral',
+  direction: 'invoke',
+  input: z.object({
+    sessionId: z.string().min(1),
+  }),
+  output: z.object({
+    promoted: z.boolean(),
   }),
 } as const;
 

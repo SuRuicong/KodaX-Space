@@ -21,6 +21,7 @@ import {
 } from './handoff.js';
 import {
   sessionCreateChannel,
+  sessionPromoteEphemeralChannel,
   sessionSendChannel,
   sessionCancelChannel,
   sessionListChannel,
@@ -189,6 +190,7 @@ export const invokeChannels = {
   [handoffAcceptChannel.name]: handoffAcceptChannel,
   [handoffDismissChannel.name]: handoffDismissChannel,
   [sessionCreateChannel.name]: sessionCreateChannel,
+  [sessionPromoteEphemeralChannel.name]: sessionPromoteEphemeralChannel,
   [sessionSendChannel.name]: sessionSendChannel,
   [sessionCancelChannel.name]: sessionCancelChannel,
   [sessionListChannel.name]: sessionListChannel,

@@ -168,13 +168,16 @@ export function registerSessionChannels(): void {
       agentMode: runtimeDefaults.agentMode,
       // F045: 工作面（Coder / Partner）。缺省 'code'。host 落盘成 SDK session tag。
       surface: input.surface,
+      ephemeral: input.ephemeral,
     });
-    await getSessionRuntimeStore().set(sessionId, {
-      reasoningMode: runtimeDefaults.reasoningMode,
-      permissionMode: runtimeDefaults.permissionMode,
-      autoModeEngine: runtimeDefaults.autoModeEngine,
-      agentMode: runtimeDefaults.agentMode,
-    });
+    if (!input.ephemeral) {
+      await getSessionRuntimeStore().set(sessionId, {
+        reasoningMode: runtimeDefaults.reasoningMode,
+        permissionMode: runtimeDefaults.permissionMode,
+        autoModeEngine: runtimeDefaults.autoModeEngine,
+        agentMode: runtimeDefaults.agentMode,
+      });
+    }
     // v0.1.6 cleanup: 用 ~/.kodax/config.json 的 thinking 默认值初始化新 session。
     // 不传 schema 改动——renderer 没必要知道 thinking 默认值，main 直接 fill 即可。
     // model 不在这里 fill：跨 provider 切换时 KodaX config 里的 model 名通常对不上
@@ -256,6 +259,21 @@ export function registerSessionChannels(): void {
   registerChannel('session.cancel', async (input) => {
     const cancelled = await kodaxHost.cancel(input.sessionId);
     return { cancelled };
+  });
+
+  registerChannel('session.promoteEphemeral', async (input) => {
+    const promoted = await kodaxHost.promoteEphemeral(input.sessionId);
+    if (!promoted) return { promoted: false };
+    const session = kodaxHost.get(input.sessionId);
+    if (session) {
+      await getSessionRuntimeStore().set(input.sessionId, {
+        reasoningMode: session.reasoningMode,
+        permissionMode: session.permissionMode,
+        autoModeEngine: session.autoModeEngine,
+        agentMode: session.agentMode,
+      });
+    }
+    return { promoted: true };
   });
 
   // session.list
