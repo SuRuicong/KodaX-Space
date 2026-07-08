@@ -1,173 +1,236 @@
-# KodaX Space
+<p align="center">
+  <img src="resources/icon.png" alt="KodaX Space" width="128">
+</p>
 
-> Provider-neutral, local-first AI agent desktop client — KodaX 生态桌面客户端
+<h1 align="center">KodaX Space</h1>
 
-[![status](https://img.shields.io/badge/status-released-green)]() [![license](https://img.shields.io/badge/license-KAI--FCL-orange)]() [![version](https://img.shields.io/badge/version-0.1.29-blue)]()
+<p align="center">
+  <b>Provider-neutral, local-first desktop workbench for KodaX coding agents.</b><br>
+  Electron + React desktop client for project-aware AI sessions, review surfaces, workflow visibility, MCP, artifacts, memory governance, and the KodaX SDK runtime.
+</p>
 
-KodaX Space 是 [KodaX](../KodaX) 生态的 Electron 桌面客户端。对标 Anthropic Claude Desktop 中的 Claude Code，Provider 中立、source-available / fair-core、本地优先（[ADR-004](docs/ADR/ADR-004-panel-model.md)）。
+<p align="center">
+  <a href="https://github.com/icetomoyo/KodaX-Space/releases/latest"><img alt="release" src="https://img.shields.io/github/v/release/icetomoyo/KodaX-Space?style=flat-square"></a>
+  <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-KAI--FCL-orange?style=flat-square"></a>
+  <a href="https://github.com/icetomoyo/KodaX-Space/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/icetomoyo/KodaX-Space/ci.yml?style=flat-square&label=ci"></a>
+  <img alt="KodaX SDK" src="https://img.shields.io/badge/KodaX_SDK-0.7.63-2ecc71?style=flat-square">
+  <img alt="platforms" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-34495e?style=flat-square">
+</p>
 
-- **12+ LLM Provider 自由切换**（不锁 Anthropic / 不锁 OpenAI）
-- **本机优先**（数据默认本地，不强制云）
-- **复用 KodaX 内核**（in-process import，REPL 同源演进）
-- **KodaX 0.7.53 能力对齐**（Capability ledger、sidecar verifier、todo drift warning、workflow surfaces）
-- **中 / 英显示语言切换**（v0.1.20，Settings + 顶部菜单，覆盖高频 chrome）
-- **CLI → Space handoff receiver**（v0.1.20，`~/.kodax/handoffs/*.json` 收件箱）
-- **图片粘贴多模态输入**（v0.1.9，截图直接粘到 composer → SDK `KodaXContextOptions.inputArtifacts`）
-- **Smart Popout Director**（v0.1.9，session 首次出现 plan/diff/tasks 信号自动展开右侧 popout）
-- **统一 Settings + Codex parity 视觉**（v0.1.9，2-tab Settings modal / 可拖侧栏 / 项目拖排）
-- **真 PTY 多 tab 终端**（v0.1.7，xterm.js + node-pty）
-- **PDF / docx / xlsx 富预览**（v0.1.7，lazy-loaded 不影响 main bundle）
-- **⌘Shift+P 命令面板**（v0.1.7，VS Code 同款）
+<p align="center">
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#why-kodax-space">Why KodaX Space</a> ·
+  <a href="#current-release">Current Release</a> ·
+  <a href="#development">Development</a> ·
+  <a href="#documentation">Documentation</a> ·
+  <a href="README_CN.md">中文 README</a>
+</p>
 
-## Documentation
+---
 
-- [USAGE.md](docs/USAGE.md) — 用户使用文档（启动 / 配置 / 主要功能 / 已知限制）
-- [PRD.md](docs/PRD.md) — 产品需求
-- [HLD.md](docs/HLD.md) — 高层设计
-- [ADR/](docs/ADR/) — 关键架构决策（Electron / 集成模式 / Rust 策略 / 面板模型 / Partner surface）
-- [KODAX_CAPABILITY_LEDGER.md](docs/KODAX_CAPABILITY_LEDGER.md) — KodaX SDK 能力消费状态与降级说明
-- [FEATURE_LIST.md](docs/FEATURE_LIST.md) — features 跨版本账本 + Completed / Partial / Deferred 状态
-- [CHANGELOG.md](CHANGELOG.md) — 版本更新记录
+## Quick Start
+
+### Download a release
+
+Prebuilt installers are published on the [KodaX Space Releases](https://github.com/icetomoyo/KodaX-Space/releases/latest) page.
+
+| Platform | Package                                                 |
+| -------- | ------------------------------------------------------- |
+| Windows  | NSIS `Setup.exe`, `Portable.exe`, plus zipped fallbacks |
+| macOS    | universal `.dmg`                                        |
+| Linux    | `AppImage` and `.deb`                                   |
+
+Current public builds are unsigned. On first launch, Windows SmartScreen or macOS Gatekeeper may ask for manual confirmation. Only install builds from a trusted KodaX-AI distribution channel.
+
+### Run from source
+
+```bash
+git clone https://github.com/icetomoyo/KodaX-Space.git
+cd KodaX-Space
+npm install --include=dev
+npm run dev
+```
+
+`npm run dev` starts the Vite renderer, the bundled Electron main process, and the KodaX runtime integration used by the desktop client.
+
+---
+
+## Why KodaX Space
+
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <h3>Local-first desktop shell</h3>
+      Project state, sessions, preferences, MCP configuration, skills, and artifacts are centered on the user's machine and shared with the wider KodaX ecosystem.
+    </td>
+    <td width="33%" valign="top">
+      <h3>Provider neutrality</h3>
+      Space consumes KodaX provider aliases and custom OpenAI/Anthropic-compatible providers instead of binding the desktop experience to one model vendor.
+    </td>
+    <td width="33%" valign="top">
+      <h3>Task-oriented UI</h3>
+      The Environment Hub, Task Dock, review workspace, artifact workspace, terminal, and floating-surface policy separate status, evidence, review, and decisions.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <h3>KodaX SDK native surface</h3>
+      Space imports the KodaX SDK in-process from Electron main, so the desktop client follows the same sessions, workflows, skills, MCP, and runtime events as KodaX CLI/REPL.
+    </td>
+    <td valign="top">
+      <h3>Governed automation</h3>
+      Permission modes, ask-user modals, keychain-backed credentials, trusted IPC schemas, and local license gates keep agent work visible and reviewable.
+    </td>
+    <td valign="top">
+      <h3>Rich project context</h3>
+      Built-in terminal tabs, PDF/docx/xlsx preview, image input, workflow panels, memory governance, and scoped Markdown agents help long sessions stay inspectable.
+    </td>
+  </tr>
+</table>
+
+## Current Release
+
+**v0.1.29 - Workspace Environment Hub + Task Dock**
+
+Released: 2026-07-08
+
+This release aligns KodaX Space with `@kodax-ai/kodax@0.7.63` and ships the F103 shell redesign. The app now has a compact Environment Hub, a structured right-side Task Dock, and a shared Floating Surface Host for popouts and blocking modals.
+
+| Area                   | Summary                                                                                                              |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Environment Hub        | Routes Changes, Location, Branch, Commit/Push, Sources, and Mode/Permission to the correct deeper surfaces.          |
+| Task Dock              | Organizes Run, Plan, Agents, Workflow, Changes, Sources, Artifacts, and Context into a persistent task side surface. |
+| Floating Surface Host  | Centralizes z-index, backdrop, Escape handling, focus trap/restore, and topmost-surface behavior.                    |
+| Memory Governance      | Adds a Coder-only Memory popout and IPC/service surface over the KodaX memory control plane.                         |
+| Scoped Markdown agents | Enables scoped project agents through the KodaX 0.7.63 runtime path.                                                 |
+| Licensing              | KodaX Space 0.1.27+ official KodaX-AI distributions use KAI-FCL or accompanying customer terms.                      |
+
+See [CHANGELOG.md](CHANGELOG.md) and [docs/features/v0.1.29.md](docs/features/v0.1.29.md) for the full release notes.
+
+## Product Surface
+
+| Surface            | Purpose                                                                                                              |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| Coder workspace    | Main AI coding session surface, backed by the KodaX SDK runtime.                                                     |
+| Environment Hub    | Compact project/session/environment router for location, branch, changes, sources, and mode context.                 |
+| Task Dock          | Persistent right-side task surface for run status, plan, agents, workflow, changes, sources, artifacts, and context. |
+| Review workspace   | Diff and file-review surface for changes that need inspection.                                                       |
+| Artifact workspace | Preview, inspect, and export generated artifacts.                                                                    |
+| Terminal workspace | Real PTY terminal tabs scoped to the selected project.                                                               |
+| MCP and Skills     | Desktop management and display paths for KodaX MCP servers and skills.                                               |
+| Memory Governance  | Review, approve, reject, and inspect memory proposals and approved references.                                       |
+| Partner surface    | Code exists behind a flag, but the user-facing Partner workflow remains disabled until the deliverable chain lands.  |
+
+## Configuration Model
+
+KodaX Space intentionally reuses KodaX ecosystem state where it should, and owns desktop-only state where the UI needs it.
+
+| State                                 | Behavior                                                                                                                                      |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `~/.kodax/config.json`                | Used for provider defaults, MCP server configuration, permission defaults, custom providers, and KodaX runtime configuration where supported. |
+| `~/.kodax/sessions/`                  | Shared session history with KodaX CLI/REPL.                                                                                                   |
+| `~/.kodax/handoffs/`                  | Desktop handoff inbox for session continuity.                                                                                                 |
+| `~/.kodax/skills/` and project skills | Discovered by the KodaX skills runtime.                                                                                                       |
+| API keys                              | Stored through OS keychain when available; environment variables remain supported.                                                            |
+| `~/.kodax/space/`                     | Space-owned preferences, projects, UI state, and desktop-specific metadata.                                                                   |
+
+## Architecture
+
+KodaX Space is an npm workspace monorepo with an Electron main process, a sandboxed React renderer, and shared IPC/UI packages.
+
+```text
+KodaX-Space/
+├── apps/
+│   └── desktop/
+│       ├── electron/          # Electron main, preload, IPC handlers, KodaX host integration
+│       └── renderer/          # React UI, shell, features, stores, visual surfaces
+├── packages/
+│   ├── space-ipc-schema/      # zod schemas for renderer <-> main IPC contracts
+│   └── space-ui-kit/          # shared UI primitives
+├── docs/                      # PRD, HLD, ADR, feature notes, manuals, ledgers
+├── e2e/ and tests/            # Playwright and integration coverage
+├── scripts/                   # dev, build, packaging, smoke helpers
+└── resources/                 # app icon and license policy resources
+```
+
+Key technical choices:
+
+| Layer                 | Choice                                                                             |
+| --------------------- | ---------------------------------------------------------------------------------- |
+| Shell                 | Electron 42                                                                        |
+| Renderer              | React 19, Vite, TypeScript, Zustand                                                |
+| UI/runtime separation | Renderer has no direct LLM/tool execution; privileged work stays in Electron main. |
+| KodaX integration     | In-process SDK import through Electron main.                                       |
+| IPC                   | zod-validated contracts from `@kodax-space/space-ipc-schema`.                      |
+| Terminal              | xterm.js + node-pty.                                                               |
+| Preview               | Monaco, pdfjs, mammoth/docx, SheetJS/xlsx.                                         |
+| Tests                 | Node test runner, Playwright, typecheck, smoke packaging checks.                   |
 
 ## Development
 
 ```bash
-# 装依赖
-npm install
+# Install dependencies
+npm install --include=dev
 
-# 开发模式（vite HMR + esbuild watch + electron）
+# Start Vite + Electron in development mode
 npm run dev
 
-# 单元测试 + 类型检查
-npm test && npm run typecheck
+# Typecheck Electron main, renderer, and workspace packages
+npm run typecheck
 
-# 仅构建 dist (不打包安装包)
+# Run workspace unit tests
+npm test
+
+# Build renderer + main + workspace packages without packaging installers
 npm run build:smoke
 
-# 完整构建 + 打包平台安装包（unsigned — 自家工具不走公开 Beta）
-npm run build:win        # Windows NSIS setup .exe + portable .exe (release also uploads zipped fallbacks)
-npm run build:mac        # macOS universal .dmg
-npm run build:linux      # Linux AppImage + .deb
-npm run build            # 当前平台（CI matrix 用）
-npm run smoke:pack       # 校验 installer size + asar 内容
+# Package installers
+npm run build:win
+npm run build:mac
+npm run build:linux
+
+# Validate packaged output
+npm run smoke:pack
 ```
 
-## Project Layout
+Useful focused commands:
 
-```
-KodaX-Space/
-├── apps/
-│   └── desktop/
-│       ├── electron/         ← main + preload (Node)
-│       │   ├── terminal/     ← F011 ptyHost (node-pty wrapper)
-│       │   └── ipc/          ← all IPC handlers
-│       └── renderer/         ← React UI (browser, sandbox)
-│           ├── shell/        ← Shell + popouts (Terminal / Preview / Diff / Tasks / Plan / MCP)
-│           ├── features/     ← terminal (xterm) / preview (pdf/docx/xlsx) / session / quick-ask
-│           └── lib/          ← fuzzy / shared utils
-├── packages/
-│   ├── space-ipc-schema/     ← zod schemas for IPC (single source of truth)
-│   └── space-ui-kit/         ← shared design primitives
-├── scripts/                  ← build / dev / clean
-├── docs/                     ← PRD · HLD · ADR · features · USAGE · FEATURE_LIST · CHANGELOG
-└── .github/workflows/        ← CI (build · release)
+```bash
+npm test -w @kodax-space/desktop
+npm test -w @kodax-space/space-ipc-schema
+npm run e2e
+npm run e2e:headed
 ```
 
-## Status
+## Documentation
 
-**v0.1.22 - Provider / Queue Patch** (2026-06-22 released)
+| Document                                                                                                 | Purpose                                                                                  |
+| -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| [README_CN.md](README_CN.md)                                                                             | Chinese README.                                                                          |
+| [docs/USER_MANUAL.zh-CN.md](docs/USER_MANUAL.zh-CN.md)                                                   | Current Chinese user manual for KodaX Space 0.1.29.                                      |
+| [docs/USAGE.md](docs/USAGE.md)                                                                           | Usage notes covering launch, configuration reuse, slash commands, and known limits.      |
+| [docs/CODING_AGENT_BEGINNER_BEST_PRACTICES.zh-CN.md](docs/CODING_AGENT_BEGINNER_BEST_PRACTICES.zh-CN.md) | Chinese beginner guide for coding-agent practice in software and microservice workflows. |
+| [docs/PRD.md](docs/PRD.md)                                                                               | Product requirements and product positioning.                                            |
+| [docs/HLD.md](docs/HLD.md)                                                                               | High-level architecture and system design.                                               |
+| [docs/ADR/](docs/ADR/)                                                                                   | Architecture decision records.                                                           |
+| [docs/FEATURE_LIST.md](docs/FEATURE_LIST.md)                                                             | Feature ledger, roadmap, and release planning status.                                    |
+| [docs/KODAX_CAPABILITY_LEDGER.md](docs/KODAX_CAPABILITY_LEDGER.md)                                       | KodaX SDK capability consumption and fallback notes.                                     |
+| [CHANGELOG.md](CHANGELOG.md)                                                                             | Release history.                                                                         |
 
-This patch keeps the v0.1.20/v0.1.21 baseline intact while fixing trusted internal custom provider compatibility, Space-owned per-session follow-up queues, ask_user modal bridge coverage, View menu polish, artifact transcript callouts, CSS spinner stability, Diff loading polish, and release metadata alignment. See [CHANGELOG.md](CHANGELOG.md) and [docs/features/v0.1.22.md](docs/features/v0.1.22.md).
+## Roadmap
 
-### v0.1.22 Patch Highlights
+Near-term planned work is tracked in [docs/FEATURE_LIST.md](docs/FEATURE_LIST.md). Current highlights:
 
-| Area                  | Summary                                                                                         |
-| --------------------- | ----------------------------------------------------------------------------------------------- |
-| **Provider trust**    | Trusted internal custom providers can explicitly bypass URL safety checks while default HTTPS and dangerous-scheme guards stay on. |
-| **Config providers**  | KodaX config custom providers keep the trusted path so existing internal gateway entries continue to work. |
-| **Follow-up queue**   | User follow-up prompts now live in a Space-owned per-session queue instead of the SDK main-thread queue. |
-| **Resume pairing**    | Resumed sessions only reuse a configured model when it belongs to the selected provider.          |
-| **Ask user bridge**   | SDK question/select/input prompts are wired through the Space IPC modal path.                    |
-| **View menu polish**  | Theme and Visual Quality can be changed from the localized View menu alongside Language.             |
-| **Conversation polish** | Artifact creation now surfaces as a standalone clickable callout; the Thinking spinner no longer leaves a caret or timer-janks during streaming. |
-| **Layout polish** | The right sidebar expansion toggle opens a readable review panel while preserving room for the transcript. |
-| **Release hygiene**   | Package versions, lockfile metadata, docs, `space.version`, Diff loading polish, and test-mode Electron userData isolation are aligned for `0.1.22`. |
-
-**v0.1.20 — Capability catch-up + Display Language MVP ✅**（2026-06-22 released）
-
-本版本在 v0.1.19 应急维护基线上收口 KodaX 0.7.53 消费、workflow 可视化/恢复、Space-side handoff receiver、Quick Ask 连续性、Repointel 诊断和中/英显示语言 MVP。详见 [CHANGELOG.md](CHANGELOG.md) 和 [docs/features/v0.1.20.md](docs/features/v0.1.20.md)。
-
-### v0.1.20 主要新增
-
-| Feature               | 描述                                                                               |
-| --------------------- | ---------------------------------------------------------------------------------- |
-| **F081**              | KodaX capability ledger + `space.version` SDK/capability diagnostics               |
-| **F082**              | Repointel status / trace / doctor readout，warm 明确标为 SDK-gated                 |
-| **F083**              | Quick Ask 临时 session 事件本地捕获 + Continue in Coder                            |
-| **F084**              | CLI/REPL handoff receiver：读取、watch、accept、dismiss `~/.kodax/handoffs/*.json` |
-| **F104**              | Display Language MVP：Settings 与顶部菜单切换 `system` / `zh-CN` / `en-US`         |
-| **SDK 0.7.53**        | sidecar verifier message、todo drift warning 进入 typed session IPC                |
-| **Workflow surfaces** | workflow 管理面板、flow/pattern graph、transcript summary、history detail recovery |
-| **Release hardening** | provider guard、shell/handoff IPC tests、通知历史回放防护、菜单浮层可读性修复      |
-
-### 历史 release
-
-| Version | Theme                                                            | Date       |
-| ------- | ---------------------------------------------------------------- | ---------- |
-| v0.1.22 | Provider trust path + per-session follow-up queue                | 2026-06-22 |
-| v0.1.21 | Patch lane: workflow recovery + release artifact resilience      | 2026-06-22 |
-| v0.1.20 | Capability catch-up + Display Language MVP                       | 2026-06-22 |
-| v0.1.19 | Session cancellation/history fix + popout recovery               | 2026-06-18 |
-| v0.1.18 | KodaX CLI custom provider bridge                                 | 2026-06-17 |
-| v0.1.17 | Keychain migration + desktop UI polish                           | 2026-06-17 |
-| v0.1.16 | Workflow support chain + motion layer                            | 2026-06-17 |
-| v0.1.9  | Multimodal input + smart popout + Codex parity（含 v0.1.8 合并） | 2026-06-08 |
-| v0.1.7  | Terminal + Preview + Command palette（含 v0.1.6）                | 2026-06-06 |
-| v0.1.5  | Sidebar overhaul + review closeout（含 v0.1.4）                  | 2026-06-05 |
-| v0.1.3  | UX polish（主题 / 通知 / 自动更新）                              | 2026-Q3    |
-| v0.1.2  | KodaX 生态打通                                                   | 2026-06-01 |
-| v0.1.1  | TUI 对齐 batch                                                   | 2026-Q2 末 |
-| v0.1.0  | Alpha foundation                                                 | 2026-Q2    |
-
-详细历史 → [CHANGELOG.md](CHANGELOG.md) / [FEATURE_LIST.md](docs/FEATURE_LIST.md)
-
-### 当前能做什么
-
-装好安装包（或源码 `npm run dev`）后：
-
-1. **配 LLM provider key**（左下角设置 → Providers；13 内建 + 自定义；OS keychain 或 memory fallback）
-2. **选项目目录**（左侧栏 + New / Open；F005 allowlist 保护所有 path 类 IPC）
-3. **创建 session 跟 AI 对话**（流式 token + tool call 卡片 + reasoning mode 切换）
-4. **粘贴截图给 AI 看**（Ctrl+V 把 PNG/JPEG/WEBP 粘到 composer，SDK 自动拼 multimodal content）
-5. **Plan/Diff/Tasks 自动开**（首次出现信号时自动展开右侧 popout，Preferences 里可关）
-6. **切换显示语言**（Settings → Preferences → Language，或顶部菜单 View → Language）
-7. **接收 CLI/REPL handoff**（titlebar handoff inbox 打开同一 KodaX session）
-8. **真 PTY 终端**（右上 Toolbar 终端图标；多 tab；cross-platform）
-9. **打开任意文件预览**（PDF/docx/xlsx 走 RichPreview；其它走 Monaco read-only）
-10. **⌘K Quick Ask 临时问 / ⌘Shift+P 命令面板导航**
-11. **Permission 弹窗确认每个写工具**（plan / accept-edits / auto 三档模式；多请求自动批 modal）
-12. **fork / rewind session**（SDK 0.7.42 持久化，跨 REPL 共享）
-13. **拖排项目 + 拖宽侧栏**（lastUsedAt 默认 / 用户拖动覆盖；左 260/右 320 默认可拖到 180-520px）
-
-### 已知限制
-
-- F015 Repointel standalone warm API：status / trace / doctor 已有；warm start/cancel/progress 仍等 SDK 公共 API
-- F017 CLI teleport：Space receiver / inbox 已有；CLI/REPL writer 仍需 KodaX 侧接入
-- F018 Quick Ask：已有临时 session + Continue in Coder；真正无 session `sideQuery` 和 Partner promotion 仍等 SDK/Partner 语义
-- F104 Display Language MVP：只覆盖高频 chrome；全量 typed locale、pseudo-locale、CI scanner、zh-Hant 和 assistant response language 留给 F076-F080
-- F014 NAPI tokenizer：并入 F042 待性能数据驱动
-- F042 NAPI helpers / Partner surface (F045-F053)：在 roadmap
-- 未签名 installer：Win SmartScreen / macOS Gatekeeper 首启警告需手动 Open
-
-### 不签名说明
-
-KodaX Space 定位为**自家与可信用户使用**，不走"陌生人公开 Beta"路径，installer 无 OS 级签名 / 公证。
-首次启动 Win SmartScreen / macOS Gatekeeper 警告需手动 Open 接受。
+| Lane     | Focus                                                                                                                              |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| v0.1.30  | Partner controlled workspace file writes through reviewed proposals and explicit apply/export.                                     |
+| v0.1.31+ | Workflow, todo, MCP/extension, provider, review, and beta-hardening lanes.                                                         |
+| v0.2.x   | Partner workbench, connector catalog, local automations, policy/audit pack, remote/self-hosted runner, and distribution expansion. |
 
 ## License
 
-[KodaX-AI Fair Core License (KAI-FCL)](LICENSE) © 2026 icetomoyo.
+[KodaX-AI Fair Core License (KAI-FCL)](LICENSE) - Copyright 2026 icetomoyo.
 
-Earlier KodaX Space releases that shipped under Apache-2.0 remain under Apache-2.0 for those released copies. KAI-FCL is source-available / fair-core, not OSI open source; commercial, enterprise, managed deployment, or customer redistribution use requires KodaX-AI authorization and a valid entitlement where required.
+KAI-FCL is source-available / fair-core, not OSI open source. Commercial, enterprise, managed deployment, or customer redistribution use requires KodaX-AI authorization and a valid entitlement where required.
 
 KodaX-AI's current official licensing policy is that KodaX Space 0.1.27 and later are provided under KAI-FCL or accompanying KodaX-AI customer terms when distributed by KodaX-AI with that notice. Historical tags, source archives, installers, or other copies already distributed with Apache-2.0 notices remain under Apache-2.0 for those specific copies.
